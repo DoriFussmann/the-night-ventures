@@ -19,12 +19,12 @@ function BrandingPanel() {
 
         {/* Headline */}
         <h1 className="text-4xl xl:text-5xl text-white font-sans font-medium leading-tight tracking-tight mb-6">
-          Strategic Clarity,<br />Measurable Results.
+          Strategic Clarity.<br />Built on Hard Data.
         </h1>
 
         {/* Subtitle */}
         <p className="text-white/70 text-lg leading-relaxed mb-10">
-          A unified portal delivering Strategic Advisory &amp; Financial Intelligence Services — empowering leaders with data-driven insights and decisive guidance.
+          We provide the advanced financial modeling, research, and strategic consulting you need to make high-stakes business decisions with absolute confidence.
         </p>
 
         {/* Feature cards */}
