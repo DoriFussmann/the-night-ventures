@@ -1,5 +1,5 @@
 import React from "react";
-import { GraduationCap, Users, Calendar } from "lucide-react";
+import { GraduationCap, Users, Briefcase } from "lucide-react";
 
 function BrandingPanel() {
   return (
@@ -14,28 +14,28 @@ function BrandingPanel() {
           <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center">
             <GraduationCap className="w-6 h-6 text-primary-foreground" />
           </div>
-          <span className="text-2xl font-bold text-white font-display">The Night Ventures</span>
+          <span className="text-2xl text-white font-sans font-medium tracking-tight">The Night Ventures</span>
         </div>
 
         {/* Headline */}
-        <h1 className="text-4xl xl:text-5xl font-bold text-white font-display leading-tight mb-6">
-          Your School,<br />Connected.
+        <h1 className="text-4xl xl:text-5xl text-white font-sans font-medium leading-tight tracking-tight mb-6">
+          Strategic Clarity,<br />Measurable Results.
         </h1>
 
         {/* Subtitle */}
         <p className="text-white/70 text-lg leading-relaxed mb-10">
-          A unified portal for teachers, parents, and administrators to stay connected with everything happening at school.
+          A unified portal delivering Strategic Advisory &amp; Financial Intelligence Services — empowering leaders with data-driven insights and decisive guidance.
         </p>
 
         {/* Feature cards */}
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white/10 rounded-xl p-4 flex items-center gap-3">
             <Users className="w-5 h-5 text-white/80" />
-            <span className="text-white text-sm font-medium">Class Rosters</span>
+            <span className="text-white text-sm font-medium">Clients</span>
           </div>
           <div className="bg-white/10 rounded-xl p-4 flex items-center gap-3">
-            <Calendar className="w-5 h-5 text-white/80" />
-            <span className="text-white text-sm font-medium">School Events</span>
+            <Briefcase className="w-5 h-5 text-white/80" />
+            <span className="text-white text-sm font-medium">Projects</span>
           </div>
         </div>
       </div>
@@ -49,7 +49,7 @@ function MobileLogo() {
       <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
         <GraduationCap className="w-5 h-5 text-primary-foreground" />
       </div>
-      <span className="text-xl font-bold text-foreground font-display">The Night Ventures</span>
+      <span className="text-xl text-foreground font-sans font-medium tracking-tight">The Night Ventures</span>
     </div>
   );
 }
