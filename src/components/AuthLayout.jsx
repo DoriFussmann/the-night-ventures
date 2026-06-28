@@ -64,13 +64,17 @@ export default function AuthLayout({ icon: Icon, title, subtitle, footer, childr
           <MobileLogo />
 
           <div className="bg-card rounded-2xl shadow-sm border border-border p-8">
-            <div className="text-center mb-6">
-              <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-primary mb-4">
-                <Icon className="w-6 h-6 text-primary-foreground" aria-hidden="true" />
+            {(Icon || title) && (
+              <div className="text-center mb-6">
+                {Icon && (
+                  <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-primary mb-4">
+                    <Icon className="w-6 h-6 text-primary-foreground" aria-hidden="true" />
+                  </div>
+                )}
+                {title && <h2 className="text-2xl font-bold text-foreground font-display">{title}</h2>}
+                {subtitle && <p className="text-muted-foreground mt-1 text-sm">{subtitle}</p>}
               </div>
-              <h2 className="text-2xl font-bold text-foreground font-display">{title}</h2>
-              {subtitle && <p className="text-muted-foreground mt-1 text-sm">{subtitle}</p>}
-            </div>
+            )}
             {children}
           </div>
 
