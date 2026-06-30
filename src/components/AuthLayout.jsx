@@ -12,7 +12,7 @@ function BrandingPanel() {
         {/* Logo */}
         <div className="flex items-center gap-3 mb-10">
           <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center">
-            <span className="text-primary-foreground font-sans font-bold text-lg">N</span>
+            <span className="text-primary-foreground font-sans font-medium text-lg">N</span>
           </div>
           <span className="text-2xl text-white font-sans font-medium tracking-tight">The Night Ventures</span>
         </div>
@@ -47,7 +47,7 @@ function MobileLogo() {
   return (
     <div className="lg:hidden flex items-center justify-center gap-2 mb-6">
       <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
-        <span className="text-primary-foreground font-sans font-bold text-base">N</span>
+        <span className="text-primary-foreground font-sans font-medium text-base">N</span>
       </div>
       <span className="text-xl text-foreground font-sans font-medium tracking-tight">The Night Ventures</span>
     </div>
@@ -71,7 +71,7 @@ export default function AuthLayout({ icon: Icon, title, subtitle, footer, childr
                     <Icon className="w-6 h-6 text-primary-foreground" aria-hidden="true" />
                   </div>
                 )}
-                {title && <h2 className="text-2xl font-bold text-foreground font-display">{title}</h2>}
+                {title && <h2 className="text-2xl font-medium text-foreground font-display">{title}</h2>}
                 {subtitle && <p className="text-muted-foreground mt-1 text-sm">{subtitle}</p>}
               </div>
             )}

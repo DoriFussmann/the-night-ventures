@@ -90,9 +90,9 @@ export default function AppSidebar({ user }) {
       {/* Logo */}
       <div className="px-5 py-6 flex items-center gap-3">
         <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
-          <span className="text-primary-foreground font-display font-bold text-sm">N</span>
+          <span className="text-primary-foreground font-display font-medium text-sm">N</span>
         </div>
-        <span className="font-display font-bold text-foreground text-lg">The Night Ventures</span>
+        <span className="font-display font-medium text-foreground text-lg">The Night Ventures</span>
       </div>
 
       {/* Navigation */}
