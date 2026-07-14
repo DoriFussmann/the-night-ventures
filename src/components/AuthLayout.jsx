@@ -19,7 +19,7 @@ function BrandingPanel() {
 
         {/* Headline */}
         <h1 className="text-4xl xl:text-5xl text-white font-sans font-light leading-tight tracking-tight mb-6">
-          Strategic Clarity.<br />Built on Hard Data.
+          Sharp Strategy.<br />Built on Hard Data.
         </h1>
 
         {/* Subtitle */}
