@@ -24,7 +24,7 @@ function BrandingPanel() {
 
         {/* Subtitle */}
         <p className="text-white/70 text-lg leading-relaxed mb-10">
-          We provide the advanced financial modeling, research, and strategic consulting you need to make high-stakes business decisions with absolute confidence.
+          Advanced financial modeling, research, and strategic consulting for high-stakes business decisions.
         </p>
 
         {/* Feature cards */}
