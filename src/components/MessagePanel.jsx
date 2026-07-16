@@ -1,9 +1,10 @@
 import React, { useState } from "react";
+import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ChevronDown, Check } from "lucide-react";
+import { ChevronDown, Check, Loader2 } from "lucide-react";
 
 export default function MessagePanel() {
   const [open, setOpen] = useState(false);
@@ -11,15 +12,24 @@ export default function MessagePanel() {
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setSubmitted(true);
-    setOpen(false);
-    setName("");
-    setEmail("");
-    setMessage("");
-    setTimeout(() => setSubmitted(false), 3000);
+    setLoading(true);
+    try {
+      await base44.functions.invoke("submitInquiry", { name, email, message });
+      setSubmitted(true);
+      setOpen(false);
+      setName("");
+      setEmail("");
+      setMessage("");
+      setTimeout(() => setSubmitted(false), 3000);
+    } catch {
+      // ignore — keep confirmation behavior simple
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -84,8 +94,15 @@ export default function MessagePanel() {
                   required
                 />
               </div>
-              <Button type="submit" className="w-full font-medium">
-                Submit
+              <Button type="submit" className="w-full font-medium" disabled={loading}>
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  "Submit"
+                )}
               </Button>
             </form>
           </div>
