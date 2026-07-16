@@ -54,7 +54,7 @@ function MobileLogo() {
   );
 }
 
-export default function AuthLayout({ icon: Icon, title, subtitle, footer, children }) {
+export default function AuthLayout({ icon: Icon, title, subtitle, footer, belowCard, children }) {
   return (
     <div className="min-h-screen flex">
       <BrandingPanel />
@@ -77,6 +77,8 @@ export default function AuthLayout({ icon: Icon, title, subtitle, footer, childr
             )}
             {children}
           </div>
+
+          {belowCard}
 
           {footer && (
             <p className="text-center text-sm text-muted-foreground mt-6">{footer}</p>
