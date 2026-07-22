@@ -3,41 +3,54 @@ import { Users, Briefcase } from "lucide-react";
 
 function BrandingPanel() {
   return (
-    <div className="hidden lg:flex lg:w-1/2 bg-secondary relative overflow-hidden items-center justify-center p-12 xl:p-16">
-      {/* Decorative blurred circles */}
-      <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-primary/10 blur-3xl" />
-      <div className="absolute -bottom-32 -right-32 w-96 h-96 rounded-full bg-primary/10 blur-3xl" />
+    <div className="relative hidden w-1/2 flex-col justify-between overflow-hidden bg-[#2c4a6e] px-14 py-12 text-white md:flex">
+      {/* 1. Dual radial gradients */}
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(ellipse 80% 60% at 20% 30%, rgba(120,160,200,0.35), transparent 55%), radial-gradient(ellipse 70% 50% at 85% 80%, rgba(40,70,110,0.55), transparent 50%)",
+        }}
+      />
+      {/* 2. Blueprint grid texture */}
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.07]"
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(255,255,255,0.9) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.9) 1px, transparent 1px)",
+          backgroundSize: "48px 48px",
+        }}
+      />
 
-      <div className="relative z-10 max-w-md">
+      {/* 3. Content */}
+      <div className="relative z-10">
         {/* Logo */}
-        <div className="flex items-center gap-3 mb-10">
+        <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center">
-            <span className="text-primary-foreground font-sans font-medium text-lg">N</span>
+            <span className="text-primary-foreground font-sans text-lg">N</span>
           </div>
-          <span className="text-2xl text-white font-sans font-medium tracking-tight">The Night Ventures</span>
+          <span className="text-2xl text-white font-sans tracking-tight">The Night Ventures</span>
         </div>
+      </div>
 
-        {/* Headline */}
-        <h1 className="text-4xl xl:text-5xl text-white font-sans font-light leading-tight tracking-tight mb-6">
-          Sharp Strategy.<br /><span className="block mt-2">Built on Hard Data.</span>
+      <div className="relative z-10">
+        {/* Hero */}
+        <h1 className="text-5xl leading-tight tracking-tight text-white mb-6">
+          Sharp Strategy.<br />
+          <span className="block mt-2">Built on Hard Data.</span>
         </h1>
-
-        {/* Subtitle */}
-        <p className="text-white/70 text-lg leading-relaxed mb-10">
+        {/* Subcopy */}
+        <p className="text-[15px] leading-relaxed text-white/70 max-w-md">
           Advanced financial modeling, research, and strategic consulting for high-stakes business decisions.
         </p>
+      </div>
 
-        {/* Feature cards */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-white/10 rounded-xl p-4 flex items-center gap-3">
-            <Users className="w-5 h-5 text-white/80" />
-            <span className="text-white text-sm font-medium">Clients</span>
-          </div>
-          <div className="bg-white/10 rounded-xl p-4 flex items-center gap-3">
-            <Briefcase className="w-5 h-5 text-white/80" />
-            <span className="text-white text-sm font-medium">Projects</span>
-          </div>
-        </div>
+      <div className="relative z-10 flex items-center gap-3 text-white/40 text-[13px]">
+        <Users className="w-4 h-4" />
+        <span>Clients</span>
+        <span className="mx-1">·</span>
+        <Briefcase className="w-4 h-4" />
+        <span>Projects</span>
       </div>
     </div>
   );
@@ -45,11 +58,11 @@ function BrandingPanel() {
 
 function MobileLogo() {
   return (
-    <div className="lg:hidden flex items-center justify-center gap-2 mb-6">
+    <div className="md:hidden flex items-center justify-center gap-2 mb-6">
       <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
-        <span className="text-primary-foreground font-sans font-medium text-base">N</span>
+        <span className="text-primary-foreground font-sans text-base">N</span>
       </div>
-      <span className="text-xl text-foreground font-sans font-medium tracking-tight">The Night Ventures</span>
+      <span className="text-2xl text-foreground font-sans tracking-tight">The Night Ventures</span>
     </div>
   );
 }
@@ -59,11 +72,11 @@ export default function AuthLayout({ icon: Icon, title, subtitle, footer, belowC
     <div className="min-h-screen flex">
       <BrandingPanel />
 
-      <div className="w-full lg:w-1/2 flex flex-col items-center justify-center bg-background px-4 py-12">
-        <div className="w-full max-w-sm">
+      <div className="w-full md:w-1/2 flex flex-col items-center justify-center bg-background px-4 py-12">
+        <div className="w-full max-w-[420px]">
           <MobileLogo />
 
-          <div className="bg-card rounded-2xl shadow-sm border border-border p-8">
+          <div className="bg-card rounded-xl border border-border p-6">
             {(Icon || title) && (
               <div className="text-center mb-6">
                 {Icon && (
