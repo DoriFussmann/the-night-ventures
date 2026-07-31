@@ -7,7 +7,7 @@ import {
   Share2,
   ListTodo,
   TrendingUp,
-  Search,
+  FileText,
   Palette,
   Layers,
   Wand2,
@@ -45,32 +45,57 @@ function SectionHeader({ label }) {
   );
 }
 
+const LAST_COMPANY_ID_KEY = "lastCompanyId";
+
+function readLastCompanyId() {
+  try {
+    return sessionStorage.getItem(LAST_COMPANY_ID_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
 export default function AppSidebar({ user }) {
   const { logout } = useAuth();
-  const { companyId } = useParams();
+  const { companyId: routeCompanyId } = useParams();
   const [companyName, setCompanyName] = useState("");
 
+  useEffect(() => {
+    if (routeCompanyId) {
+      try {
+        sessionStorage.setItem(LAST_COMPANY_ID_KEY, routeCompanyId);
+      } catch (err) {
+        console.error("Failed to persist lastCompanyId:", err);
+      }
+    }
+  }, [routeCompanyId]);
+
+  const activeCompanyId = routeCompanyId || readLastCompanyId();
+
+  const generalNav = [
+    { label: "Site Build Prompt", path: "/general/site-build-prompt", icon: FileText },
+  ];
+
   const companyNav = [
-    { label: "Company Data", path: `/company/${companyId}/company-data`, icon: Database },
-    { label: "Social & Shops", path: `/company/${companyId}/social-media-tracker`, icon: Share2 },
-    { label: "Site Tasks", path: `/company/${companyId}/website-build-tracker`, icon: ListTodo },
-    { label: "Biz Dev Tasks", path: `/company/${companyId}/business-dev-tracker`, icon: TrendingUp },
+    { label: "Company Data", path: `/company/${activeCompanyId}/company-data`, icon: Database },
+    { label: "Social & Shops", path: `/company/${activeCompanyId}/social-media-tracker`, icon: Share2 },
+    { label: "Site Tasks", path: `/company/${activeCompanyId}/website-build-tracker`, icon: ListTodo },
+    { label: "Biz Dev Tasks", path: `/company/${activeCompanyId}/business-dev-tracker`, icon: TrendingUp },
   ];
 
   const seoNav = [
-    { label: "Site Build Prompt", path: `/company/${companyId}/seo-site-prompt`, icon: Search },
-    { label: "Design Builder", path: `/company/${companyId}/design-guide-builder`, icon: Palette },
-    { label: "Design Prompt", path: `/company/${companyId}/design-layer-prompt`, icon: Layers },
-    { label: "Specific Prompt", path: `/company/${companyId}/template-to-prompt`, icon: Wand2 },
-    { label: "Topic Generator", path: `/company/${companyId}/article-topic-suggestion`, icon: Lightbulb },
-    { label: "Article Generator", path: `/company/${companyId}/article-generation`, icon: PenLine },
+    { label: "Design Builder", path: `/company/${activeCompanyId}/design-guide-builder`, icon: Palette },
+    { label: "Design Prompt", path: `/company/${activeCompanyId}/design-layer-prompt`, icon: Layers },
+    { label: "Specific Prompt", path: `/company/${activeCompanyId}/template-to-prompt`, icon: Wand2 },
+    { label: "Topic Generator", path: `/company/${activeCompanyId}/article-topic-suggestion`, icon: Lightbulb },
+    { label: "Article Generator", path: `/company/${activeCompanyId}/article-generation`, icon: PenLine },
   ];
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadCompany() {
-      if (!companyId) {
+      if (!activeCompanyId) {
         setCompanyName("");
         return;
       }
@@ -78,7 +103,7 @@ export default function AppSidebar({ user }) {
       const { data, error } = await supabase
         .from("companies")
         .select("name")
-        .eq("id", companyId)
+        .eq("id", activeCompanyId)
         .maybeSingle();
 
       if (cancelled) return;
@@ -96,7 +121,7 @@ export default function AppSidebar({ user }) {
     return () => {
       cancelled = true;
     };
-  }, [companyId]);
+  }, [activeCompanyId]);
 
   const handleLogout = () => {
     logout("/login");
@@ -112,7 +137,7 @@ export default function AppSidebar({ user }) {
           </div>
           <span className="font-display text-foreground text-lg">The Night Ventures</span>
         </div>
-        {companyId && (
+        {activeCompanyId && (
           <Link
             to="/"
             title="Back to companies"
@@ -126,7 +151,14 @@ export default function AppSidebar({ user }) {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 pb-4">
-        {companyId && (
+        <SectionHeader label="General" />
+        <div className="space-y-3">
+          {generalNav.map((item) => (
+            <NavItem key={item.path} item={item} />
+          ))}
+        </div>
+
+        {activeCompanyId && (
           <>
             <SectionHeader label="Company" />
             <div className="space-y-3">

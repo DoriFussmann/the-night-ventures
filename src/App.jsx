@@ -16,12 +16,12 @@ import CompanyData from '@/pages/tools/CompanyData';
 import SocialMediaTracker from '@/pages/tools/SocialMediaTracker';
 import WebsiteBuildTracker from '@/pages/tools/WebsiteBuildTracker';
 import BusinessDevTracker from '@/pages/tools/BusinessDevTracker';
-import SeoSitePrompt from '@/pages/tools/SeoSitePrompt';
 import DesignGuideBuilder from '@/pages/tools/DesignGuideBuilder';
 import DesignLayerPrompt from '@/pages/tools/DesignLayerPrompt';
 import TemplateToPrompt from '@/pages/tools/TemplateToPrompt';
 import ArticleTopicSuggestion from '@/pages/tools/ArticleTopicSuggestion';
 import ArticleGeneration from '@/pages/tools/ArticleGeneration';
+import SiteBuildPrompt from '@/pages/general/SiteBuildPrompt';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth } = useAuth();
@@ -43,11 +43,11 @@ const AuthenticatedApp = () => {
       <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
         <Route element={<AppShell />}>
           <Route path="/" element={<Companies />} />
+          <Route path="/general/site-build-prompt" element={<SiteBuildPrompt />} />
           <Route path="/company/:companyId/company-data" element={<CompanyData />} />
           <Route path="/company/:companyId/social-media-tracker" element={<SocialMediaTracker />} />
           <Route path="/company/:companyId/website-build-tracker" element={<WebsiteBuildTracker />} />
           <Route path="/company/:companyId/business-dev-tracker" element={<BusinessDevTracker />} />
-          <Route path="/company/:companyId/seo-site-prompt" element={<SeoSitePrompt />} />
           <Route path="/company/:companyId/design-guide-builder" element={<DesignGuideBuilder />} />
           <Route path="/company/:companyId/design-layer-prompt" element={<DesignLayerPrompt />} />
           <Route path="/company/:companyId/template-to-prompt" element={<TemplateToPrompt />} />
