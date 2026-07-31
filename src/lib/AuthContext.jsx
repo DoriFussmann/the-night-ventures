@@ -6,7 +6,7 @@ const AuthContext = createContext()
 async function fetchProfile(userId) {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, full_name, role')
+    .select('id, full_name')
     .eq('id', userId)
     .maybeSingle()
 
@@ -28,7 +28,6 @@ function buildAppUser(authUser, profile) {
       authUser.user_metadata?.name ||
       authUser.email?.split('@')[0] ||
       'User',
-    role: profile?.role || 'user',
   }
 }
 

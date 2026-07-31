@@ -3,46 +3,11 @@ import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
 import {
   LayoutDashboard,
-  Users,
-  Calendar,
-  BookOpen,
-  MessageSquare,
-  Settings,
   LogOut,
-  UserCog,
-  Eye,
 } from "lucide-react";
 
-const parentNav = [
+const nav = [
   { label: "Dashboard", path: "/", icon: LayoutDashboard },
-  { label: "My Children", path: "/children", icon: Users },
-  { label: "Events", path: "/events", icon: Calendar },
-  { label: "Messages", path: "/messages", icon: MessageSquare },
-];
-
-const teacherNav = [
-  { label: "Dashboard", path: "/", icon: LayoutDashboard },
-  { label: "My Classes", path: "/classes", icon: BookOpen },
-  { label: "Students", path: "/students", icon: Users },
-  { label: "Events", path: "/events", icon: Calendar },
-  { label: "Messages", path: "/messages", icon: MessageSquare },
-];
-
-const adminNav = [
-  { label: "Dashboard", path: "/", icon: LayoutDashboard },
-  { label: "Classes", path: "/classes", icon: BookOpen },
-  { label: "Students", path: "/students", icon: Users },
-  { label: "Events", path: "/events", icon: Calendar },
-  { label: "Messages", path: "/messages", icon: MessageSquare },
-];
-
-const adminExtraNav = [
-  { label: "User Management", path: "/users", icon: UserCog },
-  { label: "Settings", path: "/settings", icon: Settings },
-];
-
-const adminImpersonateNav = [
-  { label: "Impersonate User", path: "/impersonate", icon: Eye },
 ];
 
 function NavItem({ item }) {
@@ -65,21 +30,8 @@ function NavItem({ item }) {
   );
 }
 
-function SectionHeader({ label }) {
-  return (
-    <p className="px-3 pt-5 pb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-      {label}
-    </p>
-  );
-}
-
 export default function AppSidebar({ user }) {
   const { logout } = useAuth();
-  const role = user?.role || "user";
-  const isAdmin = role === "admin";
-  const isTeacher = role === "teacher";
-
-  const mainNav = isAdmin ? adminNav : isTeacher ? teacherNav : parentNav;
 
   const handleLogout = () => {
     logout("/login");
@@ -98,28 +50,10 @@ export default function AppSidebar({ user }) {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 pb-4">
         <div className="space-y-3">
-          {mainNav.map((item) => (
+          {nav.map((item) => (
             <NavItem key={item.path} item={item} />
           ))}
         </div>
-
-        {isAdmin && (
-          <>
-            <SectionHeader label="Administration" />
-            <div className="space-y-3">
-              {adminExtraNav.map((item) => (
-                <NavItem key={item.path} item={item} />
-              ))}
-            </div>
-
-            <SectionHeader label="Impersonate" />
-            <div className="space-y-3">
-              {adminImpersonateNav.map((item) => (
-                <NavItem key={item.path} item={item} />
-              ))}
-            </div>
-          </>
-        )}
       </nav>
 
       {/* Footer */}
