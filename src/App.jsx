@@ -11,6 +11,7 @@ import Register from '@/pages/Register';
 import ForgotPassword from '@/pages/ForgotPassword';
 import ResetPassword from '@/pages/ResetPassword';
 import AppShell from '@/components/AppShell';
+import Companies from '@/pages/Companies';
 import Home from '@/pages/Home';
 
 const AuthenticatedApp = () => {
@@ -32,7 +33,8 @@ const AuthenticatedApp = () => {
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
         <Route element={<AppShell />}>
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={<Companies />} />
+          <Route path="/company/:companyId/dashboard" element={<Home />} />
         </Route>
       </Route>
       <Route path="*" element={<PageNotFound />} />

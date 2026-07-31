@@ -1,14 +1,11 @@
-import React from "react";
-import { Link, useLocation } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
+import { supabase } from "@/lib/supabase";
 import {
   LayoutDashboard,
   LogOut,
 } from "lucide-react";
-
-const nav = [
-  { label: "Dashboard", path: "/", icon: LayoutDashboard },
-];
 
 function NavItem({ item }) {
   const location = useLocation();
@@ -32,6 +29,44 @@ function NavItem({ item }) {
 
 export default function AppSidebar({ user }) {
   const { logout } = useAuth();
+  const { companyId } = useParams();
+  const [companyName, setCompanyName] = useState("");
+
+  const nav = [
+    { label: "Dashboard", path: `/company/${companyId}/dashboard`, icon: LayoutDashboard },
+  ];
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCompany() {
+      if (!companyId) {
+        setCompanyName("");
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("companies")
+        .select("name")
+        .eq("id", companyId)
+        .maybeSingle();
+
+      if (cancelled) return;
+
+      if (error) {
+        console.error("Failed to load company:", error);
+        setCompanyName("");
+        return;
+      }
+
+      setCompanyName(data?.name || "");
+    }
+
+    loadCompany();
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId]);
 
   const handleLogout = () => {
     logout("/login");
@@ -40,19 +75,27 @@ export default function AppSidebar({ user }) {
   return (
     <aside className="fixed left-0 top-0 h-screen w-52 bg-card border-r border-border flex flex-col z-40">
       {/* Logo */}
-      <div className="px-5 py-6 flex items-center gap-3">
-        <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
-          <span className="text-primary-foreground font-display text-sm">N</span>
+      <div className="px-5 py-6">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
+            <span className="text-primary-foreground font-display text-sm">N</span>
+          </div>
+          <span className="font-display text-foreground text-lg">The Night Ventures</span>
         </div>
-        <span className="font-display text-foreground text-lg">The Night Ventures</span>
+        {companyId && (
+          <p className="mt-3 text-sm text-muted-foreground truncate" title={companyName || companyId}>
+            {companyName || "Loading company..."}
+          </p>
+        )}
       </div>
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 pb-4">
         <div className="space-y-3">
-          {nav.map((item) => (
-            <NavItem key={item.path} item={item} />
-          ))}
+          {companyId &&
+            nav.map((item) => (
+              <NavItem key={item.path} item={item} />
+            ))}
         </div>
       </nav>
 
