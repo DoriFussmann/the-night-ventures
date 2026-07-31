@@ -52,18 +52,18 @@ export default function AppSidebar({ user }) {
 
   const companyNav = [
     { label: "Company Data", path: `/company/${companyId}/company-data`, icon: Database },
-    { label: "Social Media & Shop Tracker", path: `/company/${companyId}/social-media-tracker`, icon: Share2 },
-    { label: "Website Build Tasks Tracker", path: `/company/${companyId}/website-build-tracker`, icon: ListTodo },
-    { label: "Business Development Initiatives Tracker", path: `/company/${companyId}/business-dev-tracker`, icon: TrendingUp },
+    { label: "Social & Shops", path: `/company/${companyId}/social-media-tracker`, icon: Share2 },
+    { label: "Site Tasks", path: `/company/${companyId}/website-build-tracker`, icon: ListTodo },
+    { label: "Biz Dev Tasks", path: `/company/${companyId}/business-dev-tracker`, icon: TrendingUp },
   ];
 
   const seoNav = [
-    { label: "Prompt: SEO/AI-Search-First Site + CMS Template + Test Checklist", path: `/company/${companyId}/seo-site-prompt`, icon: Search },
-    { label: "Design Guide Builder", path: `/company/${companyId}/design-guide-builder`, icon: Palette },
-    { label: "Design Layer Prompt", path: `/company/${companyId}/design-layer-prompt`, icon: Layers },
-    { label: "Template to Specific Prompt", path: `/company/${companyId}/template-to-prompt`, icon: Wand2 },
-    { label: "Article Topic Suggestion Tool", path: `/company/${companyId}/article-topic-suggestion`, icon: Lightbulb },
-    { label: "SEO Optimized Article Generation Tool", path: `/company/${companyId}/article-generation`, icon: PenLine },
+    { label: "Site Build Prompt", path: `/company/${companyId}/seo-site-prompt`, icon: Search },
+    { label: "Design Builder", path: `/company/${companyId}/design-guide-builder`, icon: Palette },
+    { label: "Design Prompt", path: `/company/${companyId}/design-layer-prompt`, icon: Layers },
+    { label: "Specific Prompt", path: `/company/${companyId}/template-to-prompt`, icon: Wand2 },
+    { label: "Topic Generator", path: `/company/${companyId}/article-topic-suggestion`, icon: Lightbulb },
+    { label: "Article Generator", path: `/company/${companyId}/article-generation`, icon: PenLine },
   ];
 
   useEffect(() => {
