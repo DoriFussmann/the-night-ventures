@@ -1,6 +1,7 @@
 #env
 .env
 .env.*
+!.env.example
 
 # Logs
 /logs
@@ -29,4 +30,4 @@ dist-ssr
 
 .env
 .vite
-base44/.app.jsonc
+.vercel

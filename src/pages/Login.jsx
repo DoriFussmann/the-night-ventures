@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { Link } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { Link, useNavigate } from "react-router-dom";
+import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,8 +8,10 @@ import { Mail, Lock, Eye, EyeOff, Loader2 } from "lucide-react";
 import AuthLayout from "@/components/AuthLayout";
 import GoogleIcon from "@/components/GoogleIcon";
 import MessagePanel from "@/components/MessagePanel";
+import { isSupabaseConfigured } from "@/lib/supabase";
 
 export default function Login() {
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -19,10 +21,18 @@ export default function Login() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    if (!isSupabaseConfigured) {
+      setError("Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env.local.");
+      return;
+    }
     setLoading(true);
     try {
-      await base44.auth.loginViaEmailPassword(email, password);
-      window.location.href = "/";
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (signInError) throw signInError;
+      navigate("/", { replace: true });
     } catch (err) {
       setError(err.message || "Invalid email or password");
     } finally {
@@ -30,12 +40,32 @@ export default function Login() {
     }
   };
 
-  const handleGoogle = () => {
-    base44.auth.loginWithProvider("google", "/");
+  const handleGoogle = async () => {
+    setError("");
+    if (!isSupabaseConfigured) {
+      setError("Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env.local.");
+      return;
+    }
+    const { error: oauthError } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/`,
+      },
+    });
+    if (oauthError) {
+      setError(oauthError.message || "Google sign-in failed");
+    }
   };
 
   return (
     <AuthLayout belowCard={<MessagePanel />}>
+      {!isSupabaseConfigured && (
+        <div className="mb-4 p-3 rounded-lg bg-amber-500/10 text-amber-800 dark:text-amber-200 text-sm">
+          Missing Supabase env. Copy <code className="font-mono">.env.example</code> to{" "}
+          <code className="font-mono">.env.local</code>, add your keys, and restart{" "}
+          <code className="font-mono">npm run dev</code>.
+        </div>
+      )}
       <Button
         variant="outline"
         className="w-full h-12 text-sm font-medium mb-6"

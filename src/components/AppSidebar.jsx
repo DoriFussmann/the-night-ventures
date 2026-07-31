@@ -1,6 +1,6 @@
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { useAuth } from "@/lib/AuthContext";
 import {
   LayoutDashboard,
   Users,
@@ -9,7 +9,6 @@ import {
   MessageSquare,
   Settings,
   LogOut,
-  GraduationCap,
   UserCog,
   Eye,
 } from "lucide-react";
@@ -75,6 +74,7 @@ function SectionHeader({ label }) {
 }
 
 export default function AppSidebar({ user }) {
+  const { logout } = useAuth();
   const role = user?.role || "user";
   const isAdmin = role === "admin";
   const isTeacher = role === "teacher";
@@ -82,7 +82,7 @@ export default function AppSidebar({ user }) {
   const mainNav = isAdmin ? adminNav : isTeacher ? teacherNav : parentNav;
 
   const handleLogout = () => {
-    base44.auth.logout("/login");
+    logout("/login");
   };
 
   return (

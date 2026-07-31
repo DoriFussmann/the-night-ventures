@@ -1,39 +1,75 @@
-**Welcome to your Base44 project** 
+# The Night Ventures
 
-**About**
+Vite + React app with **Supabase** auth/data and **Resend** email, deployed on **Vercel**.
 
-View and Edit  your app on [Base44.com](http://Base44.com) 
+## Local setup
 
-This project contains everything you need to run your app locally.
+1. Clone and install:
 
-**Edit the code in your local development environment**
-
-Any change pushed to the repo will also be reflected in the Base44 Builder.
-
-**Prerequisites:** 
-
-1. Clone the repository using the project's Git URL 
-2. Navigate to the project directory
-3. Install dependencies: `npm install`
-4. Create an `.env.local` file and set the right environment variables
-
-```
-VITE_BASE44_APP_ID=your_app_id
-VITE_BASE44_APP_BASE_URL=your_backend_url
-
-e.g.
-VITE_BASE44_APP_ID=cbef744a8545c389ef439ea6
-VITE_BASE44_APP_BASE_URL=https://my-to-do-list-81bfaad7.base44.app
+```bash
+npm install
 ```
 
-Run the app: `npm run dev`
+2. Copy env and fill in values from Supabase + Resend:
 
-**Publish your changes**
+```bash
+cp .env.example .env.local
+```
 
-Open [Base44.com](http://Base44.com) and click on Publish.
+3. In the [Supabase SQL editor](https://supabase.com/dashboard), run [`supabase/migrations/001_init.sql`](supabase/migrations/001_init.sql).
 
-**Docs & Support**
+4. Supabase Auth settings:
 
-Documentation: [https://docs.base44.com/Integrations/Using-GitHub](https://docs.base44.com/Integrations/Using-GitHub)
+   - **Authentication → URL configuration**
+     - Site URL: `http://localhost:5173` (and your production URL later)
+     - Redirect URLs: `http://localhost:5173/**`, `https://YOUR_VERCEL_DOMAIN/**`
+   - Enable **Email** provider
+   - Enable **Google** provider (optional) and add the same redirect URLs
 
-Support: [https://app.base44.com/support](https://app.base44.com/support)
+5. Run the app:
+
+```bash
+npm run dev
+```
+
+For the contact form API locally, use Vercel’s local runner (loads `/api` + env):
+
+```bash
+npx vercel dev
+```
+
+## Deploy to Vercel (GitHub + custom domain)
+
+1. Push this repo to GitHub (`DoriFussmann/the-night-ventures` or your fork).
+2. In [Vercel](https://vercel.com) → **Add New Project** → Import the GitHub repo.
+3. Set environment variables (Production + Preview as needed):
+
+   | Name | Notes |
+   |------|--------|
+   | `VITE_SUPABASE_URL` | Supabase project URL |
+   | `VITE_SUPABASE_ANON_KEY` | Supabase anon/public key |
+   | `SUPABASE_URL` | Same as project URL |
+   | `SUPABASE_SERVICE_ROLE_KEY` | Service role (server only) |
+   | `RESEND_API_KEY` | From Resend dashboard |
+   | `RESEND_FROM_EMAIL` | Verified sender (or Resend onboarding address for tests) |
+   | `INQUIRY_TO_EMAIL` | Default `dori@thenightventures.com` |
+
+4. Deploy. Confirm the site loads and `/api/submit-inquiry` accepts POSTs.
+5. **Custom domain:** Project → **Settings → Domains** → add your domain → set the DNS records Vercel shows (A/CNAME) at your registrar.
+6. Update Supabase Site URL + redirect URLs to the custom domain.
+
+## Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Vite dev server |
+| `npm run build` | Production build → `dist/` |
+| `npm run preview` | Preview production build |
+| `npx vercel dev` | Dev with API routes |
+
+## Stack
+
+- Frontend: React, Vite, React Router, Tailwind
+- Auth + DB: Supabase (`profiles`, `inquiries`)
+- Email: Resend via `api/submit-inquiry.js`
+- Hosting: Vercel

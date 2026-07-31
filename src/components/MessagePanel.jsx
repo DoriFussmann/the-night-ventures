@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,7 +17,12 @@ export default function MessagePanel() {
     e.preventDefault();
     setLoading(true);
     try {
-      await base44.functions.invoke("submitInquiry", { name, email, message });
+      const res = await fetch("/api/submit-inquiry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, message }),
+      });
+      if (!res.ok) throw new Error("Failed to submit");
       setSubmitted(true);
       setOpen(false);
       setName("");
