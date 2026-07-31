@@ -4,7 +4,11 @@ import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
-const DOC_KEYS = ["site_build_prompt", "site_build_checklist"];
+const DOC_KEYS = [
+  "site_build_prompt",
+  "site_build_checklist",
+  "design_system_prompt",
+];
 
 function downloadMarkdown(filename, content) {
   const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
@@ -138,7 +142,7 @@ export default function SiteBuildPrompt() {
   return (
     <div className="space-y-10">
       <div>
-        <h1 className="text-[15px] text-foreground mb-1">Site Build Prompt</h1>
+        <h1 className="text-[15px] text-foreground mb-1">Site Build Documents</h1>
         <p className="text-sm text-muted-foreground">
           Global reference documents for site builds. Edits apply across all companies.
         </p>
