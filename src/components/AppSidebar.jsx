@@ -9,7 +9,6 @@ import {
   TrendingUp,
   FileText,
   Palette,
-  Layers,
   Wand2,
   Lightbulb,
   PenLine,
@@ -85,7 +84,6 @@ export default function AppSidebar({ user }) {
 
   const seoNav = [
     { label: "Design Builder", path: `/company/${activeCompanyId}/design-guide-builder`, icon: Palette },
-    { label: "Design Prompt", path: `/company/${activeCompanyId}/design-layer-prompt`, icon: Layers },
     { label: "Specific Prompt", path: `/company/${activeCompanyId}/template-to-prompt`, icon: Wand2 },
     { label: "Topic Generator", path: `/company/${activeCompanyId}/article-topic-suggestion`, icon: Lightbulb },
     { label: "Article Generator", path: `/company/${activeCompanyId}/article-generation`, icon: PenLine },

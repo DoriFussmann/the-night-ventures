@@ -17,7 +17,6 @@ import SocialMediaTracker from '@/pages/tools/SocialMediaTracker';
 import WebsiteBuildTracker from '@/pages/tools/WebsiteBuildTracker';
 import BusinessDevTracker from '@/pages/tools/BusinessDevTracker';
 import DesignGuideBuilder from '@/pages/tools/DesignGuideBuilder';
-import DesignLayerPrompt from '@/pages/tools/DesignLayerPrompt';
 import TemplateToPrompt from '@/pages/tools/TemplateToPrompt';
 import ArticleTopicSuggestion from '@/pages/tools/ArticleTopicSuggestion';
 import ArticleGeneration from '@/pages/tools/ArticleGeneration';
@@ -49,7 +48,6 @@ const AuthenticatedApp = () => {
           <Route path="/company/:companyId/website-build-tracker" element={<WebsiteBuildTracker />} />
           <Route path="/company/:companyId/business-dev-tracker" element={<BusinessDevTracker />} />
           <Route path="/company/:companyId/design-guide-builder" element={<DesignGuideBuilder />} />
-          <Route path="/company/:companyId/design-layer-prompt" element={<DesignLayerPrompt />} />
           <Route path="/company/:companyId/template-to-prompt" element={<TemplateToPrompt />} />
           <Route path="/company/:companyId/article-topic-suggestion" element={<ArticleTopicSuggestion />} />
           <Route path="/company/:companyId/article-generation" element={<ArticleGeneration />} />
