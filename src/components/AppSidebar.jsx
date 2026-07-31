@@ -3,8 +3,18 @@ import { Link, useLocation, useParams } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
 import { supabase } from "@/lib/supabase";
 import {
-  LayoutDashboard,
+  Database,
+  Share2,
+  ListTodo,
+  TrendingUp,
+  Search,
+  Palette,
+  Layers,
+  Wand2,
+  Lightbulb,
+  PenLine,
   LogOut,
+  ArrowLeft,
 } from "lucide-react";
 
 function NavItem({ item }) {
@@ -15,15 +25,23 @@ function NavItem({ item }) {
   return (
     <Link
       to={item.path}
-      className={`w-full flex items-center gap-3 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+      className={`w-full flex items-start gap-3 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
         isActive
           ? "border-border bg-accent text-foreground"
           : "border-border text-muted-foreground hover:bg-accent hover:text-foreground"
       }`}
     >
-      <Icon className="w-4 h-4 shrink-0" />
-      {item.label}
+      <Icon className="w-4 h-4 shrink-0 mt-0.5" />
+      <span className="leading-snug">{item.label}</span>
     </Link>
+  );
+}
+
+function SectionHeader({ label }) {
+  return (
+    <p className="px-3 pt-5 pb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+      {label}
+    </p>
   );
 }
 
@@ -32,8 +50,20 @@ export default function AppSidebar({ user }) {
   const { companyId } = useParams();
   const [companyName, setCompanyName] = useState("");
 
-  const nav = [
-    { label: "Dashboard", path: `/company/${companyId}/dashboard`, icon: LayoutDashboard },
+  const companyNav = [
+    { label: "Company Data", path: `/company/${companyId}/company-data`, icon: Database },
+    { label: "Social Media & Shop Tracker", path: `/company/${companyId}/social-media-tracker`, icon: Share2 },
+    { label: "Website Build Tasks Tracker", path: `/company/${companyId}/website-build-tracker`, icon: ListTodo },
+    { label: "Business Development Initiatives Tracker", path: `/company/${companyId}/business-dev-tracker`, icon: TrendingUp },
+  ];
+
+  const seoNav = [
+    { label: "Prompt: SEO/AI-Search-First Site + CMS Template + Test Checklist", path: `/company/${companyId}/seo-site-prompt`, icon: Search },
+    { label: "Design Guide Builder", path: `/company/${companyId}/design-guide-builder`, icon: Palette },
+    { label: "Design Layer Prompt", path: `/company/${companyId}/design-layer-prompt`, icon: Layers },
+    { label: "Template to Specific Prompt", path: `/company/${companyId}/template-to-prompt`, icon: Wand2 },
+    { label: "Article Topic Suggestion Tool", path: `/company/${companyId}/article-topic-suggestion`, icon: Lightbulb },
+    { label: "SEO Optimized Article Generation Tool", path: `/company/${companyId}/article-generation`, icon: PenLine },
   ];
 
   useEffect(() => {
@@ -83,20 +113,36 @@ export default function AppSidebar({ user }) {
           <span className="font-display text-foreground text-lg">The Night Ventures</span>
         </div>
         {companyId && (
-          <p className="mt-3 text-sm text-muted-foreground truncate" title={companyName || companyId}>
-            {companyName || "Loading company..."}
-          </p>
+          <Link
+            to="/"
+            title="Back to companies"
+            className="mt-3 flex items-center gap-1.5 text-sm text-muted-foreground truncate transition-colors hover:text-foreground"
+          >
+            <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">{companyName || "Loading company..."}</span>
+          </Link>
         )}
       </div>
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 pb-4">
-        <div className="space-y-3">
-          {companyId &&
-            nav.map((item) => (
-              <NavItem key={item.path} item={item} />
-            ))}
-        </div>
+        {companyId && (
+          <>
+            <SectionHeader label="Company" />
+            <div className="space-y-3">
+              {companyNav.map((item) => (
+                <NavItem key={item.path} item={item} />
+              ))}
+            </div>
+
+            <SectionHeader label="SEO Tools" />
+            <div className="space-y-3">
+              {seoNav.map((item) => (
+                <NavItem key={item.path} item={item} />
+              ))}
+            </div>
+          </>
+        )}
       </nav>
 
       {/* Footer */}

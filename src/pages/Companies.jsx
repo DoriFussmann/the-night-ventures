@@ -114,7 +114,7 @@ export default function Companies() {
           {companies.map((company) => (
             <li key={company.id}>
               <Link
-                to={`/company/${company.id}/dashboard`}
+                to={`/company/${company.id}/company-data`}
                 className="block w-full rounded-lg border border-border px-4 py-3 text-sm text-foreground transition-colors hover:bg-accent"
               >
                 {company.name}
