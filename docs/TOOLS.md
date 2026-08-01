@@ -45,3 +45,4 @@ The Night Ventures app is a shared workspace for managing website and growth wor
 
 - Design Builder: previously saved design guides don't reliably reload when reopening a company (fix pending)
 - Design Builder: "Save as… Theme" (Project Themes) behavior needs re-verification (fix pending)
+- Topic Generator: backend is built (real keyword research via DataForSEO), page/UI not yet built.
