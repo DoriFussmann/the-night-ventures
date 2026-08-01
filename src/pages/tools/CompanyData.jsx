@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
+const EMPTY_CORE_KEYWORDS = ["", "", "", "", ""];
+
 const EMPTY_PROFILE = {
   domain: "",
   product_name: "",
@@ -13,7 +15,15 @@ const EMPTY_PROFILE = {
   short_description: "",
   medium_description: "",
   long_description: "",
+  core_keywords: [...EMPTY_CORE_KEYWORDS],
 };
+
+function normalizeCoreKeywords(value) {
+  const source = Array.isArray(value) ? value : [];
+  return EMPTY_CORE_KEYWORDS.map((_, i) =>
+    typeof source[i] === "string" ? source[i] : source[i] == null ? "" : String(source[i])
+  );
+}
 
 function downloadMarkdown(filename, content) {
   const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
@@ -50,7 +60,7 @@ export default function CompanyData() {
       supabase
         .from("company_profiles")
         .select(
-          "id, domain, product_name, abstract, short_description, medium_description, long_description, custom_fields"
+          "id, domain, product_name, abstract, short_description, medium_description, long_description, core_keywords, custom_fields"
         )
         .eq("company_id", companyId)
         .maybeSingle(),
@@ -91,6 +101,7 @@ export default function CompanyData() {
         short_description: profile.short_description || "",
         medium_description: profile.medium_description || "",
         long_description: profile.long_description || "",
+        core_keywords: normalizeCoreKeywords(profile.core_keywords),
       });
       setCustomValues(
         profile.custom_fields && typeof profile.custom_fields === "object"
@@ -112,6 +123,14 @@ export default function CompanyData() {
 
   const updateField = (key, value) => {
     setFields((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const updateCoreKeyword = (index, value) => {
+    setFields((prev) => {
+      const next = normalizeCoreKeywords(prev.core_keywords);
+      next[index] = value;
+      return { ...prev, core_keywords: next };
+    });
   };
 
   const updateCustomValue = (name, value) => {
@@ -168,6 +187,7 @@ export default function CompanyData() {
       short_description: fields.short_description.trim() || null,
       medium_description: fields.medium_description.trim() || null,
       long_description: fields.long_description.trim() || null,
+      core_keywords: normalizeCoreKeywords(fields.core_keywords),
       custom_fields,
       updated_at: new Date().toISOString(),
     };
@@ -196,9 +216,15 @@ export default function CompanyData() {
   };
 
   const handleDownloadMarkdown = () => {
+    const coreKeywordsLine = normalizeCoreKeywords(fields.core_keywords)
+      .map((kw) => kw.trim())
+      .filter(Boolean)
+      .join(", ");
+
     const fixedEntries = [
       ["Domain", fields.domain],
       ["Product Name", fields.product_name],
+      ["Core Keywords", coreKeywordsLine],
       ["Abstract", fields.abstract],
       ["Short Description", fields.short_description],
       ["Medium Description", fields.medium_description],
@@ -259,6 +285,27 @@ export default function CompanyData() {
             value={fields.product_name}
             onChange={(e) => updateField("product_name", e.target.value)}
           />
+        </div>
+
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <Label>Core Keywords</Label>
+            <p className="text-sm text-muted-foreground">
+              5 high-value SEO keywords this company wants to rank for. Long-tail article
+              topics from the Topic Generator tool will be built to support these.
+            </p>
+          </div>
+          {normalizeCoreKeywords(fields.core_keywords).map((keyword, index) => (
+            <div key={index} className="space-y-2">
+              <Label htmlFor={`core_keyword_${index + 1}`}>Core Keyword {index + 1}</Label>
+              <Input
+                id={`core_keyword_${index + 1}`}
+                value={keyword}
+                onChange={(e) => updateCoreKeyword(index, e.target.value)}
+                placeholder={`e.g. keyword ${index + 1}`}
+              />
+            </div>
+          ))}
         </div>
 
         <div className="space-y-2">

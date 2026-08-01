@@ -16,7 +16,7 @@ The Night Ventures app is a shared workspace for managing website and growth wor
 
 ### Company Data
 
-- **What it does:** Stores the company’s core profile: domain, product name, and short-to-long descriptions, plus any custom fields you add. You can save the profile and download it as a readable document.
+- **What it does:** Stores the company’s core profile: domain, product name, and short-to-long descriptions, plus any custom fields you add. You can save the profile and download it as a readable document. You can also set 5 core SEO keywords the company wants to rank for; these guide the Topic Generator tool's article suggestions.
 - **Who would use it and why:** Anyone writing copy, briefs, or content for that company. It’s the home base for “who is this company and how do we describe them?”
 
 ### Social & Shops
