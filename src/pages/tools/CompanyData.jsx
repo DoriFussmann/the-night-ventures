@@ -1,12 +1,69 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
+import { ChevronDown } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 
-const EMPTY_CORE_KEYWORDS = ["", "", "", "", ""];
+const DEFAULT_PILLAR_COUNT = 5;
+const DEFAULT_SUPPORTING_COUNT = 5;
+
+function emptySupporting(count = DEFAULT_SUPPORTING_COUNT) {
+  return Array.from({ length: count }, () => "");
+}
+
+function emptyPillar() {
+  return { keyword: "", supporting: emptySupporting() };
+}
+
+function normalizeStringList(value, minCount) {
+  const source = Array.isArray(value) ? value : [];
+  const list = source.map((item) =>
+    typeof item === "string" ? item : item == null ? "" : String(item)
+  );
+  while (list.length < minCount) list.push("");
+  return list;
+}
+
+function normalizePillarKeywords(value) {
+  const source = Array.isArray(value) ? value : [];
+  const items = source.map((item) => {
+    if (typeof item === "string") {
+      return { keyword: item, supporting: emptySupporting() };
+    }
+    if (item && typeof item === "object") {
+      const keyword =
+        typeof item.keyword === "string"
+          ? item.keyword
+          : item.keyword == null
+            ? ""
+            : String(item.keyword);
+      return {
+        keyword,
+        supporting: normalizeStringList(item.supporting, DEFAULT_SUPPORTING_COUNT),
+      };
+    }
+    return emptyPillar();
+  });
+  while (items.length < DEFAULT_PILLAR_COUNT) items.push(emptyPillar());
+  return items;
+}
+
+function countFilled(list) {
+  return list.filter((value) => String(value || "").trim()).length;
+}
+
+function supportingLeft(pillar) {
+  const supporting = Array.isArray(pillar?.supporting) ? pillar.supporting : [];
+  return supporting.filter((value) => !String(value || "").trim()).length;
+}
 
 const EMPTY_PROFILE = {
   domain: "",
@@ -15,15 +72,8 @@ const EMPTY_PROFILE = {
   short_description: "",
   medium_description: "",
   long_description: "",
-  core_keywords: [...EMPTY_CORE_KEYWORDS],
+  core_keywords: normalizePillarKeywords([]),
 };
-
-function normalizeCoreKeywords(value) {
-  const source = Array.isArray(value) ? value : [];
-  return EMPTY_CORE_KEYWORDS.map((_, i) =>
-    typeof source[i] === "string" ? source[i] : source[i] == null ? "" : String(source[i])
-  );
-}
 
 function downloadMarkdown(filename, content) {
   const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
@@ -48,6 +98,8 @@ export default function CompanyData() {
   const [saving, setSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState("");
   const [error, setError] = useState("");
+  const [pillarsOpen, setPillarsOpen] = useState(true);
+  const [openPillars, setOpenPillars] = useState({});
 
   const loadData = useCallback(async () => {
     if (!companyId) return;
@@ -101,7 +153,7 @@ export default function CompanyData() {
         short_description: profile.short_description || "",
         medium_description: profile.medium_description || "",
         long_description: profile.long_description || "",
-        core_keywords: normalizeCoreKeywords(profile.core_keywords),
+        core_keywords: normalizePillarKeywords(profile.core_keywords),
       });
       setCustomValues(
         profile.custom_fields && typeof profile.custom_fields === "object"
@@ -125,12 +177,44 @@ export default function CompanyData() {
     setFields((prev) => ({ ...prev, [key]: value }));
   };
 
-  const updateCoreKeyword = (index, value) => {
+  const updatePillarKeyword = (index, value) => {
     setFields((prev) => {
-      const next = normalizeCoreKeywords(prev.core_keywords);
-      next[index] = value;
+      const next = normalizePillarKeywords(prev.core_keywords);
+      next[index] = { ...next[index], keyword: value };
       return { ...prev, core_keywords: next };
     });
+  };
+
+  const updateSupportingKeyword = (pillarIndex, supportingIndex, value) => {
+    setFields((prev) => {
+      const next = normalizePillarKeywords(prev.core_keywords);
+      const supporting = [...next[pillarIndex].supporting];
+      supporting[supportingIndex] = value;
+      next[pillarIndex] = { ...next[pillarIndex], supporting };
+      return { ...prev, core_keywords: next };
+    });
+  };
+
+  const addPillarKeyword = () => {
+    setFields((prev) => ({
+      ...prev,
+      core_keywords: [...normalizePillarKeywords(prev.core_keywords), emptyPillar()],
+    }));
+  };
+
+  const addSupportingKeyword = (pillarIndex) => {
+    setFields((prev) => {
+      const next = normalizePillarKeywords(prev.core_keywords);
+      next[pillarIndex] = {
+        ...next[pillarIndex],
+        supporting: [...next[pillarIndex].supporting, ""],
+      };
+      return { ...prev, core_keywords: next };
+    });
+  };
+
+  const setPillarOpen = (index, open) => {
+    setOpenPillars((prev) => ({ ...prev, [index]: open }));
   };
 
   const updateCustomValue = (name, value) => {
@@ -187,7 +271,7 @@ export default function CompanyData() {
       short_description: fields.short_description.trim() || null,
       medium_description: fields.medium_description.trim() || null,
       long_description: fields.long_description.trim() || null,
-      core_keywords: normalizeCoreKeywords(fields.core_keywords),
+      core_keywords: normalizePillarKeywords(fields.core_keywords),
       custom_fields,
       updated_at: new Date().toISOString(),
     };
@@ -216,15 +300,24 @@ export default function CompanyData() {
   };
 
   const handleDownloadMarkdown = () => {
-    const coreKeywordsLine = normalizeCoreKeywords(fields.core_keywords)
-      .map((kw) => kw.trim())
-      .filter(Boolean)
-      .join(", ");
+    const pillars = normalizePillarKeywords(fields.core_keywords);
+    const pillarLines = pillars
+      .filter((pillar) => pillar.keyword.trim() || countFilled(pillar.supporting) > 0)
+      .map((pillar) => {
+        const supporting = pillar.supporting
+          .map((kw) => kw.trim())
+          .filter(Boolean)
+          .map((kw) => `  - ${kw}`)
+          .join("\n");
+        const head = `- ${pillar.keyword.trim() || "(untitled)"}`;
+        return supporting ? `${head}\n${supporting}` : head;
+      })
+      .join("\n");
 
     const fixedEntries = [
       ["Domain", fields.domain],
       ["Product Name", fields.product_name],
-      ["Core Keywords", coreKeywordsLine],
+      ["Pillar Keywords", pillarLines],
       ["Abstract", fields.abstract],
       ["Short Description", fields.short_description],
       ["Medium Description", fields.medium_description],
@@ -241,7 +334,11 @@ export default function CompanyData() {
     for (const [label, value] of [...fixedEntries, ...customEntries]) {
       const trimmed = (value || "").trim();
       if (!trimmed) continue;
-      lines.push(`**${label}:** ${trimmed}`, "");
+      if (label === "Pillar Keywords") {
+        lines.push(`**${label}:**`, trimmed, "");
+      } else {
+        lines.push(`**${label}:** ${trimmed}`, "");
+      }
     }
 
     const slug = (companyName || "company")
@@ -255,6 +352,9 @@ export default function CompanyData() {
   if (loading) {
     return <p className="text-sm text-muted-foreground">Loading company data...</p>;
   }
+
+  const pillars = normalizePillarKeywords(fields.core_keywords);
+  const pillarTotal = pillars.length;
 
   return (
     <div>
@@ -287,26 +387,97 @@ export default function CompanyData() {
           />
         </div>
 
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <Label>Core Keywords</Label>
-            <p className="text-sm text-muted-foreground">
-              5 high-value SEO keywords this company wants to rank for. Long-tail article
-              topics from the Topic Generator tool will be built to support these.
-            </p>
-          </div>
-          {normalizeCoreKeywords(fields.core_keywords).map((keyword, index) => (
-            <div key={index} className="space-y-2">
-              <Label htmlFor={`core_keyword_${index + 1}`}>Core Keyword {index + 1}</Label>
-              <Input
-                id={`core_keyword_${index + 1}`}
-                value={keyword}
-                onChange={(e) => updateCoreKeyword(index, e.target.value)}
-                placeholder={`e.g. keyword ${index + 1}`}
+        <Collapsible open={pillarsOpen} onOpenChange={setPillarsOpen} className="space-y-3">
+          <CollapsibleTrigger asChild>
+            <button
+              type="button"
+              className="flex w-full items-center justify-between text-left"
+            >
+              <Label className="cursor-pointer">Pillar Keywords ({pillarTotal})</Label>
+              <ChevronDown
+                className={`h-4 w-4 text-muted-foreground transition-transform ${
+                  pillarsOpen ? "rotate-180" : ""
+                }`}
               />
-            </div>
-          ))}
-        </div>
+            </button>
+          </CollapsibleTrigger>
+
+          <CollapsibleContent className="space-y-3">
+            {pillars.map((pillar, index) => {
+              const isOpen = Boolean(openPillars[index]);
+              const left = supportingLeft(pillar);
+              const supportingCount = pillar.supporting.length;
+
+              return (
+                <Collapsible
+                  key={index}
+                  open={isOpen}
+                  onOpenChange={(open) => setPillarOpen(index, open)}
+                  className="rounded-md border border-border"
+                >
+                  <div className="flex items-center gap-2 p-2">
+                    <CollapsibleTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted"
+                        aria-label={isOpen ? "Collapse supporting keywords" : "Expand supporting keywords"}
+                      >
+                        <ChevronDown
+                          className={`h-4 w-4 transition-transform ${
+                            isOpen ? "rotate-180" : ""
+                          }`}
+                        />
+                      </button>
+                    </CollapsibleTrigger>
+                    <Input
+                      id={`pillar_keyword_${index + 1}`}
+                      value={pillar.keyword}
+                      onChange={(e) => updatePillarKeyword(index, e.target.value)}
+                      placeholder="Pillar keyword"
+                      className="flex-1"
+                    />
+                    <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                      {left} left
+                    </span>
+                  </div>
+
+                  <CollapsibleContent className="border-t border-border px-3 pb-3 pt-2">
+                    <div className="mb-2 flex items-center justify-between">
+                      <Label className="text-sm">
+                        Supporting Keywords ({supportingCount})
+                      </Label>
+                    </div>
+                    <div className="space-y-2">
+                      {pillar.supporting.map((keyword, supportingIndex) => (
+                        <Input
+                          key={supportingIndex}
+                          id={`supporting_keyword_${index + 1}_${supportingIndex + 1}`}
+                          value={keyword}
+                          onChange={(e) =>
+                            updateSupportingKeyword(index, supportingIndex, e.target.value)
+                          }
+                          placeholder="Supporting keyword"
+                        />
+                      ))}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => addSupportingKeyword(index)}
+                      >
+                        + New
+                      </Button>
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              );
+            })}
+
+            <Button type="button" variant="outline" size="sm" onClick={addPillarKeyword}>
+              + New
+            </Button>
+          </CollapsibleContent>
+        </Collapsible>
 
         <div className="space-y-2">
           <Label htmlFor="abstract">Abstract</Label>
