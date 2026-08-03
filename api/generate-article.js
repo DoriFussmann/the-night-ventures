@@ -1,0 +1,1179 @@
+import Anthropic from '@anthropic-ai/sdk'
+
+export const config = {
+  maxDuration: 300,
+}
+
+function json(res, status, body) {
+  res.statusCode = status
+  res.setHeader('Content-Type', 'application/json')
+  res.end(JSON.stringify(body))
+}
+
+const MODEL = 'claude-sonnet-4-6'
+// Long articles + web-search narration need headroom; embedding body in JSON
+// previously truncated around 8k.
+const MAX_TOKENS = 16000
+const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+const WTS_START = '<!-- WHERE-THINGS-STAND:START -->'
+const WTS_END = '<!-- WHERE-THINGS-STAND:END -->'
+const FM_START = '<<<FRONTMATTER>>>'
+const BODY_START = '<<<BODY>>>'
+const BODY_END = '<<<END>>>'
+
+const TASK_INSTRUCTION = `Write the complete article body and all synthesized frontmatter fields for the spec above. Audience: startup founders raising capital, for Rupert (expert-managed investor outreach).
+
+BODY REQUIREMENTS:
+- Use the provided keyMessages as the article's argument spine — expand, evidence, and structure them into flowing prose with proper H2/H3 markdown headings; do not simply restate them as a list.
+- Target the specified wordCount (+/- 10%).
+- Land the ctaAngle naturally within the final 2-3 paragraphs — it must read as genuine, earned advice, never as an ad.
+- Do NOT include an 'Where Things Stand' section inline in your normal flow — add it as its own final section, described below.
+- Do NOT invent internal links, external links, author names, or images — these are handled separately. Do not write placeholder link text or images into the body.
+- When incorporating facts, statistics, or claims found via web search, integrate them fully into the surrounding paragraph's sentence flow — never place a search-derived fact as an isolated single-sentence line separated from its paragraph by blank lines. Every sentence must belong to a paragraph of at least 2-3 sentences. Before finalizing the body, scan for and merge any orphaned single-sentence lines into their adjacent paragraph.
+
+WHERE THINGS STAND SECTION (mandatory, comes after the main body, before any closing note):
+- Search the web for genuine news, data, or developments related to this article's topic from the past 45 days.
+- Write one grounded paragraph (100-150 words) synthesizing what you find. If you find nothing substantive from the past 45 days, write a brief paragraph noting the topic is stable with no major recent developments, rather than fabricating news.
+- This section is entirely search-derived: integrate every fact, statistic, or claim fully into the paragraph's sentence flow — never place a search-derived fact as an isolated single-sentence line separated by blank lines. The Where Things Stand content must be one cohesive paragraph of at least 2-3 sentences (preferably more), not a stack of orphaned one-liners. Before finalizing, scan for and merge any orphaned single-sentence lines into that paragraph.
+- Do not name specific publications or outlets by name (e.g. "The Wall Street Journal reported...") unless you can also provide the source URL. Instead attribute generically ("recent reporting indicates...", "data from Q2 2026 shows..."). Separately from the body, include a new JSON field whereThingsStandSources: an array of { url, note } for any web-search sources actually used in that paragraph, so they can be manually added to externalLinks later.
+- Wrap this section exactly like this in the markdown body:
+## Where Things Stand
+<!-- WHERE-THINGS-STAND:START -->
+<the paragraph>
+<!-- WHERE-THINGS-STAND:END -->
+
+FRONTMATTER: Generate title, description, slug, tags, imageAlt, faqs per the constraints above. keywords may be omitted or left empty — the server overwrites them. Also set: date and updatedDate to today's date (ISO format), category to the pillar keyword name, draft to true, author to null, internalLinks to an empty array, externalLinks to an empty array, image/image2/image3 to null. Include whereThingsStandSources as an array of { url, note } for sources used in the Where Things Stand paragraph (empty array if none).
+
+OUTPUT FORMAT (mandatory — do not wrap in markdown fences, do not write any preamble or closing note):
+<<<FRONTMATTER>>>
+{ "title", "description", "slug", "date", "updatedDate", "category", "tags": [], "imageAlt", "keywords": [], "faqs": [{"question","answer"}], "draft": true, "author": null, "internalLinks": [], "externalLinks": [], "image": null, "image2": null, "image3": null, "whereThingsStandSources": [{"url","note"}] }
+<<<BODY>>>
+<full markdown body as plain text with real newlines, including the Where Things Stand section>
+<<<END>>>`
+
+function stripOuterMarkdownFences(text) {
+  let cleaned = String(text || '').trim()
+  // Only strip a single outer fence wrapper — never strip fences inside article body.
+  const fenced = cleaned.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i)
+  if (fenced) return fenced[1].trim()
+  return cleaned
+}
+
+function extractBalancedJsonObjects(text) {
+  const source = String(text || '')
+  const objects = []
+
+  for (let i = 0; i < source.length; i++) {
+    if (source[i] !== '{') continue
+
+    let depth = 0
+    let inString = false
+    let escaped = false
+
+    for (let j = i; j < source.length; j++) {
+      const ch = source[j]
+
+      if (inString) {
+        if (escaped) {
+          escaped = false
+        } else if (ch === '\\') {
+          escaped = true
+        } else if (ch === '"') {
+          inString = false
+        }
+        continue
+      }
+
+      if (ch === '"') {
+        inString = true
+        continue
+      }
+      if (ch === '{') depth += 1
+      if (ch === '}') {
+        depth -= 1
+        if (depth === 0) {
+          objects.push(source.slice(i, j + 1))
+          i = j
+          break
+        }
+      }
+    }
+  }
+
+  return objects
+}
+
+/**
+ * Escape literal newlines/tabs/carriage returns that appear inside JSON strings.
+ * Models often emit pretty-printed string values that break JSON.parse.
+ */
+function escapeControlCharsInJsonStrings(text) {
+  const source = String(text || '')
+  let out = ''
+  let inString = false
+  let escaped = false
+
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i]
+
+    if (inString) {
+      if (escaped) {
+        out += ch
+        escaped = false
+        continue
+      }
+      if (ch === '\\') {
+        out += ch
+        escaped = true
+        continue
+      }
+      if (ch === '"') {
+        out += ch
+        inString = false
+        continue
+      }
+      if (ch === '\n') {
+        out += '\\n'
+        continue
+      }
+      if (ch === '\r') {
+        out += '\\r'
+        continue
+      }
+      if (ch === '\t') {
+        out += '\\t'
+        continue
+      }
+      out += ch
+      continue
+    }
+
+    if (ch === '"') {
+      inString = true
+    }
+    out += ch
+  }
+
+  return out
+}
+
+function tryParseJsonObject(text) {
+  const cleaned = stripOuterMarkdownFences(text)
+  const candidates = [cleaned, escapeControlCharsInJsonStrings(cleaned)]
+
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate)
+    } catch {
+      // try next
+    }
+  }
+
+  for (const candidate of candidates) {
+    const objects = extractBalancedJsonObjects(candidate)
+    for (let i = objects.length - 1; i >= 0; i--) {
+      for (const variant of [objects[i], escapeControlCharsInJsonStrings(objects[i])]) {
+        try {
+          return JSON.parse(variant)
+        } catch {
+          // try earlier
+        }
+      }
+    }
+  }
+
+  return null
+}
+
+function looksLikeFrontmatter(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  return (
+    typeof value.title === 'string' ||
+    typeof value.slug === 'string' ||
+    typeof value.description === 'string' ||
+    Array.isArray(value.tags) ||
+    Array.isArray(value.faqs)
+  )
+}
+
+function looksLikeArticleResponse(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  if (value.frontmatter && typeof value.frontmatter === 'object') return true
+  if (typeof value.body === 'string' && looksLikeFrontmatter(value)) return true
+  return false
+}
+
+function parseDelimitedArticle(text) {
+  const source = String(text || '')
+  const fmIdx = source.lastIndexOf(FM_START)
+  const bodyIdx = source.lastIndexOf(BODY_START)
+  if (fmIdx === -1 || bodyIdx === -1 || bodyIdx < fmIdx) return null
+
+  const endIdx = source.indexOf(BODY_END, bodyIdx + BODY_START.length)
+  const fmRaw = source.slice(fmIdx + FM_START.length, bodyIdx).trim()
+  const bodyRaw =
+    endIdx === -1
+      ? source.slice(bodyIdx + BODY_START.length).trim()
+      : source.slice(bodyIdx + BODY_START.length, endIdx).trim()
+
+  const frontmatter = tryParseJsonObject(fmRaw)
+  if (!looksLikeFrontmatter(frontmatter)) return null
+  if (!bodyRaw) return null
+
+  return { frontmatter, body: bodyRaw }
+}
+
+function parseLegacyJsonArticle(text) {
+  const parsed = tryParseJsonObject(text)
+  if (!parsed) return null
+
+  // Shape: { frontmatter, body }
+  if (parsed.frontmatter && typeof parsed.body === 'string') {
+    return { frontmatter: parsed.frontmatter, body: parsed.body }
+  }
+
+  // Shape: flat frontmatter fields + body
+  if (typeof parsed.body === 'string' && looksLikeFrontmatter(parsed)) {
+    const { body, ...frontmatter } = parsed
+    return { frontmatter, body }
+  }
+
+  return null
+}
+
+function extractTextBlocks(content) {
+  if (!Array.isArray(content)) return []
+  return content
+    .filter((block) => block?.type === 'text' && block.text)
+    .map((block) => String(block.text))
+}
+
+function parseArticleFromContent(content) {
+  const texts = extractTextBlocks(content)
+  if (!texts.length) {
+    throw new Error('No text content in Anthropic response')
+  }
+
+  // Prefer later blocks (JSON/delimited payload after tool-use narration),
+  // then the full joined text, then each earlier block.
+  const candidates = []
+  candidates.push(texts[texts.length - 1])
+  if (texts.length > 1) candidates.push(texts.join('\n'))
+  for (let i = texts.length - 2; i >= 0; i--) {
+    candidates.push(texts[i])
+  }
+
+  let lastError = null
+  for (const candidate of candidates) {
+    try {
+      const delimited = parseDelimitedArticle(candidate)
+      if (delimited) return delimited
+
+      const legacy = parseLegacyJsonArticle(candidate)
+      if (legacy) return legacy
+
+      lastError = new Error('No valid article payload found in model response')
+    } catch (err) {
+      lastError = err
+    }
+  }
+
+  throw lastError || new Error('Failed to parse model response as JSON')
+}
+
+function asStringArray(value) {
+  if (!Array.isArray(value)) return []
+  return value.map((item) => String(item || '').trim()).filter(Boolean)
+}
+
+function normalizeCompetitors(value) {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => ({
+      name: String(item.name || '').trim(),
+      url: String(item.url || '').trim(),
+    }))
+    .filter((item) => item.name || item.url)
+}
+
+function normalizeBatchContext(value) {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => ({
+      title: String(item.title || '').trim(),
+      slug: String(item.slug || '').trim(),
+      type: String(item.type || '').trim(),
+      targetKeyword: String(item.targetKeyword || '').trim(),
+      oneLinerSummary: String(item.oneLinerSummary || '').trim(),
+    }))
+    .filter((item) => item.title || item.slug || item.targetKeyword)
+}
+
+function normalizeFaqs(value) {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => ({
+      question: String(item.question || '').trim(),
+      answer: String(item.answer || '').trim(),
+    }))
+}
+
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function countOccurrences(haystack, needle) {
+  if (!needle) return 0
+  let count = 0
+  let idx = 0
+  while (true) {
+    const found = haystack.indexOf(needle, idx)
+    if (found === -1) break
+    count += 1
+    idx = found + needle.length
+  }
+  return count
+}
+
+function validateGeneratedArticle(frontmatter, body) {
+  const errors = []
+  const fm = frontmatter && typeof frontmatter === 'object' ? frontmatter : {}
+  const title = String(fm.title || '')
+  const description = String(fm.description || '')
+  const slug = String(fm.slug || '').trim()
+  const imageAlt = String(fm.imageAlt || '')
+  const tags = asStringArray(fm.tags)
+  const faqs = normalizeFaqs(fm.faqs)
+  const bodyText = String(body || '')
+
+  if (title.length < 55 || title.length > 60) {
+    errors.push(
+      `Your title was ${title.length} characters: '${title}'. It must be 55-60 characters. Rewrite it to fit that exact range, counting carefully.`
+    )
+  }
+  if (description.length < 140 || description.length > 160) {
+    errors.push(
+      `Your description was ${description.length} characters: '${description}'. It must be 140-160 characters. Rewrite it to fit that exact range, counting carefully.`
+    )
+  }
+  if (tags.length < 4 || tags.length > 6) {
+    errors.push(`tags length is ${tags.length} (must be 4-6)`)
+  }
+  if (imageAlt.length < 10) {
+    errors.push(`imageAlt length is ${imageAlt.length} (must be >= 10)`)
+  }
+  if (!SLUG_RE.test(slug)) {
+    errors.push(
+      `slug "${slug}" is invalid (must match /^[a-z0-9]+(?:-[a-z0-9]+)*$/)`
+    )
+  }
+
+  const startCount = countOccurrences(bodyText, WTS_START)
+  const endCount = countOccurrences(bodyText, WTS_END)
+  if (startCount !== 1) {
+    errors.push(
+      `body must contain WHERE-THINGS-STAND:START marker exactly once (found ${startCount})`
+    )
+  }
+  if (endCount !== 1) {
+    errors.push(
+      `body must contain WHERE-THINGS-STAND:END marker exactly once (found ${endCount})`
+    )
+  }
+
+  if (faqs.length < 2 || faqs.length > 4) {
+    errors.push(`faqs length is ${faqs.length} (must be 2-4)`)
+  } else {
+    faqs.forEach((faq, i) => {
+      if (!faq.question) errors.push(`faqs[${i}].question is empty`)
+      if (!faq.answer) errors.push(`faqs[${i}].answer is empty`)
+    })
+  }
+
+  return errors
+}
+
+function uniqueWordsNotInText(source, existingText) {
+  const existing = String(existingText || '').toLowerCase()
+  const words = String(source || '')
+    .replace(/[^\w\s'-]/g, ' ')
+    .split(/\s+/)
+    .map((w) => w.trim())
+    .filter(Boolean)
+
+  const seen = new Set()
+  const out = []
+  for (const word of words) {
+    const key = word.toLowerCase()
+    if (seen.has(key)) continue
+    if (existing.includes(key)) continue
+    seen.add(key)
+    out.push(word)
+  }
+  return out
+}
+
+/** Trim to maxLen at the last complete word boundary. Returns null if result < minLen. */
+function trimAtWordBoundary(text, maxLen, minLen) {
+  const value = String(text || '').trim()
+  if (value.length <= maxLen) {
+    return value.length >= minLen ? value : null
+  }
+
+  let slice = value.slice(0, maxLen)
+  if (value[maxLen] && !/\s/.test(value[maxLen]) && !/\s/.test(slice[slice.length - 1])) {
+    const lastSpace = slice.lastIndexOf(' ')
+    if (lastSpace <= 0) return null
+    slice = slice.slice(0, lastSpace)
+  }
+
+  const trimmed = slice.replace(/\s+$/g, '').replace(/[,\:;.–—-]+$/g, '').trim()
+  if (trimmed.length > maxLen) return null
+  if (trimmed.length < minLen) return null
+  return trimmed
+}
+
+/** Trim description at sentence/clause boundary under maxLen, staying >= minLen. */
+function trimAtClauseBoundary(text, maxLen, minLen) {
+  const value = String(text || '').trim()
+  if (value.length <= maxLen) {
+    return value.length >= minLen ? value : null
+  }
+
+  const window = value.slice(0, maxLen)
+  const boundaries = ['. ', '? ', '! ', '; ', ', ', ' — ', ' – ', ' - ', ' ']
+  let best = null
+
+  for (const boundary of boundaries) {
+    const idx = window.lastIndexOf(boundary)
+    if (idx < minLen - boundary.length) continue
+    let candidate = window.slice(0, idx + (boundary.trim() ? boundary.trim().length : 0)).trim()
+    // For space-only boundary, don't keep trailing space; for punctuation keep it.
+    if (boundary === ' ') {
+      candidate = window.slice(0, idx).trim()
+    } else if (boundary.endsWith(' ')) {
+      candidate = window.slice(0, idx + boundary.trimEnd().length).trim()
+    }
+    if (candidate.length >= minLen && candidate.length <= maxLen) {
+      best = candidate
+      break
+    }
+  }
+
+  if (best) return best
+  return trimAtWordBoundary(value, maxLen, minLen)
+}
+
+function extendWithWordPhrases(text, wordPool, minLen, maxLen) {
+  let result = String(text || '').trim()
+  if (result.length >= minLen && result.length <= maxLen) return result
+
+  const pool = [...wordPool]
+  while (result.length < minLen && pool.length > 0) {
+    // Prefer a 2-4 word phrase that fits under maxLen.
+    let chosen = null
+    for (let n = Math.min(4, pool.length); n >= 2; n--) {
+      const phrase = pool.slice(0, n).join(' ')
+      const candidate = `${result}${result.endsWith(':') || result.endsWith('—') ? ' ' : ': '}${phrase}`
+      if (candidate.length <= maxLen) {
+        chosen = { candidate, n }
+        if (candidate.length >= minLen) break
+      }
+    }
+    if (!chosen) {
+      // Try a single remaining word.
+      const word = pool[0]
+      const candidate = `${result} ${word}`
+      if (candidate.length <= maxLen) {
+        result = candidate
+        pool.shift()
+        continue
+      }
+      break
+    }
+    result = chosen.candidate
+    pool.splice(0, chosen.n)
+  }
+
+  if (result.length > maxLen) {
+    return trimAtWordBoundary(result, maxLen, minLen)
+  }
+  if (result.length < minLen) return null
+  return result
+}
+
+function extendDescriptionWithClauses(text, wordPool, minLen, maxLen) {
+  let result = String(text || '').trim()
+  if (result.length >= minLen && result.length <= maxLen) return result
+
+  const pool = [...wordPool]
+  const clauseBuilders = [
+    (words) => ` Focus on ${words.join(' ')}.`,
+    (words) => ` Practical guidance on ${words.join(' ')}.`,
+    (words) => ` Covers ${words.join(' ')}.`,
+  ]
+
+  let builderIdx = 0
+  while (result.length < minLen && pool.length > 0) {
+    const n = Math.min(4, Math.max(1, pool.length))
+    const builder = clauseBuilders[builderIdx % clauseBuilders.length]
+    builderIdx += 1
+
+    // Prefer fitting under max; if clause is too long, shrink word count.
+    let addition = builder(pool.slice(0, n))
+    for (let use = n; use >= 1; use--) {
+      const trial = builder(pool.slice(0, use))
+      if (result.length + trial.length <= maxLen || use === 1) {
+        addition = trial
+        pool.splice(0, use)
+        break
+      }
+    }
+
+    const candidate = `${result}${addition}`.replace(/\s+/g, ' ').trim()
+    if (candidate.length > maxLen) {
+      const trimmed = trimAtClauseBoundary(candidate, maxLen, minLen)
+      return trimmed
+    }
+    result = candidate
+  }
+
+  if (result.length > maxLen) {
+    return trimAtClauseBoundary(result, maxLen, minLen)
+  }
+  if (result.length < minLen) return null
+  return result
+}
+
+/**
+ * Last-resort programmatic length fix for title/description only.
+ * Returns { frontmatter, changed } or { frontmatter, changed: false, failed: true }.
+ */
+function applyLengthFallbacks(frontmatter, { targetKeyword, category }) {
+  const fm = { ...frontmatter }
+  let changed = false
+  let failed = false
+
+  const title = String(fm.title || '').trim()
+  if (title.length < 55 || title.length > 60) {
+    let next = title
+    if (next.length > 60) {
+      next = trimAtWordBoundary(next, 60, 55)
+      if (!next) {
+        failed = true
+      }
+    } else if (next.length < 55) {
+      const pool = [
+        ...uniqueWordsNotInText(targetKeyword, next),
+        ...uniqueWordsNotInText(category, next),
+      ]
+      next = extendWithWordPhrases(next, pool, 55, 60)
+      if (!next) failed = true
+    }
+    if (next && next !== title && next.length >= 55 && next.length <= 60) {
+      fm.title = next
+      changed = true
+    } else if (title.length < 55 || title.length > 60) {
+      failed = true
+    }
+  }
+
+  const description = String(fm.description || '').trim()
+  if (description.length < 140 || description.length > 160) {
+    let next = description
+    if (next.length > 160) {
+      next = trimAtClauseBoundary(next, 160, 140)
+      if (!next) failed = true
+    } else if (next.length < 140) {
+      const pool = [
+        ...uniqueWordsNotInText(targetKeyword, next),
+        ...uniqueWordsNotInText(category, next),
+      ]
+      next = extendDescriptionWithClauses(next, pool, 140, 160)
+      if (!next) failed = true
+    }
+    if (
+      next &&
+      next !== description &&
+      next.length >= 140 &&
+      next.length <= 160
+    ) {
+      fm.description = next
+      changed = true
+    } else if (description.length < 140 || description.length > 160) {
+      failed = true
+    }
+  }
+
+  return { frontmatter: fm, changed, failed }
+}
+
+/**
+ * Always construct keywords server-side. Model output for this field is ignored.
+ */
+function buildKeywords({ targetKeyword, supportingKeyword, pillarKeyword }) {
+  const seen = new Set()
+  const out = []
+  for (const item of [targetKeyword, supportingKeyword, pillarKeyword]) {
+    const value = String(item || '').trim()
+    if (!value) continue
+    const key = value.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(value)
+  }
+  return out
+}
+
+function normalizeWhereThingsStandSources(value) {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => ({
+      url: String(item.url || '').trim(),
+      note: String(item.note || '').trim(),
+    }))
+    .filter((item) => item.url || item.note)
+}
+
+function extractWhereThingsStandSources(raw) {
+  const fm = raw && typeof raw === 'object' ? raw : {}
+  return normalizeWhereThingsStandSources(fm.whereThingsStandSources)
+}
+
+function isHeadingBlock(block) {
+  return /^\s*#+\s/.test(String(block || ''))
+}
+
+function isListBlock(block) {
+  return /^\s*(?:[-*+]|\d+\.)\s/.test(String(block || ''))
+}
+
+function isHorizontalRuleBlock(block) {
+  // Exact thematic break only — never treat as prose orphan/target.
+  return /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(String(block || ''))
+}
+
+function isBlockquoteBlock(block) {
+  return /^\s*>/.test(String(block || ''))
+}
+
+/** Structural markdown that must never be merged into/from as prose. */
+function isStructuralBlock(block) {
+  return (
+    isHeadingBlock(block) ||
+    isListBlock(block) ||
+    isHorizontalRuleBlock(block) ||
+    isBlockquoteBlock(block)
+  )
+}
+
+/** Mid-block sentence breaks: sentence-ending punct followed by whitespace (+ more text). */
+function countMidSentenceBreaks(block) {
+  const text = String(block || '').trim()
+  // Allow a final terminator; only count breaks that leave more content after.
+  const core = text.replace(/[.!?]+["')\]]*$/, '')
+  const matches = core.match(/[.!?]["')\]]*\s+/g)
+  return matches ? matches.length : 0
+}
+
+function isShortSingleSentence(block) {
+  const text = String(block || '').trim()
+  if (!text || text.length >= 200) return false
+  if (isStructuralBlock(text)) return false
+  return countMidSentenceBreaks(text) === 0
+}
+
+function isOrphanBlock(block) {
+  const text = String(block || '').trim()
+  if (!text) return false
+  if (isStructuralBlock(text)) return false
+  if (text.length >= 200) return false
+  // Exactly one sentence: no mid-block sentence-ending punctuation + whitespace.
+  if (countMidSentenceBreaks(text) > 0) return false
+  return true
+}
+
+function splitBlocks(text) {
+  const source = String(text || '').replace(/\r\n/g, '\n')
+  if (!source.trim()) return []
+  return source
+    .split(/\n[ \t]*\n+/)
+    .map((block) => block.trim())
+    .filter(Boolean)
+}
+
+function joinBlocks(blocks) {
+  return blocks.join('\n\n')
+}
+
+function mergeOrphansPass(blocks) {
+  const pending = [...blocks]
+  const out = []
+
+  for (let i = 0; i < pending.length; i++) {
+    const block = pending[i]
+
+    // Preserve structural dividers/headings/lists/quotes untouched.
+    if (isStructuralBlock(block)) {
+      out.push(block)
+      continue
+    }
+
+    if (!isOrphanBlock(block)) {
+      out.push(block)
+      continue
+    }
+
+    const prev = out[out.length - 1]
+    const noPrecedingProse = !prev || isStructuralBlock(prev)
+
+    if (noPrecedingProse) {
+      const next = pending[i + 1]
+      if (next != null && !isStructuralBlock(next)) {
+        pending[i + 1] = `${block.trim()} ${String(next).trim()}`
+        continue
+      }
+      out.push(block)
+      continue
+    }
+
+    out[out.length - 1] = `${String(prev).trim()} ${block.trim()}`
+  }
+
+  return out
+}
+
+/** Merge orphaned single-sentence blocks into adjacent prose. Runs two passes. */
+function mergeOrphanBlocks(text) {
+  let blocks = splitBlocks(text)
+  if (blocks.length === 0) return String(text || '').trim()
+  blocks = mergeOrphansPass(blocks)
+  blocks = mergeOrphansPass(blocks)
+  return joinBlocks(blocks)
+}
+
+/**
+ * Force-merge leftover short single-sentence WTS blocks into nearest neighbor
+ * (prefer previous; if first, next), ignoring the softer orphan heuristics.
+ */
+function forceMergeWtsShortSingles(blocks) {
+  const result = [...blocks]
+  let changed = true
+
+  while (changed) {
+    changed = false
+    for (let i = 0; i < result.length; i++) {
+      if (!isShortSingleSentence(result[i])) continue
+
+      if (i > 0) {
+        result[i - 1] = `${String(result[i - 1]).trim()} ${String(result[i]).trim()}`
+        result.splice(i, 1)
+        changed = true
+        break
+      }
+
+      if (i + 1 < result.length) {
+        result[i + 1] = `${String(result[i]).trim()} ${String(result[i + 1]).trim()}`
+        result.splice(i, 1)
+        changed = true
+        break
+      }
+    }
+  }
+
+  return result
+}
+
+/** Cap WTS at two prose blocks by folding extras backward. */
+function collapseWtsToMaxBlocks(blocks, maxBlocks = 2) {
+  const result = [...blocks]
+  while (result.length > maxBlocks) {
+    const last = result.pop()
+    result[result.length - 1] = `${String(result[result.length - 1]).trim()} ${String(last).trim()}`
+  }
+  return result
+}
+
+/**
+ * Stronger WTS-only merge: 3 orphan passes, force-merge leftover singles,
+ * then hard-cap at 2 blocks.
+ */
+function mergeWtsBlocks(text) {
+  let blocks = splitBlocks(text)
+  if (blocks.length === 0) return String(text || '').trim()
+
+  blocks = mergeOrphansPass(blocks)
+  blocks = mergeOrphansPass(blocks)
+  blocks = mergeOrphansPass(blocks)
+  blocks = forceMergeWtsShortSingles(blocks)
+  blocks = collapseWtsToMaxBlocks(blocks, 2)
+  return joinBlocks(blocks)
+}
+
+/**
+ * Post-process body: merge orphans in main body and separately in WTS content.
+ * Runs before marker validation.
+ */
+function processArticleBody(body) {
+  const text = String(body || '').replace(/\r\n/g, '\n')
+  const startIdx = text.indexOf(WTS_START)
+  const endIdx = text.indexOf(WTS_END)
+
+  if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) {
+    return mergeOrphanBlocks(text)
+  }
+
+  const before = text.slice(0, startIdx)
+  const wtsInner = text.slice(startIdx + WTS_START.length, endIdx)
+  const after = text.slice(endIdx + WTS_END.length)
+
+  const mergedBefore = mergeOrphanBlocks(before)
+  const mergedWts = mergeWtsBlocks(wtsInner)
+  const beforePart = mergedBefore.replace(/\s+$/, '')
+  const wtsBlock = `${WTS_START}\n${mergedWts}\n${WTS_END}`
+
+  if (!beforePart) return `${wtsBlock}${after}`
+  return `${beforePart}\n${wtsBlock}${after}`
+}
+
+function coerceFrontmatter(raw, { pillarKeyword, targetKeyword, supportingKeyword } = {}) {
+  const fm = raw && typeof raw === 'object' ? raw : {}
+  const today = todayIsoDate()
+  const pillar = String(pillarKeyword || '').trim()
+
+  return {
+    title: String(fm.title || '').trim(),
+    description: String(fm.description || '').trim(),
+    slug: String(fm.slug || '').trim(),
+    date: String(fm.date || '').trim() || today,
+    updatedDate: String(fm.updatedDate || '').trim() || today,
+    category: String(fm.category || '').trim() || pillar,
+    tags: asStringArray(fm.tags),
+    imageAlt: String(fm.imageAlt || '').trim(),
+    keywords: buildKeywords({
+      targetKeyword,
+      supportingKeyword,
+      pillarKeyword: pillar,
+    }),
+    faqs: normalizeFaqs(fm.faqs),
+    draft: true,
+    author: null,
+    internalLinks: [],
+    externalLinks: [],
+    image: null,
+    image2: null,
+    image3: null,
+  }
+}
+
+function buildUserPrompt({
+  abstract,
+  shortDescription,
+  competitors,
+  article,
+  pillarKeyword,
+  supportingKeyword,
+  batchContext,
+}) {
+  const parts = [
+    'Company positioning:',
+    `Abstract: ${abstract || '(not set)'}`,
+    `Short Description: ${shortDescription || '(not set)'}`,
+    '',
+  ]
+
+  if (competitors.length > 0) {
+    parts.push(
+      'KNOWN COMPETITORS (use ONLY these as the competitor set — do not research, invent, or add other competitors):'
+    )
+    for (const competitor of competitors) {
+      const label = competitor.name || '(unnamed)'
+      const url = competitor.url || '(no url)'
+      parts.push(`- ${label}: ${url}`)
+    }
+  } else {
+    parts.push('KNOWN COMPETITORS: (none saved)')
+  }
+
+  parts.push(
+    '',
+    'Article plan spec:',
+    JSON.stringify(
+      {
+        title: article.title,
+        targetKeyword: article.targetKeyword,
+        type: article.type,
+        searchIntent: article.searchIntent,
+        wordCount: article.wordCount,
+        ctaAngle: article.ctaAngle,
+        keyMessages: article.keyMessages,
+        pillarKeyword,
+        supportingKeyword: supportingKeyword || null,
+      },
+      null,
+      2
+    ),
+    '',
+    'Batch context so far (sibling articles already generated in this run — for tonal coherence only; do NOT invent internal links to them):',
+    batchContext.length > 0
+      ? JSON.stringify(batchContext, null, 2)
+      : '(none yet — this is the first article in the batch)',
+    '',
+    'CONTENT CONTRACT CONSTRAINTS (enforce exactly):',
+    '- title: MUST be between 55 and 60 characters total (count every character including spaces and punctuation). Aim for 57-58 to leave safety margin. Before finalizing, count the characters in your title.',
+    '- description: MUST be between 140 and 160 characters total (count every character including spaces and punctuation). Aim for 148-152 to leave safety margin. Before finalizing, count the characters in your description. Must be a genuine meta description (not a restated title).',
+    '- slug: kebab-case, derived from the target keyword, url-safe',
+    '- tags: exactly 4-6 strings, mix of broad category terms and the specific target keyword',
+    '- imageAlt: minimum 10 characters, genuinely descriptive of a plausible hero image for this article (even though the real image is added manually later)',
+    '- keywords: optional in your JSON (server overwrites from targetKeyword / supportingKeyword / pillarKeyword).',
+    '- whereThingsStandSources: array of { url, note } for web-search sources actually used in the Where Things Stand paragraph (empty array if none).',
+    '- faqs: array of 2-4 { question, answer } objects, genuinely useful, distinct from the body content, not filler',
+    '',
+    TASK_INSTRUCTION,
+  )
+
+  return parts.join('\n')
+}
+
+function buildCorrectiveMessage(validationErrors) {
+  return [
+    'Your previous response failed validation. Resend the full article using the delimiter format only (no markdown fences, no preamble), fixing exactly these issues:',
+    ...validationErrors.map((err) => `- ${err}`),
+    '',
+    'Keep the same article intent and Where Things Stand section requirements. Count title and description characters carefully before sending.',
+    'Output exactly:',
+    `${FM_START}`,
+    '{ ...frontmatter fields... }',
+    `${BODY_START}`,
+    '<markdown body>',
+    `${BODY_END}`,
+  ].join('\n')
+}
+
+function buildParseRecoveryMessage() {
+  return [
+    'Your previous response could not be parsed. Do not apologize or explain.',
+    'Resend the COMPLETE article now using this exact delimiter format (no markdown fences, no preamble):',
+    `${FM_START}`,
+    '{ "title": "...", "description": "...", "slug": "...", "date": "YYYY-MM-DD", "updatedDate": "YYYY-MM-DD", "category": "...", "tags": [], "imageAlt": "...", "keywords": [], "faqs": [{"question":"...","answer":"..."}], "draft": true, "author": null, "internalLinks": [], "externalLinks": [], "image": null, "image2": null, "image3": null, "whereThingsStandSources": [{"url":"...","note":"..."}] }',
+    `${BODY_START}`,
+    '<full markdown body including Where Things Stand markers>',
+    `${BODY_END}`,
+  ].join('\n')
+}
+
+function normalizeArticleSpec(raw) {
+  const article = raw && typeof raw === 'object' ? raw : {}
+  const wordCountRaw = Number(article.wordCount)
+  return {
+    title: String(article.title || '').trim(),
+    targetKeyword: String(article.targetKeyword || '').trim(),
+    type: String(article.type || '').trim() || 'flex',
+    searchIntent: String(article.searchIntent || '').trim(),
+    wordCount: Number.isFinite(wordCountRaw) ? wordCountRaw : 1500,
+    ctaAngle: String(article.ctaAngle || '').trim(),
+    keyMessages: asStringArray(article.keyMessages),
+  }
+}
+
+async function callAnthropic(anthropic, messages) {
+  const message = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: MAX_TOKENS,
+    tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+    messages,
+  })
+
+  if (message?.stop_reason === 'max_tokens') {
+    const err = new Error(
+      'Model response was truncated before finishing JSON. Try again.'
+    )
+    err.code = 'truncated'
+    throw err
+  }
+
+  return message
+}
+
+export {
+  buildKeywords,
+  mergeOrphanBlocks,
+  mergeWtsBlocks,
+  processArticleBody,
+  isOrphanBlock,
+  isHorizontalRuleBlock,
+  isStructuralBlock,
+  normalizeWhereThingsStandSources,
+}
+
+export default async function handler(req, res) {
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', '*')
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+    return res.end()
+  }
+
+  if (req.method !== 'POST') {
+    return json(res, 405, { error: 'Method not allowed' })
+  }
+
+  try {
+    const apiKey = process.env.ANTHROPIC_API_KEY
+    if (!apiKey) {
+      console.error('Missing ANTHROPIC_API_KEY')
+      return json(res, 500, { error: 'Server configuration error' })
+    }
+
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {}
+    const abstract = String(body.abstract || '').trim()
+    const shortDescription = String(body.shortDescription || '').trim()
+    const competitors = normalizeCompetitors(body.competitors)
+    const pillarKeyword = String(body.pillarKeyword || '').trim()
+    const supportingKeyword = String(body.supportingKeyword || '').trim()
+    const batchContext = normalizeBatchContext(body.batchContext)
+    const article = normalizeArticleSpec(body.article)
+
+    if (!article.title && !article.targetKeyword) {
+      return json(res, 400, { error: 'article title or targetKeyword is required' })
+    }
+    if (!pillarKeyword) {
+      return json(res, 400, { error: 'pillarKeyword is required' })
+    }
+
+    const prompt = buildUserPrompt({
+      abstract,
+      shortDescription,
+      competitors,
+      article,
+      pillarKeyword,
+      supportingKeyword,
+      batchContext,
+    })
+
+    const anthropic = new Anthropic({ apiKey })
+    let activeMessage = await callAnthropic(anthropic, [
+      { role: 'user', content: prompt },
+    ])
+
+    let parsed
+    try {
+      parsed = parseArticleFromContent(activeMessage?.content)
+    } catch (err) {
+      const preview = extractTextBlocks(activeMessage?.content)
+        .join('\n')
+        .slice(0, 800)
+      console.error('generate-article parse failed (attempting recovery):', err, preview)
+
+      // One recovery turn: ask for delimiter-format resend in the same conversation.
+      try {
+        activeMessage = await callAnthropic(anthropic, [
+          { role: 'user', content: prompt },
+          { role: 'assistant', content: activeMessage.content },
+          { role: 'user', content: buildParseRecoveryMessage() },
+        ])
+        parsed = parseArticleFromContent(activeMessage?.content)
+      } catch (recoveryErr) {
+        const recoveryPreview = extractTextBlocks(activeMessage?.content)
+          .join('\n')
+          .slice(0, 800)
+        console.error(
+          'generate-article parse recovery failed:',
+          recoveryErr,
+          recoveryPreview
+        )
+        const msg =
+          recoveryErr?.code === 'truncated'
+            ? recoveryErr.message
+            : 'Failed to parse model response. Try Retry — the model likely truncated or wrapped the article incorrectly.'
+        return json(res, 502, { error: msg })
+      }
+    }
+
+    const coerceOpts = {
+      pillarKeyword,
+      targetKeyword: article.targetKeyword,
+      supportingKeyword,
+    }
+    let whereThingsStandSources = extractWhereThingsStandSources(parsed.frontmatter)
+    let frontmatter = coerceFrontmatter(parsed.frontmatter, coerceOpts)
+    let articleBody = processArticleBody(String(parsed.body || ''))
+    let validationErrors = validateGeneratedArticle(frontmatter, articleBody)
+    let lengthAdjusted = false
+
+    // Up to 2 corrective retries (3 total generation attempts).
+    const MAX_CORRECTIVE_RETRIES = 2
+    for (
+      let attempt = 0;
+      validationErrors.length > 0 && attempt < MAX_CORRECTIVE_RETRIES;
+      attempt += 1
+    ) {
+      const corrective = buildCorrectiveMessage(validationErrors)
+      try {
+        activeMessage = await callAnthropic(anthropic, [
+          { role: 'user', content: prompt },
+          { role: 'assistant', content: activeMessage.content },
+          { role: 'user', content: corrective },
+        ])
+      } catch (err) {
+        if (err?.code === 'truncated') {
+          return json(res, 502, { error: err.message, validationErrors })
+        }
+        throw err
+      }
+
+      try {
+        parsed = parseArticleFromContent(activeMessage?.content)
+        whereThingsStandSources = extractWhereThingsStandSources(parsed.frontmatter)
+        frontmatter = coerceFrontmatter(parsed.frontmatter, coerceOpts)
+        articleBody = processArticleBody(String(parsed.body || ''))
+        validationErrors = validateGeneratedArticle(frontmatter, articleBody)
+      } catch (err) {
+        console.error('generate-article corrective parse failed:', err)
+        return json(res, 422, {
+          error: 'Corrective response failed validation parse',
+          validationErrors,
+        })
+      }
+    }
+
+    // Deterministic title/description length fallback after all retries.
+    if (validationErrors.length > 0) {
+      const fallback = applyLengthFallbacks(frontmatter, {
+        targetKeyword: article.targetKeyword,
+        category: frontmatter.category || pillarKeyword,
+      })
+      if (fallback.changed) {
+        frontmatter = fallback.frontmatter
+        lengthAdjusted = true
+        validationErrors = validateGeneratedArticle(frontmatter, articleBody)
+      }
+    }
+
+    if (validationErrors.length > 0) {
+      return json(res, 422, {
+        error: 'Generated article failed validation',
+        validationErrors,
+      })
+    }
+
+    return json(res, 200, {
+      frontmatter,
+      body: articleBody,
+      whereThingsStandSources,
+      ...(lengthAdjusted ? { lengthAdjusted: true } : {}),
+    })
+  } catch (err) {
+    console.error('generate-article error:', err)
+    if (err?.code === 'truncated') {
+      return json(res, 502, { error: err.message })
+    }
+    const message =
+      err?.error?.message || err?.message || 'Failed to generate article'
+    return json(res, 502, { error: String(message) })
+  }
+}

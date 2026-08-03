@@ -9,6 +9,7 @@ import {
   Download,
   Loader2,
   Trash2,
+  Upload,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { parseClusterMarkdown } from "./articleGeneration/parseClusterMarkdown";
 
 const ARTICLE_TYPES = [
   { value: "comprehensive", label: "Comprehensive" },
@@ -70,6 +72,69 @@ function asStringArray(value) {
   return value.map((item) => String(item || "").trim()).filter(Boolean);
 }
 
+function normalizeFaqs(value) {
+  if (!Array.isArray(value)) return undefined;
+  const faqs = value
+    .filter((item) => item && typeof item === "object")
+    .map((item) => ({
+      question: String(item.question || "").trim(),
+      answer: String(item.answer || "").trim(),
+    }))
+    .filter((item) => item.question || item.answer);
+  return faqs.length > 0 ? faqs : undefined;
+}
+
+/** Optional fields written by Article Generator after a successful draft. */
+function extractGeneratedFields(raw) {
+  if (!raw || typeof raw !== "object") return {};
+  const fields = {};
+  if (raw.description != null && String(raw.description).trim()) {
+    fields.description = String(raw.description).trim();
+  }
+  if (raw.slug != null && String(raw.slug).trim()) {
+    fields.slug = String(raw.slug).trim();
+  }
+  if (raw.date != null && String(raw.date).trim()) {
+    fields.date = String(raw.date).trim();
+  }
+  if (raw.updatedDate != null && String(raw.updatedDate).trim()) {
+    fields.updatedDate = String(raw.updatedDate).trim();
+  }
+  if (raw.category != null && String(raw.category).trim()) {
+    fields.category = String(raw.category).trim();
+  }
+  if (Array.isArray(raw.tags) && raw.tags.length > 0) {
+    fields.tags = asStringArray(raw.tags);
+  }
+  if (raw.imageAlt != null && String(raw.imageAlt).trim()) {
+    fields.imageAlt = String(raw.imageAlt).trim();
+  }
+  if (Array.isArray(raw.keywords) && raw.keywords.length > 0) {
+    fields.keywords = asStringArray(raw.keywords);
+  }
+  const faqs = normalizeFaqs(raw.faqs);
+  if (faqs) fields.faqs = faqs;
+  if (raw.draft != null) fields.draft = Boolean(raw.draft);
+  if (raw.author !== undefined) fields.author = raw.author;
+  if (Array.isArray(raw.externalLinks)) {
+    fields.externalLinks = asStringArray(raw.externalLinks);
+  }
+  if (raw.image !== undefined) fields.image = raw.image;
+  if (raw.image2 !== undefined) fields.image2 = raw.image2;
+  if (raw.image3 !== undefined) fields.image3 = raw.image3;
+  return fields;
+}
+
+function hasGeneratedFrontmatter(article) {
+  if (!article || typeof article !== "object") return false;
+  return Boolean(
+    article.slug ||
+      article.description ||
+      (Array.isArray(article.tags) && article.tags.length > 0) ||
+      (Array.isArray(article.faqs) && article.faqs.length > 0)
+  );
+}
+
 function normalizeArticle(raw) {
   if (!raw || typeof raw !== "object") return null;
   const status = ARTICLE_STATUSES.includes(raw.status) ? raw.status : "planned";
@@ -89,6 +154,7 @@ function normalizeArticle(raw) {
     publishedUrl: raw.publishedUrl ? String(raw.publishedUrl) : undefined,
     publishedAt: raw.publishedAt ? String(raw.publishedAt) : undefined,
     updatedAt: raw.updatedAt ? String(raw.updatedAt) : undefined,
+    ...extractGeneratedFields(raw),
   };
 }
 
@@ -100,11 +166,41 @@ function normalizePillarArticle(raw) {
   if (typeof raw !== "object") return null;
   const status = ARTICLE_STATUSES.includes(raw.status) ? raw.status : null;
   if (!status) return null;
-  return {
+
+  const title = String(raw.title || "").trim();
+  const targetKeyword = String(raw.targetKeyword || "").trim();
+  const pillarRationale = String(raw.pillarRationale || "").trim();
+  const type = ARTICLE_TYPES.some((t) => t.value === raw.type) ? raw.type : undefined;
+  const wordCountRaw = Number(raw.wordCount);
+  const generated = extractGeneratedFields(raw);
+  const base = {
     status,
     publishedUrl: raw.publishedUrl ? String(raw.publishedUrl) : undefined,
     publishedAt: raw.publishedAt ? String(raw.publishedAt) : undefined,
+    updatedAt: raw.updatedAt ? String(raw.updatedAt) : undefined,
+    ...generated,
   };
+
+  if (!title && !targetKeyword) return base;
+
+  return {
+    ...base,
+    ...(title ? { title } : {}),
+    ...(targetKeyword ? { targetKeyword } : {}),
+    ...(type ? { type } : {}),
+    ...(raw.searchIntent
+      ? { searchIntent: String(raw.searchIntent).trim() }
+      : {}),
+    keyMessages: asStringArray(raw.keyMessages),
+    ...(Number.isFinite(wordCountRaw) ? { wordCount: wordCountRaw } : {}),
+    internalLinks: asStringArray(raw.internalLinks),
+    ...(raw.ctaAngle ? { ctaAngle: String(raw.ctaAngle).trim() } : {}),
+    ...(pillarRationale ? { pillarRationale } : {}),
+  };
+}
+
+function pillarProposalKey(pillarSlug) {
+  return `pillar::${pillarSlug}`;
 }
 
 function extractCorePillars(coreKeywords) {
@@ -338,30 +434,22 @@ function downloadMarkdown(filename, content) {
   URL.revokeObjectURL(url);
 }
 
-function clusterToMarkdown({
-  companyName,
-  pillarKeyword,
-  supportingKeyword,
-  clusterRationale,
-  articles,
-}) {
-  const generated = new Date().toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
+function pickMarkdownFile() {
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".md,.markdown,text/markdown";
+    input.onchange = () => {
+      resolve(input.files?.[0] || null);
+    };
+    input.oncancel = () => resolve(null);
+    input.click();
   });
+}
+
+function articlesToMarkdownSections(articles) {
+  const lines = [];
   const list = Array.isArray(articles) ? articles : [];
-  const lines = [
-    `# Article Cluster`,
-    "",
-    `- **Company:** ${companyName || "(unnamed)"}`,
-    `- **Pillar:** ${pillarKeyword}`,
-    `- **Supporting keyword:** ${supportingKeyword}`,
-    `- **Cluster rationale:** ${clusterRationale || ""}`,
-    `- **Generated:** ${generated}`,
-    `- **Articles:** ${list.length}`,
-    "",
-  ];
 
   for (const article of list) {
     lines.push(`## ${article.title || "(untitled)"}`, "");
@@ -387,6 +475,57 @@ function clusterToMarkdown({
     }
     lines.push("");
   }
+
+  return lines;
+}
+
+function clusterToMarkdown({
+  companyName,
+  pillarKeyword,
+  supportingKeyword,
+  clusterRationale,
+  articles,
+}) {
+  const generated = new Date().toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  const list = Array.isArray(articles) ? articles : [];
+  const lines = [
+    `# Article Cluster`,
+    "",
+    `- **Company:** ${companyName || "(unnamed)"}`,
+    `- **Pillar:** ${pillarKeyword}`,
+    `- **Supporting keyword:** ${supportingKeyword}`,
+    `- **Cluster rationale:** ${clusterRationale || ""}`,
+    `- **Generated:** ${generated}`,
+    `- **Articles:** ${list.length}`,
+    "",
+    ...articlesToMarkdownSections(list),
+  ];
+
+  return lines.join("\n").trim() + "\n";
+}
+
+function pillarArticleToMarkdown({ companyName, pillarKeyword, pillarArticle }) {
+  const generated = new Date().toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  const article = pillarArticle && typeof pillarArticle === "object" ? pillarArticle : {};
+  const lines = [
+    `# Article Cluster`,
+    "",
+    `- **Company:** ${companyName || "(unnamed)"}`,
+    `- **Pillar:** ${pillarKeyword}`,
+    `- **Pillar rationale:** ${article.pillarRationale || ""}`,
+    `- **Generated:** ${generated}`,
+    `- **Articles:** 1`,
+    "",
+    ...articlesToMarkdownSections([article]),
+  ];
 
   return lines.join("\n").trim() + "\n";
 }
@@ -446,6 +585,7 @@ export default function ArticleTopicSuggestion() {
   const [publishOpen, setPublishOpen] = useState(false);
   const [publishContext, setPublishContext] = useState(null);
   const [publishUrl, setPublishUrl] = useState("");
+  const [detailArticle, setDetailArticle] = useState(null);
 
   const persistCoverage = useCallback(
     async (nextPillars) => {
@@ -777,6 +917,371 @@ export default function ArticleTopicSuggestion() {
     downloadMarkdown(filename, markdown);
   };
 
+  const requestPillarProposal = async ({ pillar, regenerate = false }) => {
+    const key = pillarProposalKey(pillar.slug);
+    setProposalLoading(true);
+    setProposalError("");
+    setError("");
+    setExpandedPillar(pillar.slug);
+    setProposalKey(key);
+
+    if (!regenerate) {
+      setProposalRationale("");
+      setProposalArticles([]);
+      setSteeringNotes("");
+      setExpandedProposalId(null);
+    }
+
+    try {
+      const body = {
+        mode: "pillar",
+        pillarKeyword: pillar.keyword,
+        abstract,
+        shortDescription,
+        contentMap: buildContentMapPayload(pillars),
+        competitors,
+        keywordData: keywordData.trim(),
+      };
+
+      if (regenerate) {
+        const previousArticle = proposalArticles[0];
+        body.steeringNotes = steeringNotes.trim();
+        body.previousProposal = {
+          pillarRationale: proposalRationale,
+          article: previousArticle
+            ? {
+                title: previousArticle.title,
+                targetKeyword: previousArticle.targetKeyword,
+                type: previousArticle.type,
+                searchIntent: previousArticle.searchIntent,
+                keyMessages: previousArticle.keyMessages,
+                wordCount: previousArticle.wordCount,
+                internalLinks: previousArticle.internalLinks,
+                ctaAngle: previousArticle.ctaAngle,
+              }
+            : null,
+        };
+      }
+
+      const res = await fetch("/api/plan-cluster", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || `Plan pillar article failed (${res.status})`);
+      }
+
+      const articles = normalizeProposalArticles(
+        data.article ? [data.article] : []
+      );
+      if (!articles.length) {
+        throw new Error("No pillar article returned in proposal");
+      }
+
+      setProposalRationale(String(data.pillarRationale || "").trim());
+      setProposalArticles(articles);
+      setExpandedProposalId(null);
+    } catch (err) {
+      console.error("Plan pillar article failed:", err);
+      setProposalError(err.message || "Failed to plan pillar article");
+      setProposalArticles([]);
+      setProposalRationale("");
+    } finally {
+      setProposalLoading(false);
+    }
+  };
+
+  const handlePlanPillarArticle = (pillar) => {
+    if (proposalLoading || saving) return;
+
+    const key = pillarProposalKey(pillar.slug);
+    setExpandedPillar(pillar.slug);
+    setExpandedSupporting(null);
+    setProposalKey(key);
+    setProposalRationale("");
+    setProposalArticles([]);
+    setProposalError("");
+    setKeywordData("");
+    setSteeringNotes("");
+    setExpandedProposalId(null);
+  };
+
+  const handleRegeneratePillar = (pillar) => {
+    if (proposalLoading || saving) return;
+    void requestPillarProposal({ pillar, regenerate: true });
+  };
+
+  const handleConfirmPillarArticle = async (pillar) => {
+    if (!proposalArticles.length || saving || proposalLoading) return;
+
+    const now = new Date().toISOString();
+    const article = proposalArticles[0];
+    const pillarArticle = {
+      status: "planned",
+      title: article.title,
+      targetKeyword: article.targetKeyword,
+      type: article.type || "comprehensive",
+      searchIntent: article.searchIntent || undefined,
+      keyMessages: asStringArray(article.keyMessages),
+      wordCount: article.wordCount,
+      internalLinks: asStringArray(article.internalLinks),
+      ctaAngle: article.ctaAngle || undefined,
+      pillarRationale: String(proposalRationale || "").trim() || undefined,
+      updatedAt: now,
+    };
+
+    await applyPillars((prev) =>
+      prev.map((p) =>
+        p.slug === pillar.slug ? { ...p, pillarArticle } : p
+      )
+    );
+
+    clearProposal();
+    setExpandedPillar(pillar.slug);
+  };
+
+  const handleDownloadPillarArticle = (pillar) => {
+    const markdown = pillarArticleToMarkdown({
+      companyName,
+      pillarKeyword: pillar.keyword,
+      pillarArticle: pillar.pillarArticle,
+    });
+    const filename = `${pillar.slug}--pillar-article.md`;
+    downloadMarkdown(filename, markdown);
+  };
+
+  const handleUploadPillarArticle = async (pillar) => {
+    if (proposalLoading || saving) return;
+
+    if (pillar.pillarArticle?.title) {
+      const ok = window.confirm(
+        `“${pillar.keyword}” already has a pillar article. Upload a file to replace it?`
+      );
+      if (!ok) return;
+    }
+
+    const file = await pickMarkdownFile();
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const { meta, articles } = parseClusterMarkdown(text);
+      if (!articles.length) {
+        throw new Error("No articles found in this file.");
+      }
+      if (articles.length > 1) {
+        const ok = window.confirm(
+          `This file has ${articles.length} articles. Use the first as the pillar article?`
+        );
+        if (!ok) return;
+      }
+
+      const article = articles[0];
+      const now = new Date().toISOString();
+      const pillarArticle = {
+        status: article.status || "planned",
+        title: article.title,
+        targetKeyword: article.targetKeyword,
+        type: article.type || "comprehensive",
+        searchIntent: article.searchIntent || undefined,
+        keyMessages: asStringArray(article.keyMessages),
+        wordCount: article.wordCount || undefined,
+        internalLinks: asStringArray(article.internalLinks),
+        ctaAngle: article.ctaAngle || undefined,
+        pillarRationale: String(meta.rationale || "").trim() || undefined,
+        updatedAt: now,
+      };
+
+      clearProposal();
+      await applyPillars((prev) =>
+        prev.map((p) =>
+          p.slug === pillar.slug ? { ...p, pillarArticle } : p
+        )
+      );
+      setExpandedPillar(pillar.slug);
+      setExpandedSupporting(null);
+    } catch (err) {
+      console.error("Upload pillar article failed:", err);
+      setError(err?.message || "Failed to upload pillar article");
+    }
+  };
+
+  const handleUploadCluster = async (pillar, supporting) => {
+    if (proposalLoading || saving) return;
+
+    if (supporting.plannedArticles.length > 0) {
+      const ok = window.confirm(
+        `“${supporting.keyword}” already has ${supporting.plannedArticles.length} planned article${
+          supporting.plannedArticles.length === 1 ? "" : "s"
+        }. Upload a file to replace them?`
+      );
+      if (!ok) return;
+    }
+
+    const file = await pickMarkdownFile();
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const { meta, articles } = parseClusterMarkdown(text);
+      if (!articles.length) {
+        throw new Error("No articles found in this file.");
+      }
+
+      const now = new Date().toISOString();
+      const plannedArticles = articles.map((item) => ({
+        id: newId(),
+        title: item.title,
+        targetKeyword: item.targetKeyword,
+        type: item.type,
+        status: item.status || "planned",
+        searchIntent: item.searchIntent || undefined,
+        keyMessages: asStringArray(item.keyMessages),
+        wordCount: item.wordCount || undefined,
+        internalLinks: asStringArray(item.internalLinks),
+        ctaAngle: item.ctaAngle || undefined,
+        updatedAt: now,
+      }));
+      const clusterRationale = String(meta.rationale || "").trim();
+
+      clearProposal();
+      await applyPillars((prev) =>
+        prev.map((p) => {
+          if (p.slug !== pillar.slug) return p;
+          return {
+            ...p,
+            supporting: p.supporting.map((sup) => {
+              if (sup.slug !== supporting.slug) return sup;
+              const { clusterRationale: _prevRationale, ...rest } = sup;
+              return {
+                ...rest,
+                plannedArticles,
+                ...(clusterRationale ? { clusterRationale } : {}),
+              };
+            }),
+          };
+        })
+      );
+      setExpandedPillar(pillar.slug);
+      setExpandedSupporting(`${pillar.slug}::${supporting.slug}`);
+    } catch (err) {
+      console.error("Upload cluster failed:", err);
+      setError(err?.message || "Failed to upload cluster");
+    }
+  };
+
+  const handleSaveCoverage = async () => {
+    if (saving || !pillars.length) return;
+    await persistCoverage(pillars);
+  };
+
+  const clearDetailIfMatch = (candidate) => {
+    if (!detailArticle || !candidate) return;
+    if (candidate.id && detailArticle.id === candidate.id) {
+      setDetailArticle(null);
+      return;
+    }
+    if (
+      detailArticle.title === candidate.title &&
+      detailArticle.targetKeyword === candidate.targetKeyword
+    ) {
+      setDetailArticle(null);
+    }
+  };
+
+  const removePillarArticle = (pillar) => {
+    if (saving || proposalLoading || !pillar.pillarArticle) return;
+    const title = pillar.pillarArticle.title || pillar.keyword;
+    const ok = window.confirm(
+      `Remove the pillar article “${title}”? This cannot be undone.`
+    );
+    if (!ok) return;
+
+    clearDetailIfMatch(pillar.pillarArticle);
+
+    if (proposalKey === pillarProposalKey(pillar.slug)) {
+      clearProposal();
+    }
+
+    void applyPillars((prev) =>
+      prev.map((item) =>
+        item.slug === pillar.slug ? { ...item, pillarArticle: null } : item
+      )
+    );
+  };
+
+  const removeCluster = (pillar, supporting) => {
+    if (saving || proposalLoading || supporting.plannedArticles.length === 0) {
+      return;
+    }
+    const count = supporting.plannedArticles.length;
+    const ok = window.confirm(
+      `Remove the entire cluster for “${supporting.keyword}” (${count} article${
+        count === 1 ? "" : "s"
+      })? This cannot be undone.`
+    );
+    if (!ok) return;
+
+    for (const article of supporting.plannedArticles) {
+      clearDetailIfMatch(article);
+    }
+
+    const detailKey = `${pillar.slug}::${supporting.slug}`;
+    if (proposalKey === detailKey) {
+      clearProposal();
+    }
+
+    void applyPillars((prev) =>
+      prev.map((p) => {
+        if (p.slug !== pillar.slug) return p;
+        return {
+          ...p,
+          supporting: p.supporting.map((sup) => {
+            if (sup.slug !== supporting.slug) return sup;
+            const { clusterRationale: _prevRationale, ...rest } = sup;
+            return {
+              ...rest,
+              plannedArticles: [],
+            };
+          }),
+        };
+      })
+    );
+  };
+
+  const removeClusterArticle = (pillarSlug, supportingSlug, article) => {
+    if (saving || proposalLoading || !article) return;
+    const title = article.title || "(untitled)";
+    const ok = window.confirm(
+      `Remove “${title}” from this cluster? This cannot be undone.`
+    );
+    if (!ok) return;
+
+    clearDetailIfMatch(article);
+
+    void applyPillars((prev) =>
+      prev.map((pillar) => {
+        if (pillar.slug !== pillarSlug) return pillar;
+        return {
+          ...pillar,
+          supporting: pillar.supporting.map((sup) => {
+            if (sup.slug !== supportingSlug) return sup;
+            const plannedArticles = sup.plannedArticles.filter(
+              (item) => item.id !== article.id
+            );
+            if (plannedArticles.length === 0) {
+              const { clusterRationale: _prevRationale, ...rest } = sup;
+              return { ...rest, plannedArticles };
+            }
+            return { ...sup, plannedArticles };
+          }),
+        };
+      })
+    );
+  };
+
   const advanceArticleStatus = (pillarSlug, supportingSlug, article) => {
     const next = nextArticleStatus(article.status);
 
@@ -828,12 +1333,18 @@ export default function ArticleTopicSuggestion() {
       await applyPillars((prev) =>
         prev.map((pillar) => {
           if (pillar.slug !== publishContext.pillarSlug) return pillar;
+          const existing =
+            pillar.pillarArticle && typeof pillar.pillarArticle === "object"
+              ? pillar.pillarArticle
+              : {};
           return {
             ...pillar,
             pillarArticle: {
+              ...existing,
               status: "published",
               publishedUrl: url || undefined,
               publishedAt: now,
+              updatedAt: now,
             },
           };
         })
@@ -896,9 +1407,17 @@ export default function ArticleTopicSuggestion() {
     }
 
     void applyPillars((prev) =>
-      prev.map((item) =>
-        item.slug === pillar.slug ? { ...item, pillarArticle: { status: next } } : item
-      )
+      prev.map((item) => {
+        if (item.slug !== pillar.slug) return item;
+        const existing =
+          item.pillarArticle && typeof item.pillarArticle === "object"
+            ? item.pillarArticle
+            : {};
+        return {
+          ...item,
+          pillarArticle: { ...existing, status: next },
+        };
+      })
     );
   };
 
@@ -920,6 +1439,17 @@ export default function ArticleTopicSuggestion() {
             <span className="text-xs text-muted-foreground">{savedMessage}</span>
           )}
           {saving && <span className="text-xs text-muted-foreground">Saving…</span>}
+          {pillars.length > 0 && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={saving || proposalLoading}
+              onClick={() => void handleSaveCoverage()}
+            >
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -939,6 +1469,9 @@ export default function ArticleTopicSuggestion() {
           {pillars.map((pillar) => {
             const isPillarOpen = expandedPillar === pillar.slug;
             const pillarStatus = pillarArticleStatus(pillar.pillarArticle);
+            const pillarKey = pillarProposalKey(pillar.slug);
+            const showPillarProposal = proposalKey === pillarKey;
+            const hasPillarPlan = Boolean(pillar.pillarArticle?.title);
             const supportingTotal = pillar.supporting.length;
             const supportingWithPublished = pillar.supporting.filter((sup) =>
               sup.plannedArticles.some((a) => a.status === "published")
@@ -957,55 +1490,402 @@ export default function ArticleTopicSuggestion() {
                 key={pillar.slug}
                 className="rounded-lg border border-border bg-card overflow-hidden"
               >
-                <button
-                  type="button"
-                  onClick={() => togglePillar(pillar.slug)}
-                  className="w-full flex items-start gap-3 px-4 py-3.5 text-left hover:bg-accent/40 transition-colors"
-                >
-                  <span className="mt-0.5 text-muted-foreground shrink-0">
-                    {isPillarOpen ? (
-                      <ChevronDown className="w-4 h-4" />
-                    ) : (
-                      <ChevronRight className="w-4 h-4" />
-                    )}
-                  </span>
-                  <div className="flex-1 min-w-0 space-y-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium text-foreground">
-                        {pillar.keyword}
-                      </span>
-                      <StatusChip status={pillarStatus} />
+                <div className="flex items-center gap-3 px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() => togglePillar(pillar.slug)}
+                    className="flex flex-1 items-center gap-3 min-w-0 text-left hover:opacity-80 transition-opacity"
+                  >
+                    <span className="text-muted-foreground shrink-0">
+                      {isPillarOpen ? (
+                        <ChevronDown className="w-4 h-4" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4" />
+                      )}
+                    </span>
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-medium text-foreground leading-snug">
+                          {pillar.keyword}
+                        </span>
+                        <StatusChip status={pillarStatus} />
+                        {showPillarProposal && proposalLoading && (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            Planning…
+                          </span>
+                        )}
+                      </div>
+                      {showProgress && (
+                        <Progress value={coveragePct} className="h-1 max-w-xs" />
+                      )}
                     </div>
-                    {showProgress && (
-                      <Progress value={coveragePct} className="h-1.5 max-w-xs" />
+                  </button>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {pillarStatus === "missing" && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        disabled={proposalLoading || saving}
+                        onClick={() => handlePlanPillarArticle(pillar)}
+                      >
+                        {showPillarProposal && proposalLoading ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Plus className="w-3.5 h-3.5" />
+                        )}
+                        Plan
+                      </Button>
                     )}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      disabled={proposalLoading || saving}
+                      onClick={() => void handleUploadPillarArticle(pillar)}
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      Upload
+                    </Button>
                   </div>
-                </button>
+                </div>
 
                 {isPillarOpen && (
                   <div className="border-t border-border bg-muted/20 px-4 py-3 space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-2 min-w-0">
-                        <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
-                          Pillar Article
-                        </p>
-                        {pillarStatus === "published" &&
-                          pillar.pillarArticle?.publishedUrl && (
-                            <a
-                              href={pillar.pillarArticle.publishedUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-[11px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
-                            >
-                              View URL
-                            </a>
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center gap-2 min-w-0">
+                          <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+                            Pillar Article
+                          </p>
+                          {pillarStatus === "published" &&
+                            pillar.pillarArticle?.publishedUrl && (
+                              <a
+                                href={pillar.pillarArticle.publishedUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-[11px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                              >
+                                View URL
+                              </a>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {hasPillarPlan && !showPillarProposal && (
+                            <>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs"
+                                onClick={() => handleDownloadPillarArticle(pillar)}
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                Download .md
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                                disabled={saving || proposalLoading}
+                                onClick={() => removePillarArticle(pillar)}
+                                aria-label="Remove pillar article"
+                                title="Remove pillar article"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                            </>
                           )}
+                          <StatusCycleButton
+                            status={pillarStatus}
+                            disabled={saving}
+                            onClick={() => advancePillarArticle(pillar)}
+                          />
+                        </div>
                       </div>
-                      <StatusCycleButton
-                        status={pillarStatus}
-                        disabled={saving}
-                        onClick={() => advancePillarArticle(pillar)}
-                      />
+
+                      {hasPillarPlan &&
+                        !showPillarProposal &&
+                        pillar.pillarArticle && (
+                          <button
+                            type="button"
+                            className={`w-full text-left rounded-md border px-3 py-2.5 ${
+                              hasGeneratedFrontmatter(pillar.pillarArticle)
+                                ? "border-border bg-background hover:bg-muted/40 cursor-pointer"
+                                : "border-dashed border-border bg-slate-50/80 cursor-default"
+                            }`}
+                            onClick={() => {
+                              if (hasGeneratedFrontmatter(pillar.pillarArticle)) {
+                                setDetailArticle(pillar.pillarArticle);
+                              }
+                            }}
+                            disabled={!hasGeneratedFrontmatter(pillar.pillarArticle)}
+                          >
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-sm text-foreground font-medium">
+                                {pillar.pillarArticle.title || "(untitled)"}
+                              </span>
+                              {pillar.pillarArticle.type && (
+                                <TypeBadge type={pillar.pillarArticle.type} />
+                              )}
+                              {hasGeneratedFrontmatter(pillar.pillarArticle) && (
+                                <span className="text-[11px] text-muted-foreground">
+                                  View draft details
+                                </span>
+                              )}
+                            </div>
+                            {pillar.pillarArticle.slug && (
+                              <p className="text-[11px] text-muted-foreground mt-1">
+                                {pillar.pillarArticle.slug}
+                              </p>
+                            )}
+                          </button>
+                        )}
+
+                      {showPillarProposal && (
+                        <div className="rounded-md border border-border bg-background px-3 py-3 space-y-3">
+                          <div className="space-y-1.5">
+                            <Label htmlFor={`keyword_data_${pillarKey}`}>
+                              Keyword data (optional)
+                            </Label>
+                            <Textarea
+                              id={`keyword_data_${pillarKey}`}
+                              value={keywordData}
+                              onChange={(e) => setKeywordData(e.target.value)}
+                              placeholder="Paste Semrush keyword data (queries, volumes, difficulty)…"
+                              rows={4}
+                              disabled={proposalLoading}
+                            />
+                          </div>
+
+                          {proposalArticles.length === 0 &&
+                            !proposalLoading &&
+                            !proposalError && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                disabled={saving}
+                                onClick={() =>
+                                  requestPillarProposal({
+                                    pillar,
+                                    regenerate: false,
+                                  })
+                                }
+                              >
+                                Generate Proposal
+                              </Button>
+                            )}
+
+                          {proposalLoading && proposalArticles.length === 0 && (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              Generating pillar article proposal…
+                            </div>
+                          )}
+
+                          {proposalError && (
+                            <p className="text-sm text-destructive">
+                              {proposalError}
+                            </p>
+                          )}
+
+                          {proposalArticles.length > 0 && (
+                            <>
+                              <div className="space-y-1.5">
+                                {proposalRationale && (
+                                  <p className="text-sm text-foreground">
+                                    {proposalRationale}
+                                  </p>
+                                )}
+                                <p className="text-xs text-muted-foreground">
+                                  {proposalTypeSummary(proposalArticles)}
+                                  {proposalLoading ? " · Regenerating…" : ""}
+                                </p>
+                              </div>
+
+                              <ul className="space-y-2">
+                                {proposalArticles.map((article) => {
+                                  const isExpanded =
+                                    expandedProposalId === article.id;
+                                  return (
+                                    <li
+                                      key={article.id}
+                                      className="rounded-md border border-dashed border-border bg-slate-50/80 px-3 py-2.5"
+                                    >
+                                      <div className="flex items-start gap-2">
+                                        <button
+                                          type="button"
+                                          className="flex flex-1 items-start gap-2 min-w-0 text-left"
+                                          onClick={() =>
+                                            setExpandedProposalId((prev) =>
+                                              prev === article.id
+                                                ? null
+                                                : article.id
+                                            )
+                                          }
+                                        >
+                                          <span className="mt-0.5 text-muted-foreground shrink-0">
+                                            {isExpanded ? (
+                                              <ChevronDown className="w-3.5 h-3.5" />
+                                            ) : (
+                                              <ChevronRight className="w-3.5 h-3.5" />
+                                            )}
+                                          </span>
+                                          <div className="flex flex-wrap items-center gap-2 min-w-0">
+                                            <span className="text-sm text-foreground">
+                                              {article.title}
+                                            </span>
+                                            <TypeBadge type={article.type} />
+                                          </div>
+                                        </button>
+                                      </div>
+
+                                      {isExpanded && (
+                                        <div className="mt-2 ml-5 space-y-1.5 text-xs text-muted-foreground">
+                                          <p>
+                                            <span className="font-medium text-foreground/80">
+                                              Target keyword:
+                                            </span>{" "}
+                                            {article.targetKeyword}
+                                          </p>
+                                          <p>
+                                            <span className="font-medium text-foreground/80">
+                                              Search intent:
+                                            </span>{" "}
+                                            {article.searchIntent || "—"}
+                                          </p>
+                                          <p>
+                                            <span className="font-medium text-foreground/80">
+                                              Word count:
+                                            </span>{" "}
+                                            {article.wordCount ?? "—"}
+                                          </p>
+                                          <p>
+                                            <span className="font-medium text-foreground/80">
+                                              CTA angle:
+                                            </span>{" "}
+                                            {article.ctaAngle || "—"}
+                                          </p>
+                                          <div>
+                                            <p className="font-medium text-foreground/80">
+                                              Key messages:
+                                            </p>
+                                            <ul className="list-disc pl-4 mt-0.5 space-y-0.5">
+                                              {article.keyMessages.length > 0 ? (
+                                                article.keyMessages.map(
+                                                  (msg, i) => (
+                                                    <li key={i}>{msg}</li>
+                                                  )
+                                                )
+                                              ) : (
+                                                <li>—</li>
+                                              )}
+                                            </ul>
+                                          </div>
+                                          <div>
+                                            <p className="font-medium text-foreground/80">
+                                              Internal links:
+                                            </p>
+                                            <ul className="list-disc pl-4 mt-0.5 space-y-0.5">
+                                              {article.internalLinks.length >
+                                              0 ? (
+                                                article.internalLinks.map(
+                                                  (link, i) => (
+                                                    <li key={i}>{link}</li>
+                                                  )
+                                                )
+                                              ) : (
+                                                <li>—</li>
+                                              )}
+                                            </ul>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+
+                              <div className="space-y-2 pt-1">
+                                <div className="space-y-1.5">
+                                  <Label htmlFor={`steering_${pillarKey}`}>
+                                    Steering notes
+                                  </Label>
+                                  <Textarea
+                                    id={`steering_${pillarKey}`}
+                                    value={steeringNotes}
+                                    onChange={(e) =>
+                                      setSteeringNotes(e.target.value)
+                                    }
+                                    placeholder="Optional guidance for regeneration…"
+                                    rows={2}
+                                    disabled={proposalLoading}
+                                  />
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={proposalLoading || saving}
+                                    onClick={() =>
+                                      handleRegeneratePillar(pillar)
+                                    }
+                                  >
+                                    {proposalLoading ? (
+                                      <>
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                        Regenerating…
+                                      </>
+                                    ) : (
+                                      "Regenerate"
+                                    )}
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    disabled={
+                                      proposalLoading ||
+                                      saving ||
+                                      proposalArticles.length === 0
+                                    }
+                                    onClick={() =>
+                                      handleConfirmPillarArticle(pillar)
+                                    }
+                                  >
+                                    {saving
+                                      ? "Saving…"
+                                      : "Save Pillar Article"}
+                                  </Button>
+                                </div>
+                              </div>
+                            </>
+                          )}
+
+                          {proposalError &&
+                            proposalArticles.length === 0 &&
+                            !proposalLoading && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={saving}
+                                onClick={() =>
+                                  requestPillarProposal({
+                                    pillar,
+                                    regenerate: false,
+                                  })
+                                }
+                              >
+                                Retry
+                              </Button>
+                            )}
+                        </div>
+                      )}
                     </div>
 
                     <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium pt-1">
@@ -1031,7 +1911,7 @@ export default function ArticleTopicSuggestion() {
                               key={sup.slug}
                               className="rounded-md border border-border bg-background overflow-hidden"
                             >
-                              <div className="flex items-center gap-2 px-3 py-2.5">
+                              <div className="flex items-center gap-2 px-3 py-2">
                                 <button
                                   type="button"
                                   onClick={() => toggleSupporting(pillar.slug, sup.slug)}
@@ -1045,7 +1925,7 @@ export default function ArticleTopicSuggestion() {
                                     )}
                                   </span>
                                   <div className="flex flex-wrap items-center gap-2 min-w-0">
-                                    <span className="text-sm text-foreground">
+                                    <span className="text-sm text-foreground leading-snug">
                                       {sup.keyword}
                                     </span>
                                     {clusterNotPlanned && !showProposal && (
@@ -1068,16 +1948,32 @@ export default function ArticleTopicSuggestion() {
                                 </button>
                                 <div className="flex items-center gap-1.5 shrink-0">
                                   {plannedCount > 0 && !showProposal && (
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="outline"
-                                      className="h-7 text-xs"
-                                      onClick={() => handleDownloadCluster(pillar, sup)}
-                                    >
-                                      <Download className="w-3.5 h-3.5" />
-                                      Download .md
-                                    </Button>
+                                    <>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-7 text-xs"
+                                        onClick={() =>
+                                          handleDownloadCluster(pillar, sup)
+                                        }
+                                      >
+                                        <Download className="w-3.5 h-3.5" />
+                                        Download .md
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="ghost"
+                                        className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                                        disabled={proposalLoading || saving}
+                                        onClick={() => removeCluster(pillar, sup)}
+                                        aria-label="Remove cluster"
+                                        title="Remove cluster"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </Button>
+                                    </>
                                   )}
                                   <Button
                                     type="button"
@@ -1092,7 +1988,18 @@ export default function ArticleTopicSuggestion() {
                                     ) : (
                                       <Plus className="w-3.5 h-3.5" />
                                     )}
-                                    Plan Cluster
+                                    Plan
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-xs"
+                                    disabled={proposalLoading || saving}
+                                    onClick={() => void handleUploadCluster(pillar, sup)}
+                                  >
+                                    <Upload className="w-3.5 h-3.5" />
+                                    Upload
                                   </Button>
                                 </div>
                               </div>
@@ -1322,7 +2229,7 @@ export default function ArticleTopicSuggestion() {
                                           >
                                             {saving
                                               ? "Saving…"
-                                              : "Confirm Cluster Creation"}
+                                              : "Save Cluster"}
                                           </Button>
                                         </div>
                                       </div>
@@ -1358,6 +2265,8 @@ export default function ArticleTopicSuggestion() {
                                         const done = article.status === "published";
                                         const incomplete =
                                           article.status !== "published";
+                                        const canOpenDetail =
+                                          hasGeneratedFrontmatter(article);
 
                                         return (
                                           <li
@@ -1383,7 +2292,30 @@ export default function ArticleTopicSuggestion() {
                                                   <Circle className="w-4 h-4" />
                                                 )}
                                               </span>
-                                              <div className="flex-1 min-w-0 space-y-1.5">
+                                              <div
+                                                className={`flex-1 min-w-0 space-y-1.5 ${
+                                                  canOpenDetail
+                                                    ? "cursor-pointer"
+                                                    : ""
+                                                }`}
+                                                role={canOpenDetail ? "button" : undefined}
+                                                tabIndex={canOpenDetail ? 0 : undefined}
+                                                onClick={() => {
+                                                  if (canOpenDetail) {
+                                                    setDetailArticle(article);
+                                                  }
+                                                }}
+                                                onKeyDown={(ev) => {
+                                                  if (
+                                                    canOpenDetail &&
+                                                    (ev.key === "Enter" ||
+                                                      ev.key === " ")
+                                                  ) {
+                                                    ev.preventDefault();
+                                                    setDetailArticle(article);
+                                                  }
+                                                }}
+                                              >
                                                 <div className="flex flex-wrap items-center gap-2">
                                                   <span
                                                     className={`text-sm ${
@@ -1395,8 +2327,16 @@ export default function ArticleTopicSuggestion() {
                                                     {article.title || "(untitled)"}
                                                   </span>
                                                   <TypeBadge type={article.type} />
+                                                  {canOpenDetail && (
+                                                    <span className="text-[11px] text-muted-foreground">
+                                                      View draft details
+                                                    </span>
+                                                  )}
                                                 </div>
                                                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                                                  {article.slug && (
+                                                    <span>{article.slug}</span>
+                                                  )}
                                                   {article.publishedAt && (
                                                     <span>
                                                       Published{" "}
@@ -1425,17 +2365,37 @@ export default function ArticleTopicSuggestion() {
                                                   )}
                                                 </div>
                                               </div>
-                                              <StatusCycleButton
-                                                status={article.status}
-                                                disabled={saving}
-                                                onClick={() =>
-                                                  advanceArticleStatus(
-                                                    pillar.slug,
-                                                    sup.slug,
-                                                    article
-                                                  )
-                                                }
-                                              />
+                                              <div className="flex items-center gap-1 shrink-0">
+                                                <StatusCycleButton
+                                                  status={article.status}
+                                                  disabled={saving}
+                                                  onClick={() =>
+                                                    advanceArticleStatus(
+                                                      pillar.slug,
+                                                      sup.slug,
+                                                      article
+                                                    )
+                                                  }
+                                                />
+                                                <Button
+                                                  type="button"
+                                                  size="sm"
+                                                  variant="ghost"
+                                                  className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                                                  disabled={saving || proposalLoading}
+                                                  onClick={() =>
+                                                    removeClusterArticle(
+                                                      pillar.slug,
+                                                      sup.slug,
+                                                      article
+                                                    )
+                                                  }
+                                                  aria-label="Remove article"
+                                                  title="Remove article"
+                                                >
+                                                  <Trash2 className="w-3.5 h-3.5" />
+                                                </Button>
+                                              </div>
                                             </div>
                                           </li>
                                         );
@@ -1491,6 +2451,132 @@ export default function ArticleTopicSuggestion() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={detailArticle != null}
+        onOpenChange={(open) => {
+          if (!open) setDetailArticle(null);
+        }}
+      >
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+          {detailArticle && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="pr-6 text-base leading-snug">
+                  {detailArticle.title || "(untitled)"}
+                </DialogTitle>
+                <DialogDescription>
+                  Generated draft frontmatter from Article Generator
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3 text-sm">
+                <CoverageDetailRow
+                  label="slug"
+                  value={detailArticle.slug}
+                />
+                <CoverageDetailRow
+                  label="description"
+                  value={detailArticle.description}
+                />
+                <CoverageDetailRow
+                  label="category"
+                  value={detailArticle.category}
+                />
+                <CoverageDetailRow
+                  label="targetKeyword"
+                  value={detailArticle.targetKeyword}
+                />
+                <CoverageDetailRow
+                  label="type"
+                  value={
+                    detailArticle.type ? (
+                      <TypeBadge type={detailArticle.type} />
+                    ) : null
+                  }
+                />
+                <CoverageDetailRow
+                  label="status"
+                  value={detailArticle.status}
+                />
+                <CoverageDetailRow label="date" value={detailArticle.date} />
+                <CoverageDetailRow
+                  label="updatedDate"
+                  value={detailArticle.updatedDate}
+                />
+                <CoverageDetailRow
+                  label="imageAlt"
+                  value={detailArticle.imageAlt}
+                />
+                <CoverageDetailList label="tags" items={detailArticle.tags} />
+                <CoverageDetailList
+                  label="keywords"
+                  items={detailArticle.keywords}
+                />
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">
+                    faqs
+                  </p>
+                  {Array.isArray(detailArticle.faqs) &&
+                  detailArticle.faqs.length > 0 ? (
+                    <ul className="space-y-2">
+                      {detailArticle.faqs.map((faq, i) => (
+                        <li
+                          key={`faq-${i}`}
+                          className="rounded-md border border-border px-3 py-2"
+                        >
+                          <p className="font-medium text-foreground">
+                            {faq.question || "—"}
+                          </p>
+                          <p className="text-muted-foreground mt-1">
+                            {faq.answer || "—"}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-muted-foreground">—</p>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function CoverageDetailRow({ label, value }) {
+  return (
+    <div>
+      <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-0.5">
+        {label}
+      </p>
+      <div className="text-foreground break-words">
+        {value || <span className="text-muted-foreground">—</span>}
+      </div>
+    </div>
+  );
+}
+
+function CoverageDetailList({ label, items }) {
+  const list = Array.isArray(items) ? items : [];
+  return (
+    <div>
+      <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">
+        {label}
+      </p>
+      {list.length === 0 ? (
+        <p className="text-muted-foreground">—</p>
+      ) : (
+        <ul className="list-disc pl-5 space-y-1 text-foreground">
+          {list.map((item, i) => (
+            <li key={`${label}-${i}`} className="break-words">
+              {item}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

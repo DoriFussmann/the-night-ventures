@@ -20,6 +20,7 @@ import DesignGuideBuilder from '@/pages/tools/DesignGuideBuilder';
 import TemplateToPrompt from '@/pages/tools/TemplateToPrompt';
 import ArticleTopicSuggestion from '@/pages/tools/ArticleTopicSuggestion';
 import ArticleGeneration from '@/pages/tools/ArticleGeneration';
+import Articles from '@/pages/tools/Articles';
 import SiteBuildPrompt from '@/pages/general/SiteBuildPrompt';
 
 const AuthenticatedApp = () => {
@@ -43,6 +44,7 @@ const AuthenticatedApp = () => {
           <Route path="/company/:companyId/template-to-prompt" element={<TemplateToPrompt />} />
           <Route path="/company/:companyId/article-topic-suggestion" element={<ArticleTopicSuggestion />} />
           <Route path="/company/:companyId/article-generation" element={<ArticleGeneration />} />
+          <Route path="/company/:companyId/articles" element={<Articles />} />
         </Route>
       </Route>
       <Route path="*" element={<PageNotFound />} />

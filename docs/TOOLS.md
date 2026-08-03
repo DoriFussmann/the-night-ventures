@@ -53,13 +53,12 @@ The Night Ventures app is a shared workspace for managing website and growth wor
 
 ### Article Generator
 
-- **What it does:** Placeholder for writing full SEO articles from planned topics. Not built yet (shows “Coming soon”).
-- **Who would use it and why:** Will turn confirmed cluster briefs into draft articles.
+- **What it does:** Turns Topic Generator cluster or pillar markdown exports into full draft articles. Drop a `.md` export, select articles, and generate them sequentially (comprehensive first). Each draft is validated against the content contract, downloadable as individual `.md` files or a zip, and successful generations update coverage status to drafted with frontmatter visible in the Topic Generator detail view.
+- **Who would use it and why:** Content and SEO leads who have confirmed article plans and need CMS-ready drafts for the manual drop workflow.
 
 ## Known limitations / in-progress issues
 
 - Design Builder: previously saved design guides don't reliably reload when reopening a company (fix pending)
 - Design Builder: "Save as… Theme" (Project Themes) behavior needs re-verification (fix pending)
 - Specific Prompt: UI stub only
-- Article Generator: UI stub only
 - Topic Generator: keyword research is paste-in (e.g. Semrush export), not an automated DataForSEO pull from this screen

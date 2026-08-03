@@ -7,7 +7,8 @@ function json(res, status, body) {
 }
 
 const MODEL = 'claude-sonnet-4-6'
-const MAX_TOKENS = 6000
+const MAX_TOKENS_CLUSTER = 6000
+const MAX_TOKENS_PILLAR = 3000
 
 const TASK_INSTRUCTION = `Plan an SEO article cluster for the supporting keyword above, under the given pillar. Propose 3 to 6 articles — only as many as genuinely distinct search intents exist; state in clusterRationale why this count. Exactly one article must be type 'comprehensive'.
 
@@ -21,6 +22,15 @@ HARD CONSTRAINTS, in priority order:
 For each article provide: title (SEO title, targetKeyword phrasing near front), targetKeyword, type, searchIntent (one line), keyMessages (3-5 bullet strings), wordCount (2000 comprehensive, 1500 otherwise), internalLinks (sibling titles; every non-comprehensive links to the comprehensive; all reference the pillar), ctaAngle (one line bridging naturally to an expert-managed investor outreach service, without being an ad). Audience: startup founders raising capital.
 In clusterRationale, briefly confirm the territory check: name which reserved territories appeared in the keyword data and were excluded.
 Respond ONLY with valid JSON, no markdown fences: { "clusterRationale": "", "articles": [ { "title", "targetKeyword", "type", "searchIntent", "keyMessages": [], "wordCount", "internalLinks": [], "ctaAngle" } ] }`
+
+const PILLAR_TASK_INSTRUCTION = `Plan the single comprehensive pillar article for the pillar keyword above. This is the hub page for its entire topic — the definitive, most complete resource a founder could find on this subject, that all of this pillar's supporting-keyword cluster articles will link into. It is NOT one of the supporting articles; do not narrow its scope to a single sub-intent.
+
+Produce exactly one article with: title (SEO title, pillar keyword phrasing near front), targetKeyword (should be the pillar keyword itself, or its highest-volume close variant if keyword data shows one — never a narrower sub-topic), type ('comprehensive'), searchIntent (one line, describing the full topic this page must own), keyMessages (6-10 bullet strings — more than a supporting article, since this page must comprehensively cover the topic end to end), wordCount (2500-3000), internalLinks (leave as a placeholder note: 'links to all supporting cluster articles once they exist'), ctaAngle (one line — how this hub naturally bridges to an expert-managed investor outreach service).
+
+If keyword data is provided, ground targetKeyword and any secondary phrasing coverage in real rows. If competitors are provided, you may search to check how they cover this topic and note gaps in pillarRationale.
+
+Respond ONLY with valid JSON, no markdown fences:
+{ "pillarRationale": "", "article": { "title", "targetKeyword", "type": "comprehensive", "searchIntent", "keyMessages": [], "wordCount", "internalLinks", "ctaAngle" } }`
 
 const KEYWORD_DATA_INSTRUCTION =
   'When keyword data is provided, every article\'s targetKeyword MUST be selected from or directly grounded in these real queries — do not invent keyword phrasings. Use volume and difficulty to prioritize which intents deserve articles. Absorb near-duplicate variants into one article rather than splitting them.'
@@ -82,21 +92,23 @@ function extractBalancedJsonObjects(text) {
   return objects
 }
 
-function looksLikeProposal(value) {
-  return (
-    value &&
-    typeof value === 'object' &&
-    !Array.isArray(value) &&
-    (Array.isArray(value.articles) || typeof value.clusterRationale === 'string')
-  )
+function looksLikeProposal(value, mode = 'cluster') {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  if (mode === 'pillar') {
+    return (
+      typeof value.pillarRationale === 'string' ||
+      (value.article && typeof value.article === 'object')
+    )
+  }
+  return Array.isArray(value.articles) || typeof value.clusterRationale === 'string'
 }
 
-function parseModelJson(text) {
+function parseModelJson(text, mode = 'cluster') {
   const cleaned = stripMarkdownFences(text)
 
   try {
     const direct = JSON.parse(cleaned)
-    if (looksLikeProposal(direct)) return direct
+    if (looksLikeProposal(direct, mode)) return direct
   } catch {
     // Fall through to object extraction.
   }
@@ -105,7 +117,7 @@ function parseModelJson(text) {
   for (let i = objects.length - 1; i >= 0; i--) {
     try {
       const parsed = JSON.parse(objects[i])
-      if (looksLikeProposal(parsed)) return parsed
+      if (looksLikeProposal(parsed, mode)) return parsed
     } catch {
       // Try earlier candidates.
     }
@@ -125,7 +137,7 @@ function extractTextContent(content) {
   return extractTextBlocks(content).join('\n').trim()
 }
 
-function parseProposalFromContent(content) {
+function parseProposalFromContent(content, mode = 'cluster') {
   const texts = extractTextBlocks(content)
   if (!texts.length) {
     throw new Error('No text content in Anthropic response')
@@ -138,7 +150,7 @@ function parseProposalFromContent(content) {
 
   for (const candidate of candidates) {
     try {
-      return parseModelJson(candidate)
+      return parseModelJson(candidate, mode)
     } catch (err) {
       lastError = err
     }
@@ -163,6 +175,32 @@ function normalizeCompetitors(value) {
     .filter((item) => item.name || item.url)
 }
 
+function normalizeInternalLinks(value) {
+  if (typeof value === 'string' && value.trim()) {
+    return [value.trim()]
+  }
+  return asStringArray(value)
+}
+
+function normalizeArticleFields(item, { defaultWordCount, forceType } = {}) {
+  const type = forceType || (ALLOWED_TYPES.has(item.type) ? item.type : 'flex')
+  const wordCountRaw = Number(item.wordCount)
+  const wordCount = Number.isFinite(wordCountRaw)
+    ? wordCountRaw
+    : defaultWordCount ?? (type === 'comprehensive' ? 2000 : 1500)
+
+  return {
+    title: String(item.title || '').trim(),
+    targetKeyword: String(item.targetKeyword || '').trim(),
+    type,
+    searchIntent: String(item.searchIntent || '').trim(),
+    keyMessages: asStringArray(item.keyMessages),
+    wordCount,
+    internalLinks: normalizeInternalLinks(item.internalLinks),
+    ctaAngle: String(item.ctaAngle || '').trim(),
+  }
+}
+
 function normalizeProposal(parsed) {
   if (!parsed || typeof parsed !== 'object') {
     throw new Error('Invalid proposal shape')
@@ -171,26 +209,7 @@ function normalizeProposal(parsed) {
   const articlesRaw = Array.isArray(parsed.articles) ? parsed.articles : []
   const articles = articlesRaw
     .filter((item) => item && typeof item === 'object')
-    .map((item) => {
-      const type = ALLOWED_TYPES.has(item.type) ? item.type : 'flex'
-      const wordCountRaw = Number(item.wordCount)
-      const wordCount = Number.isFinite(wordCountRaw)
-        ? wordCountRaw
-        : type === 'comprehensive'
-          ? 2000
-          : 1500
-
-      return {
-        title: String(item.title || '').trim(),
-        targetKeyword: String(item.targetKeyword || '').trim(),
-        type,
-        searchIntent: String(item.searchIntent || '').trim(),
-        keyMessages: asStringArray(item.keyMessages),
-        wordCount,
-        internalLinks: asStringArray(item.internalLinks),
-        ctaAngle: String(item.ctaAngle || '').trim(),
-      }
-    })
+    .map((item) => normalizeArticleFields(item))
     .filter((item) => item.title && item.targetKeyword)
 
   if (!articles.length) {
@@ -200,6 +219,32 @@ function normalizeProposal(parsed) {
   return {
     clusterRationale: String(parsed.clusterRationale || '').trim(),
     articles,
+  }
+}
+
+function normalizePillarProposal(parsed) {
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('Invalid proposal shape')
+  }
+
+  const articleRaw =
+    parsed.article && typeof parsed.article === 'object' ? parsed.article : null
+  if (!articleRaw) {
+    throw new Error('Proposal contained no usable pillar article')
+  }
+
+  const article = normalizeArticleFields(articleRaw, {
+    defaultWordCount: 2750,
+    forceType: 'comprehensive',
+  })
+
+  if (!article.title || !article.targetKeyword) {
+    throw new Error('Proposal contained no usable pillar article')
+  }
+
+  return {
+    pillarRationale: String(parsed.pillarRationale || '').trim(),
+    article,
   }
 }
 
@@ -229,6 +274,7 @@ function buildReservedKeywordSection(contentMap, supportingKeyword) {
 }
 
 function buildUserPrompt({
+  mode,
   pillarKeyword,
   supportingKeyword,
   abstract,
@@ -245,13 +291,21 @@ function buildUserPrompt({
     `Short Description: ${shortDescription || '(not set)'}`,
     '',
     `Pillar keyword: ${pillarKeyword}`,
-    `Supporting keyword: ${supportingKeyword}`,
+  ]
+
+  if (mode === 'cluster') {
+    parts.push(`Supporting keyword: ${supportingKeyword}`)
+  }
+
+  parts.push(
     '',
     'Full content map (all pillars, supporting keywords, and planned/published articles):',
-    JSON.stringify(contentMap, null, 2),
-    '',
-    buildReservedKeywordSection(contentMap, supportingKeyword),
-  ]
+    JSON.stringify(contentMap, null, 2)
+  )
+
+  if (mode === 'cluster') {
+    parts.push('', buildReservedKeywordSection(contentMap, supportingKeyword))
+  }
 
   if (competitors.length > 0) {
     parts.push(
@@ -273,13 +327,16 @@ function buildUserPrompt({
     )
   }
 
-  const taskParts = [TASK_INSTRUCTION]
-  if (keywordData) {
-    taskParts.push(KEYWORD_DATA_INSTRUCTION)
+  if (mode === 'pillar') {
+    parts.push('', PILLAR_TASK_INSTRUCTION)
+  } else {
+    const taskParts = [TASK_INSTRUCTION]
+    if (keywordData) {
+      taskParts.push(KEYWORD_DATA_INSTRUCTION)
+    }
+    taskParts.push(WEB_SEARCH_INSTRUCTION)
+    parts.push('', taskParts.join(' '))
   }
-  taskParts.push(WEB_SEARCH_INSTRUCTION)
-
-  parts.push('', taskParts.join(' '))
 
   if (steeringNotes) {
     parts.push('', 'Steering notes from the editor (apply these):', steeringNotes)
@@ -316,6 +373,7 @@ export default async function handler(req, res) {
     }
 
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {}
+    const mode = body.mode === 'pillar' ? 'pillar' : 'cluster'
     const pillarKeyword = String(body.pillarKeyword || '').trim()
     const supportingKeyword = String(body.supportingKeyword || '').trim()
     const abstract = String(body.abstract || '').trim()
@@ -332,7 +390,7 @@ export default async function handler(req, res) {
     if (!pillarKeyword) {
       return json(res, 400, { error: 'pillarKeyword is required' })
     }
-    if (!supportingKeyword) {
+    if (mode === 'cluster' && !supportingKeyword) {
       return json(res, 400, { error: 'supportingKeyword is required' })
     }
     if (contentMap == null) {
@@ -341,6 +399,7 @@ export default async function handler(req, res) {
 
     const anthropic = new Anthropic({ apiKey })
     const prompt = buildUserPrompt({
+      mode,
       pillarKeyword,
       supportingKeyword,
       abstract,
@@ -354,7 +413,7 @@ export default async function handler(req, res) {
 
     const message = await anthropic.messages.create({
       model: MODEL,
-      max_tokens: MAX_TOKENS,
+      max_tokens: mode === 'pillar' ? MAX_TOKENS_PILLAR : MAX_TOKENS_CLUSTER,
       tools: [{ type: 'web_search_20250305', name: 'web_search' }],
       messages: [{ role: 'user', content: prompt }],
     })
@@ -369,7 +428,7 @@ export default async function handler(req, res) {
 
     let parsed
     try {
-      parsed = parseProposalFromContent(message?.content)
+      parsed = parseProposalFromContent(message?.content, mode)
     } catch (err) {
       const preview = extractTextContent(message?.content).slice(0, 500)
       console.error('plan-cluster JSON parse failed:', err, preview)
@@ -378,7 +437,8 @@ export default async function handler(req, res) {
 
     let proposal
     try {
-      proposal = normalizeProposal(parsed)
+      proposal =
+        mode === 'pillar' ? normalizePillarProposal(parsed) : normalizeProposal(parsed)
     } catch (err) {
       console.error('plan-cluster normalize failed:', err)
       return json(res, 502, { error: err.message || 'Invalid proposal from model' })

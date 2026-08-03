@@ -12,6 +12,7 @@ import {
   Wand2,
   Lightbulb,
   PenLine,
+  BookOpen,
   LogOut,
   ArrowLeft,
 } from "lucide-react";
@@ -56,6 +57,7 @@ function readLastCompanyId() {
 
 export default function AppSidebar({ user }) {
   const { logout } = useAuth();
+  const location = useLocation();
   const { companyId: routeCompanyId } = useParams();
   const [companyName, setCompanyName] = useState("");
 
@@ -69,7 +71,10 @@ export default function AppSidebar({ user }) {
     }
   }, [routeCompanyId]);
 
-  const activeCompanyId = routeCompanyId || readLastCompanyId();
+  // On the company picker, ignore the remembered company so leftover chrome
+  // (e.g. "← Rupert") does not appear before a selection is made.
+  const isCompanyPicker = location.pathname === "/";
+  const activeCompanyId = routeCompanyId || (isCompanyPicker ? "" : readLastCompanyId());
 
   const generalNav = [
     { label: "Site Build Prompt", path: "/general/site-build-prompt", icon: FileText },
@@ -87,8 +92,8 @@ export default function AppSidebar({ user }) {
     { label: "Specific Prompt", path: `/company/${activeCompanyId}/template-to-prompt`, icon: Wand2 },
     { label: "Topic Generator", path: `/company/${activeCompanyId}/article-topic-suggestion`, icon: Lightbulb },
     { label: "Article Generator", path: `/company/${activeCompanyId}/article-generation`, icon: PenLine },
+    { label: "Articles", path: `/company/${activeCompanyId}/articles`, icon: BookOpen },
   ];
-
   useEffect(() => {
     let cancelled = false;
 
