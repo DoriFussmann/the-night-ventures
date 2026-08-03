@@ -50,17 +50,17 @@ export const AuthProvider = ({ children }) => {
       return
     }
 
-    // Keep protected routes on the loading spinner until profile + auth flags settle,
-    // so login → "/" doesn't bounce back to /login mid-update.
-    setIsLoadingAuth(true)
+    // Mark authenticated immediately so Login can navigate on the first attempt.
+    // Do not flip isLoadingAuth back to true after the initial check — that used to
+    // unmount public routes in App and make the first login click appear to do nothing.
     setIsAuthenticated(true)
     setUser(buildAppUser(nextSession.user, null))
+    setIsLoadingAuth(false)
+    setAuthChecked(true)
 
     const nextProfile = await fetchProfile(nextSession.user.id)
     setProfile(nextProfile)
     setUser(buildAppUser(nextSession.user, nextProfile))
-    setIsLoadingAuth(false)
-    setAuthChecked(true)
   }, [])
 
   useEffect(() => {

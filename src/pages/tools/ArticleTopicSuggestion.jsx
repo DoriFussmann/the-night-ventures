@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   ChevronDown,
@@ -6,11 +6,15 @@ import {
   Plus,
   Check,
   Circle,
+  Download,
+  Loader2,
+  Trash2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import {
   Dialog,
@@ -20,13 +24,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 const ARTICLE_TYPES = [
   { value: "comprehensive", label: "Comprehensive" },
@@ -68,16 +65,27 @@ function newId() {
   return `art_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
+function asStringArray(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item || "").trim()).filter(Boolean);
+}
+
 function normalizeArticle(raw) {
   if (!raw || typeof raw !== "object") return null;
   const status = ARTICLE_STATUSES.includes(raw.status) ? raw.status : "planned";
   const type = ARTICLE_TYPES.some((t) => t.value === raw.type) ? raw.type : "flex";
+  const wordCountRaw = Number(raw.wordCount);
   return {
     id: String(raw.id || newId()),
     title: String(raw.title || "").trim(),
     targetKeyword: String(raw.targetKeyword || "").trim(),
     type,
     status,
+    searchIntent: raw.searchIntent ? String(raw.searchIntent).trim() : undefined,
+    keyMessages: asStringArray(raw.keyMessages),
+    wordCount: Number.isFinite(wordCountRaw) ? wordCountRaw : undefined,
+    internalLinks: asStringArray(raw.internalLinks),
+    ctaAngle: raw.ctaAngle ? String(raw.ctaAngle).trim() : undefined,
     publishedUrl: raw.publishedUrl ? String(raw.publishedUrl) : undefined,
     publishedAt: raw.publishedAt ? String(raw.publishedAt) : undefined,
     updatedAt: raw.updatedAt ? String(raw.updatedAt) : undefined,
@@ -87,10 +95,16 @@ function normalizeArticle(raw) {
 function normalizePillarArticle(raw) {
   if (raw == null) return null;
   if (typeof raw === "string") {
-    return ARTICLE_STATUSES.includes(raw) ? raw : null;
+    return ARTICLE_STATUSES.includes(raw) ? { status: raw } : null;
   }
-  const article = normalizeArticle(raw);
-  return article?.status || null;
+  if (typeof raw !== "object") return null;
+  const status = ARTICLE_STATUSES.includes(raw.status) ? raw.status : null;
+  if (!status) return null;
+  return {
+    status,
+    publishedUrl: raw.publishedUrl ? String(raw.publishedUrl) : undefined,
+    publishedAt: raw.publishedAt ? String(raw.publishedAt) : undefined,
+  };
 }
 
 function extractCorePillars(coreKeywords) {
@@ -158,11 +172,13 @@ function buildCoverageFromCompanyData(coreKeywords, existingPillars = []) {
       const plannedArticles = Array.isArray(prevSup?.plannedArticles)
         ? prevSup.plannedArticles.map(normalizeArticle).filter(Boolean)
         : [];
+      const clusterRationale = String(prevSup?.clusterRationale || "").trim();
 
       return {
         slug: uniqueSlug(slugify(keyword), usedSupportingSlugs),
         keyword,
         plannedArticles,
+        ...(clusterRationale ? { clusterRationale } : {}),
       };
     });
 
@@ -222,15 +238,12 @@ function StatusChip({ status }) {
   );
 }
 
-function typeCountsLabel(articles) {
-  if (!articles.length) return null;
-  const counts = {};
-  for (const article of articles) {
-    counts[article.type] = (counts[article.type] || 0) + 1;
-  }
-  return ARTICLE_TYPES.filter((t) => counts[t.value])
-    .map((t) => `${counts[t.value]} ${t.label.toLowerCase()}`)
-    .join(" · ");
+function TypeBadge({ type }) {
+  return (
+    <span className="inline-flex items-center rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+      {TYPE_LABEL[type] || type}
+    </span>
+  );
 }
 
 function formatDate(value) {
@@ -244,22 +257,174 @@ function formatDate(value) {
   });
 }
 
-function nextStatus(status) {
+/** Pillar article: none → planned → drafted → published → none */
+function nextPillarStatus(status) {
+  if (!status || status === "missing") return "planned";
   if (status === "planned") return "drafted";
   if (status === "drafted") return "published";
   return null;
 }
 
-const EMPTY_ARTICLE_FORM = {
-  title: "",
-  targetKeyword: "",
-  type: "comprehensive",
-};
+/** Supporting article: planned → drafted → published → planned */
+function nextArticleStatus(status) {
+  if (status === "planned") return "drafted";
+  if (status === "drafted") return "published";
+  if (status === "published") return "planned";
+  return "planned";
+}
+
+function cycleButtonLabel(status) {
+  if (!status || status === "missing") return "Mark Planned";
+  return statusLabel(status);
+}
+
+function StatusCycleButton({ status, onClick, disabled }) {
+  const resolved = status && status !== "missing" ? status : "missing";
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className={`h-7 text-xs shrink-0 ${statusChipClass(resolved)}`}
+      onClick={onClick}
+      disabled={disabled}
+    >
+      {cycleButtonLabel(resolved)}
+    </Button>
+  );
+}
+
+function buildContentMapPayload(pillars) {
+  return (Array.isArray(pillars) ? pillars : []).map((pillar) => ({
+    keyword: pillar.keyword,
+    pillarArticle: pillar.pillarArticle
+      ? { status: pillarArticleStatus(pillar.pillarArticle) }
+      : null,
+    supporting: (pillar.supporting || []).map((sup) => ({
+      keyword: sup.keyword,
+      articles: (sup.plannedArticles || []).map((article) => ({
+        title: article.title,
+        targetKeyword: article.targetKeyword,
+        type: article.type,
+        status: article.status,
+      })),
+    })),
+  }));
+}
+
+function proposalTypeSummary(articles) {
+  const list = Array.isArray(articles) ? articles : [];
+  const counts = {};
+  for (const article of list) {
+    const key = article.type || "flex";
+    counts[key] = (counts[key] || 0) + 1;
+  }
+  const parts = ARTICLE_TYPES.filter((t) => counts[t.value]).map(
+    (t) => `${counts[t.value]} ${t.value}`
+  );
+  const n = list.length;
+  return `${n} article${n === 1 ? "" : "s"} proposed: ${parts.join(", ")}`;
+}
+
+function downloadMarkdown(filename, content) {
+  const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function clusterToMarkdown({
+  companyName,
+  pillarKeyword,
+  supportingKeyword,
+  clusterRationale,
+  articles,
+}) {
+  const generated = new Date().toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  const list = Array.isArray(articles) ? articles : [];
+  const lines = [
+    `# Article Cluster`,
+    "",
+    `- **Company:** ${companyName || "(unnamed)"}`,
+    `- **Pillar:** ${pillarKeyword}`,
+    `- **Supporting keyword:** ${supportingKeyword}`,
+    `- **Cluster rationale:** ${clusterRationale || ""}`,
+    `- **Generated:** ${generated}`,
+    `- **Articles:** ${list.length}`,
+    "",
+  ];
+
+  for (const article of list) {
+    lines.push(`## ${article.title || "(untitled)"}`, "");
+    lines.push(`- **targetKeyword:** ${article.targetKeyword || ""}`);
+    lines.push(`- **type:** ${article.type || ""}`);
+    lines.push(`- **status:** ${article.status || "planned"}`);
+    lines.push(`- **searchIntent:** ${article.searchIntent || ""}`);
+    lines.push(`- **wordCount:** ${article.wordCount ?? ""}`);
+    lines.push(`- **ctaAngle:** ${article.ctaAngle || ""}`);
+    lines.push("- **keyMessages:**");
+    const messages = asStringArray(article.keyMessages);
+    if (messages.length) {
+      for (const msg of messages) lines.push(`  - ${msg}`);
+    } else {
+      lines.push("  - _(none)_");
+    }
+    lines.push("- **internalLinks:**");
+    const links = asStringArray(article.internalLinks);
+    if (links.length) {
+      for (const link of links) lines.push(`  - ${link}`);
+    } else {
+      lines.push("  - _(none)_");
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n").trim() + "\n";
+}
+
+function normalizeProposalArticles(articles) {
+  if (!Array.isArray(articles)) return [];
+  return articles
+    .map((raw) => {
+      const type = ARTICLE_TYPES.some((t) => t.value === raw?.type)
+        ? raw.type
+        : "flex";
+      const wordCountRaw = Number(raw?.wordCount);
+      return {
+        id: newId(),
+        title: String(raw?.title || "").trim(),
+        targetKeyword: String(raw?.targetKeyword || "").trim(),
+        type,
+        searchIntent: String(raw?.searchIntent || "").trim(),
+        keyMessages: asStringArray(raw?.keyMessages),
+        wordCount: Number.isFinite(wordCountRaw)
+          ? wordCountRaw
+          : type === "comprehensive"
+            ? 2000
+            : 1500,
+        internalLinks: asStringArray(raw?.internalLinks),
+        ctaAngle: String(raw?.ctaAngle || "").trim(),
+      };
+    })
+    .filter((item) => item.title && item.targetKeyword);
+}
 
 export default function ArticleTopicSuggestion() {
   const { companyId } = useParams();
 
   const [companyName, setCompanyName] = useState("");
+  const [abstract, setAbstract] = useState("");
+  const [shortDescription, setShortDescription] = useState("");
+  const [competitors, setCompetitors] = useState([]);
   const [pillars, setPillars] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -269,9 +434,14 @@ export default function ArticleTopicSuggestion() {
   const [expandedPillar, setExpandedPillar] = useState(null);
   const [expandedSupporting, setExpandedSupporting] = useState(null);
 
-  const [addOpen, setAddOpen] = useState(false);
-  const [addContext, setAddContext] = useState(null);
-  const [articleForm, setArticleForm] = useState(EMPTY_ARTICLE_FORM);
+  const [proposalKey, setProposalKey] = useState(null);
+  const [proposalRationale, setProposalRationale] = useState("");
+  const [proposalArticles, setProposalArticles] = useState([]);
+  const [proposalLoading, setProposalLoading] = useState(false);
+  const [proposalError, setProposalError] = useState("");
+  const [keywordData, setKeywordData] = useState("");
+  const [steeringNotes, setSteeringNotes] = useState("");
+  const [expandedProposalId, setExpandedProposalId] = useState(null);
 
   const [publishOpen, setPublishOpen] = useState(false);
   const [publishContext, setPublishContext] = useState(null);
@@ -332,7 +502,7 @@ export default function ArticleTopicSuggestion() {
       supabase.from("companies").select("name").eq("id", companyId).maybeSingle(),
       supabase
         .from("company_profiles")
-        .select("core_keywords")
+        .select("core_keywords, abstract, short_description, competitors")
         .eq("company_id", companyId)
         .maybeSingle(),
       supabase
@@ -356,6 +526,20 @@ export default function ArticleTopicSuggestion() {
       setLoading(false);
       return;
     }
+
+    setAbstract(profileResult.data?.abstract || "");
+    setShortDescription(profileResult.data?.short_description || "");
+    setCompetitors(
+      Array.isArray(profileResult.data?.competitors)
+        ? profileResult.data.competitors
+            .filter((item) => item && typeof item === "object")
+            .map((item) => ({
+              name: String(item.name || "").trim(),
+              url: String(item.url || "").trim(),
+            }))
+            .filter((item) => item.name || item.url)
+        : []
+    );
 
     if (coverageResult.error) {
       console.error(coverageResult.error);
@@ -400,20 +584,6 @@ export default function ArticleTopicSuggestion() {
     loadData();
   }, [loadData]);
 
-  const totals = useMemo(() => {
-    let planned = 0;
-    let published = 0;
-    for (const pillar of pillars) {
-      for (const supporting of pillar.supporting) {
-        for (const article of supporting.plannedArticles) {
-          planned += 1;
-          if (article.status === "published") published += 1;
-        }
-      }
-    }
-    return { planned, published };
-  }, [pillars]);
-
   const togglePillar = (slug) => {
     setExpandedPillar((prev) => (prev === slug ? null : slug));
     setExpandedSupporting(null);
@@ -424,63 +594,194 @@ export default function ArticleTopicSuggestion() {
     setExpandedSupporting((prev) => (prev === key ? null : key));
   };
 
-  const openAddArticle = (pillarSlug, supportingSlug, defaultKeyword) => {
-    setAddContext({ pillarSlug, supportingSlug });
-    setArticleForm({
-      ...EMPTY_ARTICLE_FORM,
-      targetKeyword: defaultKeyword || "",
-    });
-    setAddOpen(true);
+  const clearProposal = () => {
+    setProposalKey(null);
+    setProposalRationale("");
+    setProposalArticles([]);
+    setProposalError("");
+    setKeywordData("");
+    setSteeringNotes("");
+    setExpandedProposalId(null);
   };
 
-  const handleAddArticle = async (e) => {
-    e.preventDefault();
-    if (!addContext || saving) return;
+  const requestClusterProposal = async ({
+    pillar,
+    supporting,
+    regenerate = false,
+  }) => {
+    const key = `${pillar.slug}::${supporting.slug}`;
+    setProposalLoading(true);
+    setProposalError("");
+    setError("");
+    setExpandedPillar(pillar.slug);
+    setExpandedSupporting(key);
+    setProposalKey(key);
 
-    const title = articleForm.title.trim();
-    const targetKeyword = articleForm.targetKeyword.trim();
-    if (!title || !targetKeyword) {
-      setError("Title and target keyword are required");
-      return;
+    if (!regenerate) {
+      setProposalRationale("");
+      setProposalArticles([]);
+      setSteeringNotes("");
+      setExpandedProposalId(null);
     }
 
+    try {
+      const body = {
+        pillarKeyword: pillar.keyword,
+        supportingKeyword: supporting.keyword,
+        abstract,
+        shortDescription,
+        contentMap: buildContentMapPayload(pillars),
+        competitors,
+        keywordData: keywordData.trim(),
+      };
+
+      if (regenerate) {
+        body.steeringNotes = steeringNotes.trim();
+        body.previousProposal = {
+          clusterRationale: proposalRationale,
+          articles: proposalArticles.map(
+            ({
+              title,
+              targetKeyword,
+              type,
+              searchIntent,
+              keyMessages,
+              wordCount,
+              internalLinks,
+              ctaAngle,
+            }) => ({
+              title,
+              targetKeyword,
+              type,
+              searchIntent,
+              keyMessages,
+              wordCount,
+              internalLinks,
+              ctaAngle,
+            })
+          ),
+        };
+      }
+
+      const res = await fetch("/api/plan-cluster", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || `Plan cluster failed (${res.status})`);
+      }
+
+      const articles = normalizeProposalArticles(data.articles);
+      if (!articles.length) {
+        throw new Error("No articles returned in proposal");
+      }
+
+      setProposalRationale(String(data.clusterRationale || "").trim());
+      setProposalArticles(articles);
+      setExpandedProposalId(null);
+    } catch (err) {
+      console.error("Plan cluster failed:", err);
+      setProposalError(err.message || "Failed to plan cluster");
+      setProposalArticles([]);
+      setProposalRationale("");
+    } finally {
+      setProposalLoading(false);
+    }
+  };
+
+  const handlePlanCluster = (pillar, supporting) => {
+    if (proposalLoading || saving) return;
+
+    if (supporting.plannedArticles.length > 0) {
+      const ok = window.confirm(
+        `“${supporting.keyword}” already has ${supporting.plannedArticles.length} planned article${
+          supporting.plannedArticles.length === 1 ? "" : "s"
+        }. Generate a new AI proposal? Confirming cluster creation later will replace the existing articles.`
+      );
+      if (!ok) return;
+    }
+
+    const key = `${pillar.slug}::${supporting.slug}`;
+    setExpandedPillar(pillar.slug);
+    setExpandedSupporting(key);
+    setProposalKey(key);
+    setProposalRationale("");
+    setProposalArticles([]);
+    setProposalError("");
+    setKeywordData("");
+    setSteeringNotes("");
+    setExpandedProposalId(null);
+  };
+
+  const handleRegenerate = (pillar, supporting) => {
+    if (proposalLoading || saving) return;
+    void requestClusterProposal({ pillar, supporting, regenerate: true });
+  };
+
+  const removeProposalArticle = (articleId) => {
+    setProposalArticles((prev) => prev.filter((item) => item.id !== articleId));
+    setExpandedProposalId((prev) => (prev === articleId ? null : prev));
+  };
+
+  const handleConfirmCluster = async (pillar, supporting) => {
+    if (!proposalArticles.length || saving || proposalLoading) return;
+
     const now = new Date().toISOString();
-    const article = {
-      id: newId(),
-      title,
-      targetKeyword,
-      type: articleForm.type,
+    const articles = proposalArticles.map((item) => ({
+      id: item.id || newId(),
+      title: item.title,
+      targetKeyword: item.targetKeyword,
+      type: item.type,
       status: "planned",
+      searchIntent: item.searchIntent || undefined,
+      keyMessages: asStringArray(item.keyMessages),
+      wordCount: item.wordCount,
+      internalLinks: asStringArray(item.internalLinks),
+      ctaAngle: item.ctaAngle || undefined,
       updatedAt: now,
-    };
+    }));
 
     await applyPillars((prev) =>
-      prev.map((pillar) => {
-        if (pillar.slug !== addContext.pillarSlug) return pillar;
+      prev.map((p) => {
+        if (p.slug !== pillar.slug) return p;
         return {
-          ...pillar,
-          supporting: pillar.supporting.map((sup) => {
-            if (sup.slug !== addContext.supportingSlug) return sup;
+          ...p,
+          supporting: p.supporting.map((sup) => {
+            if (sup.slug !== supporting.slug) return sup;
             return {
               ...sup,
-              plannedArticles: [...sup.plannedArticles, article],
+              plannedArticles: articles,
+              clusterRationale: String(proposalRationale || "").trim(),
             };
           }),
         };
       })
     );
 
-    setAddOpen(false);
-    setAddContext(null);
-    setArticleForm(EMPTY_ARTICLE_FORM);
+    clearProposal();
+    setExpandedPillar(pillar.slug);
+    setExpandedSupporting(`${pillar.slug}::${supporting.slug}`);
+  };
+
+  const handleDownloadCluster = (pillar, supporting) => {
+    const markdown = clusterToMarkdown({
+      companyName,
+      pillarKeyword: pillar.keyword,
+      supportingKeyword: supporting.keyword,
+      clusterRationale: supporting.clusterRationale,
+      articles: supporting.plannedArticles,
+    });
+    const filename = `${pillar.slug}--${supporting.slug}-cluster.md`;
+    downloadMarkdown(filename, markdown);
   };
 
   const advanceArticleStatus = (pillarSlug, supportingSlug, article) => {
-    const next = nextStatus(article.status);
-    if (!next) return;
+    const next = nextArticleStatus(article.status);
 
-    if (next === "published") {
-      setPublishContext({ pillarSlug, supportingSlug, articleId: article.id });
+    if (next === "published" && article.status !== "published") {
+      setPublishContext({ kind: "article", pillarSlug, supportingSlug, articleId: article.id });
       setPublishUrl(article.publishedUrl || "");
       setPublishOpen(true);
       return;
@@ -496,11 +797,19 @@ export default function ArticleTopicSuggestion() {
             if (sup.slug !== supportingSlug) return sup;
             return {
               ...sup,
-              plannedArticles: sup.plannedArticles.map((item) =>
-                item.id === article.id
-                  ? { ...item, status: next, updatedAt: now }
-                  : item
-              ),
+              plannedArticles: sup.plannedArticles.map((item) => {
+                if (item.id !== article.id) return item;
+                if (next === "planned" && article.status === "published") {
+                  return {
+                    ...item,
+                    status: "planned",
+                    publishedUrl: undefined,
+                    publishedAt: undefined,
+                    updatedAt: now,
+                  };
+                }
+                return { ...item, status: next, updatedAt: now };
+              }),
             };
           }),
         };
@@ -515,49 +824,81 @@ export default function ArticleTopicSuggestion() {
     const now = new Date().toISOString();
     const url = publishUrl.trim();
 
-    await applyPillars((prev) =>
-      prev.map((pillar) => {
-        if (pillar.slug !== publishContext.pillarSlug) return pillar;
-        return {
-          ...pillar,
-          supporting: pillar.supporting.map((sup) => {
-            if (sup.slug !== publishContext.supportingSlug) return sup;
-            return {
-              ...sup,
-              plannedArticles: sup.plannedArticles.map((item) =>
-                item.id === publishContext.articleId
-                  ? {
-                      ...item,
-                      status: "published",
-                      publishedUrl: url || undefined,
-                      publishedAt: now,
-                      updatedAt: now,
-                    }
-                  : item
-              ),
-            };
-          }),
-        };
-      })
-    );
+    if (publishContext.kind === "pillar") {
+      await applyPillars((prev) =>
+        prev.map((pillar) => {
+          if (pillar.slug !== publishContext.pillarSlug) return pillar;
+          return {
+            ...pillar,
+            pillarArticle: {
+              status: "published",
+              publishedUrl: url || undefined,
+              publishedAt: now,
+            },
+          };
+        })
+      );
+    } else {
+      await applyPillars((prev) =>
+        prev.map((pillar) => {
+          if (pillar.slug !== publishContext.pillarSlug) return pillar;
+          return {
+            ...pillar,
+            supporting: pillar.supporting.map((sup) => {
+              if (sup.slug !== publishContext.supportingSlug) return sup;
+              return {
+                ...sup,
+                plannedArticles: sup.plannedArticles.map((item) =>
+                  item.id === publishContext.articleId
+                    ? {
+                        ...item,
+                        status: "published",
+                        publishedUrl: url || undefined,
+                        publishedAt: now,
+                        updatedAt: now,
+                      }
+                    : item
+                ),
+              };
+            }),
+          };
+        })
+      );
+    }
 
     setPublishOpen(false);
     setPublishContext(null);
     setPublishUrl("");
   };
 
-  const advancePillarArticle = (pillarSlug) => {
+  const advancePillarArticle = (pillar) => {
+    const current = pillarArticleStatus(pillar.pillarArticle);
+    const next = nextPillarStatus(current);
+
+    if (current === "published") {
+      void applyPillars((prev) =>
+        prev.map((item) =>
+          item.slug === pillar.slug ? { ...item, pillarArticle: null } : item
+        )
+      );
+      return;
+    }
+
+    if (next === "published") {
+      const existing =
+        pillar.pillarArticle && typeof pillar.pillarArticle === "object"
+          ? pillar.pillarArticle
+          : null;
+      setPublishContext({ kind: "pillar", pillarSlug: pillar.slug });
+      setPublishUrl(existing?.publishedUrl || "");
+      setPublishOpen(true);
+      return;
+    }
+
     void applyPillars((prev) =>
-      prev.map((pillar) => {
-        if (pillar.slug !== pillarSlug) return pillar;
-        const current = pillarArticleStatus(pillar.pillarArticle);
-        let next = null;
-        if (current === "missing") next = "planned";
-        else if (current === "planned") next = "drafted";
-        else if (current === "drafted") next = "published";
-        if (!next) return pillar;
-        return { ...pillar, pillarArticle: next };
-      })
+      prev.map((item) =>
+        item.slug === pillar.slug ? { ...item, pillarArticle: { status: next } } : item
+      )
     );
   };
 
@@ -570,11 +911,9 @@ export default function ArticleTopicSuggestion() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-[15px] text-foreground mb-1">Topic Generation</h1>
-          <p className="text-sm text-muted-foreground">
-            {companyName
-              ? `Content coverage for ${companyName} — pillars, supporting keywords, and planned articles.`
-              : "Content coverage for this company’s pillar and supporting keywords."}
-          </p>
+          {companyName && (
+            <p className="text-sm text-foreground">{companyName}</p>
+          )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {savedMessage && (
@@ -587,403 +926,535 @@ export default function ArticleTopicSuggestion() {
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       {pillars.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border px-4 py-8 text-sm text-muted-foreground space-y-2">
-          <p>No pillar keywords yet — nothing to track coverage for.</p>
-          <p>
-            Add pillar and supporting keywords in{" "}
-            <Link
-              to={`/company/${companyId}/company-data`}
-              className="text-foreground underline underline-offset-2 hover:text-primary"
-            >
-              Company Data
-            </Link>
-            , then return here.
-          </p>
+        <div className="rounded-lg border border-dashed border-border px-4 py-8 text-sm">
+          <Link
+            to={`/company/${companyId}/company-data`}
+            className="text-foreground underline underline-offset-2 hover:text-primary"
+          >
+            Company Data
+          </Link>
         </div>
       ) : (
-        <>
-          {totals.planned === 0 && (
-            <div className="rounded-lg border border-dashed border-border px-4 py-5 text-sm text-muted-foreground">
-              No articles planned yet. Expand a pillar, open a supporting keyword, and add
-              planned articles to start building coverage. Ideal coverage is whatever you
-              plan per keyword — not a fixed template.
-            </div>
-          )}
+        <div className="space-y-2">
+          {pillars.map((pillar) => {
+            const isPillarOpen = expandedPillar === pillar.slug;
+            const pillarStatus = pillarArticleStatus(pillar.pillarArticle);
+            const supportingTotal = pillar.supporting.length;
+            const supportingWithPublished = pillar.supporting.filter((sup) =>
+              sup.plannedArticles.some((a) => a.status === "published")
+            ).length;
+            const coveragePct =
+              supportingTotal > 0
+                ? Math.round((supportingWithPublished / supportingTotal) * 100)
+                : 0;
+            const showProgress =
+              supportingTotal > 0 &&
+              (pillarStatus !== "missing" ||
+                pillar.supporting.some((sup) => sup.plannedArticles.length > 0));
 
-          <div className="space-y-2">
-            {pillars.map((pillar) => {
-              const isPillarOpen = expandedPillar === pillar.slug;
-              const pillarStatus = pillarArticleStatus(pillar.pillarArticle);
-              const supportingTotal = pillar.supporting.length;
-              const supportingWithPublished = pillar.supporting.filter((sup) =>
-                sup.plannedArticles.some((a) => a.status === "published")
-              ).length;
-              const coveragePct =
-                supportingTotal > 0
-                  ? Math.round((supportingWithPublished / supportingTotal) * 100)
-                  : 0;
-              const hasAnyPlan = pillar.supporting.some(
-                (sup) => sup.plannedArticles.length > 0
-              );
-              const hasAnyPublished = supportingWithPublished > 0;
-              const noCoverage = !hasAnyPlan && !hasAnyPublished && pillarStatus === "missing";
-
-              return (
-                <div
-                  key={pillar.slug}
-                  className="rounded-lg border border-border bg-card overflow-hidden"
+            return (
+              <div
+                key={pillar.slug}
+                className="rounded-lg border border-border bg-card overflow-hidden"
+              >
+                <button
+                  type="button"
+                  onClick={() => togglePillar(pillar.slug)}
+                  className="w-full flex items-start gap-3 px-4 py-3.5 text-left hover:bg-accent/40 transition-colors"
                 >
-                  <button
-                    type="button"
-                    onClick={() => togglePillar(pillar.slug)}
-                    className="w-full flex items-start gap-3 px-4 py-3.5 text-left hover:bg-accent/40 transition-colors"
-                  >
-                    <span className="mt-0.5 text-muted-foreground shrink-0">
-                      {isPillarOpen ? (
-                        <ChevronDown className="w-4 h-4" />
-                      ) : (
-                        <ChevronRight className="w-4 h-4" />
-                      )}
-                    </span>
-                    <div className="flex-1 min-w-0 space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-medium text-foreground">
-                          {pillar.keyword}
-                        </span>
-                        <StatusChip status={pillarStatus} />
-                      </div>
-
-                      {noCoverage ? (
-                        <p className="text-xs text-muted-foreground">
-                          No coverage yet — no pillar article or supporting articles planned.
-                        </p>
-                      ) : (
-                        <div className="space-y-1.5">
-                          <p className="text-xs text-muted-foreground">
-                            {supportingWithPublished} of {supportingTotal} supporting
-                            keywords have any published article
-                          </p>
-                          <Progress value={coveragePct} className="h-1.5 max-w-xs" />
-                        </div>
-                      )}
+                  <span className="mt-0.5 text-muted-foreground shrink-0">
+                    {isPillarOpen ? (
+                      <ChevronDown className="w-4 h-4" />
+                    ) : (
+                      <ChevronRight className="w-4 h-4" />
+                    )}
+                  </span>
+                  <div className="flex-1 min-w-0 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium text-foreground">
+                        {pillar.keyword}
+                      </span>
+                      <StatusChip status={pillarStatus} />
                     </div>
-                  </button>
+                    {showProgress && (
+                      <Progress value={coveragePct} className="h-1.5 max-w-xs" />
+                    )}
+                  </div>
+                </button>
 
-                  {isPillarOpen && (
-                    <div className="border-t border-border bg-muted/20 px-4 py-3 space-y-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
+                {isPillarOpen && (
+                  <div className="border-t border-border bg-muted/20 px-4 py-3 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2 min-w-0">
                         <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
-                          Pillar article
+                          Pillar Article
                         </p>
-                        {pillarStatus !== "published" && (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-7 text-xs"
-                            onClick={() => advancePillarArticle(pillar.slug)}
-                            disabled={saving}
-                          >
-                            {pillarStatus === "missing"
-                              ? "Mark planned"
-                              : pillarStatus === "planned"
-                                ? "Mark drafted"
-                                : "Mark published"}
-                          </Button>
-                        )}
+                        {pillarStatus === "published" &&
+                          pillar.pillarArticle?.publishedUrl && (
+                            <a
+                              href={pillar.pillarArticle.publishedUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[11px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                            >
+                              View URL
+                            </a>
+                          )}
                       </div>
+                      <StatusCycleButton
+                        status={pillarStatus}
+                        disabled={saving}
+                        onClick={() => advancePillarArticle(pillar)}
+                      />
+                    </div>
 
-                      <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium pt-1">
-                        Supporting keywords ({pillar.supporting.length})
-                      </p>
+                    <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium pt-1">
+                      Supporting keywords ({pillar.supporting.length})
+                    </p>
 
-                      {pillar.supporting.length === 0 ? (
-                        <div className="rounded-md border border-dashed border-border px-3 py-4 text-xs text-muted-foreground">
-                          No supporting keywords for this pillar. Add them in Company Data.
-                        </div>
-                      ) : (
-                        <div className="space-y-1.5">
-                          {pillar.supporting.map((sup) => {
-                            const detailKey = `${pillar.slug}::${sup.slug}`;
-                            const isDetailOpen = expandedSupporting === detailKey;
-                            const plannedCount = sup.plannedArticles.length;
-                            const publishedCount = sup.plannedArticles.filter(
-                              (a) => a.status === "published"
-                            ).length;
-                            const typeLabel = typeCountsLabel(sup.plannedArticles);
-                            const clusterNotPlanned = plannedCount === 0;
-                            const hasGap = plannedCount > 0 && publishedCount < plannedCount;
+                    {pillar.supporting.length > 0 && (
+                      <div className="space-y-1.5">
+                        {pillar.supporting.map((sup) => {
+                          const detailKey = `${pillar.slug}::${sup.slug}`;
+                          const isDetailOpen = expandedSupporting === detailKey;
+                          const plannedCount = sup.plannedArticles.length;
+                          const publishedCount = sup.plannedArticles.filter(
+                            (a) => a.status === "published"
+                          ).length;
+                          const clusterNotPlanned = plannedCount === 0;
+                          const hasGap = plannedCount > 0 && publishedCount < plannedCount;
+                          const isProposalTarget = proposalKey === detailKey;
+                          const showProposal = isProposalTarget;
 
-                            return (
-                              <div
-                                key={sup.slug}
-                                className="rounded-md border border-border bg-background overflow-hidden"
-                              >
+                          return (
+                            <div
+                              key={sup.slug}
+                              className="rounded-md border border-border bg-background overflow-hidden"
+                            >
+                              <div className="flex items-center gap-2 px-3 py-2.5">
                                 <button
                                   type="button"
                                   onClick={() => toggleSupporting(pillar.slug, sup.slug)}
-                                  className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-accent/40 transition-colors"
+                                  className="flex flex-1 items-center gap-2.5 min-w-0 text-left hover:opacity-80 transition-opacity"
                                 >
-                                  <span className="mt-0.5 text-muted-foreground shrink-0">
+                                  <span className="text-muted-foreground shrink-0">
                                     {isDetailOpen ? (
                                       <ChevronDown className="w-3.5 h-3.5" />
                                     ) : (
                                       <ChevronRight className="w-3.5 h-3.5" />
                                     )}
                                   </span>
-                                  <div className="flex-1 min-w-0 space-y-1">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <span className="text-sm text-foreground">
-                                        {sup.keyword}
+                                  <div className="flex flex-wrap items-center gap-2 min-w-0">
+                                    <span className="text-sm text-foreground">
+                                      {sup.keyword}
+                                    </span>
+                                    {clusterNotPlanned && !showProposal && (
+                                      <span className="inline-flex items-center rounded-full border border-dashed border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+                                        Cluster not planned
                                       </span>
-                                      {clusterNotPlanned && (
-                                        <span className="inline-flex items-center rounded-full border border-dashed border-border px-2 py-0.5 text-[11px] text-muted-foreground">
-                                          Cluster not planned
-                                        </span>
-                                      )}
-                                      {hasGap && (
-                                        <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800">
-                                          Gap: {publishedCount}/{plannedCount} published
-                                        </span>
-                                      )}
-                                    </div>
-                                    {plannedCount > 0 ? (
-                                      <p className="text-xs text-muted-foreground">
-                                        {typeLabel}
-                                        <span className="text-muted-foreground/50"> · </span>
-                                        {publishedCount} published / {plannedCount} planned
-                                      </p>
-                                    ) : (
-                                      <p className="text-xs text-muted-foreground">
-                                        No articles planned
-                                      </p>
+                                    )}
+                                    {hasGap && !showProposal && (
+                                      <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800">
+                                        Gap: {publishedCount}/{plannedCount} published
+                                      </span>
+                                    )}
+                                    {isProposalTarget && proposalLoading && (
+                                      <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                        Planning…
+                                      </span>
                                     )}
                                   </div>
                                 </button>
-
-                                {isDetailOpen && (
-                                  <div className="border-t border-border px-3 py-3 space-y-3 bg-muted/10">
-                                    <div className="flex items-center justify-between gap-2">
-                                      <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
-                                        Article checklist
-                                      </p>
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        className="h-7 text-xs"
-                                        onClick={() =>
-                                          openAddArticle(
-                                            pillar.slug,
-                                            sup.slug,
-                                            sup.keyword
-                                          )
-                                        }
-                                      >
-                                        <Plus className="w-3.5 h-3.5" />
-                                        Add planned article
-                                      </Button>
-                                    </div>
-
-                                    {sup.plannedArticles.length === 0 ? (
-                                      <div className="rounded-md border border-dashed border-border px-3 py-5 text-xs text-muted-foreground text-center">
-                                        Empty checklist — add planned articles to define ideal
-                                        coverage for this keyword.
-                                      </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  {plannedCount > 0 && !showProposal && (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 text-xs"
+                                      onClick={() => handleDownloadCluster(pillar, sup)}
+                                    >
+                                      <Download className="w-3.5 h-3.5" />
+                                      Download .md
+                                    </Button>
+                                  )}
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-xs"
+                                    disabled={proposalLoading || saving}
+                                    onClick={() => handlePlanCluster(pillar, sup)}
+                                  >
+                                    {isProposalTarget && proposalLoading ? (
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                     ) : (
-                                      <ul className="space-y-2">
-                                        {sup.plannedArticles.map((article) => {
-                                          const done = article.status === "published";
-                                          const incomplete = article.status !== "published";
-                                          const advance = nextStatus(article.status);
+                                      <Plus className="w-3.5 h-3.5" />
+                                    )}
+                                    Plan Cluster
+                                  </Button>
+                                </div>
+                              </div>
 
+                              {isDetailOpen && showProposal && (
+                                <div className="border-t border-border px-3 py-3 space-y-3 bg-muted/10">
+                                  <div className="space-y-1.5">
+                                    <Label htmlFor={`keyword_data_${detailKey}`}>
+                                      Keyword data (optional)
+                                    </Label>
+                                    <Textarea
+                                      id={`keyword_data_${detailKey}`}
+                                      value={keywordData}
+                                      onChange={(e) => setKeywordData(e.target.value)}
+                                      placeholder="Paste Semrush keyword data (queries, volumes, difficulty)…"
+                                      rows={4}
+                                      disabled={proposalLoading}
+                                    />
+                                  </div>
+
+                                  {proposalArticles.length === 0 &&
+                                    !proposalLoading &&
+                                    !proposalError && (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      disabled={saving}
+                                      onClick={() =>
+                                        requestClusterProposal({
+                                          pillar,
+                                          supporting: sup,
+                                          regenerate: false,
+                                        })
+                                      }
+                                    >
+                                      Generate Proposal
+                                    </Button>
+                                  )}
+
+                                  {proposalLoading && proposalArticles.length === 0 && (
+                                    <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                                      <Loader2 className="w-4 h-4 animate-spin" />
+                                      Generating cluster proposal…
+                                    </div>
+                                  )}
+
+                                  {proposalError && (
+                                    <p className="text-sm text-destructive">{proposalError}</p>
+                                  )}
+
+                                  {proposalArticles.length > 0 && (
+                                    <>
+                                      <div className="space-y-1.5">
+                                        {proposalRationale && (
+                                          <p className="text-sm text-foreground">
+                                            {proposalRationale}
+                                          </p>
+                                        )}
+                                        <p className="text-xs text-muted-foreground">
+                                          {proposalTypeSummary(proposalArticles)}
+                                          {proposalLoading ? " · Regenerating…" : ""}
+                                        </p>
+                                      </div>
+
+                                      <ul className="space-y-2">
+                                        {proposalArticles.map((article) => {
+                                          const isExpanded =
+                                            expandedProposalId === article.id;
                                           return (
                                             <li
                                               key={article.id}
-                                              className={`rounded-md border px-3 py-2.5 ${
-                                                incomplete
-                                                  ? "border-dashed border-border bg-slate-50/80"
-                                                  : "border-border bg-background"
-                                              }`}
+                                              className="rounded-md border border-dashed border-border bg-slate-50/80 px-3 py-2.5"
                                             >
-                                              <div className="flex items-start gap-2.5">
-                                                <span
-                                                  className={`mt-0.5 shrink-0 ${
-                                                    done
-                                                      ? "text-emerald-600"
-                                                      : "text-muted-foreground/50"
-                                                  }`}
-                                                  aria-hidden
+                                              <div className="flex items-start gap-2">
+                                                <button
+                                                  type="button"
+                                                  className="flex flex-1 items-start gap-2 min-w-0 text-left"
+                                                  onClick={() =>
+                                                    setExpandedProposalId((prev) =>
+                                                      prev === article.id
+                                                        ? null
+                                                        : article.id
+                                                    )
+                                                  }
                                                 >
-                                                  {done ? (
-                                                    <Check className="w-4 h-4" />
-                                                  ) : (
-                                                    <Circle className="w-4 h-4" />
-                                                  )}
-                                                </span>
-                                                <div className="flex-1 min-w-0 space-y-1.5">
-                                                  <div className="flex flex-wrap items-center gap-2">
-                                                    <span
-                                                      className={`text-sm ${
-                                                        incomplete
-                                                          ? "text-foreground/80"
-                                                          : "text-foreground font-medium"
-                                                      }`}
-                                                    >
-                                                      {article.title || "(untitled)"}
-                                                    </span>
-                                                    <StatusChip status={article.status} />
-                                                    {incomplete && (
-                                                      <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-                                                        Missing
-                                                      </span>
+                                                  <span className="mt-0.5 text-muted-foreground shrink-0">
+                                                    {isExpanded ? (
+                                                      <ChevronDown className="w-3.5 h-3.5" />
+                                                    ) : (
+                                                      <ChevronRight className="w-3.5 h-3.5" />
                                                     )}
+                                                  </span>
+                                                  <div className="flex flex-wrap items-center gap-2 min-w-0">
+                                                    <span className="text-sm text-foreground">
+                                                      {article.title}
+                                                    </span>
+                                                    <TypeBadge type={article.type} />
                                                   </div>
-                                                  <p className="text-xs text-muted-foreground">
-                                                    {TYPE_LABEL[article.type] || article.type}
-                                                    <span className="text-muted-foreground/50">
-                                                      {" "}
-                                                      ·{" "}
-                                                    </span>
-                                                    Target: {article.targetKeyword}
+                                                </button>
+                                                <Button
+                                                  type="button"
+                                                  size="sm"
+                                                  variant="ghost"
+                                                  className="h-7 w-7 p-0 shrink-0 text-muted-foreground hover:text-destructive"
+                                                  disabled={proposalLoading}
+                                                  onClick={() =>
+                                                    removeProposalArticle(article.id)
+                                                  }
+                                                  aria-label="Remove article"
+                                                >
+                                                  <Trash2 className="w-3.5 h-3.5" />
+                                                </Button>
+                                              </div>
+
+                                              {isExpanded && (
+                                                <div className="mt-2 ml-5 space-y-1.5 text-xs text-muted-foreground">
+                                                  <p>
+                                                    <span className="font-medium text-foreground/80">
+                                                      Target keyword:
+                                                    </span>{" "}
+                                                    {article.targetKeyword}
                                                   </p>
-                                                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                                                    {article.publishedAt && (
-                                                      <span>
-                                                        Published {formatDate(article.publishedAt)}
-                                                      </span>
-                                                    )}
-                                                    {article.updatedAt &&
-                                                      article.status !== "published" && (
-                                                        <span>
-                                                          Updated {formatDate(article.updatedAt)}
-                                                        </span>
+                                                  <p>
+                                                    <span className="font-medium text-foreground/80">
+                                                      Search intent:
+                                                    </span>{" "}
+                                                    {article.searchIntent || "—"}
+                                                  </p>
+                                                  <p>
+                                                    <span className="font-medium text-foreground/80">
+                                                      Word count:
+                                                    </span>{" "}
+                                                    {article.wordCount ?? "—"}
+                                                  </p>
+                                                  <p>
+                                                    <span className="font-medium text-foreground/80">
+                                                      CTA angle:
+                                                    </span>{" "}
+                                                    {article.ctaAngle || "—"}
+                                                  </p>
+                                                  <div>
+                                                    <p className="font-medium text-foreground/80">
+                                                      Key messages:
+                                                    </p>
+                                                    <ul className="list-disc pl-4 mt-0.5 space-y-0.5">
+                                                      {article.keyMessages.length > 0 ? (
+                                                        article.keyMessages.map(
+                                                          (msg, i) => (
+                                                            <li key={i}>{msg}</li>
+                                                          )
+                                                        )
+                                                      ) : (
+                                                        <li>—</li>
                                                       )}
-                                                    {article.publishedUrl && (
-                                                      <a
-                                                        href={article.publishedUrl}
-                                                        target="_blank"
-                                                        rel="noreferrer"
-                                                        className="underline underline-offset-2 hover:text-foreground"
-                                                        onClick={(ev) => ev.stopPropagation()}
-                                                      >
-                                                        View URL
-                                                      </a>
-                                                    )}
+                                                    </ul>
+                                                  </div>
+                                                  <div>
+                                                    <p className="font-medium text-foreground/80">
+                                                      Internal links:
+                                                    </p>
+                                                    <ul className="list-disc pl-4 mt-0.5 space-y-0.5">
+                                                      {article.internalLinks.length >
+                                                      0 ? (
+                                                        article.internalLinks.map(
+                                                          (link, i) => (
+                                                            <li key={i}>{link}</li>
+                                                          )
+                                                        )
+                                                      ) : (
+                                                        <li>—</li>
+                                                      )}
+                                                    </ul>
                                                   </div>
                                                 </div>
-                                                {advance && (
-                                                  <Button
-                                                    type="button"
-                                                    variant="outline"
-                                                    size="sm"
-                                                    className="h-7 text-xs shrink-0"
-                                                    disabled={saving}
-                                                    onClick={() =>
-                                                      advanceArticleStatus(
-                                                        pillar.slug,
-                                                        sup.slug,
-                                                        article
-                                                      )
-                                                    }
-                                                  >
-                                                    Mark {advance}
-                                                  </Button>
-                                                )}
-                                              </div>
+                                              )}
                                             </li>
                                           );
                                         })}
                                       </ul>
-                                    )}
+
+                                      <div className="space-y-2 pt-1">
+                                        <div className="space-y-1.5">
+                                          <Label htmlFor={`steering_${detailKey}`}>
+                                            Steering notes
+                                          </Label>
+                                          <Textarea
+                                            id={`steering_${detailKey}`}
+                                            value={steeringNotes}
+                                            onChange={(e) =>
+                                              setSteeringNotes(e.target.value)
+                                            }
+                                            placeholder="Optional guidance for regeneration…"
+                                            rows={2}
+                                            disabled={proposalLoading}
+                                          />
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            disabled={proposalLoading || saving}
+                                            onClick={() =>
+                                              handleRegenerate(pillar, sup)
+                                            }
+                                          >
+                                            {proposalLoading ? (
+                                              <>
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                Regenerating…
+                                              </>
+                                            ) : (
+                                              "Regenerate"
+                                            )}
+                                          </Button>
+                                          <Button
+                                            type="button"
+                                            size="sm"
+                                            disabled={
+                                              proposalLoading ||
+                                              saving ||
+                                              proposalArticles.length === 0
+                                            }
+                                            onClick={() =>
+                                              handleConfirmCluster(pillar, sup)
+                                            }
+                                          >
+                                            {saving
+                                              ? "Saving…"
+                                              : "Confirm Cluster Creation"}
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    </>
+                                  )}
+
+                                  {proposalError && proposalArticles.length === 0 && !proposalLoading && (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      disabled={saving}
+                                      onClick={() =>
+                                        requestClusterProposal({
+                                          pillar,
+                                          supporting: sup,
+                                          regenerate: false,
+                                        })
+                                      }
+                                    >
+                                      Retry
+                                    </Button>
+                                  )}
+                                </div>
+                              )}
+
+                              {isDetailOpen &&
+                                !showProposal &&
+                                plannedCount > 0 && (
+                                  <div className="border-t border-border px-3 py-3 space-y-3 bg-muted/10">
+                                    <ul className="space-y-2">
+                                      {sup.plannedArticles.map((article) => {
+                                        const done = article.status === "published";
+                                        const incomplete =
+                                          article.status !== "published";
+
+                                        return (
+                                          <li
+                                            key={article.id}
+                                            className={`rounded-md border px-3 py-2.5 ${
+                                              incomplete
+                                                ? "border-dashed border-border bg-slate-50/80"
+                                                : "border-border bg-background"
+                                            }`}
+                                          >
+                                            <div className="flex items-start gap-2.5">
+                                              <span
+                                                className={`mt-0.5 shrink-0 ${
+                                                  done
+                                                    ? "text-emerald-600"
+                                                    : "text-muted-foreground/50"
+                                                }`}
+                                                aria-hidden
+                                              >
+                                                {done ? (
+                                                  <Check className="w-4 h-4" />
+                                                ) : (
+                                                  <Circle className="w-4 h-4" />
+                                                )}
+                                              </span>
+                                              <div className="flex-1 min-w-0 space-y-1.5">
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                  <span
+                                                    className={`text-sm ${
+                                                      incomplete
+                                                        ? "text-foreground/80"
+                                                        : "text-foreground font-medium"
+                                                    }`}
+                                                  >
+                                                    {article.title || "(untitled)"}
+                                                  </span>
+                                                  <TypeBadge type={article.type} />
+                                                </div>
+                                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                                                  {article.publishedAt && (
+                                                    <span>
+                                                      Published{" "}
+                                                      {formatDate(article.publishedAt)}
+                                                    </span>
+                                                  )}
+                                                  {article.updatedAt &&
+                                                    article.status !== "published" && (
+                                                      <span>
+                                                        Updated{" "}
+                                                        {formatDate(article.updatedAt)}
+                                                      </span>
+                                                    )}
+                                                  {article.publishedUrl && (
+                                                    <a
+                                                      href={article.publishedUrl}
+                                                      target="_blank"
+                                                      rel="noreferrer"
+                                                      className="underline underline-offset-2 hover:text-foreground"
+                                                      onClick={(ev) =>
+                                                        ev.stopPropagation()
+                                                      }
+                                                    >
+                                                      View URL
+                                                    </a>
+                                                  )}
+                                                </div>
+                                              </div>
+                                              <StatusCycleButton
+                                                status={article.status}
+                                                disabled={saving}
+                                                onClick={() =>
+                                                  advanceArticleStatus(
+                                                    pillar.slug,
+                                                    sup.slug,
+                                                    article
+                                                  )
+                                                }
+                                              />
+                                            </div>
+                                          </li>
+                                        );
+                                      })}
+                                    </ul>
                                   </div>
                                 )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
-
-      <Dialog open={addOpen} onOpenChange={setAddOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Add planned article</DialogTitle>
-            <DialogDescription>
-              Define one piece of ideal coverage for this supporting keyword. Ideal set size
-              varies per keyword.
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleAddArticle} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="article_title">Title</Label>
-              <Input
-                id="article_title"
-                value={articleForm.title}
-                onChange={(e) =>
-                  setArticleForm((prev) => ({ ...prev, title: e.target.value }))
-                }
-                placeholder="Article title"
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="article_keyword">Target keyword</Label>
-              <Input
-                id="article_keyword"
-                value={articleForm.targetKeyword}
-                onChange={(e) =>
-                  setArticleForm((prev) => ({
-                    ...prev,
-                    targetKeyword: e.target.value,
-                  }))
-                }
-                placeholder="Primary target keyword"
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Type</Label>
-              <Select
-                value={articleForm.type}
-                onValueChange={(value) =>
-                  setArticleForm((prev) => ({ ...prev, type: value }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {ARTICLE_TYPES.map((type) => (
-                    <SelectItem key={type.value} value={type.value}>
-                      {type.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setAddOpen(false)}
-                disabled={saving}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? "Saving…" : "Add article"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={publishOpen} onOpenChange={setPublishOpen}>
         <DialogContent className="max-w-md">

@@ -39,7 +39,8 @@ export default function Login() {
         password,
       });
       if (signInError) throw signInError;
-      // Stay in loading state; navigate happens once AuthContext marks isAuthenticated.
+      // Full navigation avoids auth-state races that left the first click stuck on /login.
+      window.location.href = "/";
     } catch (err) {
       setError(err.message || "Invalid email or password");
       setLoading(false);

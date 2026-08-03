@@ -65,6 +65,27 @@ function supportingLeft(pillar) {
   return supporting.filter((value) => !String(value || "").trim()).length;
 }
 
+function emptyCompetitor() {
+  return { name: "", url: "" };
+}
+
+function normalizeCompetitors(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => {
+    if (!item || typeof item !== "object") return emptyCompetitor();
+    return {
+      name: item.name == null ? "" : String(item.name),
+      url: item.url == null ? "" : String(item.url),
+    };
+  });
+}
+
+function isLooseHttpUrl(value) {
+  const url = String(value || "").trim();
+  if (!url) return true;
+  return /^https?:\/\//i.test(url);
+}
+
 const EMPTY_PROFILE = {
   domain: "",
   product_name: "",
@@ -73,6 +94,7 @@ const EMPTY_PROFILE = {
   medium_description: "",
   long_description: "",
   core_keywords: normalizePillarKeywords([], { minCount: DEFAULT_PILLAR_COUNT }),
+  competitors: [],
 };
 
 function downloadMarkdown(filename, content) {
@@ -98,7 +120,7 @@ export default function CompanyData() {
   const [saving, setSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState("");
   const [error, setError] = useState("");
-  const [pillarsOpen, setPillarsOpen] = useState(true);
+  const [pillarsOpen, setPillarsOpen] = useState(false);
   const [openPillars, setOpenPillars] = useState({});
 
   const loadData = useCallback(async () => {
@@ -112,7 +134,7 @@ export default function CompanyData() {
       supabase
         .from("company_profiles")
         .select(
-          "id, domain, product_name, abstract, short_description, medium_description, long_description, core_keywords, custom_fields"
+          "id, domain, product_name, abstract, short_description, medium_description, long_description, core_keywords, competitors, custom_fields"
         )
         .eq("company_id", companyId)
         .maybeSingle(),
@@ -158,6 +180,7 @@ export default function CompanyData() {
             ? 0
             : DEFAULT_PILLAR_COUNT,
         }),
+        competitors: normalizeCompetitors(profile.competitors),
       });
       setCustomValues(
         profile.custom_fields && typeof profile.custom_fields === "object"
@@ -197,6 +220,28 @@ export default function CompanyData() {
       next[pillarIndex] = { ...next[pillarIndex], supporting };
       return { ...prev, core_keywords: next };
     });
+  };
+
+  const addCompetitor = () => {
+    setFields((prev) => ({
+      ...prev,
+      competitors: [...normalizeCompetitors(prev.competitors), emptyCompetitor()],
+    }));
+  };
+
+  const updateCompetitor = (index, key, value) => {
+    setFields((prev) => {
+      const next = normalizeCompetitors(prev.competitors);
+      next[index] = { ...next[index], [key]: value };
+      return { ...prev, competitors: next };
+    });
+  };
+
+  const removeCompetitor = (index) => {
+    setFields((prev) => ({
+      ...prev,
+      competitors: normalizeCompetitors(prev.competitors).filter((_, i) => i !== index),
+    }));
   };
 
   const addPillarKeyword = () => {
@@ -314,6 +359,21 @@ export default function CompanyData() {
     setSavedMessage("");
     setError("");
 
+    const competitors = normalizeCompetitors(fields.competitors)
+      .map((item) => ({
+        name: item.name.trim(),
+        url: item.url.trim(),
+      }))
+      .filter((item) => item.name || item.url);
+
+    for (const competitor of competitors) {
+      if (!isLooseHttpUrl(competitor.url)) {
+        setError("Competitor URLs must start with http:// or https://");
+        setSaving(false);
+        return;
+      }
+    }
+
     const custom_fields = {};
     for (const def of customFieldDefs) {
       custom_fields[def.name] = customValues[def.name] ?? "";
@@ -328,6 +388,7 @@ export default function CompanyData() {
       medium_description: fields.medium_description.trim() || null,
       long_description: fields.long_description.trim() || null,
       core_keywords: normalizePillarKeywords(fields.core_keywords),
+      competitors,
       custom_fields,
       updated_at: new Date().toISOString(),
     };
@@ -370,10 +431,17 @@ export default function CompanyData() {
       })
       .join("\n");
 
+    const competitorLines = normalizeCompetitors(fields.competitors)
+      .map((item) => ({ name: item.name.trim(), url: item.url.trim() }))
+      .filter((item) => item.name || item.url)
+      .map((item) => `- ${item.name || "(unnamed)"}${item.url ? `: ${item.url}` : ""}`)
+      .join("\n");
+
     const fixedEntries = [
       ["Domain", fields.domain],
       ["Product Name", fields.product_name],
       ["Pillar Keywords", pillarLines],
+      ["Competitors", competitorLines],
       ["Abstract", fields.abstract],
       ["Short Description", fields.short_description],
       ["Medium Description", fields.medium_description],
@@ -390,7 +458,7 @@ export default function CompanyData() {
     for (const [label, value] of [...fixedEntries, ...customEntries]) {
       const trimmed = (value || "").trim();
       if (!trimmed) continue;
-      if (label === "Pillar Keywords") {
+      if (label === "Pillar Keywords" || label === "Competitors") {
         lines.push(`**${label}:**`, trimmed, "");
       } else {
         lines.push(`**${label}:** ${trimmed}`, "");
@@ -565,6 +633,40 @@ export default function CompanyData() {
             </Button>
           </CollapsibleContent>
         </Collapsible>
+
+        <div className="space-y-3">
+          <Label>Competitors</Label>
+          {normalizeCompetitors(fields.competitors).map((competitor, index) => (
+            <div key={index} className="flex items-start gap-2">
+              <Input
+                value={competitor.name}
+                onChange={(e) => updateCompetitor(index, "name", e.target.value)}
+                placeholder="Name"
+                className="flex-1"
+                aria-label={`Competitor ${index + 1} name`}
+              />
+              <Input
+                value={competitor.url}
+                onChange={(e) => updateCompetitor(index, "url", e.target.value)}
+                placeholder="https://"
+                className="flex-1"
+                aria-label={`Competitor ${index + 1} URL`}
+              />
+              <button
+                type="button"
+                onClick={() => removeCompetitor(index)}
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-destructive"
+                title="Remove competitor"
+                aria-label="Remove competitor"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+          <Button type="button" variant="outline" size="sm" onClick={addCompetitor}>
+            + Add
+          </Button>
+        </div>
 
         <div className="space-y-2">
           <Label htmlFor="abstract">Abstract</Label>
