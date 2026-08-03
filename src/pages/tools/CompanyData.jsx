@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { ChevronDown } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,7 +32,7 @@ function normalizeStringList(value, minCount) {
   return list;
 }
 
-function normalizePillarKeywords(value) {
+function normalizePillarKeywords(value, { minCount = 0 } = {}) {
   const source = Array.isArray(value) ? value : [];
   const items = source.map((item) => {
     if (typeof item === "string") {
@@ -52,7 +52,7 @@ function normalizePillarKeywords(value) {
     }
     return emptyPillar();
   });
-  while (items.length < DEFAULT_PILLAR_COUNT) items.push(emptyPillar());
+  while (items.length < minCount) items.push(emptyPillar());
   return items;
 }
 
@@ -72,7 +72,7 @@ const EMPTY_PROFILE = {
   short_description: "",
   medium_description: "",
   long_description: "",
-  core_keywords: normalizePillarKeywords([]),
+  core_keywords: normalizePillarKeywords([], { minCount: DEFAULT_PILLAR_COUNT }),
 };
 
 function downloadMarkdown(filename, content) {
@@ -153,7 +153,11 @@ export default function CompanyData() {
         short_description: profile.short_description || "",
         medium_description: profile.medium_description || "",
         long_description: profile.long_description || "",
-        core_keywords: normalizePillarKeywords(profile.core_keywords),
+        core_keywords: normalizePillarKeywords(profile.core_keywords, {
+          minCount: Array.isArray(profile.core_keywords) && profile.core_keywords.length > 0
+            ? 0
+            : DEFAULT_PILLAR_COUNT,
+        }),
       });
       setCustomValues(
         profile.custom_fields && typeof profile.custom_fields === "object"
@@ -200,6 +204,58 @@ export default function CompanyData() {
       ...prev,
       core_keywords: [...normalizePillarKeywords(prev.core_keywords), emptyPillar()],
     }));
+  };
+
+  const removePillarKeyword = (index) => {
+    const pillars = normalizePillarKeywords(fields.core_keywords);
+    const pillar = pillars[index];
+    const hasContent =
+      String(pillar?.keyword || "").trim() || countFilled(pillar?.supporting || []) > 0;
+    if (
+      hasContent &&
+      !window.confirm("Delete this pillar keyword and its supporting keywords?")
+    ) {
+      return;
+    }
+
+    setFields((prev) => {
+      const next = normalizePillarKeywords(prev.core_keywords);
+      next.splice(index, 1);
+      return { ...prev, core_keywords: next };
+    });
+    setOpenPillars((prev) => {
+      const remapped = {};
+      for (const [key, open] of Object.entries(prev)) {
+        const i = Number(key);
+        if (Number.isNaN(i) || i === index) continue;
+        remapped[i > index ? i - 1 : i] = open;
+      }
+      return remapped;
+    });
+  };
+
+  const movePillarKeyword = (index, direction) => {
+    const target = index + direction;
+    const length = normalizePillarKeywords(fields.core_keywords).length;
+    if (target < 0 || target >= length) return;
+
+    setFields((prev) => {
+      const next = normalizePillarKeywords(prev.core_keywords);
+      if (target >= next.length) return prev;
+      const swapped = [...next];
+      const tmp = swapped[index];
+      swapped[index] = swapped[target];
+      swapped[target] = tmp;
+      return { ...prev, core_keywords: swapped };
+    });
+    setOpenPillars((prev) => {
+      const remapped = { ...prev };
+      const a = prev[index];
+      const b = prev[target];
+      remapped[index] = b;
+      remapped[target] = a;
+      return remapped;
+    });
   };
 
   const addSupportingKeyword = (pillarIndex) => {
@@ -439,6 +495,37 @@ export default function CompanyData() {
                     <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
                       {left} left
                     </span>
+                    <div className="flex shrink-0 items-center gap-0.5">
+                      <button
+                        type="button"
+                        onClick={() => movePillarKeyword(index, -1)}
+                        disabled={index === 0}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
+                        title="Move up"
+                        aria-label="Move pillar up"
+                      >
+                        <ArrowUp className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => movePillarKeyword(index, 1)}
+                        disabled={index === pillars.length - 1}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
+                        title="Move down"
+                        aria-label="Move pillar down"
+                      >
+                        <ArrowDown className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removePillarKeyword(index)}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-destructive"
+                        title="Delete pillar"
+                        aria-label="Delete pillar keyword"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
 
                   <CollapsibleContent className="border-t border-border px-3 pb-3 pt-2">

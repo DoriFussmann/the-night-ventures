@@ -50,10 +50,15 @@ export const AuthProvider = ({ children }) => {
       return
     }
 
+    // Keep protected routes on the loading spinner until profile + auth flags settle,
+    // so login → "/" doesn't bounce back to /login mid-update.
+    setIsLoadingAuth(true)
+    setIsAuthenticated(true)
+    setUser(buildAppUser(nextSession.user, null))
+
     const nextProfile = await fetchProfile(nextSession.user.id)
     setProfile(nextProfile)
     setUser(buildAppUser(nextSession.user, nextProfile))
-    setIsAuthenticated(true)
     setIsLoadingAuth(false)
     setAuthChecked(true)
   }, [])
@@ -84,7 +89,11 @@ export const AuthProvider = ({ children }) => {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      applySession(nextSession)
+      // Supabase can deadlock if other auth/DB calls run inside this callback.
+      // Defer so sign-in + profile fetch don't hang on the first attempt.
+      setTimeout(() => {
+        if (mounted) applySession(nextSession)
+      }, 0)
     })
 
     return () => {
