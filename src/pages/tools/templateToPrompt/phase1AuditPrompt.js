@@ -17,4 +17,9 @@ End with a section titled exactly:
 
 ## Highest severity
 
-List the leftover items that most urgently need a content decision (draft it / delete it / rewrite it), one numbered item per line. Use short labels that identify the file or content piece (e.g. "Published article: technical-seo-eeat-content-sites.md", "Service: Technical SEO Audits"). Do not fix anything.`;
+List the leftover items that most urgently need a decision, one numbered item per line. Prefix each label with a kind tag:
+- [content] for published/demo/template content files that need draft / delete / rewrite (e.g. "[content] Published article: technical-seo-eeat-content-sites.md")
+- [config] for site.ts fields, env vars, or other identity config that is not a content file (e.g. "[config] site.ts SITE_NAME still 'Your Company'")
+- [missing] when a surface/file/page does not exist yet and should not be invented in the fill pass (e.g. "[missing] About page")
+
+Use short labels that identify the file, field, or content piece. Do not fix anything.`;

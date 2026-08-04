@@ -1,14 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useParams } from "react-router-dom";
 import { Info, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,25 +12,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import WorkflowStepper, {
+  nextWorkflowStatus,
+} from "@/components/WorkflowStepper";
 
-const STATUSES = ["pending", "in-progress", "done"];
-
-const STATUS_META = {
-  pending: {
-    label: "Pending",
-    className: "bg-slate-100 text-slate-600 border-slate-200",
-  },
-  "in-progress": {
-    label: "In progress",
-    className: "bg-orange-50 text-orange-700 border-orange-200",
-  },
-  done: {
-    label: "Done",
-    className: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  },
-};
-
-export const ROUTE_STEPS = [
+const ROUTE_STEPS = [
   {
     id: "choose-pillar",
     name: "Choose pillar",
@@ -128,7 +107,7 @@ function readStatuses(companyId) {
     const parsed = JSON.parse(raw);
     const next = defaultStatuses();
     for (const step of ROUTE_STEPS) {
-      if (STATUSES.includes(parsed?.[step.id])) {
+      if (["pending", "in-progress", "done"].includes(parsed?.[step.id])) {
         next[step.id] = parsed[step.id];
       }
     }
@@ -156,31 +135,30 @@ function clearStatuses(companyId) {
   }
 }
 
-function nextStatus(current) {
-  const index = STATUSES.indexOf(current);
-  return STATUSES[(index + 1) % STATUSES.length];
-}
-
-export default function RouteTracker({ open, onOpenChange, companyId }) {
+export default function TheRoute() {
+  const { companyId } = useParams();
   const [statuses, setStatuses] = useState(() => readStatuses(companyId));
   const [expandedId, setExpandedId] = useState(null);
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
 
   useEffect(() => {
-    if (open) {
-      setStatuses(readStatuses(companyId));
-      setExpandedId(null);
-    }
-  }, [open, companyId]);
+    setStatuses(readStatuses(companyId));
+    setExpandedId(null);
+  }, [companyId]);
 
   const doneCount = useMemo(
     () => ROUTE_STEPS.filter((step) => statuses[step.id] === "done").length,
     [statuses]
   );
 
+  const expandedStep = useMemo(
+    () => ROUTE_STEPS.find((step) => step.id === expandedId) || null,
+    [expandedId]
+  );
+
   const cycleStatus = (stepId) => {
     setStatuses((prev) => {
-      const next = { ...prev, [stepId]: nextStatus(prev[stepId] || "pending") };
+      const next = { ...prev, [stepId]: nextWorkflowStatus(prev[stepId] || "pending") };
       writeStatuses(companyId, next);
       return next;
     });
@@ -199,88 +177,54 @@ export default function RouteTracker({ open, onOpenChange, companyId }) {
   };
 
   return (
-    <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-xl max-h-[90vh] flex flex-col gap-0 p-0 overflow-hidden">
-          <DialogHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
-            <DialogTitle>The Route</DialogTitle>
-            <DialogDescription>
-              Cluster workflow — {doneCount} of {ROUTE_STEPS.length} done
-            </DialogDescription>
-          </DialogHeader>
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-[15px] text-foreground mb-1">The Route</h1>
+          <p className="text-sm text-muted-foreground">
+            Cluster workflow — {doneCount} of {ROUTE_STEPS.length} done
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setConfirmResetOpen(true)}
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+          Refresh
+        </Button>
+      </div>
 
-          <div className="flex-1 overflow-y-auto px-3 py-2">
-            <ul className="space-y-1">
-              {ROUTE_STEPS.map((step, index) => {
-                const status = statuses[step.id] || "pending";
-                const meta = STATUS_META[status] || STATUS_META.pending;
-                const expanded = expandedId === step.id;
+      <WorkflowStepper
+        steps={ROUTE_STEPS}
+        statuses={statuses}
+        onCycleStatus={cycleStatus}
+        selectedId={expandedId}
+        renderStepAction={(step, { selected }) => (
+          <button
+            type="button"
+            title={selected ? "Hide details" : "Show details"}
+            aria-label={selected ? "Hide details" : "Show details"}
+            aria-expanded={selected}
+            onClick={(event) => toggleExpanded(step.id, event)}
+            className={`mt-0.5 rounded p-1 text-muted-foreground hover:bg-background hover:text-foreground ${
+              selected ? "bg-background text-foreground" : ""
+            }`}
+          >
+            <Info className="h-3.5 w-3.5" />
+          </button>
+        )}
+      />
 
-                return (
-                  <li key={step.id}>
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => cycleStatus(step.id)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          cycleStatus(step.id);
-                        }
-                      }}
-                      className="w-full flex items-center gap-2 rounded-lg border border-transparent px-2.5 py-2 text-left transition-colors hover:bg-accent hover:border-border cursor-pointer"
-                    >
-                      <span className="w-5 shrink-0 text-xs tabular-nums text-muted-foreground">
-                        {index + 1}
-                      </span>
-                      <span className="min-w-0 flex-1 flex items-center gap-2">
-                        <span className="truncate text-sm text-foreground">{step.name}</span>
-                        <span className="shrink-0 inline-flex items-center rounded-full border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground truncate max-w-[9.5rem]">
-                          {step.location}
-                        </span>
-                      </span>
-                      <span
-                        className={`shrink-0 inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${meta.className}`}
-                      >
-                        {meta.label}
-                      </span>
-                      <button
-                        type="button"
-                        title={expanded ? "Hide details" : "Show details"}
-                        aria-label={expanded ? "Hide details" : "Show details"}
-                        aria-expanded={expanded}
-                        onClick={(event) => toggleExpanded(step.id, event)}
-                        className={`shrink-0 p-1 rounded text-muted-foreground hover:text-foreground hover:bg-background ${
-                          expanded ? "text-foreground bg-background" : ""
-                        }`}
-                      >
-                        <Info className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                    {expanded && (
-                      <p className="px-9 pb-2 text-xs text-muted-foreground leading-relaxed">
-                        {step.description}
-                      </p>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-
-          <DialogFooter className="px-6 py-4 border-t border-border shrink-0 sm:justify-between">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setConfirmResetOpen(true)}
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              Refresh
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {expandedStep && (
+        <div className="rounded-lg border border-border bg-muted/30 px-4 py-3">
+          <p className="text-sm font-medium text-foreground mb-1">{expandedStep.name}</p>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            {expandedStep.description}
+          </p>
+        </div>
+      )}
 
       <AlertDialog open={confirmResetOpen} onOpenChange={setConfirmResetOpen}>
         <AlertDialogContent>
@@ -302,6 +246,6 @@ export default function RouteTracker({ open, onOpenChange, companyId }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </div>
   );
 }

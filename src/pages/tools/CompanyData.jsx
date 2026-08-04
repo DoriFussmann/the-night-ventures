@@ -19,6 +19,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  emptyServiceEntry,
+  emptyTeamEntry,
+  normalizeServices,
+  normalizeTeamMembers,
+  trimServicesForSave,
+  trimTeamMembersForSave,
+} from "./templateToPrompt/customFieldKeys";
 
 const DEFAULT_PILLAR_COUNT = 5;
 const DEFAULT_SUPPORTING_COUNT = 5;
@@ -105,6 +113,8 @@ const EMPTY_PROFILE = {
   design_guide_abstract: "",
   core_keywords: normalizePillarKeywords([], { minCount: DEFAULT_PILLAR_COUNT }),
   competitors: [],
+  services: [],
+  team_members: [],
 };
 
 function downloadMarkdown(filename, content) {
@@ -151,7 +161,7 @@ export default function CompanyData() {
       supabase
         .from("company_profiles")
         .select(
-          "id, domain, product_name, abstract, short_description, medium_description, long_description, design_guide_raw, design_guide_abstract, core_keywords, competitors, custom_fields"
+          "id, domain, product_name, abstract, short_description, medium_description, long_description, design_guide_raw, design_guide_abstract, core_keywords, competitors, services, team_members, custom_fields"
         )
         .eq("company_id", companyId)
         .maybeSingle(),
@@ -200,6 +210,8 @@ export default function CompanyData() {
             : DEFAULT_PILLAR_COUNT,
         }),
         competitors: normalizeCompetitors(profile.competitors),
+        services: normalizeServices(profile.services),
+        team_members: normalizeTeamMembers(profile.team_members),
       });
       setCustomValues(
         profile.custom_fields && typeof profile.custom_fields === "object"
@@ -261,6 +273,82 @@ export default function CompanyData() {
       ...prev,
       competitors: normalizeCompetitors(prev.competitors).filter((_, i) => i !== index),
     }));
+  };
+
+  const addService = () => {
+    setFields((prev) => ({
+      ...prev,
+      services: [...normalizeServices(prev.services), emptyServiceEntry()],
+    }));
+  };
+
+  const updateService = (index, key, value) => {
+    setFields((prev) => {
+      const next = normalizeServices(prev.services);
+      next[index] = { ...next[index], [key]: value };
+      return { ...prev, services: next };
+    });
+  };
+
+  const removeService = (index) => {
+    setFields((prev) => ({
+      ...prev,
+      services: normalizeServices(prev.services).filter((_, i) => i !== index),
+    }));
+  };
+
+  const addTeamMember = () => {
+    setFields((prev) => ({
+      ...prev,
+      team_members: [...normalizeTeamMembers(prev.team_members), emptyTeamEntry()],
+    }));
+  };
+
+  const updateTeamMember = (index, key, value) => {
+    setFields((prev) => {
+      const next = normalizeTeamMembers(prev.team_members);
+      next[index] = { ...next[index], [key]: value };
+      return { ...prev, team_members: next };
+    });
+  };
+
+  const removeTeamMember = (index) => {
+    setFields((prev) => ({
+      ...prev,
+      team_members: normalizeTeamMembers(prev.team_members).filter((_, i) => i !== index),
+    }));
+  };
+
+  const addTeamSameAs = (memberIndex) => {
+    setFields((prev) => {
+      const next = normalizeTeamMembers(prev.team_members);
+      next[memberIndex] = {
+        ...next[memberIndex],
+        same_as: [...next[memberIndex].same_as, ""],
+      };
+      return { ...prev, team_members: next };
+    });
+  };
+
+  const updateTeamSameAs = (memberIndex, urlIndex, value) => {
+    setFields((prev) => {
+      const next = normalizeTeamMembers(prev.team_members);
+      const same_as = [...next[memberIndex].same_as];
+      same_as[urlIndex] = value;
+      next[memberIndex] = { ...next[memberIndex], same_as };
+      return { ...prev, team_members: next };
+    });
+  };
+
+  const removeTeamSameAs = (memberIndex, urlIndex) => {
+    setFields((prev) => {
+      const next = normalizeTeamMembers(prev.team_members);
+      next[memberIndex] = {
+        ...next[memberIndex],
+        same_as: next[memberIndex].same_as.filter((_, i) => i !== urlIndex),
+      };
+      return { ...prev, team_members: next };
+    });
   };
 
   const addPillarKeyword = () => {
@@ -393,6 +481,19 @@ export default function CompanyData() {
       }
     }
 
+    const services = trimServicesForSave(fields.services);
+    const team_members = trimTeamMembersForSave(fields.team_members);
+
+    for (const member of team_members) {
+      for (const url of member.same_as || []) {
+        if (!isLooseHttpUrl(url)) {
+          setError("Team sameAs URLs must start with http:// or https://");
+          setSaving(false);
+          return;
+        }
+      }
+    }
+
     const custom_fields = {};
     for (const def of customFieldDefs) {
       custom_fields[def.name] = customValues[def.name] ?? "";
@@ -410,6 +511,8 @@ export default function CompanyData() {
       design_guide_abstract: fields.design_guide_abstract.trim() || null,
       core_keywords: normalizePillarKeywords(fields.core_keywords),
       competitors,
+      services,
+      team_members,
       custom_fields,
       updated_at: new Date().toISOString(),
     };
@@ -458,11 +561,31 @@ export default function CompanyData() {
       .map((item) => `- ${item.name || "(unnamed)"}${item.url ? `: ${item.url}` : ""}`)
       .join("\n");
 
+    const serviceLines = trimServicesForSave(fields.services)
+      .map((s) => {
+        const head = `- ${s.title || "(untitled)"}: ${s.summary || ""}`.trim();
+        return s.detail ? `${head}\n  ${s.detail}` : head;
+      })
+      .join("\n");
+
+    const teamLines = trimTeamMembersForSave(fields.team_members)
+      .map((t) => {
+        const head = `- ${t.name || "(unnamed)"}${t.role ? ` (${t.role})` : ""}`;
+        const parts = [head];
+        if (t.bio) parts.push(`  ${t.bio}`);
+        if (t.credentials) parts.push(`  Credentials: ${t.credentials}`);
+        if (t.same_as?.length) parts.push(`  sameAs: ${t.same_as.join(", ")}`);
+        return parts.join("\n");
+      })
+      .join("\n");
+
     const fixedEntries = [
       ["Domain", fields.domain],
       ["Product Name", fields.product_name],
       ["Pillar Keywords", pillarLines],
       ["Competitors", competitorLines],
+      ["Services / Products", serviceLines],
+      ["Team", teamLines],
       ["Abstract", fields.abstract],
       ["Short Description", fields.short_description],
       ["Medium Description", fields.medium_description],
@@ -480,7 +603,12 @@ export default function CompanyData() {
     for (const [label, value] of [...fixedEntries, ...customEntries]) {
       const trimmed = (value || "").trim();
       if (!trimmed) continue;
-      if (label === "Pillar Keywords" || label === "Competitors") {
+      if (
+        label === "Pillar Keywords" ||
+        label === "Competitors" ||
+        label === "Services / Products" ||
+        label === "Team"
+      ) {
         lines.push(`**${label}:**`, trimmed, "");
       } else {
         lines.push(`**${label}:** ${trimmed}`, "");
@@ -781,6 +909,141 @@ export default function CompanyData() {
             </div>
           ))}
           <Button type="button" variant="outline" size="sm" onClick={addCompetitor}>
+            + Add
+          </Button>
+        </div>
+
+        <div className="space-y-3">
+          <Label>Services / Products</Label>
+          {normalizeServices(fields.services).map((service, index) => (
+            <div
+              key={index}
+              className="space-y-2 rounded-md border border-border p-3"
+            >
+              <div className="flex items-start gap-2">
+                <Input
+                  value={service.title}
+                  onChange={(e) => updateService(index, "title", e.target.value)}
+                  placeholder="Title"
+                  className="flex-1"
+                  aria-label={`Service ${index + 1} title`}
+                />
+                <button
+                  type="button"
+                  onClick={() => removeService(index)}
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-destructive"
+                  title="Remove service"
+                  aria-label="Remove service"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <Textarea
+                value={service.summary}
+                onChange={(e) => updateService(index, "summary", e.target.value)}
+                placeholder="Summary"
+                className="min-h-[72px]"
+                aria-label={`Service ${index + 1} summary`}
+              />
+              <Textarea
+                value={service.detail}
+                onChange={(e) => updateService(index, "detail", e.target.value)}
+                placeholder="Detail (optional)"
+                className="min-h-[72px]"
+                aria-label={`Service ${index + 1} detail`}
+              />
+            </div>
+          ))}
+          <Button type="button" variant="outline" size="sm" onClick={addService}>
+            + Add
+          </Button>
+        </div>
+
+        <div className="space-y-3">
+          <Label>Team</Label>
+          {normalizeTeamMembers(fields.team_members).map((member, index) => (
+            <div
+              key={index}
+              className="space-y-2 rounded-md border border-border p-3"
+            >
+              <div className="flex items-start gap-2">
+                <Input
+                  value={member.name}
+                  onChange={(e) => updateTeamMember(index, "name", e.target.value)}
+                  placeholder="Name"
+                  className="flex-1"
+                  aria-label={`Team member ${index + 1} name`}
+                />
+                <Input
+                  value={member.role}
+                  onChange={(e) => updateTeamMember(index, "role", e.target.value)}
+                  placeholder="Role"
+                  className="flex-1"
+                  aria-label={`Team member ${index + 1} role`}
+                />
+                <button
+                  type="button"
+                  onClick={() => removeTeamMember(index)}
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-destructive"
+                  title="Remove team member"
+                  aria-label="Remove team member"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <Textarea
+                value={member.bio}
+                onChange={(e) => updateTeamMember(index, "bio", e.target.value)}
+                placeholder="Bio"
+                className="min-h-[72px]"
+                aria-label={`Team member ${index + 1} bio`}
+              />
+              <Input
+                value={member.credentials}
+                onChange={(e) =>
+                  updateTeamMember(index, "credentials", e.target.value)
+                }
+                placeholder="Credentials (optional)"
+                aria-label={`Team member ${index + 1} credentials`}
+              />
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">
+                  sameAs URLs (optional)
+                </Label>
+                {(member.same_as || []).map((url, urlIndex) => (
+                  <div key={urlIndex} className="flex items-start gap-2">
+                    <Input
+                      value={url}
+                      onChange={(e) =>
+                        updateTeamSameAs(index, urlIndex, e.target.value)
+                      }
+                      placeholder="https://"
+                      className="flex-1"
+                      aria-label={`Team member ${index + 1} sameAs ${urlIndex + 1}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeTeamSameAs(index, urlIndex)}
+                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-destructive"
+                      title="Remove URL"
+                      aria-label="Remove sameAs URL"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => addTeamSameAs(index)}
+                >
+                  + Add URL
+                </Button>
+              </div>
+            </div>
+          ))}
+          <Button type="button" variant="outline" size="sm" onClick={addTeamMember}>
             + Add
           </Button>
         </div>

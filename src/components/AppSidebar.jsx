@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
 import { supabase } from "@/lib/supabase";
-import RouteTracker from "@/components/RouteTracker";
 import {
   Database,
   Share2,
@@ -11,6 +10,7 @@ import {
   FileText,
   Palette,
   Wand2,
+  LayoutTemplate,
   Lightbulb,
   PenLine,
   BookOpen,
@@ -18,6 +18,7 @@ import {
   LogOut,
   ArrowLeft,
   Route,
+  Construction,
 } from "lucide-react";
 
 function NavItem({ item }) {
@@ -63,7 +64,6 @@ export default function AppSidebar({ user }) {
   const location = useLocation();
   const { companyId: routeCompanyId } = useParams();
   const [companyName, setCompanyName] = useState("");
-  const [routeOpen, setRouteOpen] = useState(false);
 
   useEffect(() => {
     if (routeCompanyId) {
@@ -79,6 +79,14 @@ export default function AppSidebar({ user }) {
   // (e.g. "← Rupert") does not appear before a selection is made.
   const isCompanyPicker = location.pathname === "/";
   const activeCompanyId = routeCompanyId || (isCompanyPicker ? "" : readLastCompanyId());
+  const routePath = activeCompanyId
+    ? `/company/${activeCompanyId}/the-route`
+    : "";
+  const siteBuildFlowPath = activeCompanyId
+    ? `/company/${activeCompanyId}/site-build-flow`
+    : "";
+  const isRouteActive = location.pathname === routePath;
+  const isSiteBuildFlowActive = location.pathname === siteBuildFlowPath;
 
   const generalNav = [
     { label: "Site Build Prompt", path: "/general/site-build-prompt", icon: FileText },
@@ -94,6 +102,7 @@ export default function AppSidebar({ user }) {
   const seoNav = [
     { label: "Design Builder", path: `/company/${activeCompanyId}/design-guide-builder`, icon: Palette },
     { label: "Specific Prompt", path: `/company/${activeCompanyId}/template-to-prompt`, icon: Wand2 },
+    { label: "Site Content Build", path: `/company/${activeCompanyId}/site-content-build`, icon: LayoutTemplate },
     { label: "Topic Generator", path: `/company/${activeCompanyId}/article-topic-suggestion`, icon: Lightbulb },
     { label: "Article Generator", path: `/company/${activeCompanyId}/article-generation`, icon: PenLine },
     { label: "Articles", path: `/company/${activeCompanyId}/articles`, icon: BookOpen },
@@ -186,15 +195,29 @@ export default function AppSidebar({ user }) {
       </nav>
 
       {activeCompanyId && (
-        <div className="border-t border-border px-3 py-3">
-          <button
-            type="button"
-            onClick={() => setRouteOpen(true)}
-            className="w-full flex items-start gap-3 rounded-lg border border-border px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        <div className="border-t border-border px-3 py-3 space-y-2">
+          <Link
+            to={siteBuildFlowPath}
+            className={`w-full flex items-start gap-3 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+              isSiteBuildFlowActive
+                ? "border-border bg-accent text-foreground"
+                : "border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+            }`}
+          >
+            <Construction className="w-4 h-4 shrink-0 mt-0.5" />
+            <span className="leading-snug">Site Build Flow</span>
+          </Link>
+          <Link
+            to={routePath}
+            className={`w-full flex items-start gap-3 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+              isRouteActive
+                ? "border-border bg-accent text-foreground"
+                : "border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+            }`}
           >
             <Route className="w-4 h-4 shrink-0 mt-0.5" />
             <span className="leading-snug">The Route</span>
-          </button>
+          </Link>
         </div>
       )}
 
@@ -209,14 +232,6 @@ export default function AppSidebar({ user }) {
           Log Out
         </button>
       </div>
-
-      {activeCompanyId && (
-        <RouteTracker
-          open={routeOpen}
-          onOpenChange={setRouteOpen}
-          companyId={activeCompanyId}
-        />
-      )}
     </aside>
   );
 }

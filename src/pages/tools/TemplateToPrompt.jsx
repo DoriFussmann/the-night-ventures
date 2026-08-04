@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { ChevronDown, Copy, Loader2, Plus, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
@@ -28,16 +28,11 @@ import {
   countNeedsInputMarkers,
 } from "./templateToPrompt/buildPhase2Prompt";
 import { parseHighestSeverityItems } from "./templateToPrompt/parseHighestSeverity";
+import { emptySeverityDecision } from "./templateToPrompt/classifySeverityItem";
 import {
-  SERVICES_CUSTOM_FIELD,
-  TEAM_BIOS_CUSTOM_FIELD,
   emptyNewContentEntry,
-  emptyServiceEntry,
-  emptyTeamEntry,
-  parseServicesField,
-  parseTeamBiosField,
-  serializeServices,
-  serializeTeamBios,
+  normalizeServices,
+  normalizeTeamMembers,
 } from "./templateToPrompt/customFieldKeys";
 
 function PromptCodeBlock({ value, onCopy, copyMessage }) {
@@ -59,35 +54,18 @@ function PromptCodeBlock({ value, onCopy, copyMessage }) {
   );
 }
 
-async function ensureCustomFieldDef(name) {
-  const { data: existing, error: selectError } = await supabase
-    .from("company_custom_fields")
-    .select("id, name")
-    .eq("name", name)
-    .maybeSingle();
-
-  if (selectError) throw selectError;
-  if (existing) return existing;
-
-  const { data, error: insertError } = await supabase
-    .from("company_custom_fields")
-    .insert({ name })
-    .select("id, name")
-    .single();
-
-  if (insertError) {
-    // Race: another client may have created it
-    const { data: again, error: againError } = await supabase
-      .from("company_custom_fields")
-      .select("id, name")
-      .eq("name", name)
-      .maybeSingle();
-    if (againError) throw insertError;
-    if (again) return again;
-    throw insertError;
-  }
-
-  return data;
+function CompanyDataEmptyHint({ companyId }) {
+  return (
+    <p className="text-sm text-muted-foreground">
+      No services/team added yet — add them in{" "}
+      <Link
+        to={`/company/${companyId}/company-data`}
+        className="text-primary font-medium underline underline-offset-2"
+      >
+        Company Data
+      </Link>
+    </p>
+  );
 }
 
 export default function TemplateToPrompt() {
@@ -96,7 +74,6 @@ export default function TemplateToPrompt() {
   const [companyName, setCompanyName] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [savingReuse, setSavingReuse] = useState(false);
 
   const [auditCopyMessage, setAuditCopyMessage] = useState("");
   const [outputCopyMessage, setOutputCopyMessage] = useState("");
@@ -111,10 +88,8 @@ export default function TemplateToPrompt() {
   const [homepageHero, setHomepageHero] = useState("");
   const [llmsDescription, setLlmsDescription] = useState("");
 
-  const [services, setServices] = useState([emptyServiceEntry()]);
-  const [teamBios, setTeamBios] = useState([emptyTeamEntry()]);
-  const [saveServicesToCompanyData, setSaveServicesToCompanyData] = useState(false);
-  const [saveTeamToCompanyData, setSaveTeamToCompanyData] = useState(false);
+  const [services, setServices] = useState([]);
+  const [teamBios, setTeamBios] = useState([]);
 
   const [contentDecisions, setContentDecisions] = useState([]);
   const [newContent, setNewContent] = useState([]);
@@ -134,7 +109,7 @@ export default function TemplateToPrompt() {
       supabase
         .from("company_profiles")
         .select(
-          "domain, product_name, short_description, medium_description, custom_fields"
+          "domain, product_name, short_description, medium_description, services, team_members"
         )
         .eq("company_id", companyId)
         .maybeSingle(),
@@ -170,16 +145,8 @@ export default function TemplateToPrompt() {
     setHomepageHero(shortDesc);
     setLlmsDescription(mediumDesc || shortDesc);
 
-    const custom =
-      profile?.custom_fields && typeof profile.custom_fields === "object"
-        ? profile.custom_fields
-        : {};
-
-    const savedServices = parseServicesField(custom[SERVICES_CUSTOM_FIELD]);
-    setServices(savedServices.length > 0 ? savedServices : [emptyServiceEntry()]);
-
-    const savedTeam = parseTeamBiosField(custom[TEAM_BIOS_CUSTOM_FIELD]);
-    setTeamBios(savedTeam.length > 0 ? savedTeam : [emptyTeamEntry()]);
+    setServices(normalizeServices(profile?.services));
+    setTeamBios(normalizeTeamMembers(profile?.team_members));
 
     setLoading(false);
   }, [companyId]);
@@ -195,13 +162,8 @@ export default function TemplateToPrompt() {
       const byLabel = new Map(prev.map((d) => [d.label, d]));
       return labels.map((label) => {
         const existing = byLabel.get(label);
-        return (
-          existing || {
-            label,
-            action: "",
-            rewriteSummary: "",
-          }
-        );
+        if (existing) return existing;
+        return emptySeverityDecision(label);
       });
     });
   }, [auditReport]);
@@ -209,18 +171,6 @@ export default function TemplateToPrompt() {
   const handleHeroSourceChange = (source) => {
     setHeroSource(source);
     setHomepageHero(source === "medium" ? mediumDescription : shortDescription);
-  };
-
-  const updateService = (index, key, value) => {
-    setServices((prev) =>
-      prev.map((row, i) => (i === index ? { ...row, [key]: value } : row))
-    );
-  };
-
-  const updateTeam = (index, key, value) => {
-    setTeamBios((prev) =>
-      prev.map((row, i) => (i === index ? { ...row, [key]: value } : row))
-    );
   };
 
   const updateDecision = (index, patch) => {
@@ -246,76 +196,24 @@ export default function TemplateToPrompt() {
     }
   };
 
-  const persistReuseFields = async () => {
-    if (!companyId) return;
-    if (!saveServicesToCompanyData && !saveTeamToCompanyData) return;
-
-    const { data: profile, error: loadError } = await supabase
-      .from("company_profiles")
-      .select("id, custom_fields")
-      .eq("company_id", companyId)
-      .maybeSingle();
-
-    if (loadError) throw loadError;
-
-    const custom_fields = {
-      ...(profile?.custom_fields && typeof profile.custom_fields === "object"
-        ? profile.custom_fields
-        : {}),
-    };
-
-    if (saveServicesToCompanyData) {
-      await ensureCustomFieldDef(SERVICES_CUSTOM_FIELD);
-      custom_fields[SERVICES_CUSTOM_FIELD] = serializeServices(services);
-    }
-
-    if (saveTeamToCompanyData) {
-      await ensureCustomFieldDef(TEAM_BIOS_CUSTOM_FIELD);
-      custom_fields[TEAM_BIOS_CUSTOM_FIELD] = serializeTeamBios(teamBios);
-    }
-
-    const payload = {
-      company_id: companyId,
-      custom_fields,
-      updated_at: new Date().toISOString(),
-    };
-    if (profile?.id) payload.id = profile.id;
-
-    const { error: upsertError } = await supabase
-      .from("company_profiles")
-      .upsert(payload, { onConflict: "company_id" });
-
-    if (upsertError) throw upsertError;
-  };
-
-  const handlePersonalize = async () => {
+  const handlePersonalize = () => {
     setError("");
-    setSavingReuse(true);
 
-    try {
-      await persistReuseFields();
+    const prompt = buildPhase2Prompt({
+      businessName,
+      domain,
+      oneLinePositioning,
+      homepageHero,
+      llmsDescription,
+      services,
+      teamBios,
+      contentDecisions,
+      newContent,
+      auditReport,
+    });
 
-      const prompt = buildPhase2Prompt({
-        businessName,
-        domain,
-        oneLinePositioning,
-        homepageHero,
-        llmsDescription,
-        services,
-        teamBios,
-        contentDecisions,
-        newContent,
-        auditReport,
-      });
-
-      setAssembledPrompt(prompt);
-      setNeedsInputCount(countNeedsInputMarkers(prompt));
-    } catch (err) {
-      console.error(err);
-      setError(err.message || "Failed to assemble prompt");
-    } finally {
-      setSavingReuse(false);
-    }
+    setAssembledPrompt(prompt);
+    setNeedsInputCount(countNeedsInputMarkers(prompt));
   };
 
   const subtitle = useMemo(() => {
@@ -324,6 +222,28 @@ export default function TemplateToPrompt() {
     }
     return "Turn the site template into a company-specific fill prompt.";
   }, [companyName]);
+
+  const contentDecisionRows = contentDecisions
+    .map((row, index) => ({ row, index }))
+    .filter(({ row }) => !row.kind || row.kind === "content");
+  const configDecisionRows = contentDecisions
+    .map((row, index) => ({ row, index }))
+    .filter(({ row }) => row.kind === "config");
+  const missingDecisionRows = contentDecisions
+    .map((row, index) => ({ row, index }))
+    .filter(({ row }) => row.kind === "missing");
+
+  const usableServices = services.filter(
+    (s) => s.title.trim() || s.summary.trim() || s.detail.trim()
+  );
+  const usableTeam = teamBios.filter(
+    (t) =>
+      t.name.trim() ||
+      t.role.trim() ||
+      t.bio.trim() ||
+      t.credentials.trim() ||
+      (t.same_as || []).some((u) => u.trim())
+  );
 
   if (loading) {
     return (
@@ -373,7 +293,7 @@ export default function TemplateToPrompt() {
                 id="audit-report"
                 value={auditReport}
                 onChange={(e) => setAuditReport(e.target.value)}
-                className="min-h-[180px] font-mono text-xs"
+                className="min-h-[180px]"
                 placeholder="Paste the structured audit report here…"
                 required
               />
@@ -385,8 +305,9 @@ export default function TemplateToPrompt() {
             <div>
               <h2 className="text-[15px] text-foreground">From Company Data</h2>
               <p className="text-sm text-muted-foreground">
-                Pre-filled from Company Data. Edits here only affect this prompt —
-                they are not saved back to Company Data.
+                Pre-filled from Company Data. Edits to identity fields only affect
+                this prompt — they are not saved back. Services and Team are read
+                from Company Data.
               </p>
             </div>
 
@@ -458,6 +379,68 @@ export default function TemplateToPrompt() {
                 className="min-h-[96px]"
               />
             </div>
+
+            <div className="space-y-3 rounded-lg border border-border p-4">
+              <h3 className="text-sm font-medium text-foreground">
+                Services / products
+              </h3>
+              {usableServices.length === 0 ? (
+                <CompanyDataEmptyHint companyId={companyId} />
+              ) : (
+                <ul className="space-y-2 text-sm text-foreground">
+                  {usableServices.map((s, i) => (
+                    <li key={`svc-${i}`}>
+                      <span className="font-medium">{s.title || "(untitled)"}</span>
+                      {s.summary ? (
+                        <span className="text-muted-foreground"> — {s.summary}</span>
+                      ) : null}
+                      {s.detail ? (
+                        <p className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap">
+                          {s.detail}
+                        </p>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="space-y-3 rounded-lg border border-border p-4">
+              <h3 className="text-sm font-medium text-foreground">Team</h3>
+              {usableTeam.length === 0 ? (
+                <CompanyDataEmptyHint companyId={companyId} />
+              ) : (
+                <ul className="space-y-3 text-sm text-foreground">
+                  {usableTeam.map((t, i) => (
+                    <li key={`team-${i}`}>
+                      <span className="font-medium">{t.name || "(unnamed)"}</span>
+                      {t.role ? (
+                        <span className="text-muted-foreground"> — {t.role}</span>
+                      ) : null}
+                      {t.bio ? (
+                        <p className="mt-1 text-muted-foreground whitespace-pre-wrap">
+                          {t.bio}
+                        </p>
+                      ) : null}
+                      {t.credentials ? (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Credentials: {t.credentials}
+                        </p>
+                      ) : null}
+                      {(t.same_as || []).filter((u) => u.trim()).length > 0 ? (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          sameAs:{" "}
+                          {(t.same_as || [])
+                            .map((u) => u.trim())
+                            .filter(Boolean)
+                            .join(", ")}
+                        </p>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </section>
 
           {/* 3. Manual fields */}
@@ -465,135 +448,9 @@ export default function TemplateToPrompt() {
             <div>
               <h2 className="text-[15px] text-foreground">Manual fields</h2>
               <p className="text-sm text-muted-foreground">
-                Not auto-filled. Leave empty and the assembled prompt will mark them
-                with {NEEDS_INPUT_MARKER}.
+                Decisions for Highest severity audit items. Leave empty and the
+                assembled prompt will mark them with {NEEDS_INPUT_MARKER}.
               </p>
-            </div>
-
-            <div className="space-y-3 rounded-lg border border-border p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-sm font-medium text-foreground">
-                    Services / products
-                  </h3>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Not yet tracked in Company Data. Consider adding a Services field
-                    there for future reuse.
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setServices((prev) => [...prev, emptyServiceEntry()])}
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Add
-                </Button>
-              </div>
-
-              <div className="space-y-3">
-                {services.map((row, index) => (
-                  <div
-                    key={`service-${index}`}
-                    className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]"
-                  >
-                    <Input
-                      placeholder="Title"
-                      value={row.title}
-                      onChange={(e) => updateService(index, "title", e.target.value)}
-                    />
-                    <Input
-                      placeholder="Summary"
-                      value={row.summary}
-                      onChange={(e) => updateService(index, "summary", e.target.value)}
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      disabled={services.length <= 1}
-                      onClick={() =>
-                        setServices((prev) => prev.filter((_, i) => i !== index))
-                      }
-                      title="Remove"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-
-              <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-                <Checkbox
-                  checked={saveServicesToCompanyData}
-                  onCheckedChange={(v) => setSaveServicesToCompanyData(v === true)}
-                />
-                Save these to Company Data
-              </label>
-            </div>
-
-            <div className="space-y-3 rounded-lg border border-border p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-sm font-medium text-foreground">
-                    Team / author bios
-                  </h3>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Not yet tracked in Company Data. Consider adding a Team field
-                    there for future reuse.
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setTeamBios((prev) => [...prev, emptyTeamEntry()])}
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Add
-                </Button>
-              </div>
-
-              <div className="space-y-3">
-                {teamBios.map((row, index) => (
-                  <div key={`team-${index}`} className="space-y-2">
-                    <div className="flex gap-2">
-                      <Input
-                        placeholder="Name"
-                        value={row.name}
-                        onChange={(e) => updateTeam(index, "name", e.target.value)}
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        disabled={teamBios.length <= 1}
-                        onClick={() =>
-                          setTeamBios((prev) => prev.filter((_, i) => i !== index))
-                        }
-                        title="Remove"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
-                    </div>
-                    <Textarea
-                      placeholder="Bio"
-                      value={row.bio}
-                      onChange={(e) => updateTeam(index, "bio", e.target.value)}
-                      className="min-h-[72px]"
-                    />
-                  </div>
-                ))}
-              </div>
-
-              <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-                <Checkbox
-                  checked={saveTeamToCompanyData}
-                  onCheckedChange={(v) => setSaveTeamToCompanyData(v === true)}
-                />
-                Save these to Company Data
-              </label>
             </div>
 
             <div className="space-y-3 rounded-lg border border-border p-4">
@@ -602,19 +459,20 @@ export default function TemplateToPrompt() {
                   Published demo / template content decisions
                 </h3>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Parsed from the audit report&apos;s &quot;Highest severity&quot;
-                  section.
+                  Content-file findings from the audit report&apos;s &quot;Highest
+                  severity&quot; section.
                 </p>
               </div>
 
-              {contentDecisions.length === 0 ? (
+              {contentDecisionRows.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  Paste an audit report that includes a &quot;Highest severity&quot;
-                  list to populate decisions.
+                  {contentDecisions.length === 0
+                    ? 'Paste an audit report that includes a "Highest severity" list to populate decisions.'
+                    : "No content-file findings in Highest severity."}
                 </p>
               ) : (
                 <div className="space-y-3">
-                  {contentDecisions.map((row, index) => (
+                  {contentDecisionRows.map(({ row, index }) => (
                     <div
                       key={`${row.label}-${index}`}
                       className="grid gap-2 sm:grid-cols-[1fr_180px] items-start"
@@ -652,6 +510,87 @@ export default function TemplateToPrompt() {
                           />
                         )}
                       </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-3 rounded-lg border border-border p-4">
+              <div>
+                <h3 className="text-sm font-medium text-foreground">
+                  Config field updates
+                </h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  site.ts / env / identity config findings — set a value instead of
+                  a content decision.
+                </p>
+              </div>
+
+              {configDecisionRows.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No config-field findings in Highest severity.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {configDecisionRows.map(({ row, index }) => (
+                    <div
+                      key={`config-${row.label}-${index}`}
+                      className="grid gap-2 sm:grid-cols-[1fr_1fr] items-start"
+                    >
+                      <p className="text-sm text-foreground pt-2">{row.label}</p>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">
+                          set to
+                        </Label>
+                        <Input
+                          placeholder="Value to set"
+                          value={row.setToValue || ""}
+                          onChange={(e) =>
+                            updateDecision(index, { setToValue: e.target.value })
+                          }
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-3 rounded-lg border border-border p-4">
+              <div>
+                <h3 className="text-sm font-medium text-foreground">
+                  Missing surfaces
+                </h3>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Findings where no file/page exists yet. Defer instead of forcing
+                  a content decision this run.
+                </p>
+              </div>
+
+              {missingDecisionRows.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No missing-surface findings in Highest severity.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {missingDecisionRows.map(({ row, index }) => (
+                    <div
+                      key={`missing-${row.label}-${index}`}
+                      className="flex flex-wrap items-start justify-between gap-3"
+                    >
+                      <p className="text-sm text-foreground flex-1 min-w-[200px]">
+                        {row.label}
+                      </p>
+                      <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+                        <Checkbox
+                          checked={row.defer === true}
+                          onCheckedChange={(v) =>
+                            updateDecision(index, { defer: v === true })
+                          }
+                        />
+                        Defer to Full Site Content Build stage
+                      </label>
                     </div>
                   ))}
                 </div>
@@ -776,19 +715,8 @@ export default function TemplateToPrompt() {
           </section>
 
           <div>
-            <Button
-              type="button"
-              onClick={handlePersonalize}
-              disabled={savingReuse}
-            >
-              {savingReuse ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Working...
-                </>
-              ) : (
-                "Personalize Prompt"
-              )}
+            <Button type="button" onClick={handlePersonalize}>
+              Personalize Prompt
             </Button>
           </div>
 

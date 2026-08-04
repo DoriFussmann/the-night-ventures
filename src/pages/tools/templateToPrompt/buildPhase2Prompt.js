@@ -10,36 +10,68 @@ function valueOrNeeds(value) {
 
 function formatServices(services) {
   const rows = Array.isArray(services) ? services : [];
-  const usable = rows.filter((s) => filled(s?.title) || filled(s?.summary));
-  if (usable.length === 0) return NEEDS_INPUT_MARKER;
+  const usable = rows.filter(
+    (s) => filled(s?.title) || filled(s?.summary) || filled(s?.detail)
+  );
+  if (usable.length === 0) {
+    return "(None added in Company Data yet — skip inventing services this run.)";
+  }
 
   return usable
     .map((s, i) => {
-      const title = valueOrNeeds(s.title);
-      const summary = valueOrNeeds(s.summary);
-      return `${i + 1}. Title: ${title}\n   Summary: ${summary}`;
+      const lines = [
+        `${i + 1}. Title: ${valueOrNeeds(s.title)}`,
+        `   Summary: ${valueOrNeeds(s.summary)}`,
+      ];
+      if (filled(s.detail)) {
+        lines.push(`   Detail: ${filled(s.detail)}`);
+      }
+      return lines.join("\n");
     })
     .join("\n");
 }
 
 function formatTeamBios(teamBios) {
   const rows = Array.isArray(teamBios) ? teamBios : [];
-  const usable = rows.filter((t) => filled(t?.name) || filled(t?.bio));
-  if (usable.length === 0) return NEEDS_INPUT_MARKER;
+  const usable = rows.filter(
+    (t) =>
+      filled(t?.name) ||
+      filled(t?.role) ||
+      filled(t?.bio) ||
+      filled(t?.credentials) ||
+      (Array.isArray(t?.same_as) && t.same_as.some((u) => filled(u)))
+  );
+  if (usable.length === 0) {
+    return "(None added in Company Data yet — skip inventing team bios this run.)";
+  }
 
   return usable
     .map((t, i) => {
-      const name = valueOrNeeds(t.name);
-      const bio = valueOrNeeds(t.bio);
-      return `${i + 1}. Name: ${name}\n   Bio: ${bio}`;
+      const lines = [
+        `${i + 1}. Name: ${valueOrNeeds(t.name)}`,
+        `   Role: ${valueOrNeeds(t.role)}`,
+        `   Bio: ${valueOrNeeds(t.bio)}`,
+      ];
+      if (filled(t.credentials)) {
+        lines.push(`   Credentials: ${filled(t.credentials)}`);
+      }
+      const sameAs = (Array.isArray(t.same_as) ? t.same_as : [])
+        .map((u) => filled(u))
+        .filter(Boolean);
+      if (sameAs.length > 0) {
+        lines.push(`   sameAs: ${sameAs.join(", ")}`);
+      }
+      return lines.join("\n");
     })
     .join("\n");
 }
 
 function formatContentDecisions(decisions) {
-  const rows = Array.isArray(decisions) ? decisions : [];
+  const rows = (Array.isArray(decisions) ? decisions : []).filter(
+    (d) => !d?.kind || d.kind === "content"
+  );
   if (rows.length === 0) {
-    return NEEDS_INPUT_MARKER;
+    return "(None — no content-file findings in Highest severity.)";
   }
 
   return rows
@@ -58,6 +90,45 @@ function formatContentDecisions(decisions) {
       if (action === "rewrite") {
         const summary = valueOrNeeds(d.rewriteSummary);
         return `${i + 1}. ${label} → rewrite it\n   Replacement summary: ${summary}`;
+      }
+      return `${i + 1}. ${label} → ${NEEDS_INPUT_MARKER}`;
+    })
+    .join("\n");
+}
+
+function formatConfigUpdates(decisions) {
+  const rows = (Array.isArray(decisions) ? decisions : []).filter(
+    (d) => d?.kind === "config"
+  );
+  if (rows.length === 0) {
+    return "(None — no config-field findings in Highest severity.)";
+  }
+
+  return rows
+    .map((d, i) => {
+      const label = valueOrNeeds(d.label);
+      const value = filled(d.setToValue);
+      if (!value) {
+        return `${i + 1}. ${label} → set to: ${NEEDS_INPUT_MARKER}`;
+      }
+      return `${i + 1}. ${label} → set to: ${value}`;
+    })
+    .join("\n");
+}
+
+function formatDeferredSurfaces(decisions) {
+  const rows = (Array.isArray(decisions) ? decisions : []).filter(
+    (d) => d?.kind === "missing"
+  );
+  if (rows.length === 0) {
+    return "(None — no missing-surface findings in Highest severity.)";
+  }
+
+  return rows
+    .map((d, i) => {
+      const label = valueOrNeeds(d.label);
+      if (d.defer) {
+        return `${i + 1}. ${label} → defer to Full Site Content Build stage (do not invent this run)`;
       }
       return `${i + 1}. ${label} → ${NEEDS_INPUT_MARKER}`;
     })
@@ -148,19 +219,27 @@ ${formatServices(services)}
 ${formatTeamBios(teamBios)}
 
 4. PUBLISHED DEMO / TEMPLATE CONTENT DECISIONS
-   For each highest-severity item from the audit, apply the decision below:
+   For each highest-severity content-file item from the audit, apply the decision below:
 ${formatContentDecisions(contentDecisions)}
 
-5. LLMS.TXT
+5. CONFIG UPDATES
+   For each config-field finding (site.ts / env / identity config — not a content file), set the value as specified. Do not treat these as draft/delete/rewrite content decisions:
+${formatConfigUpdates(contentDecisions)}
+
+6. DEFERRED TO FULL SITE CONTENT BUILD
+   The following missing surfaces are deferred. Do not invent or scaffold them in this run:
+${formatDeferredSurfaces(contentDecisions)}
+
+7. LLMS.TXT
    Update public/llms.txt and any generators so the site description is:
    "${llms}"
    Remove leftover template-topic language that does not match ${name}.
 
-6. NEW CONTENT TO ADD THIS RUN
+8. NEW CONTENT TO ADD THIS RUN
 ${formatNewContent(newContent)}
 
-7. VERIFICATION
-   Run a clean build. Grep for common template leftovers. Report: final homepage copy, services/products entries, team bios touched, each highest-severity decision applied, and any spots still marked as needing input that blocked a change.
+9. VERIFICATION
+   Run a clean build. Grep for common template leftovers. Report: final homepage copy, services/products entries, team bios touched, each highest-severity content decision applied, each config update applied, deferred missing surfaces left untouched, and any spots still marked as needing input that blocked a change.
 `;
 }
 
