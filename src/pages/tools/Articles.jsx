@@ -30,9 +30,21 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-const TYPE_OPTIONS = ["comprehensive", "howto", "comparison", "faq", "flex"];
+const TYPE_OPTIONS = [
+  { value: "pillar", label: "Pillar" },
+  { value: "comprehensive", label: "Comprehensive" },
+  { value: "howto", label: "How-to" },
+  { value: "comparison", label: "Comparison" },
+  { value: "faq", label: "FAQ" },
+  { value: "flex", label: "Flex" },
+];
+
+const TYPE_LABELS = Object.fromEntries(
+  TYPE_OPTIONS.map((option) => [option.value, option.label])
+);
 
 const TYPE_COLORS = {
+  pillar: "bg-indigo-50 text-indigo-700 border-indigo-200",
   comprehensive: "bg-violet-50 text-violet-700 border-violet-200",
   howto: "bg-blue-50 text-blue-700 border-blue-200",
   comparison: "bg-amber-50 text-amber-800 border-amber-200",
@@ -40,10 +52,24 @@ const TYPE_COLORS = {
   flex: "bg-slate-100 text-slate-600 border-slate-200",
 };
 
+const STATUS_LABELS = {
+  drafted: "Drafted",
+  published: "Published",
+};
+
 const STATUS_COLORS = {
   drafted: "bg-orange-50 text-orange-700 border-orange-200",
   published: "bg-emerald-50 text-emerald-700 border-emerald-200",
 };
+
+function isPillarArticle(article) {
+  return !String(article?.supporting_keyword || "").trim();
+}
+
+function articleDisplayType(article) {
+  if (isPillarArticle(article)) return "pillar";
+  return TYPE_COLORS[article?.type] ? article.type : "flex";
+}
 
 function TypeBadge({ type }) {
   const key = TYPE_COLORS[type] ? type : "flex";
@@ -51,7 +77,7 @@ function TypeBadge({ type }) {
     <span
       className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${TYPE_COLORS[key]}`}
     >
-      {key}
+      {TYPE_LABELS[key] || key}
     </span>
   );
 }
@@ -62,7 +88,7 @@ function StatusBadge({ status }) {
     <span
       className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${STATUS_COLORS[key]}`}
     >
-      {key}
+      {STATUS_LABELS[key] || key}
     </span>
   );
 }
@@ -239,7 +265,9 @@ export default function Articles() {
       if (pillarFilter !== "all" && article.pillar_keyword !== pillarFilter) {
         return false;
       }
-      if (typeFilter !== "all" && article.type !== typeFilter) return false;
+      if (typeFilter !== "all" && articleDisplayType(article) !== typeFilter) {
+        return false;
+      }
       if (!q) return true;
       const title = String(article.title || "").toLowerCase();
       const target = String(article.target_keyword || "").toLowerCase();
@@ -332,7 +360,7 @@ export default function Articles() {
             <SelectValue placeholder="Pillar Keyword" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All pillars</SelectItem>
+            <SelectItem value="all">All Pillars</SelectItem>
             {pillarOptions.map((pillar) => (
               <SelectItem key={pillar} value={pillar}>
                 {pillar}
@@ -349,10 +377,10 @@ export default function Articles() {
             <SelectValue placeholder="Type" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All types</SelectItem>
+            <SelectItem value="all">All Types</SelectItem>
             {TYPE_OPTIONS.map((type) => (
-              <SelectItem key={type} value={type}>
-                {type}
+              <SelectItem key={type.value} value={type.value}>
+                {type.label}
               </SelectItem>
             ))}
           </SelectContent>
@@ -412,7 +440,7 @@ export default function Articles() {
                   {article.title || "(untitled)"}
                 </span>
                 <PillarBadge keyword={article.pillar_keyword} />
-                <TypeBadge type={article.type} />
+                <TypeBadge type={articleDisplayType(article)} />
                 <StatusBadge status={article.status} />
                 <span className="shrink-0 text-xs text-muted-foreground tabular-nums w-[5.5rem] text-right">
                   {formatDisplayDate(article.updated_date || article.date)}
@@ -445,7 +473,7 @@ export default function Articles() {
                 </DialogHeader>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <PillarBadge keyword={selected.pillar_keyword} />
-                  <TypeBadge type={selected.type} />
+                  <TypeBadge type={articleDisplayType(selected)} />
                   <StatusBadge status={selected.status} />
                   <Button
                     type="button"

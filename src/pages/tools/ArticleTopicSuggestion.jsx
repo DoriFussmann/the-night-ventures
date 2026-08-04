@@ -7,6 +7,7 @@ import {
   Check,
   Circle,
   Download,
+  Eye,
   Loader2,
   Trash2,
   Upload,
@@ -586,6 +587,7 @@ export default function ArticleTopicSuggestion() {
   const [publishContext, setPublishContext] = useState(null);
   const [publishUrl, setPublishUrl] = useState("");
   const [detailArticle, setDetailArticle] = useState(null);
+  const [detailCluster, setDetailCluster] = useState(null);
 
   const persistCoverage = useCallback(
     async (nextPillars) => {
@@ -1227,6 +1229,13 @@ export default function ArticleTopicSuggestion() {
     for (const article of supporting.plannedArticles) {
       clearDetailIfMatch(article);
     }
+    if (
+      detailCluster &&
+      detailCluster.pillarSlug === pillar.slug &&
+      detailCluster.supportingSlug === supporting.slug
+    ) {
+      setDetailCluster(null);
+    }
 
     const detailKey = `${pillar.slug}::${supporting.slug}`;
     if (proposalKey === detailKey) {
@@ -1581,6 +1590,18 @@ export default function ArticleTopicSuggestion() {
                                 size="sm"
                                 variant="outline"
                                 className="h-7 text-xs"
+                                onClick={() =>
+                                  setDetailArticle(pillar.pillarArticle)
+                                }
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                View details
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs"
                                 onClick={() => handleDownloadPillarArticle(pillar)}
                               >
                                 <Download className="w-3.5 h-3.5" />
@@ -1613,17 +1634,10 @@ export default function ArticleTopicSuggestion() {
                         pillar.pillarArticle && (
                           <button
                             type="button"
-                            className={`w-full text-left rounded-md border px-3 py-2.5 ${
-                              hasGeneratedFrontmatter(pillar.pillarArticle)
-                                ? "border-border bg-background hover:bg-muted/40 cursor-pointer"
-                                : "border-dashed border-border bg-slate-50/80 cursor-default"
-                            }`}
-                            onClick={() => {
-                              if (hasGeneratedFrontmatter(pillar.pillarArticle)) {
-                                setDetailArticle(pillar.pillarArticle);
-                              }
-                            }}
-                            disabled={!hasGeneratedFrontmatter(pillar.pillarArticle)}
+                            className="w-full text-left rounded-md border border-border bg-background hover:bg-muted/40 cursor-pointer px-3 py-2.5"
+                            onClick={() =>
+                              setDetailArticle(pillar.pillarArticle)
+                            }
                           >
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="text-sm text-foreground font-medium">
@@ -1632,11 +1646,9 @@ export default function ArticleTopicSuggestion() {
                               {pillar.pillarArticle.type && (
                                 <TypeBadge type={pillar.pillarArticle.type} />
                               )}
-                              {hasGeneratedFrontmatter(pillar.pillarArticle) && (
-                                <span className="text-[11px] text-muted-foreground">
-                                  View draft details
-                                </span>
-                              )}
+                              <span className="text-[11px] text-muted-foreground">
+                                View details
+                              </span>
                             </div>
                             {pillar.pillarArticle.slug && (
                               <p className="text-[11px] text-muted-foreground mt-1">
@@ -1889,7 +1901,7 @@ export default function ArticleTopicSuggestion() {
                     </div>
 
                     <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium pt-1">
-                      Supporting keywords ({pillar.supporting.length})
+                      Supporting keyword clusters ({pillar.supporting.length})
                     </p>
 
                     {pillar.supporting.length > 0 && (
@@ -1901,15 +1913,27 @@ export default function ArticleTopicSuggestion() {
                           const publishedCount = sup.plannedArticles.filter(
                             (a) => a.status === "published"
                           ).length;
+                          const draftedCount = sup.plannedArticles.filter(
+                            (a) => a.status === "drafted"
+                          ).length;
                           const clusterNotPlanned = plannedCount === 0;
-                          const hasGap = plannedCount > 0 && publishedCount < plannedCount;
+                          const clusterComplete =
+                            plannedCount > 0 && publishedCount === plannedCount;
+                          const clusterInProgress =
+                            plannedCount > 0 && publishedCount < plannedCount;
                           const isProposalTarget = proposalKey === detailKey;
                           const showProposal = isProposalTarget;
 
                           return (
                             <div
                               key={sup.slug}
-                              className="rounded-md border border-border bg-background overflow-hidden"
+                              className={`rounded-md border overflow-hidden ${
+                                clusterComplete
+                                  ? "border-emerald-200 bg-emerald-50/40"
+                                  : clusterInProgress
+                                    ? "border-amber-200/80 bg-background"
+                                    : "border-border bg-background"
+                              }`}
                             >
                               <div className="flex items-center gap-2 px-3 py-2">
                                 <button
@@ -1933,9 +1957,20 @@ export default function ArticleTopicSuggestion() {
                                         Cluster not planned
                                       </span>
                                     )}
-                                    {hasGap && !showProposal && (
+                                    {clusterInProgress && !showProposal && (
                                       <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800">
-                                        Gap: {publishedCount}/{plannedCount} published
+                                        In progress · {publishedCount}/
+                                        {plannedCount} published
+                                        {draftedCount > 0
+                                          ? ` · ${draftedCount} drafted`
+                                          : ""}
+                                      </span>
+                                    )}
+                                    {clusterComplete && !showProposal && (
+                                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                                        <Check className="w-3 h-3" />
+                                        Complete · {publishedCount}/{plannedCount}{" "}
+                                        published
                                       </span>
                                     )}
                                     {isProposalTarget && proposalLoading && (
@@ -1949,6 +1984,26 @@ export default function ArticleTopicSuggestion() {
                                 <div className="flex items-center gap-1.5 shrink-0">
                                   {plannedCount > 0 && !showProposal && (
                                     <>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-7 text-xs"
+                                        onClick={() =>
+                                          setDetailCluster({
+                                            pillarSlug: pillar.slug,
+                                            supportingSlug: sup.slug,
+                                            pillarKeyword: pillar.keyword,
+                                            supportingKeyword: sup.keyword,
+                                            clusterRationale:
+                                              sup.clusterRationale || "",
+                                            articles: sup.plannedArticles,
+                                          })
+                                        }
+                                      >
+                                        <Eye className="w-3.5 h-3.5" />
+                                        View details
+                                      </Button>
                                       <Button
                                         type="button"
                                         size="sm"
@@ -2265,8 +2320,6 @@ export default function ArticleTopicSuggestion() {
                                         const done = article.status === "published";
                                         const incomplete =
                                           article.status !== "published";
-                                        const canOpenDetail =
-                                          hasGeneratedFrontmatter(article);
 
                                         return (
                                           <li
@@ -2293,23 +2346,16 @@ export default function ArticleTopicSuggestion() {
                                                 )}
                                               </span>
                                               <div
-                                                className={`flex-1 min-w-0 space-y-1.5 ${
-                                                  canOpenDetail
-                                                    ? "cursor-pointer"
-                                                    : ""
-                                                }`}
-                                                role={canOpenDetail ? "button" : undefined}
-                                                tabIndex={canOpenDetail ? 0 : undefined}
+                                                className="flex-1 min-w-0 space-y-1.5 cursor-pointer"
+                                                role="button"
+                                                tabIndex={0}
                                                 onClick={() => {
-                                                  if (canOpenDetail) {
-                                                    setDetailArticle(article);
-                                                  }
+                                                  setDetailArticle(article);
                                                 }}
                                                 onKeyDown={(ev) => {
                                                   if (
-                                                    canOpenDetail &&
-                                                    (ev.key === "Enter" ||
-                                                      ev.key === " ")
+                                                    ev.key === "Enter" ||
+                                                    ev.key === " "
                                                   ) {
                                                     ev.preventDefault();
                                                     setDetailArticle(article);
@@ -2327,11 +2373,9 @@ export default function ArticleTopicSuggestion() {
                                                     {article.title || "(untitled)"}
                                                   </span>
                                                   <TypeBadge type={article.type} />
-                                                  {canOpenDetail && (
-                                                    <span className="text-[11px] text-muted-foreground">
-                                                      View draft details
-                                                    </span>
-                                                  )}
+                                                  <span className="text-[11px] text-muted-foreground">
+                                                    View details
+                                                  </span>
                                                 </div>
                                                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
                                                   {article.slug && (
@@ -2466,82 +2510,167 @@ export default function ArticleTopicSuggestion() {
                   {detailArticle.title || "(untitled)"}
                 </DialogTitle>
                 <DialogDescription>
-                  Generated draft frontmatter from Article Generator
+                  {hasGeneratedFrontmatter(detailArticle)
+                    ? "Planned topic details and draft frontmatter"
+                    : "Planned topic details from Topic Generator"}
                 </DialogDescription>
               </DialogHeader>
-              <div className="space-y-3 text-sm">
-                <CoverageDetailRow
-                  label="slug"
-                  value={detailArticle.slug}
-                />
-                <CoverageDetailRow
-                  label="description"
-                  value={detailArticle.description}
-                />
-                <CoverageDetailRow
-                  label="category"
-                  value={detailArticle.category}
-                />
-                <CoverageDetailRow
-                  label="targetKeyword"
-                  value={detailArticle.targetKeyword}
-                />
-                <CoverageDetailRow
-                  label="type"
-                  value={
-                    detailArticle.type ? (
-                      <TypeBadge type={detailArticle.type} />
-                    ) : null
-                  }
-                />
-                <CoverageDetailRow
-                  label="status"
-                  value={detailArticle.status}
-                />
-                <CoverageDetailRow label="date" value={detailArticle.date} />
-                <CoverageDetailRow
-                  label="updatedDate"
-                  value={detailArticle.updatedDate}
-                />
-                <CoverageDetailRow
-                  label="imageAlt"
-                  value={detailArticle.imageAlt}
-                />
-                <CoverageDetailList label="tags" items={detailArticle.tags} />
-                <CoverageDetailList
-                  label="keywords"
-                  items={detailArticle.keywords}
-                />
-                <div>
-                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">
-                    faqs
+              <div className="space-y-5">
+                <section className="space-y-3">
+                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+                    Plan
                   </p>
-                  {Array.isArray(detailArticle.faqs) &&
-                  detailArticle.faqs.length > 0 ? (
-                    <ul className="space-y-2">
-                      {detailArticle.faqs.map((faq, i) => (
-                        <li
-                          key={`faq-${i}`}
-                          className="rounded-md border border-border px-3 py-2"
-                        >
-                          <p className="font-medium text-foreground">
-                            {faq.question || "—"}
-                          </p>
-                          <p className="text-muted-foreground mt-1">
-                            {faq.answer || "—"}
-                          </p>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-muted-foreground">—</p>
-                  )}
+                  <ArticlePlanFields article={detailArticle} />
+                </section>
+                {hasGeneratedFrontmatter(detailArticle) && (
+                  <section className="space-y-3 border-t border-border pt-4">
+                    <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+                      Draft frontmatter
+                    </p>
+                    <div className="space-y-3 text-sm">
+                      <CoverageDetailRow
+                        label="slug"
+                        value={detailArticle.slug}
+                      />
+                      <CoverageDetailRow
+                        label="description"
+                        value={detailArticle.description}
+                      />
+                      <CoverageDetailRow
+                        label="category"
+                        value={detailArticle.category}
+                      />
+                      <CoverageDetailRow
+                        label="date"
+                        value={detailArticle.date}
+                      />
+                      <CoverageDetailRow
+                        label="updatedDate"
+                        value={detailArticle.updatedDate}
+                      />
+                      <CoverageDetailRow
+                        label="imageAlt"
+                        value={detailArticle.imageAlt}
+                      />
+                      <CoverageDetailList
+                        label="tags"
+                        items={detailArticle.tags}
+                      />
+                      <CoverageDetailList
+                        label="keywords"
+                        items={detailArticle.keywords}
+                      />
+                      <div>
+                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">
+                          faqs
+                        </p>
+                        {Array.isArray(detailArticle.faqs) &&
+                        detailArticle.faqs.length > 0 ? (
+                          <ul className="space-y-2">
+                            {detailArticle.faqs.map((faq, i) => (
+                              <li
+                                key={`faq-${i}`}
+                                className="rounded-md border border-border px-3 py-2"
+                              >
+                                <p className="font-medium text-foreground">
+                                  {faq.question || "—"}
+                                </p>
+                                <p className="text-muted-foreground mt-1">
+                                  {faq.answer || "—"}
+                                </p>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-muted-foreground">—</p>
+                        )}
+                      </div>
+                    </div>
+                  </section>
+                )}
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={detailCluster != null}
+        onOpenChange={(open) => {
+          if (!open) setDetailCluster(null);
+        }}
+      >
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+          {detailCluster && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="pr-6 text-base leading-snug">
+                  {detailCluster.supportingKeyword}
+                </DialogTitle>
+                <DialogDescription>
+                  Cluster for pillar “{detailCluster.pillarKeyword}” ·{" "}
+                  {detailCluster.articles.length} article
+                  {detailCluster.articles.length === 1 ? "" : "s"}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <CoverageDetailRow
+                  label="cluster rationale"
+                  value={detailCluster.clusterRationale}
+                />
+                <div className="space-y-3">
+                  {detailCluster.articles.map((article, index) => (
+                    <div
+                      key={article.id || `cluster-article-${index}`}
+                      className="rounded-md border border-border px-3 py-3 space-y-3"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-medium text-foreground">
+                          {article.title || "(untitled)"}
+                        </p>
+                        {article.type && <TypeBadge type={article.type} />}
+                      </div>
+                      <ArticlePlanFields article={article} />
+                    </div>
+                  ))}
                 </div>
               </div>
             </>
           )}
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function ArticlePlanFields({ article }) {
+  if (!article) return null;
+  return (
+    <div className="space-y-3 text-sm">
+      <CoverageDetailRow label="targetKeyword" value={article.targetKeyword} />
+      <CoverageDetailRow
+        label="type"
+        value={article.type ? <TypeBadge type={article.type} /> : null}
+      />
+      <CoverageDetailRow label="status" value={article.status} />
+      <CoverageDetailRow label="searchIntent" value={article.searchIntent} />
+      <CoverageDetailRow
+        label="wordCount"
+        value={
+          article.wordCount != null && article.wordCount !== ""
+            ? String(article.wordCount)
+            : null
+        }
+      />
+      <CoverageDetailRow label="ctaAngle" value={article.ctaAngle} />
+      {article.pillarRationale ? (
+        <CoverageDetailRow
+          label="pillarRationale"
+          value={article.pillarRationale}
+        />
+      ) : null}
+      <CoverageDetailList label="keyMessages" items={article.keyMessages} />
+      <CoverageDetailList label="internalLinks" items={article.internalLinks} />
     </div>
   );
 }

@@ -11,7 +11,7 @@ export default function AppShell() {
       <AppSidebar user={user} />
 
       <main className="ml-52 scroll-thin">
-        <div className="px-8 py-6 max-w-3xl">
+        <div className="px-8 py-6 max-w-6xl">
           <Outlet />
         </div>
       </main>

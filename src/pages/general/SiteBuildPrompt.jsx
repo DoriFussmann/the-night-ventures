@@ -81,7 +81,7 @@ function DocumentSection({ doc }) {
       <Textarea
         value={content}
         onChange={(e) => setContent(e.target.value)}
-        className="min-h-[280px] font-mono text-sm"
+        className="min-h-[280px] font-sans text-sm"
       />
 
       <div className="flex flex-wrap items-center gap-3">

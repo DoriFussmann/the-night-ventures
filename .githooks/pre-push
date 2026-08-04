@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Lightweight pre-push: warn if docs/SYSTEM.md may be behind pipeline code changes.
+# Never blocks the push.
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+"${REPO_ROOT}/scripts/check-system-doc-stale.sh" || true
+exit 0
