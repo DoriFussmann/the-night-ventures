@@ -16,7 +16,7 @@ function slugify(value) {
   return base || "";
 }
 
-function findPillar(pillars, pillarKeyword) {
+export function findPillar(pillars, pillarKeyword) {
   const lower = norm(pillarKeyword);
   const slug = slugify(pillarKeyword);
   return (
@@ -26,7 +26,7 @@ function findPillar(pillars, pillarKeyword) {
   );
 }
 
-function findSupporting(pillar, supportingKeyword) {
+export function findSupporting(pillar, supportingKeyword) {
   const supporting = Array.isArray(pillar?.supporting) ? pillar.supporting : [];
   if (!supportingKeyword) return null;
   const lower = norm(supportingKeyword);
@@ -38,12 +38,50 @@ function findSupporting(pillar, supportingKeyword) {
   );
 }
 
-function articleMatches(item, { targetKeyword, title }) {
+export function articleMatches(item, { targetKeyword, title }) {
   const kw = norm(targetKeyword);
   const t = norm(title);
   if (kw && norm(item?.targetKeyword) === kw) return true;
   if (t && norm(item?.title) === t) return true;
   return false;
+}
+
+/**
+ * Resolve a coverage planned-article / pillarArticle match for a library row.
+ * Matching mirrors updateCoverageDrafted (pillar → supporting → targetKeyword/title).
+ */
+export function findCoverageArticle(pillars, article) {
+  const pillarKeyword = article?.pillar_keyword ?? article?.pillarKeyword;
+  const supportingKeyword =
+    article?.supporting_keyword ?? article?.supportingKeyword;
+  const targetKeyword = article?.target_keyword ?? article?.targetKeyword;
+  const title = article?.title;
+
+  const pillar = findPillar(
+    Array.isArray(pillars) ? pillars : [],
+    pillarKeyword
+  );
+  if (!pillar) return null;
+
+  const isPillar = !String(supportingKeyword || "").trim();
+  if (isPillar) {
+    const current =
+      pillar.pillarArticle && typeof pillar.pillarArticle === "object"
+        ? pillar.pillarArticle
+        : null;
+    if (!current) return null;
+    return articleMatches(current, { targetKeyword, title }) ? current : null;
+  }
+
+  const supporting = findSupporting(pillar, supportingKeyword);
+  if (!supporting) return null;
+  const planned = Array.isArray(supporting.plannedArticles)
+    ? supporting.plannedArticles
+    : [];
+  return (
+    planned.find((item) => articleMatches(item, { targetKeyword, title })) ||
+    null
+  );
 }
 
 function mergeFrontmatterFields(existing, frontmatter) {

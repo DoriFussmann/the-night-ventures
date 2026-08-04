@@ -11,6 +11,14 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const DEFAULT_PILLAR_COUNT = 5;
 const DEFAULT_SUPPORTING_COUNT = 5;
@@ -93,6 +101,8 @@ const EMPTY_PROFILE = {
   short_description: "",
   medium_description: "",
   long_description: "",
+  design_guide_raw: "",
+  design_guide_abstract: "",
   core_keywords: normalizePillarKeywords([], { minCount: DEFAULT_PILLAR_COUNT }),
   competitors: [],
 };
@@ -122,6 +132,13 @@ export default function CompanyData() {
   const [error, setError] = useState("");
   const [pillarsOpen, setPillarsOpen] = useState(false);
   const [openPillars, setOpenPillars] = useState({});
+  const [designGuideOpen, setDesignGuideOpen] = useState(false);
+  const [designGuideDraftRaw, setDesignGuideDraftRaw] = useState("");
+  const [designGuideDraftAbstract, setDesignGuideDraftAbstract] = useState("");
+  const [designGuideAbstractReady, setDesignGuideAbstractReady] = useState(false);
+  const [designGuideGenerating, setDesignGuideGenerating] = useState(false);
+  const [designGuideSaving, setDesignGuideSaving] = useState(false);
+  const [designGuideError, setDesignGuideError] = useState("");
 
   const loadData = useCallback(async () => {
     if (!companyId) return;
@@ -134,7 +151,7 @@ export default function CompanyData() {
       supabase
         .from("company_profiles")
         .select(
-          "id, domain, product_name, abstract, short_description, medium_description, long_description, core_keywords, competitors, custom_fields"
+          "id, domain, product_name, abstract, short_description, medium_description, long_description, design_guide_raw, design_guide_abstract, core_keywords, competitors, custom_fields"
         )
         .eq("company_id", companyId)
         .maybeSingle(),
@@ -175,6 +192,8 @@ export default function CompanyData() {
         short_description: profile.short_description || "",
         medium_description: profile.medium_description || "",
         long_description: profile.long_description || "",
+        design_guide_raw: profile.design_guide_raw || "",
+        design_guide_abstract: profile.design_guide_abstract || "",
         core_keywords: normalizePillarKeywords(profile.core_keywords, {
           minCount: Array.isArray(profile.core_keywords) && profile.core_keywords.length > 0
             ? 0
@@ -387,6 +406,8 @@ export default function CompanyData() {
       short_description: fields.short_description.trim() || null,
       medium_description: fields.medium_description.trim() || null,
       long_description: fields.long_description.trim() || null,
+      design_guide_raw: fields.design_guide_raw.trim() || null,
+      design_guide_abstract: fields.design_guide_abstract.trim() || null,
       core_keywords: normalizePillarKeywords(fields.core_keywords),
       competitors,
       custom_fields,
@@ -446,6 +467,7 @@ export default function CompanyData() {
       ["Short Description", fields.short_description],
       ["Medium Description", fields.medium_description],
       ["Long Description", fields.long_description],
+      ["Design Guidelines", fields.design_guide_abstract],
     ];
 
     const customEntries = customFieldDefs.map((def) => [
@@ -473,12 +495,107 @@ export default function CompanyData() {
     downloadMarkdown(`${slug || "company"}-data.md`, lines.join("\n").trim() + "\n");
   };
 
+  const openDesignGuideModal = () => {
+    setDesignGuideDraftRaw(fields.design_guide_raw || "");
+    setDesignGuideDraftAbstract("");
+    setDesignGuideAbstractReady(false);
+    setDesignGuideError("");
+    setDesignGuideOpen(true);
+  };
+
+  const handleGenerateDesignGuideAbstract = async () => {
+    const raw = designGuideDraftRaw.trim();
+    if (!raw || designGuideGenerating) return;
+
+    setDesignGuideGenerating(true);
+    setDesignGuideError("");
+    setDesignGuideAbstractReady(false);
+    setDesignGuideDraftAbstract("");
+
+    try {
+      const res = await fetch("/api/design-guide-abstract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ raw }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || `Generate abstract failed (${res.status})`);
+      }
+
+      const abstract = String(data.abstract || "").trim();
+      if (!abstract) {
+        throw new Error("No abstract returned");
+      }
+
+      setDesignGuideDraftAbstract(abstract);
+      setDesignGuideAbstractReady(true);
+    } catch (err) {
+      console.error("Failed to generate design guide abstract:", err);
+      setDesignGuideError(err.message || "Failed to generate abstract");
+    } finally {
+      setDesignGuideGenerating(false);
+    }
+  };
+
+  const handleSaveDesignGuide = async () => {
+    if (!companyId || designGuideSaving || !designGuideAbstractReady) return;
+
+    const raw = designGuideDraftRaw.trim();
+    const abstract = designGuideDraftAbstract.trim();
+    if (!raw || !abstract) {
+      setDesignGuideError("Paste a Design Guide and generate an abstract before saving.");
+      return;
+    }
+
+    setDesignGuideSaving(true);
+    setDesignGuideError("");
+
+    const payload = {
+      company_id: companyId,
+      design_guide_raw: raw,
+      design_guide_abstract: abstract,
+      updated_at: new Date().toISOString(),
+    };
+    if (profileId) {
+      payload.id = profileId;
+    }
+
+    const { data, error: upsertError } = await supabase
+      .from("company_profiles")
+      .upsert(payload, { onConflict: "company_id" })
+      .select("id")
+      .single();
+
+    if (upsertError) {
+      console.error("Failed to save design guide:", upsertError);
+      setDesignGuideError(upsertError.message || "Failed to save design guide");
+      setDesignGuideSaving(false);
+      return;
+    }
+
+    setProfileId(data?.id || profileId);
+    setFields((prev) => ({
+      ...prev,
+      design_guide_raw: raw,
+      design_guide_abstract: abstract,
+    }));
+    setDesignGuideSaving(false);
+    setDesignGuideOpen(false);
+    setSavedMessage("Saved");
+    window.setTimeout(() => setSavedMessage(""), 2500);
+  };
+
   if (loading) {
     return <p className="text-sm text-muted-foreground">Loading company data...</p>;
   }
 
   const pillars = normalizePillarKeywords(fields.core_keywords);
   const pillarTotal = pillars.length;
+  const hasDesignGuide = Boolean(
+    String(fields.design_guide_raw || "").trim() ||
+      String(fields.design_guide_abstract || "").trim()
+  );
 
   return (
     <div>
@@ -708,6 +825,22 @@ export default function CompanyData() {
           />
         </div>
 
+        <div className="space-y-3 rounded-md border border-border p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <Label>Design Guidelines</Label>
+            <Button type="button" variant="outline" size="sm" onClick={openDesignGuideModal}>
+              {hasDesignGuide ? "Update Design Guide" : "Paste Design Guide"}
+            </Button>
+          </div>
+          {fields.design_guide_abstract.trim() ? (
+            <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+              {fields.design_guide_abstract}
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">Not set yet</p>
+          )}
+        </div>
+
         {customFieldDefs.map((def) => (
           <div key={def.id} className="space-y-2">
             <Label htmlFor={`custom-${def.id}`}>{def.name}</Label>
@@ -734,6 +867,96 @@ export default function CompanyData() {
           )}
         </div>
       </form>
+
+      <Dialog
+        open={designGuideOpen}
+        onOpenChange={(open) => {
+          if (designGuideGenerating || designGuideSaving) return;
+          setDesignGuideOpen(open);
+          if (!open) setDesignGuideError("");
+        }}
+      >
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {hasDesignGuide ? "Update Design Guide" : "Paste Design Guide"}
+            </DialogTitle>
+            <DialogDescription>
+              Paste your project&apos;s Design Guide.md, generate an abstract, then save.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="design_guide_raw_paste">Design Guide</Label>
+              <Textarea
+                id="design_guide_raw_paste"
+                value={designGuideDraftRaw}
+                onChange={(e) => {
+                  setDesignGuideDraftRaw(e.target.value);
+                  setDesignGuideAbstractReady(false);
+                  setDesignGuideDraftAbstract("");
+                }}
+                placeholder="Paste your project's Design Guide.md content here."
+                className="min-h-[220px] font-mono text-sm"
+              />
+            </div>
+
+            <Button
+              type="button"
+              onClick={handleGenerateDesignGuideAbstract}
+              disabled={
+                designGuideGenerating ||
+                designGuideSaving ||
+                !designGuideDraftRaw.trim()
+              }
+            >
+              {designGuideGenerating ? "Generating..." : "Generate Abstract"}
+            </Button>
+
+            {designGuideAbstractReady && (
+              <div className="space-y-2 rounded-md border border-dashed border-border p-3">
+                <Label htmlFor="design_guide_abstract_review">
+                  Review abstract before saving
+                </Label>
+                <Textarea
+                  id="design_guide_abstract_review"
+                  value={designGuideDraftAbstract}
+                  onChange={(e) => setDesignGuideDraftAbstract(e.target.value)}
+                  className="min-h-[160px]"
+                />
+              </div>
+            )}
+
+            {designGuideError && (
+              <p className="text-sm text-destructive">{designGuideError}</p>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDesignGuideOpen(false)}
+              disabled={designGuideGenerating || designGuideSaving}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleSaveDesignGuide}
+              disabled={
+                designGuideGenerating ||
+                designGuideSaving ||
+                !designGuideAbstractReady ||
+                !designGuideDraftAbstract.trim()
+              }
+            >
+              {designGuideSaving ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

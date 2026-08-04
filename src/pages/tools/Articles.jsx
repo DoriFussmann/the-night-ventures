@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
-import { Loader2, Search, Trash2 } from "lucide-react";
+import { Download, Loader2, Search, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +29,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  articlesSummaryFilename,
+  buildArticlesSummaryMarkdown,
+} from "./articleGeneration/buildArticlesSummaryMarkdown";
+import { downloadMarkdownFile } from "./articleGeneration/serializeArticleMarkdown";
 
 const TYPE_OPTIONS = [
   { value: "pillar", label: "Pillar" },
@@ -197,6 +202,7 @@ export default function Articles() {
   const [selectedId, setSelectedId] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [downloadingSummary, setDownloadingSummary] = useState(false);
 
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -317,6 +323,61 @@ export default function Articles() {
     setDeleteId(null);
   };
 
+  const downloadSummary = async () => {
+    if (!companyId || downloadingSummary || articles.length === 0) return;
+
+    setDownloadingSummary(true);
+    setError("");
+
+    try {
+      const [companyResult, coverageResult] = await Promise.all([
+        supabase
+          .from("companies")
+          .select("name")
+          .eq("id", companyId)
+          .maybeSingle(),
+        supabase
+          .from("content_coverage")
+          .select("pillars")
+          .eq("company_id", companyId)
+          .maybeSingle(),
+      ]);
+
+      if (companyResult.error) {
+        throw new Error(
+          companyResult.error.message || "Failed to load company"
+        );
+      }
+      if (coverageResult.error) {
+        throw new Error(
+          coverageResult.error.message || "Failed to load content coverage"
+        );
+      }
+
+      const companyName = companyResult.data?.name || "";
+      const pillars = Array.isArray(coverageResult.data?.pillars)
+        ? coverageResult.data.pillars
+        : [];
+      const generatedAt = new Date();
+      const markdown = buildArticlesSummaryMarkdown({
+        companyName,
+        articles,
+        pillars,
+        generatedAt,
+      });
+
+      downloadMarkdownFile(
+        articlesSummaryFilename(companyName, generatedAt),
+        markdown
+      );
+    } catch (err) {
+      console.error(err);
+      setError(err?.message || "Failed to download articles summary");
+    } finally {
+      setDownloadingSummary(false);
+    }
+  };
+
   const hasAnyArticles = articles.length > 0;
   const hasActiveFilters =
     Boolean(debouncedSearch) ||
@@ -385,6 +446,21 @@ export default function Articles() {
             ))}
           </SelectContent>
         </Select>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-9 shrink-0"
+          disabled={!hasAnyArticles || loading || downloadingSummary}
+          onClick={downloadSummary}
+        >
+          {downloadingSummary ? (
+            <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+          ) : (
+            <Download className="h-3.5 w-3.5 mr-1.5" />
+          )}
+          Download Summary
+        </Button>
       </div>
 
       {slugFilter && (

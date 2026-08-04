@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
 import { supabase } from "@/lib/supabase";
+import RouteTracker from "@/components/RouteTracker";
 import {
   Database,
   Share2,
@@ -13,8 +14,10 @@ import {
   Lightbulb,
   PenLine,
   BookOpen,
+  Image,
   LogOut,
   ArrowLeft,
+  Route,
 } from "lucide-react";
 
 function NavItem({ item }) {
@@ -60,6 +63,7 @@ export default function AppSidebar({ user }) {
   const location = useLocation();
   const { companyId: routeCompanyId } = useParams();
   const [companyName, setCompanyName] = useState("");
+  const [routeOpen, setRouteOpen] = useState(false);
 
   useEffect(() => {
     if (routeCompanyId) {
@@ -93,6 +97,7 @@ export default function AppSidebar({ user }) {
     { label: "Topic Generator", path: `/company/${activeCompanyId}/article-topic-suggestion`, icon: Lightbulb },
     { label: "Article Generator", path: `/company/${activeCompanyId}/article-generation`, icon: PenLine },
     { label: "Articles", path: `/company/${activeCompanyId}/articles`, icon: BookOpen },
+    { label: "Cluster Images", path: `/company/${activeCompanyId}/cluster-image-generator`, icon: Image },
   ];
   useEffect(() => {
     let cancelled = false;
@@ -180,6 +185,19 @@ export default function AppSidebar({ user }) {
         )}
       </nav>
 
+      {activeCompanyId && (
+        <div className="border-t border-border px-3 py-3">
+          <button
+            type="button"
+            onClick={() => setRouteOpen(true)}
+            className="w-full flex items-start gap-3 rounded-lg border border-border px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <Route className="w-4 h-4 shrink-0 mt-0.5" />
+            <span className="leading-snug">The Route</span>
+          </button>
+        </div>
+      )}
+
       {/* Footer */}
       <div className="border-t border-border px-5 py-4">
         <p className="text-sm text-foreground truncate">{user?.full_name || "User"}</p>
@@ -191,6 +209,14 @@ export default function AppSidebar({ user }) {
           Log Out
         </button>
       </div>
+
+      {activeCompanyId && (
+        <RouteTracker
+          open={routeOpen}
+          onOpenChange={setRouteOpen}
+          companyId={activeCompanyId}
+        />
+      )}
     </aside>
   );
 }

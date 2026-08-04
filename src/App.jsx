@@ -21,6 +21,7 @@ import TemplateToPrompt from '@/pages/tools/TemplateToPrompt';
 import ArticleTopicSuggestion from '@/pages/tools/ArticleTopicSuggestion';
 import ArticleGeneration from '@/pages/tools/ArticleGeneration';
 import Articles from '@/pages/tools/Articles';
+import ClusterImageGenerator from '@/pages/tools/ClusterImageGenerator';
 import SiteBuildPrompt from '@/pages/general/SiteBuildPrompt';
 
 const AuthenticatedApp = () => {
@@ -45,6 +46,7 @@ const AuthenticatedApp = () => {
           <Route path="/company/:companyId/article-topic-suggestion" element={<ArticleTopicSuggestion />} />
           <Route path="/company/:companyId/article-generation" element={<ArticleGeneration />} />
           <Route path="/company/:companyId/articles" element={<Articles />} />
+          <Route path="/company/:companyId/cluster-image-generator" element={<ClusterImageGenerator />} />
         </Route>
       </Route>
       <Route path="*" element={<PageNotFound />} />

@@ -224,7 +224,7 @@ Checklist from what exists in this repository today (routes, tables, APIs). “T
 - [ ] Monthly update scan — TNV review queue for substantive WTS updates only; write-back via CMS or manual `.md` drop; auto lastmod bumps explicitly rejected (see stage 16)
 - [ ] CMS write endpoint for approved monthly updates — not built
 - [ ] CMS / Astro automation or sync from TNV — deliberately out of scope (see KD-08); presumed manual deploy after CMS write
-- [ ] Specific Prompt tool — UI stub (“Coming soon”)
+- [x] Specific Prompt tool — Audit Prompt + Personalize Prompt (client-side assembly from Company Data)
 
 ### Doc freshness check
 
