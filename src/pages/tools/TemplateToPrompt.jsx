@@ -28,10 +28,16 @@ import {
   countNeedsInputMarkers,
 } from "./templateToPrompt/buildPhase2Prompt";
 import { parseHighestSeverityItems } from "./templateToPrompt/parseHighestSeverity";
-import { emptySeverityDecision } from "./templateToPrompt/classifySeverityItem";
+import {
+  CONFIG_SKIP_VALUE,
+  demoSeedDefaultLabel,
+  emptySeverityDecision,
+  expandSeverityLabels,
+} from "./templateToPrompt/classifySeverityItem";
 import {
   emptyNewContentEntry,
   normalizeServices,
+  normalizeSocialLinks,
   normalizeTeamMembers,
 } from "./templateToPrompt/customFieldKeys";
 
@@ -90,6 +96,8 @@ export default function TemplateToPrompt() {
 
   const [services, setServices] = useState([]);
   const [teamBios, setTeamBios] = useState([]);
+  const [contactEmail, setContactEmail] = useState("");
+  const [socialLinks, setSocialLinks] = useState([]);
 
   const [contentDecisions, setContentDecisions] = useState([]);
   const [newContent, setNewContent] = useState([]);
@@ -109,7 +117,7 @@ export default function TemplateToPrompt() {
       supabase
         .from("company_profiles")
         .select(
-          "domain, product_name, short_description, medium_description, services, team_members"
+          "domain, product_name, short_description, medium_description, services, team_members, contact_email, social_links"
         )
         .eq("company_id", companyId)
         .maybeSingle(),
@@ -147,6 +155,8 @@ export default function TemplateToPrompt() {
 
     setServices(normalizeServices(profile?.services));
     setTeamBios(normalizeTeamMembers(profile?.team_members));
+    setContactEmail(profile?.contact_email || "");
+    setSocialLinks(normalizeSocialLinks(profile?.social_links));
 
     setLoading(false);
   }, [companyId]);
@@ -157,16 +167,46 @@ export default function TemplateToPrompt() {
 
   // Sync decision rows from audit "Highest severity" section
   useEffect(() => {
-    const labels = parseHighestSeverityItems(auditReport);
+    const labels = parseHighestSeverityItems(auditReport).flatMap(
+      expandSeverityLabels
+    );
+    const companyData = {
+      domain,
+      productName: businessName,
+      contactEmail,
+      socialLinks,
+      services,
+      teamMembers: teamBios,
+    };
     setContentDecisions((prev) => {
       const byLabel = new Map(prev.map((d) => [d.label, d]));
       return labels.map((label) => {
         const existing = byLabel.get(label);
-        if (existing) return existing;
-        return emptySeverityDecision(label);
+        if (!existing) return emptySeverityDecision(label, companyData);
+
+        // If Company Data was filled after the row was created, backfill unset config
+        if (existing.kind === "config" && existing.companyDataUnset) {
+          const refreshed = emptySeverityDecision(label, companyData);
+          if (!refreshed.companyDataUnset && refreshed.setToValue) {
+            return {
+              ...existing,
+              setToValue: refreshed.setToValue,
+              companyDataUnset: false,
+            };
+          }
+        }
+        return existing;
       });
     });
-  }, [auditReport]);
+  }, [
+    auditReport,
+    domain,
+    businessName,
+    contactEmail,
+    socialLinks,
+    services,
+    teamBios,
+  ]);
 
   const handleHeroSourceChange = (source) => {
     setHeroSource(source);
@@ -477,7 +517,14 @@ export default function TemplateToPrompt() {
                       key={`${row.label}-${index}`}
                       className="grid gap-2 sm:grid-cols-[1fr_180px] items-start"
                     >
-                      <p className="text-sm text-foreground pt-2">{row.label}</p>
+                      <div className="pt-2 space-y-1">
+                        <p className="text-sm text-foreground">{row.label}</p>
+                        {row.demoSeed ? (
+                          <p className="text-xs text-muted-foreground">
+                            {demoSeedDefaultLabel(row)}
+                          </p>
+                        ) : null}
+                      </div>
                       <div className="space-y-2">
                         <Select
                           value={row.action || undefined}
@@ -533,26 +580,74 @@ export default function TemplateToPrompt() {
                 </p>
               ) : (
                 <div className="space-y-3">
-                  {configDecisionRows.map(({ row, index }) => (
-                    <div
-                      key={`config-${row.label}-${index}`}
-                      className="grid gap-2 sm:grid-cols-[1fr_1fr] items-start"
-                    >
-                      <p className="text-sm text-foreground pt-2">{row.label}</p>
-                      <div className="space-y-1">
-                        <Label className="text-xs text-muted-foreground">
-                          set to
-                        </Label>
-                        <Input
-                          placeholder="Value to set"
-                          value={row.setToValue || ""}
-                          onChange={(e) =>
-                            updateDecision(index, { setToValue: e.target.value })
-                          }
-                        />
+                  {configDecisionRows.map(({ row, index }) => {
+                    const fromCompanyUnset =
+                      row.companyDataUnset && !(row.setToValue || "").trim();
+                    const skipDefault =
+                      (row.setToValue || "").trim().toLowerCase() ===
+                      CONFIG_SKIP_VALUE;
+
+                    return (
+                      <div
+                        key={`config-${row.label}-${index}`}
+                        className="grid gap-2 sm:grid-cols-[1fr_1fr] items-start"
+                      >
+                        <p className="text-sm text-foreground pt-2">
+                          {row.label}
+                        </p>
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">
+                            set to
+                          </Label>
+                          {fromCompanyUnset ? (
+                            <div className="space-y-2">
+                              <p className="text-sm text-muted-foreground">
+                                Not set in Company Data —{" "}
+                                <Link
+                                  to={`/company/${companyId}/company-data`}
+                                  className="text-primary font-medium underline underline-offset-2"
+                                >
+                                  set it
+                                </Link>
+                              </p>
+                              <Input
+                                placeholder="Optional override for this run"
+                                value={row.setToValue || ""}
+                                onChange={(e) =>
+                                  updateDecision(index, {
+                                    setToValue: e.target.value,
+                                    companyDataUnset: !e.target.value.trim(),
+                                  })
+                                }
+                              />
+                            </div>
+                          ) : (
+                            <div className="space-y-1">
+                              <Input
+                                placeholder={
+                                  skipDefault
+                                    ? CONFIG_SKIP_VALUE
+                                    : "Value to set"
+                                }
+                                value={row.setToValue || ""}
+                                onChange={(e) =>
+                                  updateDecision(index, {
+                                    setToValue: e.target.value,
+                                    companyDataUnset: false,
+                                  })
+                                }
+                              />
+                              {skipDefault ? (
+                                <p className="text-xs text-muted-foreground">
+                                  Default: skip this run (override anytime).
+                                </p>
+                              ) : null}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

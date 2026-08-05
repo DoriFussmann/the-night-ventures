@@ -23,10 +23,13 @@ import {
 } from "@/components/ui/dialog";
 import {
   emptyServiceEntry,
+  emptySocialLinkEntry,
   emptyTeamEntry,
   normalizeServices,
+  normalizeSocialLinks,
   normalizeTeamMembers,
   trimServicesForSave,
+  trimSocialLinksForSave,
   trimTeamMembersForSave,
 } from "./templateToPrompt/customFieldKeys";
 
@@ -118,6 +121,8 @@ const EMPTY_PROFILE = {
   competitors: [],
   services: [],
   team_members: [],
+  contact_email: "",
+  social_links: [],
 };
 
 function downloadMarkdown(filename, content) {
@@ -173,7 +178,7 @@ export default function CompanyData() {
       supabase
         .from("company_profiles")
         .select(
-          "id, domain, product_name, target_audience, abstract, short_description, medium_description, long_description, design_guide_raw, design_guide_abstract, core_keywords, competitors, services, team_members, custom_fields"
+          "id, domain, product_name, target_audience, abstract, short_description, medium_description, long_description, design_guide_raw, design_guide_abstract, core_keywords, competitors, services, team_members, contact_email, social_links, custom_fields"
         )
         .eq("company_id", companyId)
         .maybeSingle(),
@@ -252,6 +257,8 @@ export default function CompanyData() {
         competitors: normalizeCompetitors(profile.competitors),
         services: normalizeServices(profile.services),
         team_members: normalizeTeamMembers(profile.team_members),
+        contact_email: profile.contact_email || "",
+        social_links: normalizeSocialLinks(profile.social_links),
       });
       setCustomValues(
         profile.custom_fields && typeof profile.custom_fields === "object"
@@ -364,6 +371,33 @@ export default function CompanyData() {
     setFields((prev) => ({
       ...prev,
       team_members: normalizeTeamMembers(prev.team_members).filter((_, i) => i !== index),
+    }));
+  };
+
+  const addSocialLink = () => {
+    setFields((prev) => ({
+      ...prev,
+      social_links: [
+        ...normalizeSocialLinks(prev.social_links),
+        emptySocialLinkEntry(),
+      ],
+    }));
+  };
+
+  const updateSocialLink = (index, key, value) => {
+    setFields((prev) => {
+      const next = normalizeSocialLinks(prev.social_links);
+      next[index] = { ...next[index], [key]: value };
+      return { ...prev, social_links: next };
+    });
+  };
+
+  const removeSocialLink = (index) => {
+    setFields((prev) => ({
+      ...prev,
+      social_links: normalizeSocialLinks(prev.social_links).filter(
+        (_, i) => i !== index
+      ),
     }));
   };
 
@@ -531,6 +565,7 @@ export default function CompanyData() {
 
     const services = trimServicesForSave(fields.services);
     const team_members = trimTeamMembersForSave(fields.team_members);
+    const social_links = trimSocialLinksForSave(fields.social_links);
 
     for (const member of team_members) {
       for (const url of member.same_as || []) {
@@ -539,6 +574,14 @@ export default function CompanyData() {
           setSaving(false);
           return;
         }
+      }
+    }
+
+    for (const link of social_links) {
+      if (!isLooseHttpUrl(link.url)) {
+        setError("Social link URLs must start with http:// or https://");
+        setSaving(false);
+        return;
       }
     }
 
@@ -562,6 +605,8 @@ export default function CompanyData() {
       competitors,
       services,
       team_members,
+      contact_email: fields.contact_email.trim() || null,
+      social_links,
       custom_fields,
       updated_at: new Date().toISOString(),
     };
@@ -658,6 +703,13 @@ export default function CompanyData() {
       })
       .join("\n");
 
+    const socialLines = trimSocialLinksForSave(fields.social_links)
+      .map(
+        (link) =>
+          `- ${link.label || "(unlabeled)"}${link.url ? `: ${link.url}` : ""}`
+      )
+      .join("\n");
+
     const categoryLines = industries
       .filter((industry) => selectedIndustryIds.includes(industry.id))
       .map((industry) => `- ${industry.name}`)
@@ -672,6 +724,8 @@ export default function CompanyData() {
       ["Competitors", competitorLines],
       ["Services / Products", serviceLines],
       ["Team", teamLines],
+      ["Contact Email", fields.contact_email],
+      ["Social Links", socialLines],
       ["Abstract", fields.abstract],
       ["Short Description", fields.short_description],
       ["Medium Description", fields.medium_description],
@@ -694,7 +748,8 @@ export default function CompanyData() {
         label === "Pillar Keywords" ||
         label === "Competitors" ||
         label === "Services / Products" ||
-        label === "Team"
+        label === "Team" ||
+        label === "Social Links"
       ) {
         lines.push(`**${label}:**`, trimmed, "");
       } else {
@@ -1208,6 +1263,61 @@ export default function CompanyData() {
           <Button type="button" variant="outline" size="sm" onClick={addTeamMember}>
             + Add
           </Button>
+        </div>
+
+        <div className="space-y-3 rounded-lg border border-border p-4">
+          <div>
+            <Label>Contact & Social</Label>
+            <p className="text-xs text-muted-foreground mt-1">
+              Used by Specific Prompt to auto-fill CONTACT_EMAIL and SAME_AS /
+              social links config findings.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="contact_email">Contact email</Label>
+            <Input
+              id="contact_email"
+              type="email"
+              value={fields.contact_email}
+              onChange={(e) => updateField("contact_email", e.target.value)}
+              placeholder="hello@example.com"
+            />
+          </div>
+          <div className="space-y-3">
+            <Label>Social links</Label>
+            {normalizeSocialLinks(fields.social_links).map((link, index) => (
+              <div key={index} className="flex items-start gap-2">
+                <Input
+                  value={link.label}
+                  onChange={(e) =>
+                    updateSocialLink(index, "label", e.target.value)
+                  }
+                  placeholder="Label"
+                  className="flex-1"
+                  aria-label={`Social link ${index + 1} label`}
+                />
+                <Input
+                  value={link.url}
+                  onChange={(e) => updateSocialLink(index, "url", e.target.value)}
+                  placeholder="https://"
+                  className="flex-1"
+                  aria-label={`Social link ${index + 1} URL`}
+                />
+                <button
+                  type="button"
+                  onClick={() => removeSocialLink(index)}
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-destructive"
+                  title="Remove social link"
+                  aria-label="Remove social link"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+            <Button type="button" variant="outline" size="sm" onClick={addSocialLink}>
+              + Add
+            </Button>
+          </div>
         </div>
 
         <div className="space-y-2">

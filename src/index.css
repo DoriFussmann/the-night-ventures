@@ -98,6 +98,15 @@
     font-size: 0.75rem; /* match nav text-xs */
     -webkit-font-smoothing: antialiased;
   }
+
+  /* Form controls don't always inherit body font; keep them on Inter */
+  button,
+  input,
+  optgroup,
+  select,
+  textarea {
+    font-family: 'Inter', sans-serif;
+  }
 }
 
 /* Thin scrollbar (design system) */

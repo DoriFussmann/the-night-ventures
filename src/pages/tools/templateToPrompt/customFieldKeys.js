@@ -8,6 +8,10 @@ export function emptyTeamEntry() {
   return { name: "", role: "", bio: "", credentials: "", same_as: [] };
 }
 
+export function emptySocialLinkEntry() {
+  return { label: "", url: "" };
+}
+
 export function emptyNewContentEntry() {
   return {
     title: "",
@@ -47,6 +51,41 @@ export function normalizeTeamMembers(value) {
       ),
     };
   });
+}
+
+export function normalizeSocialLinks(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => {
+    if (!item || typeof item !== "object") return emptySocialLinkEntry();
+    return {
+      label: item.label == null ? "" : String(item.label),
+      url: item.url == null ? "" : String(item.url),
+    };
+  });
+}
+
+export function formatSocialLinksForConfig(value) {
+  return normalizeSocialLinks(value)
+    .map((item) => ({
+      label: item.label.trim(),
+      url: item.url.trim(),
+    }))
+    .filter((item) => item.label || item.url)
+    .map((item) =>
+      item.label && item.url
+        ? `${item.label}: ${item.url}`
+        : item.url || item.label
+    )
+    .join("\n");
+}
+
+export function trimSocialLinksForSave(socialLinks) {
+  return normalizeSocialLinks(socialLinks)
+    .map((item) => ({
+      label: item.label.trim(),
+      url: item.url.trim(),
+    }))
+    .filter((item) => item.label || item.url);
 }
 
 export function trimServicesForSave(services) {

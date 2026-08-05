@@ -109,7 +109,13 @@ function formatConfigUpdates(decisions) {
       const label = valueOrNeeds(d.label);
       const value = filled(d.setToValue);
       if (!value) {
+        if (d.companyDataUnset) {
+          return `${i + 1}. ${label} → skip this run (not set in Company Data)`;
+        }
         return `${i + 1}. ${label} → set to: ${NEEDS_INPUT_MARKER}`;
+      }
+      if (value.toLowerCase() === "skip this run") {
+        return `${i + 1}. ${label} → skip this run`;
       }
       return `${i + 1}. ${label} → set to: ${value}`;
     })
