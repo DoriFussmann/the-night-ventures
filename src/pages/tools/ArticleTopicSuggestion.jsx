@@ -1438,7 +1438,7 @@ export default function ArticleTopicSuggestion() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-[15px] text-foreground mb-1">Topic Generation</h1>
+          <h1 className="text-xs text-foreground mb-1">Topic Generation</h1>
           {companyName && (
             <p className="text-sm text-foreground">{companyName}</p>
           )}

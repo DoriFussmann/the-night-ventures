@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Copy, Eye, EyeOff, Plus, Trash2, Pencil, X } from "lucide-react";
+import { Copy, Download, Plus, Trash2, Pencil, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,42 +50,49 @@ function statusBadgeClass(status) {
 }
 
 async function copyText(value) {
-  if (!value) return;
+  if (!value) return false;
   try {
     await navigator.clipboard.writeText(value);
+    return true;
   } catch (err) {
     console.error("Copy failed:", err);
+    return false;
   }
 }
 
-function AccessCell({ value, revealed, onToggle, stopPropagation }) {
-  if (!value) {
-    return <span className="text-muted-foreground/50">—</span>;
-  }
+function formatAccountDetails(account) {
+  const lines = [
+    `Name: ${account.name || ""}`,
+    `Type: ${account.type || ""}`,
+  ];
+  if (account.status) lines.push(`Status: ${account.status}`);
+  if (account.url) lines.push(`URL: ${account.url}`);
+  if (account.username) lines.push(`Username: ${account.username}`);
+  if (account.access_details) lines.push(`Access Details: ${account.access_details}`);
+  if (account.comments) lines.push(`Comments: ${account.comments}`);
+  return lines.join("\n");
+}
 
-  return (
-    <div className="flex items-center gap-1.5" onClick={stopPropagation}>
-      <span className="font-mono text-xs text-foreground/80 truncate max-w-[140px]">
-        {revealed ? value : "••••••••"}
-      </span>
-      <button
-        type="button"
-        onClick={onToggle}
-        className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent"
-        title={revealed ? "Hide" : "Show"}
-      >
-        {revealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-      </button>
-      <button
-        type="button"
-        onClick={() => copyText(value)}
-        className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent"
-        title="Copy"
-      >
-        <Copy className="w-3.5 h-3.5" />
-      </button>
-    </div>
-  );
+function slugifyFilename(name) {
+  const base = String(name || "account")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  return base || "account";
+}
+
+function downloadAccountDetails(account) {
+  const text = formatAccountDetails(account);
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const href = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = href;
+  a.download = `${slugifyFilename(account.name)}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(href);
 }
 
 function DetailRow({ label, value, copyable = false, mono = false }) {
@@ -121,7 +128,7 @@ export default function SocialMediaTracker() {
   const [notes, setNotes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [revealedAccess, setRevealedAccess] = useState({});
+  const [actionMessage, setActionMessage] = useState("");
 
   const [selected, setSelected] = useState(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -332,9 +339,24 @@ export default function SocialMediaTracker() {
     setNotes((prev) => prev.filter((item) => item.id !== note.id));
   };
 
-  const toggleAccess = (id, event) => {
-    event?.stopPropagation?.();
-    setRevealedAccess((prev) => ({ ...prev, [id]: !prev[id] }));
+  const flashAction = (message) => {
+    setActionMessage(message);
+    window.setTimeout(() => setActionMessage(""), 2000);
+  };
+
+  const handleCopyAll = async (account) => {
+    const ok = await copyText(formatAccountDetails(account));
+    flashAction(ok ? "Copied" : "Copy failed");
+  };
+
+  const handleDownload = (account) => {
+    try {
+      downloadAccountDetails(account);
+      flashAction("Downloaded");
+    } catch (err) {
+      console.error("Download failed:", err);
+      flashAction("Download failed");
+    }
   };
 
   if (loading) {
@@ -345,7 +367,7 @@ export default function SocialMediaTracker() {
     <div className="space-y-8">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-[15px] text-foreground mb-1">
+          <h1 className="text-xs text-foreground mb-1">
             Social Media & Shop Tracker
           </h1>
           <p className="text-sm text-muted-foreground">
@@ -383,64 +405,27 @@ export default function SocialMediaTracker() {
                   <li key={account.id}>
                     <button
                       type="button"
-                      onClick={() => setSelected(account)}
-                      className="w-full text-left px-4 py-3 hover:bg-accent/60 transition-colors"
+                      onClick={() => {
+                        setActionMessage("");
+                        setSelected(account);
+                      }}
+                      className="w-full text-left px-4 py-2.5 hover:bg-accent/60 transition-colors flex items-center justify-between gap-3"
                     >
-                      <div className="flex items-start justify-between gap-3 mb-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${meta.dot}`} />
-                          <span className="text-sm font-medium text-foreground truncate">
-                            {account.name}
-                          </span>
-                        </div>
-                        {account.status && (
-                          <span
-                            className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium ${statusBadgeClass(
-                              account.status
-                            )}`}
-                          >
-                            {account.status}
-                          </span>
-                        )}
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${meta.dot}`} />
+                        <span className="text-sm font-medium text-foreground truncate">
+                          {account.name}
+                        </span>
                       </div>
-
-                      <div className="grid gap-1.5 pl-3.5 text-xs text-muted-foreground">
-                        {account.url && (
-                          <div>
-                            {account.url.startsWith("http") ? (
-                              <a
-                                href={account.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                onClick={(e) => e.stopPropagation()}
-                                className="text-primary hover:underline break-all"
-                              >
-                                {account.url}
-                              </a>
-                            ) : (
-                              <span className="break-all">{account.url}</span>
-                            )}
-                          </div>
-                        )}
-                        {account.username && (
-                          <div>
-                            <span className="text-muted-foreground/70">Username: </span>
-                            <span className="text-foreground/80">{account.username}</span>
-                          </div>
-                        )}
-                        <div className="flex items-center gap-2">
-                          <span className="text-muted-foreground/70 shrink-0">Access:</span>
-                          <AccessCell
-                            value={account.access_details}
-                            revealed={!!revealedAccess[account.id]}
-                            onToggle={(e) => toggleAccess(account.id, e)}
-                            stopPropagation={(e) => e.stopPropagation()}
-                          />
-                        </div>
-                        {account.comments && (
-                          <p className="text-foreground/70 line-clamp-2">{account.comments}</p>
-                        )}
-                      </div>
+                      {account.status ? (
+                        <span
+                          className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium ${statusBadgeClass(
+                            account.status
+                          )}`}
+                        >
+                          {account.status}
+                        </span>
+                      ) : null}
                     </button>
                   </li>
                 ))}
@@ -477,11 +462,6 @@ export default function SocialMediaTracker() {
               >
                 <div className="min-w-0">
                   <p className="text-sm text-foreground whitespace-pre-wrap">{note.text}</p>
-                  <p className="mt-1 text-[11px] text-muted-foreground">
-                    {note.created_at
-                      ? new Date(note.created_at).toLocaleString()
-                      : ""}
-                  </p>
                 </div>
                 <button
                   type="button"
@@ -535,23 +515,46 @@ export default function SocialMediaTracker() {
                 <DetailRow label="Comments" value={selected.comments} />
               </div>
 
-              <DialogFooter className="gap-2 sm:gap-0">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => openEdit(selected)}
-                >
-                  <Pencil className="w-4 h-4" />
-                  Edit
-                </Button>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  onClick={() => handleDeleteAccount(selected)}
-                >
-                  <Trash2 className="w-4 h-4" />
-                  Delete
-                </Button>
+              <DialogFooter className="flex-col gap-3 sm:flex-col sm:space-x-0">
+                <div className="flex flex-wrap items-center gap-2 w-full">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => handleCopyAll(selected)}
+                  >
+                    <Copy className="w-4 h-4" />
+                    Copy all
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => handleDownload(selected)}
+                  >
+                    <Download className="w-4 h-4" />
+                    Download
+                  </Button>
+                  {actionMessage ? (
+                    <span className="text-sm text-muted-foreground">{actionMessage}</span>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap gap-2 w-full">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => openEdit(selected)}
+                  >
+                    <Pencil className="w-4 h-4" />
+                    Edit
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={() => handleDeleteAccount(selected)}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Delete
+                  </Button>
+                </div>
               </DialogFooter>
             </>
           )}

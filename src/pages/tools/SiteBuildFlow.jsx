@@ -849,7 +849,7 @@ export default function SiteBuildFlow() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-[15px] text-foreground mb-1">Site Build Flow</h1>
+          <h1 className="text-xs text-foreground mb-1">Site Build Flow</h1>
           <p className="text-sm text-muted-foreground">Loading…</p>
         </div>
       </div>
@@ -860,7 +860,7 @@ export default function SiteBuildFlow() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-[15px] text-foreground mb-1">Site Build Flow</h1>
+          <h1 className="text-xs text-foreground mb-1">Site Build Flow</h1>
           <p className="text-sm text-muted-foreground">
             Template → live — {doneStageCount} of {STAGES.length} stages done
           </p>

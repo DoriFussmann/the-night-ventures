@@ -237,17 +237,17 @@ const readerMarkdownComponents = {
     </h3>
   ),
   p: ({ children }) => (
-    <p className="mb-4 text-[15px] leading-[1.75] text-foreground/90">
+    <p className="mb-4 text-xs leading-[1.75] text-foreground/90">
       {children}
     </p>
   ),
   ul: ({ children }) => (
-    <ul className="mb-4 ml-5 list-disc space-y-1.5 text-[15px] leading-[1.7] text-foreground/90">
+    <ul className="mb-4 ml-5 list-disc space-y-1.5 text-xs leading-[1.7] text-foreground/90">
       {children}
     </ul>
   ),
   ol: ({ children }) => (
-    <ol className="mb-4 ml-5 list-decimal space-y-1.5 text-[15px] leading-[1.7] text-foreground/90">
+    <ol className="mb-4 ml-5 list-decimal space-y-1.5 text-xs leading-[1.7] text-foreground/90">
       {children}
     </ol>
   ),
@@ -696,7 +696,7 @@ export default function ArticleGeneration() {
   return (
     <div className="space-y-6 pb-24">
       <div>
-        <h1 className="text-[15px] text-foreground mb-1">Article Generator</h1>
+        <h1 className="text-xs text-foreground mb-1">Article Generator</h1>
         <p className="text-sm text-muted-foreground">
           Drop a cluster or pillar markdown export to review, select, and generate
           draft articles.
@@ -1291,10 +1291,10 @@ export default function ArticleGeneration() {
                         <div className="space-y-4">
                           {readerJob.frontmatter.faqs.map((faq, i) => (
                             <div key={`reader-faq-${i}`}>
-                              <p className="font-medium text-foreground text-[15px]">
+                              <p className="font-medium text-foreground text-xs">
                                 {faq.question}
                               </p>
-                              <p className="mt-1.5 text-[15px] leading-[1.7] text-foreground/90">
+                              <p className="mt-1.5 text-xs leading-[1.7] text-foreground/90">
                                 {faq.answer}
                               </p>
                             </div>

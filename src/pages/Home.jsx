@@ -8,7 +8,7 @@ export default function Home() {
 
   return (
     <div>
-      <h1 className="text-[15px] text-foreground mb-2">
+      <h1 className="text-xs text-foreground mb-2">
         Welcome back{user?.full_name ? `, ${user.full_name}` : ""}
       </h1>
       <p className="text-muted-foreground">

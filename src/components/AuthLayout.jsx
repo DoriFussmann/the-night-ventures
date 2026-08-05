@@ -40,7 +40,7 @@ function BrandingPanel() {
           <span className="block mt-2">Built on Hard Data.</span>
         </h1>
         {/* Subcopy */}
-        <p className="text-[15px] leading-relaxed text-white/70 max-w-md">
+        <p className="text-xs leading-relaxed text-white/70 max-w-md">
           Advanced financial modeling, research, and strategic consulting for high-stakes business decisions.
         </p>
       </div>

@@ -63,7 +63,7 @@ export default function Companies() {
     <div>
       <div className="flex items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-[15px] text-foreground mb-1">Companies</h1>
+          <h1 className="text-xs text-foreground mb-1">Companies</h1>
           <p className="text-sm text-muted-foreground">
             Choose a company to continue, or add a new one.
           </p>

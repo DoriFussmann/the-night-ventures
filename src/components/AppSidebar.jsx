@@ -15,6 +15,7 @@ import {
   PenLine,
   BookOpen,
   Image,
+  Sparkles,
   LogOut,
   ArrowLeft,
   Route,
@@ -29,21 +30,21 @@ function NavItem({ item }) {
   return (
     <Link
       to={item.path}
-      className={`w-full flex items-start gap-3 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+      className={`w-full flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors ${
         isActive
           ? "border-border bg-accent text-foreground"
-          : "border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+          : "border-border text-foreground/80 hover:bg-accent hover:text-foreground"
       }`}
     >
-      <Icon className="w-4 h-4 shrink-0 mt-0.5" />
-      <span className="leading-snug">{item.label}</span>
+      <Icon className="w-3.5 h-3.5 shrink-0" />
+      <span className="leading-tight">{item.label}</span>
     </Link>
   );
 }
 
 function SectionHeader({ label }) {
   return (
-    <p className="px-3 pt-5 pb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+    <p className="px-2.5 pt-3 pb-0.5 text-[9px] font-semibold uppercase tracking-widest text-muted-foreground/60">
       {label}
     </p>
   );
@@ -107,6 +108,7 @@ export default function AppSidebar({ user }) {
     { label: "Article Generator", path: `/company/${activeCompanyId}/article-generation`, icon: PenLine },
     { label: "Articles", path: `/company/${activeCompanyId}/articles`, icon: BookOpen },
     { label: "Cluster Images", path: `/company/${activeCompanyId}/cluster-image-generator`, icon: Image },
+    { label: "Image Generator", path: `/company/${activeCompanyId}/image-generator`, icon: Sparkles },
   ];
   useEffect(() => {
     let cancelled = false;
@@ -146,30 +148,31 @@ export default function AppSidebar({ user }) {
 
   return (
     <aside className="fixed left-0 top-0 h-screen w-52 bg-card border-r border-border flex flex-col z-40">
-      {/* Logo */}
-      <div className="px-5 py-6">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
-            <span className="text-primary-foreground font-display text-sm">N</span>
-          </div>
-          <span className="font-display text-foreground text-lg">The Night Ventures</span>
-        </div>
+      {/* Logo + company return */}
+      <div className="flex items-center gap-2 px-2.5 pt-3 pb-2">
+        <Link
+          to="/"
+          title="The Night Ventures"
+          className="h-7 w-7 shrink-0 rounded-md bg-primary flex items-center justify-center"
+        >
+          <span className="text-primary-foreground font-display text-xs">N</span>
+        </Link>
         {activeCompanyId && (
           <Link
             to="/"
             title="Back to companies"
-            className="mt-3 flex items-center gap-1.5 text-sm text-muted-foreground truncate transition-colors hover:text-foreground"
+            className="h-7 min-w-0 flex-1 flex items-center gap-1.5 rounded-md border border-border px-2 text-xs text-foreground/80 transition-colors hover:bg-accent hover:text-foreground"
           >
-            <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">{companyName || "Loading company..."}</span>
+            <ArrowLeft className="w-3 h-3 shrink-0" />
+            <span className="truncate">{companyName || "Loading…"}</span>
           </Link>
         )}
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-3 pb-4">
+      <nav className="flex-1 overflow-y-auto px-2.5 pb-3">
         <SectionHeader label="General" />
-        <div className="space-y-3">
+        <div className="space-y-1.5">
           {generalNav.map((item) => (
             <NavItem key={item.path} item={item} />
           ))}
@@ -178,14 +181,14 @@ export default function AppSidebar({ user }) {
         {activeCompanyId && (
           <>
             <SectionHeader label="Company" />
-            <div className="space-y-3">
+            <div className="space-y-1.5">
               {companyNav.map((item) => (
                 <NavItem key={item.path} item={item} />
               ))}
             </div>
 
             <SectionHeader label="SEO Tools" />
-            <div className="space-y-3">
+            <div className="space-y-1.5">
               {seoNav.map((item) => (
                 <NavItem key={item.path} item={item} />
               ))}
@@ -195,40 +198,40 @@ export default function AppSidebar({ user }) {
       </nav>
 
       {activeCompanyId && (
-        <div className="border-t border-border px-3 py-3 space-y-2">
+        <div className="border-t border-border px-2.5 py-2 space-y-1.5">
           <Link
             to={siteBuildFlowPath}
-            className={`w-full flex items-start gap-3 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+            className={`w-full flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors ${
               isSiteBuildFlowActive
                 ? "border-border bg-accent text-foreground"
-                : "border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+                : "border-border text-foreground/80 hover:bg-accent hover:text-foreground"
             }`}
           >
-            <Construction className="w-4 h-4 shrink-0 mt-0.5" />
-            <span className="leading-snug">Site Build Flow</span>
+            <Construction className="w-3.5 h-3.5 shrink-0" />
+            <span className="leading-tight">Site Build Flow</span>
           </Link>
           <Link
             to={routePath}
-            className={`w-full flex items-start gap-3 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+            className={`w-full flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors ${
               isRouteActive
                 ? "border-border bg-accent text-foreground"
-                : "border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+                : "border-border text-foreground/80 hover:bg-accent hover:text-foreground"
             }`}
           >
-            <Route className="w-4 h-4 shrink-0 mt-0.5" />
-            <span className="leading-snug">The Route</span>
+            <Route className="w-3.5 h-3.5 shrink-0" />
+            <span className="leading-tight">The Route</span>
           </Link>
         </div>
       )}
 
       {/* Footer */}
-      <div className="border-t border-border px-5 py-4">
-        <p className="text-sm text-foreground truncate">{user?.full_name || "User"}</p>
+      <div className="border-t border-border px-3 py-2.5">
+        <p className="text-xs text-foreground truncate">{user?.full_name || "User"}</p>
         <button
           onClick={handleLogout}
-          className="flex items-center gap-2 mt-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          className="flex items-center gap-1.5 mt-1 text-xs text-foreground/80 hover:text-foreground transition-colors"
         >
-          <LogOut className="w-4 h-4" />
+          <LogOut className="w-3.5 h-3.5" />
           Log Out
         </button>
       </div>

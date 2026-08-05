@@ -74,7 +74,7 @@ function DocumentSection({ doc }) {
 
   return (
     <section className="space-y-3">
-      <h2 className="text-[15px] text-foreground">{doc.title}</h2>
+      <h2 className="text-xs text-foreground">{doc.title}</h2>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
@@ -142,7 +142,7 @@ export default function SiteBuildPrompt() {
   return (
     <div className="space-y-10">
       <div>
-        <h1 className="text-[15px] text-foreground mb-1">Site Build Documents</h1>
+        <h1 className="text-xs text-foreground mb-1">Site Build Documents</h1>
         <p className="text-sm text-muted-foreground">
           Global reference documents for site builds. Edits apply across all companies.
         </p>

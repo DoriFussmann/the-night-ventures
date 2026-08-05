@@ -17,7 +17,7 @@
     --secondary: 213 43% 30%;
     --secondary-foreground: 0 0% 100%;
     --muted: 0 0% 98%;
-    --muted-foreground: 0 0% 54%;
+    --muted-foreground: 0 0% 28%;
     --accent: 0 0% 98%;
     --accent-foreground: 0 0% 10%;
     --destructive: 0 84% 60%;
@@ -58,7 +58,7 @@
     --secondary: 213 43% 24%;
     --secondary-foreground: 0 0% 98%;
     --muted: 0 0% 16%;
-    --muted-foreground: 0 0% 64%;
+    --muted-foreground: 0 0% 78%;
     --accent: 0 0% 16%;
     --accent-foreground: 0 0% 98%;
     --destructive: 0 62% 45%;
@@ -89,9 +89,13 @@
     letter-spacing: -0.01em;
   }
 
+  html {
+    font-size: 15px;
+  }
+
   body {
     @apply bg-background text-foreground font-body antialiased;
-    font-size: 13px;
+    font-size: 0.75rem; /* match nav text-xs */
     -webkit-font-smoothing: antialiased;
   }
 }

@@ -332,7 +332,7 @@ export default function ClusterImageGenerator() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-[15px] text-foreground mb-1">Cluster Image Generator</h1>
+        <h1 className="text-xs text-foreground mb-1">Cluster Image Generator</h1>
         <p className="text-sm text-muted-foreground">
           Branded 16:9 topic cards ({IMAGE_WIDTH}×{IMAGE_HEIGHT}) for pillar and
           cluster hero images — preview live, download PNG.

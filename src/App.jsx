@@ -23,6 +23,7 @@ import ArticleTopicSuggestion from '@/pages/tools/ArticleTopicSuggestion';
 import ArticleGeneration from '@/pages/tools/ArticleGeneration';
 import Articles from '@/pages/tools/Articles';
 import ClusterImageGenerator from '@/pages/tools/ClusterImageGenerator';
+import AiImageGenerator from '@/pages/tools/AiImageGenerator';
 import TheRoute from '@/pages/tools/TheRoute';
 import SiteBuildFlow from '@/pages/tools/SiteBuildFlow';
 import SiteBuildPrompt from '@/pages/general/SiteBuildPrompt';
@@ -51,6 +52,7 @@ const AuthenticatedApp = () => {
           <Route path="/company/:companyId/article-generation" element={<ArticleGeneration />} />
           <Route path="/company/:companyId/articles" element={<Articles />} />
           <Route path="/company/:companyId/cluster-image-generator" element={<ClusterImageGenerator />} />
+          <Route path="/company/:companyId/image-generator" element={<AiImageGenerator />} />
           <Route path="/company/:companyId/the-route" element={<TheRoute />} />
           <Route path="/company/:companyId/site-build-flow" element={<SiteBuildFlow />} />
         </Route>

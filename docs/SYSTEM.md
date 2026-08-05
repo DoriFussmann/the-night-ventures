@@ -170,7 +170,7 @@ Legend:
 ### Hosting / env (pipeline-relevant)
 
 - Hosting: Vercel (see `README.md`).
-- Secrets used by pipeline APIs: `ANTHROPIC_API_KEY` (required by plan/generate), Supabase URL/keys, optional DataForSEO for the unwired topic-generator route.
+- Secrets used by pipeline APIs: `ANTHROPIC_API_KEY` (required by plan/generate and design-guide routes), `OPENAI_API_KEY` (required by Site Content Build image generation / `api/generate-image.js`), Supabase URL/keys, optional DataForSEO for the unwired topic-generator route.
 
 ---
 
@@ -216,6 +216,7 @@ Checklist from what exists in this repository today (routes, tables, APIs). “T
 - [ ] `api/topic-generator.js` (DataForSEO find_topics) — **no `src/` caller**
 - [ ] Articles library `status = published` sync — **genuinely unresolved**: no mechanism updates `generated_articles.status` when an article is published via the CMS (separate app, no callback into TNV). Decision still open: leave the library as a permanent “drafts” record independent of live status (simplest), or eventually add a lightweight “mark published” action in the Articles library UI mirroring the one already built in Topic Generator’s coverage view
 - [x] `ANTHROPIC_API_KEY` documented in `.env.example` (added; was a real gap in the scaffold)
+- [x] `OPENAI_API_KEY` documented in `.env.example` / README / this file (sibling of Anthropic; required for `api/generate-image.js`)
 
 ### Designed / pending (not built here)
 

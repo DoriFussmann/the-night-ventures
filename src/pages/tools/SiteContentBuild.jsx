@@ -1,17 +1,32 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Copy, Loader2 } from "lucide-react";
+import { Copy, Download, Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Progress } from "@/components/ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   normalizeServices,
   normalizeTeamMembers,
 } from "./templateToPrompt/customFieldKeys";
 import { buildSiteContentPrompt } from "./siteContentBuild/buildSiteContentPrompt";
+import { parsePlaceholders } from "./siteContentBuild/parsePlaceholders";
+import {
+  IMAGE_SIZES,
+  downloadGeneratedImage,
+  generateOneImage,
+  imageSrcFromResult,
+} from "./aiImage/generateImageClient";
 
 const PAGE_OPTIONS = [
   {
@@ -144,6 +159,14 @@ export default function SiteContentBuild() {
   const [assembledPrompt, setAssembledPrompt] = useState("");
   const [copyMessage, setCopyMessage] = useState("");
 
+  const [placeholderReport, setPlaceholderReport] = useState("");
+  const [placeholderRows, setPlaceholderRows] = useState([]);
+  const [imageSize, setImageSize] = useState("1024x1024");
+  const [batchRunning, setBatchRunning] = useState(false);
+  const [batchStep, setBatchStep] = useState(0);
+  const [batchLabel, setBatchLabel] = useState("");
+  const [singleRunningId, setSingleRunningId] = useState(null);
+
   const loadCompanyData = useCallback(async () => {
     if (!companyId) return;
 
@@ -258,6 +281,110 @@ export default function SiteContentBuild() {
     setPages((prev) => ({ ...prev, [key]: checked === true }));
   };
 
+  const updatePlaceholderRow = (id, patch) => {
+    setPlaceholderRows((prev) =>
+      prev.map((row) => (row.id === id ? { ...row, ...patch } : row))
+    );
+  };
+
+  const handleParsePlaceholders = () => {
+    setError("");
+    const parsed = parsePlaceholders(placeholderReport);
+    if (parsed.length === 0) {
+      setError("No placeholders found. Paste one Label: description per line.");
+      setPlaceholderRows([]);
+      return;
+    }
+    setPlaceholderRows(
+      parsed.map((item, index) => ({
+        id: `ph-${index}-${Date.now()}`,
+        label: item.label,
+        description: item.description,
+        status: "idle",
+        error: null,
+        result: null,
+      }))
+    );
+  };
+
+  const runGenerateForRow = async (row) => {
+    const data = await generateOneImage({
+      prompt: row.description,
+      size: imageSize,
+      styleContext: designGuideAbstract,
+    });
+    return data;
+  };
+
+  const handleGenerateOne = async (rowId) => {
+    const row = placeholderRows.find((r) => r.id === rowId);
+    if (!row || batchRunning || singleRunningId != null) return;
+
+    setError("");
+    setSingleRunningId(rowId);
+    updatePlaceholderRow(rowId, { status: "running", error: null });
+
+    try {
+      const result = await runGenerateForRow(row);
+      updatePlaceholderRow(rowId, { status: "done", result, error: null });
+    } catch (err) {
+      updatePlaceholderRow(rowId, {
+        status: "failed",
+        error: err?.message || "Generation failed",
+      });
+    } finally {
+      setSingleRunningId(null);
+    }
+  };
+
+  const handleGenerateAll = async () => {
+    if (batchRunning || singleRunningId != null || placeholderRows.length === 0) {
+      return;
+    }
+
+    setError("");
+    setBatchRunning(true);
+    setBatchStep(0);
+    setBatchLabel("");
+
+    const rows = placeholderRows.slice();
+    for (let step = 0; step < rows.length; step++) {
+      const row = rows[step];
+      setBatchStep(step + 1);
+      setBatchLabel(row.label);
+      updatePlaceholderRow(row.id, { status: "running", error: null });
+
+      try {
+        const result = await runGenerateForRow(row);
+        updatePlaceholderRow(row.id, { status: "done", result, error: null });
+      } catch (err) {
+        updatePlaceholderRow(row.id, {
+          status: "failed",
+          error: err?.message || "Generation failed",
+        });
+      }
+    }
+
+    setBatchRunning(false);
+    setBatchLabel("");
+  };
+
+  const handleDownload = async (row) => {
+    if (!row?.result) return;
+    try {
+      await downloadGeneratedImage(row.label, row.result);
+    } catch (err) {
+      console.error("Download failed:", err);
+      setError(err?.message || "Failed to download image");
+    }
+  };
+
+  const batchProgressPct =
+    placeholderRows.length > 0 && batchStep > 0
+      ? Math.round((batchStep / placeholderRows.length) * 100)
+      : 0;
+  const generationBusy = batchRunning || singleRunningId != null;
+
   if (loading) {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -270,7 +397,7 @@ export default function SiteContentBuild() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-[15px] text-foreground mb-1">Site Content Build</h1>
+        <h1 className="text-xs text-foreground mb-1">Site Content Build</h1>
         <p className="text-sm text-muted-foreground">{subtitle}</p>
       </div>
 
@@ -279,7 +406,7 @@ export default function SiteContentBuild() {
       {/* Page selection */}
       <section className="space-y-4">
         <div>
-          <h2 className="text-[15px] text-foreground">Pages to build</h2>
+          <h2 className="text-xs text-foreground">Pages to build</h2>
           <p className="text-sm text-muted-foreground">
             Only checked pages are included in the generated Cursor prompt.
           </p>
@@ -339,7 +466,7 @@ export default function SiteContentBuild() {
       {/* Company Data (read-only) */}
       <section className="space-y-4">
         <div>
-          <h2 className="text-[15px] text-foreground">From Company Data</h2>
+          <h2 className="text-xs text-foreground">From Company Data</h2>
           <p className="text-sm text-muted-foreground">
             Read-only pull used to assemble the prompt. Edit values in{" "}
             <Link
@@ -466,12 +593,204 @@ export default function SiteContentBuild() {
 
       {assembledPrompt && (
         <section className="space-y-3">
-          <h2 className="text-[15px] text-foreground">Assembled prompt</h2>
+          <h2 className="text-xs text-foreground">Assembled prompt</h2>
           <PromptCodeBlock
             value={assembledPrompt}
             onCopy={() => copyText(assembledPrompt)}
             copyMessage={copyMessage}
           />
+        </section>
+      )}
+
+      {assembledPrompt && (
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-xs text-foreground">
+              Generate Placeholder Images
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              After Cursor reports image placeholders, paste the checklist here
+              (one{" "}
+              <span className="font-mono text-xs">Label: description</span> per
+              line). Each image uses the Design Guidelines from Company Data as
+              style context — generate and download, then upload into the CMS.
+            </p>
+          </div>
+
+          {designGuideMissing && (
+            <Alert variant="destructive">
+              <AlertDescription>
+                No Design Guidelines set — generated images will not follow brand
+                direction. Set this in Company Data first for on-brand results.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <div className="space-y-2">
+            <Label htmlFor="placeholder-report">Cursor placeholder report</Label>
+            <Textarea
+              id="placeholder-report"
+              value={placeholderReport}
+              onChange={(e) => setPlaceholderReport(e.target.value)}
+              className="min-h-[140px] font-mono text-xs"
+              placeholder={
+                "Team photo: professional headshot of Dori Fussmann\nHero image: founder-investor connection/trust"
+              }
+              disabled={generationBusy}
+            />
+          </div>
+
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-2 w-full sm:w-[200px]">
+              <Label htmlFor="image-size">Size (all images)</Label>
+              <Select
+                value={imageSize}
+                onValueChange={setImageSize}
+                disabled={generationBusy}
+              >
+                <SelectTrigger id="image-size">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {IMAGE_SIZES.map((size) => (
+                    <SelectItem key={size} value={size}>
+                      {size}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleParsePlaceholders}
+              disabled={generationBusy || !placeholderReport.trim()}
+            >
+              Parse placeholders
+            </Button>
+            <Button
+              type="button"
+              onClick={handleGenerateAll}
+              disabled={
+                generationBusy || placeholderRows.length === 0
+              }
+            >
+              {batchRunning ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Generating…
+                </>
+              ) : (
+                "Generate All"
+              )}
+            </Button>
+          </div>
+
+          {batchRunning && (
+            <div className="rounded-lg border border-border bg-card px-4 py-4 space-y-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>
+                  Generating {batchStep} of {placeholderRows.length}
+                  {batchLabel ? `: ${batchLabel}` : ""}
+                </span>
+              </div>
+              <Progress value={batchProgressPct} className="h-1.5" />
+              <p className="text-xs text-muted-foreground">
+                Images run one at a time. Failures are skipped so the rest of the
+                batch can finish.
+              </p>
+            </div>
+          )}
+
+          {placeholderRows.length > 0 && (
+            <ul className="space-y-3">
+              {placeholderRows.map((row) => {
+                const src = imageSrcFromResult(row.result);
+                const isRowBusy =
+                  row.status === "running" ||
+                  (generationBusy && singleRunningId === row.id);
+                return (
+                  <li
+                    key={row.id}
+                    className="rounded-lg border border-border p-4 space-y-3"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="space-y-1 min-w-0 flex-1">
+                        <p className="text-sm font-medium text-foreground">
+                          {row.label}
+                        </p>
+                        <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                          {row.description}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Status:{" "}
+                          {row.status === "idle" && "Ready"}
+                          {row.status === "running" && "Generating…"}
+                          {row.status === "done" && "Done"}
+                          {row.status === "failed" && "Failed"}
+                        </p>
+                        {row.error ? (
+                          <p className="text-xs text-destructive">{row.error}</p>
+                        ) : null}
+                      </div>
+                      <div className="flex flex-wrap gap-2 shrink-0">
+                        {row.status === "done" ? (
+                          <>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDownload(row)}
+                              disabled={generationBusy}
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              Download
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleGenerateOne(row.id)}
+                              disabled={generationBusy}
+                            >
+                              Regenerate
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleGenerateOne(row.id)}
+                            disabled={generationBusy}
+                          >
+                            {isRowBusy ? (
+                              <>
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                Generating…
+                              </>
+                            ) : row.status === "failed" ? (
+                              "Retry"
+                            ) : (
+                              "Generate"
+                            )}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    {src ? (
+                      <img
+                        src={src}
+                        alt={row.label}
+                        className="max-h-64 w-auto rounded-md border border-border"
+                      />
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </section>
       )}
     </div>

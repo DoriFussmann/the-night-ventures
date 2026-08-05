@@ -129,15 +129,15 @@ const markdownComponents = {
     <h3 className="text-lg font-medium text-foreground mt-6 mb-2">{children}</h3>
   ),
   p: ({ children }) => (
-    <p className="mb-4 text-[15px] leading-[1.75] text-foreground/90">{children}</p>
+    <p className="mb-4 text-xs leading-[1.75] text-foreground/90">{children}</p>
   ),
   ul: ({ children }) => (
-    <ul className="mb-4 ml-5 list-disc space-y-1.5 text-[15px] leading-[1.7] text-foreground/90">
+    <ul className="mb-4 ml-5 list-disc space-y-1.5 text-xs leading-[1.7] text-foreground/90">
       {children}
     </ul>
   ),
   ol: ({ children }) => (
-    <ol className="mb-4 ml-5 list-decimal space-y-1.5 text-[15px] leading-[1.7] text-foreground/90">
+    <ol className="mb-4 ml-5 list-decimal space-y-1.5 text-xs leading-[1.7] text-foreground/90">
       {children}
     </ol>
   ),
@@ -388,7 +388,7 @@ export default function Articles() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-[15px] text-foreground mb-1">Articles</h1>
+        <h1 className="text-xs text-foreground mb-1">Articles</h1>
         <p className="text-sm text-muted-foreground">
           Saved drafts from Article Generator — full frontmatter and body,
           read-only.

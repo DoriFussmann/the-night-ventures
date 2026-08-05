@@ -727,7 +727,7 @@ export default function CompanyData() {
 
   return (
     <div>
-      <h1 className="text-[15px] text-foreground mb-1">
+      <h1 className="text-xs text-foreground mb-1">
         {companyName || "Company Data"}
       </h1>
       <p className="text-sm text-muted-foreground mb-6">

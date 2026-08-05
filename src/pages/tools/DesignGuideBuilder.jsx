@@ -1,6 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { ChevronDown, Copy, Download, Loader2 } from "lucide-react";
+import {
+  ChevronDown,
+  Copy,
+  Download,
+  Eraser,
+  FileUp,
+  Loader2,
+  Pencil,
+} from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -77,6 +85,12 @@ function normalizeHex(value) {
   return raw;
 }
 
+function fieldsHaveContent(fields) {
+  return Object.values(fields || {}).some((v) => String(v || "").trim());
+}
+
+const COMPANY_GUIDE_KEY = "__company__";
+
 export default function DesignGuideBuilder() {
   const { companyId } = useParams();
   const fieldRefs = useRef({});
@@ -86,9 +100,11 @@ export default function DesignGuideBuilder() {
   const [savedSnapshot, setSavedSnapshot] = useState(() => snapshotFields(emptyFields()));
   const [autoKeys, setAutoKeys] = useState(() => new Set());
   const [themes, setThemes] = useState([]);
+  const [companyGuide, setCompanyGuide] = useState(null); // { fields, updated_at } | null
   const [selectedThemeId, setSelectedThemeId] = useState("");
+  const [entryMode, setEntryMode] = useState(null); // "existing" | "new" | null
   const [openSections, setOpenSections] = useState([]);
-  const [missingOpen, setMissingOpen] = useState(true);
+  const [missingOpen, setMissingOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState("");
@@ -110,6 +126,23 @@ export default function DesignGuideBuilder() {
   const emptyKeys = useMemo(() => getEmptyKeys(fields), [fields]);
   const hasEmptyFields = emptyKeys.length > 0;
 
+  const refreshThemes = useCallback(async () => {
+    const { data, error: themesError } = await supabase
+      .from("design_guide_themes")
+      .select("id, name, fields, created_at")
+      .order("name", { ascending: true });
+
+    if (themesError) {
+      console.error("Failed to load themes:", themesError);
+      setError(themesError.message || "Failed to load themes");
+      return [];
+    }
+
+    const list = data || [];
+    setThemes(list);
+    return list;
+  }, []);
+
   const loadData = useCallback(async () => {
     if (!companyId) return;
 
@@ -120,6 +153,8 @@ export default function DesignGuideBuilder() {
     setAiError("");
     setExtractedSwatches([]);
     setFileJobs([]);
+    setSelectedThemeId("");
+    setEntryMode(null);
 
     const [companyResult, guideResult, themesResult] = await Promise.all([
       supabase.from("companies").select("name").eq("id", companyId).maybeSingle(),
@@ -156,11 +191,24 @@ export default function DesignGuideBuilder() {
       setFields(blank);
       setSavedSnapshot(snapshotFields(blank));
       setAutoKeys(new Set());
+      setCompanyGuide(null);
     } else {
       const next = normalizeFields(guideResult.data?.fields);
       setFields(next);
       setSavedSnapshot(snapshotFields(next));
       setAutoKeys(new Set());
+
+      if (fieldsHaveContent(next)) {
+        setCompanyGuide({
+          fields: next,
+          updated_at: guideResult.data?.updated_at || null,
+        });
+        // Resume the company's last save so work isn't hidden behind entry mode
+        setSelectedThemeId(COMPANY_GUIDE_KEY);
+        setEntryMode("existing");
+      } else {
+        setCompanyGuide(null);
+      }
     }
 
     setLoading(false);
@@ -235,8 +283,9 @@ export default function DesignGuideBuilder() {
     }
 
     setSavedSnapshot(snapshotFields(fields));
+    setCompanyGuide({ fields: { ...fields }, updated_at: payload.updated_at });
     setSaving(false);
-    setSavedMessage("Saved");
+    setSavedMessage("Saved to company");
     window.setTimeout(() => setSavedMessage(""), 2500);
   };
 
@@ -255,38 +304,128 @@ export default function DesignGuideBuilder() {
     }
   };
 
-  const handleLoadTheme = () => {
-    if (!selectedThemeId) return;
-    const theme = themes.find((t) => t.id === selectedThemeId);
-    if (!theme) return;
+  const applyLoadedFields = (nextFields) => {
+    const next = normalizeFields(nextFields);
+    setFields(next);
+    setSavedSnapshot(snapshotFields(next));
+    setAutoKeys(new Set());
+    setSuggestions(null);
+    setExtractedSwatches([]);
+    setFileJobs([]);
+    setAiError("");
+    setError("");
+  };
 
+  const loadThemeById = (themeId, { confirmDirty = true } = {}) => {
+    if (!themeId) return false;
+
+    if (confirmDirty && dirty) {
+      const ok = window.confirm(
+        "You have unsaved changes. Load this and replace the current form?"
+      );
+      if (!ok) return false;
+    }
+
+    if (themeId === COMPANY_GUIDE_KEY) {
+      if (!companyGuide) return false;
+      applyLoadedFields(companyGuide.fields);
+      setSelectedThemeId(COMPANY_GUIDE_KEY);
+      setEntryMode("existing");
+      setDeleteArmed(false);
+      return true;
+    }
+
+    const theme = themes.find((t) => t.id === themeId);
+    if (!theme) return false;
+
+    applyLoadedFields(theme.fields);
+    setSelectedThemeId(themeId);
+    setEntryMode("existing");
+    setDeleteArmed(false);
+    return true;
+  };
+
+  const handleStartNewTheme = () => {
     if (dirty) {
       const ok = window.confirm(
-        "You have unsaved changes. Load this theme and replace the current form?"
+        "You have unsaved changes. Start a new theme and clear the form?"
       );
       if (!ok) return;
     }
 
-    const next = normalizeFields(theme.fields);
-    setFields(next);
+    const blank = emptyFields();
+    setFields(blank);
+    setSavedSnapshot(snapshotFields(blank));
     setAutoKeys(new Set());
     setSuggestions(null);
+    setExtractedSwatches([]);
+    setFileJobs([]);
+    setAiError("");
+    setError("");
+    setSelectedThemeId("");
+    setDeleteArmed(false);
+    setEntryMode("new");
+  };
+
+  const handleOpenExisting = async () => {
+    setDeleteArmed(false);
+    setEntryMode("existing");
+    const list = await refreshThemes();
+
+    // If nothing selected yet, prefer company last-save, else sole theme
+    if (!selectedThemeId) {
+      if (companyGuide) {
+        loadThemeById(COMPANY_GUIDE_KEY, { confirmDirty: false });
+      } else if (list.length === 1) {
+        loadThemeById(list[0].id, { confirmDirty: false });
+      }
+    }
+  };
+
+  const handleClearData = () => {
+    const hasContent =
+      dirty ||
+      Object.values(fields).some((v) => String(v || "").trim()) ||
+      fileJobs.length > 0 ||
+      extractedSwatches.length > 0 ||
+      suggestions;
+
+    if (hasContent) {
+      const ok = window.confirm("Clear all form data?");
+      if (!ok) return;
+    }
+
+    const blank = emptyFields();
+    setFields(blank);
+    setAutoKeys(new Set());
+    setSuggestions(null);
+    setExtractedSwatches([]);
+    setFileJobs([]);
+    setAiError("");
     setError("");
   };
 
   const handleSaveAsTheme = async () => {
-    const raw = window.prompt("Theme name:");
+    const isNamedTheme =
+      selectedThemeId && selectedThemeId !== COMPANY_GUIDE_KEY;
+    const existing = themes.find((t) => t.id === selectedThemeId);
+    const defaultName = existing?.name || companyName || "";
+    const raw = window.prompt(
+      isNamedTheme ? "Update theme name:" : "Theme name:",
+      defaultName
+    );
     if (raw == null) return;
     const name = raw.trim();
     if (!name) return;
 
     setError("");
+    const payload = isNamedTheme
+      ? { id: selectedThemeId, name, fields }
+      : { name, fields };
+
     const { data, error: upsertError } = await supabase
       .from("design_guide_themes")
-      .upsert(
-        { name, fields },
-        { onConflict: "name" }
-      )
+      .upsert(payload, isNamedTheme ? undefined : { onConflict: "name" })
       .select("id, name, fields, created_at")
       .single();
 
@@ -301,12 +440,13 @@ export default function DesignGuideBuilder() {
       return [...others, data].sort((a, b) => a.name.localeCompare(b.name));
     });
     setSelectedThemeId(data.id);
-    setSavedMessage("Theme saved");
+    setEntryMode("existing");
+    setSavedMessage(isNamedTheme ? "Theme updated" : "Theme saved");
     window.setTimeout(() => setSavedMessage(""), 2500);
   };
 
   const handleDeleteTheme = async () => {
-    if (!selectedThemeId) return;
+    if (!selectedThemeId || selectedThemeId === COMPANY_GUIDE_KEY) return;
 
     if (!deleteArmed) {
       setDeleteArmed(true);
@@ -327,7 +467,10 @@ export default function DesignGuideBuilder() {
     }
 
     setThemes((prev) => prev.filter((t) => t.id !== selectedThemeId));
-    setSelectedThemeId("");
+    setSelectedThemeId(companyGuide ? COMPANY_GUIDE_KEY : "");
+    if (companyGuide) {
+      applyLoadedFields(companyGuide.fields);
+    }
     setDeleteArmed(false);
   };
 
@@ -631,36 +774,62 @@ export default function DesignGuideBuilder() {
     return <p className="text-sm text-muted-foreground">Loading design guide...</p>;
   }
 
+  const showWorkspace =
+    entryMode === "new" || (entryMode === "existing" && Boolean(selectedThemeId));
+  const hasNamedThemeSelected =
+    Boolean(selectedThemeId) && selectedThemeId !== COMPANY_GUIDE_KEY;
+  const openExistingEmpty = !companyGuide && themes.length === 0;
+
   return (
     <div>
-      <h1 className="text-[15px] text-foreground mb-1">Design Guide Builder</h1>
-      <p className="text-sm text-muted-foreground mb-6">
-        {companyName
-          ? `Build and export a design guide for ${companyName}.`
-          : "Build and export a design guide for this company."}
-      </p>
+      <div className="mb-6 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <h1 className="text-xs text-foreground">Design Guide Builder</h1>
+        {companyName && (
+          <span className="text-xs text-muted-foreground">{companyName}</span>
+        )}
+      </div>
 
       {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
 
-      {/* Project Themes */}
-      <div className="mb-6 space-y-2 rounded-lg border border-border p-4">
-        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          Project Themes
-        </p>
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="min-w-[180px] flex-1 space-y-2">
-            <Label htmlFor="theme-select">Theme</Label>
+      {/* Entry: open existing or start new */}
+      <div className="mb-6 flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant={entryMode === "existing" ? "default" : "outline"}
+          onClick={() => {
+            void handleOpenExisting();
+          }}
+        >
+          Open existing theme
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant={entryMode === "new" ? "default" : "outline"}
+          onClick={handleStartNewTheme}
+        >
+          Start new theme
+        </Button>
+
+        {entryMode === "existing" && (
+          <>
             <Select
               value={selectedThemeId || undefined}
               onValueChange={(v) => {
-                setSelectedThemeId(v);
                 setDeleteArmed(false);
+                loadThemeById(v);
               }}
             >
-              <SelectTrigger id="theme-select">
+              <SelectTrigger id="theme-select" className="w-[260px]">
                 <SelectValue placeholder="Select a theme…" />
               </SelectTrigger>
               <SelectContent>
+                {companyGuide && (
+                  <SelectItem value={COMPANY_GUIDE_KEY}>
+                    Company guide (last save)
+                  </SelectItem>
+                )}
                 {themes.map((theme) => (
                   <SelectItem key={theme.id} value={theme.id}>
                     {theme.name}
@@ -668,31 +837,122 @@ export default function DesignGuideBuilder() {
                 ))}
               </SelectContent>
             </Select>
-          </div>
+            {hasNamedThemeSelected && (
+              <Button
+                type="button"
+                variant={deleteArmed ? "destructive" : "ghost"}
+                size="sm"
+                onClick={handleDeleteTheme}
+                onBlur={() => setDeleteArmed(false)}
+              >
+                {deleteArmed ? "Confirm delete" : "Delete"}
+              </Button>
+            )}
+            {openExistingEmpty && (
+              <span className="text-xs text-muted-foreground">
+                No themes yet — use Save as theme after editing
+              </span>
+            )}
+          </>
+        )}
+      </div>
+
+      {showWorkspace && (
+        <>
+
+      {/* Dropzone */}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <label
+          htmlFor="dg-file-input"
+          className={`flex h-24 w-full max-w-xs cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed transition-colors ${
+            dragOver
+              ? "border-foreground bg-muted/40"
+              : "border-border hover:border-foreground/40 hover:bg-muted/20"
+          }`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragOver(false);
+            processFiles(e.dataTransfer.files);
+          }}
+          aria-label="Upload brand file"
+          title="Upload image, PDF, or text"
+        >
+          {fileJobs.some((j) => j.status === "scanning") ? (
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          ) : (
+            <FileUp className="h-8 w-8 text-muted-foreground" />
+          )}
+          <input
+            id="dg-file-input"
+            type="file"
+            className="sr-only"
+            multiple
+            accept="image/*,.pdf,application/pdf,text/*,.md,.markdown,.txt"
+            onChange={(e) => {
+              processFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
+        </label>
+
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
             variant="outline"
             size="sm"
-            disabled={!selectedThemeId}
-            onClick={handleLoadTheme}
+            onClick={handleClearData}
+            title="Clear form data"
           >
-            Load
+            <Eraser className="mr-2 h-3.5 w-3.5" />
+            Clear
           </Button>
-          <Button type="button" variant="outline" size="sm" onClick={handleSaveAsTheme}>
-            Save as…
-          </Button>
-          <Button
-            type="button"
-            variant={deleteArmed ? "destructive" : "outline"}
-            size="sm"
-            disabled={!selectedThemeId}
-            onClick={handleDeleteTheme}
-            onBlur={() => setDeleteArmed(false)}
-          >
-            {deleteArmed ? "Confirm delete" : "Delete"}
-          </Button>
+          {hasNamedThemeSelected ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleSaveAsTheme}
+              title="Save edits to this theme"
+            >
+              <Pencil className="mr-2 h-3.5 w-3.5" />
+              Save theme
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleSaveAsTheme}
+            >
+              Save as theme…
+            </Button>
+          )}
         </div>
       </div>
+
+      {fileJobs.length > 0 && (
+        <ul className="mb-4 space-y-1 text-sm">
+          {fileJobs.map((job) => (
+            <li key={job.id} className="flex flex-wrap items-center gap-2">
+              <span className="font-medium">{job.name}</span>
+              <span
+                className={
+                  job.status === "error"
+                    ? "text-destructive"
+                    : "text-muted-foreground"
+                }
+              >
+                {job.status === "scanning" ? "generating…" : job.summary || job.status}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
 
       {/* Progress */}
       <div className="mb-4 space-y-2">
@@ -754,66 +1014,6 @@ export default function DesignGuideBuilder() {
           </CollapsibleContent>
         </div>
       </Collapsible>
-
-      {/* Dropzone */}
-      <div
-        className={`mb-4 rounded-lg border border-dashed p-6 text-center transition-colors ${
-          dragOver ? "border-foreground bg-muted/40" : "border-border"
-        }`}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragOver(true);
-        }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragOver(false);
-          processFiles(e.dataTransfer.files);
-        }}
-      >
-        <p className="text-sm text-foreground mb-1">
-          Drop brand files here — images, PDFs, or text/markdown
-        </p>
-        <p className="text-xs text-muted-foreground mb-3">
-          Images extract a color palette locally. PDFs and text are scanned via AI into empty
-          fields only.
-        </p>
-        <Label htmlFor="dg-file-input" className="cursor-pointer">
-          <span className="inline-flex h-8 items-center justify-center rounded-md border border-input bg-background px-3 text-xs font-medium shadow-sm hover:bg-accent hover:text-accent-foreground">
-            Choose files
-          </span>
-        </Label>
-        <input
-          id="dg-file-input"
-          type="file"
-          className="sr-only"
-          multiple
-          accept="image/*,.pdf,application/pdf,text/*,.md,.markdown,.txt"
-          onChange={(e) => {
-            processFiles(e.target.files);
-            e.target.value = "";
-          }}
-        />
-      </div>
-
-      {fileJobs.length > 0 && (
-        <ul className="mb-4 space-y-1 text-sm">
-          {fileJobs.map((job) => (
-            <li key={job.id} className="flex flex-wrap items-center gap-2">
-              <span className="font-medium">{job.name}</span>
-              <span
-                className={
-                  job.status === "error"
-                    ? "text-destructive"
-                    : "text-muted-foreground"
-                }
-              >
-                {job.status === "scanning" ? "scanning…" : job.summary || job.status}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
 
       {extractedSwatches.length > 0 && (
         <div className="mb-6 space-y-3 rounded-lg border border-border p-4">
@@ -920,7 +1120,7 @@ export default function DesignGuideBuilder() {
       {/* Actions */}
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <Button type="button" onClick={handleSave} disabled={saving}>
-          {saving ? "Saving…" : "Save"}
+          {saving ? "Saving…" : "Save to company"}
         </Button>
         <Button type="button" variant="outline" onClick={handleDownload}>
           <Download className="mr-2 h-4 w-4" />
@@ -967,6 +1167,8 @@ export default function DesignGuideBuilder() {
           );
         })}
       </Accordion>
+        </>
+      )}
     </div>
   );
 }

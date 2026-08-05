@@ -38,7 +38,7 @@ import {
 function PromptCodeBlock({ value, onCopy, copyMessage }) {
   return (
     <div className="space-y-3">
-      <pre className="max-h-[480px] overflow-auto rounded-lg border border-border bg-muted/30 p-4 text-xs font-mono whitespace-pre-wrap text-foreground">
+      <pre className="max-h-[480px] overflow-auto rounded-lg border border-border bg-muted/30 p-4 text-xs font-sans whitespace-pre-wrap text-foreground">
         {value}
       </pre>
       <div className="flex flex-wrap items-center gap-3">
@@ -257,7 +257,7 @@ export default function TemplateToPrompt() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-[15px] text-foreground mb-1">Specific Prompt</h1>
+        <h1 className="text-xs text-foreground mb-1">Specific Prompt</h1>
         <p className="text-sm text-muted-foreground">{subtitle}</p>
       </div>
 
@@ -284,7 +284,7 @@ export default function TemplateToPrompt() {
         <TabsContent value="personalize" className="space-y-8 pt-2">
           {/* 1. Audit report */}
           <section className="space-y-3">
-            <h2 className="text-[15px] text-foreground">Audit report</h2>
+            <h2 className="text-xs text-foreground">Audit report</h2>
             <div className="space-y-2">
               <Label htmlFor="audit-report">
                 Paste the audit report from Tab 1&apos;s output here.
@@ -303,7 +303,7 @@ export default function TemplateToPrompt() {
           {/* 2. Auto-filled from Company Data */}
           <section className="space-y-4">
             <div>
-              <h2 className="text-[15px] text-foreground">From Company Data</h2>
+              <h2 className="text-xs text-foreground">From Company Data</h2>
               <p className="text-sm text-muted-foreground">
                 Pre-filled from Company Data. Edits to identity fields only affect
                 this prompt — they are not saved back. Services and Team are read
@@ -446,7 +446,7 @@ export default function TemplateToPrompt() {
           {/* 3. Manual fields */}
           <section className="space-y-4">
             <div>
-              <h2 className="text-[15px] text-foreground">Manual fields</h2>
+              <h2 className="text-xs text-foreground">Manual fields</h2>
               <p className="text-sm text-muted-foreground">
                 Decisions for Highest severity audit items. Leave empty and the
                 assembled prompt will mark them with {NEEDS_INPUT_MARKER}.
@@ -722,7 +722,7 @@ export default function TemplateToPrompt() {
 
           {assembledPrompt && (
             <section className="space-y-3">
-              <h2 className="text-[15px] text-foreground">Assembled prompt</h2>
+              <h2 className="text-xs text-foreground">Assembled prompt</h2>
               {needsInputCount > 0 && (
                 <Alert variant="destructive">
                   <AlertDescription>
