@@ -63,13 +63,13 @@ mark(
 )
 
 const { semrushTools } = await import(
-  pathToFileURL(path.join(root, 'api/lib/seo-advisor/providers/semrush.js')).href
+  pathToFileURL(path.join(root, 'lib/seo-advisor/providers/semrush.js')).href
 )
 const { dataforseoTools } = await import(
-  pathToFileURL(path.join(root, 'api/lib/seo-advisor/providers/dataforseo.js')).href
+  pathToFileURL(path.join(root, 'lib/seo-advisor/providers/dataforseo.js')).href
 )
 const { mozTools } = await import(
-  pathToFileURL(path.join(root, 'api/lib/seo-advisor/providers/moz.js')).href
+  pathToFileURL(path.join(root, 'lib/seo-advisor/providers/moz.js')).href
 )
 
 const sm = await semrushTools.domainOverview({ domain: 'semrush.com' })

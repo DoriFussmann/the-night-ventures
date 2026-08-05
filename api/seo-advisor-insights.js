@@ -3,7 +3,7 @@ import {
   handleOptions,
   parseBody,
   json,
-} from './lib/seo-advisor/auth.js'
+} from '../lib/seo-advisor/auth.js'
 
 const PROFILE_FIELDS = new Set([
   'competitors',

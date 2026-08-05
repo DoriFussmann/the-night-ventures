@@ -85,12 +85,12 @@ if (serviceRoleLooksValid(serviceKey)) {
 }
 
 const { semrushTools } = await import(
-  pathToFileURLSafe('../api/lib/seo-advisor/providers/semrush.js')
+  pathToFileURLSafe('../lib/seo-advisor/providers/semrush.js')
 )
 const { dataforseoTools } = await import(
-  pathToFileURLSafe('../api/lib/seo-advisor/providers/dataforseo.js')
+  pathToFileURLSafe('../lib/seo-advisor/providers/dataforseo.js')
 )
-const { mozTools } = await import(pathToFileURLSafe('../api/lib/seo-advisor/providers/moz.js'))
+const { mozTools } = await import(pathToFileURLSafe('../lib/seo-advisor/providers/moz.js'))
 
 function pathToFileURLSafe(rel) {
   return new URL(rel, import.meta.url).href

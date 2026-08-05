@@ -4,19 +4,19 @@ import {
   handleOptions,
   parseBody,
   json,
-} from './lib/seo-advisor/auth.js'
+} from '../lib/seo-advisor/auth.js'
 import {
   loadCompanyContext,
   buildSystemPrompt,
   messagesFromRows,
-} from './lib/seo-advisor/context.js'
+} from '../lib/seo-advisor/context.js'
 import {
   TOOL_DEFINITIONS,
   executeTool,
   providerLabelForTool,
   MAX_TOOL_CALLS_PER_TURN,
   healthSnapshot,
-} from './lib/seo-advisor/tools.js'
+} from '../lib/seo-advisor/tools.js'
 
 const MODEL = 'claude-sonnet-4-6'
 const MAX_TOKENS = 8192

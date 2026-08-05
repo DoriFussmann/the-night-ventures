@@ -3,8 +3,8 @@ import {
   handleOptions,
   parseBody,
   json,
-} from './lib/seo-advisor/auth.js'
-import { healthSnapshot } from './lib/seo-advisor/tools.js'
+} from '../lib/seo-advisor/auth.js'
+import { healthSnapshot } from '../lib/seo-advisor/tools.js'
 
 export default async function handler(req, res) {
   if (handleOptions(req, res, 'GET, POST, DELETE, OPTIONS')) return

@@ -153,10 +153,10 @@ async function main() {
 
   // Direct provider smoke (normalized shape, graceful failure)
   const { dataforseoTools } = await import(
-    pathToFileURL(path.join(root, 'api/lib/seo-advisor/providers/dataforseo.js')).href
+    pathToFileURL(path.join(root, 'lib/seo-advisor/providers/dataforseo.js')).href
   )
   const { semrushTools } = await import(
-    pathToFileURL(path.join(root, 'api/lib/seo-advisor/providers/semrush.js')).href
+    pathToFileURL(path.join(root, 'lib/seo-advisor/providers/semrush.js')).href
   )
 
   const dfs = await dataforseoTools.keywordData({ keyword: 'seo tools' })

@@ -59,16 +59,16 @@ async function main() {
   console.log('=== SEO Advisor unit self-test ===')
 
   const { semrushTools } = await import(
-    pathToFileURL(path.join(root, 'api/lib/seo-advisor/providers/semrush.js')).href
+    pathToFileURL(path.join(root, 'lib/seo-advisor/providers/semrush.js')).href
   )
   const { dataforseoTools } = await import(
-    pathToFileURL(path.join(root, 'api/lib/seo-advisor/providers/dataforseo.js')).href
+    pathToFileURL(path.join(root, 'lib/seo-advisor/providers/dataforseo.js')).href
   )
   const { executeTool, TOOL_DEFINITIONS, MAX_TOOL_CALLS_PER_TURN } = await import(
-    pathToFileURL(path.join(root, 'api/lib/seo-advisor/tools.js')).href
+    pathToFileURL(path.join(root, 'lib/seo-advisor/tools.js')).href
   )
   const { buildSystemPrompt } = await import(
-    pathToFileURL(path.join(root, 'api/lib/seo-advisor/context.js')).href
+    pathToFileURL(path.join(root, 'lib/seo-advisor/context.js')).href
   )
 
   const sm = await semrushTools.domainOverview({ domain: 'example.com' })
