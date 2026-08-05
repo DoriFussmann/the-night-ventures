@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { ArrowDown, ArrowUp, ChevronDown, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, Trash2, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import {
   Collapsible,
   CollapsibleContent,
@@ -105,6 +107,7 @@ function isLooseHttpUrl(value) {
 const EMPTY_PROFILE = {
   domain: "",
   product_name: "",
+  target_audience: "",
   abstract: "",
   short_description: "",
   medium_description: "",
@@ -136,6 +139,9 @@ export default function CompanyData() {
   const [fields, setFields] = useState(EMPTY_PROFILE);
   const [customFieldDefs, setCustomFieldDefs] = useState([]);
   const [customValues, setCustomValues] = useState({});
+  const [industries, setIndustries] = useState([]);
+  const [selectedIndustryIds, setSelectedIndustryIds] = useState([]);
+  const [industryFilter, setIndustryFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState("");
@@ -156,12 +162,18 @@ export default function CompanyData() {
     setLoading(true);
     setError("");
 
-    const [companyResult, profileResult, customFieldsResult] = await Promise.all([
+    const [
+      companyResult,
+      profileResult,
+      customFieldsResult,
+      industriesResult,
+      companyIndustriesResult,
+    ] = await Promise.all([
       supabase.from("companies").select("name").eq("id", companyId).maybeSingle(),
       supabase
         .from("company_profiles")
         .select(
-          "id, domain, product_name, abstract, short_description, medium_description, long_description, design_guide_raw, design_guide_abstract, core_keywords, competitors, services, team_members, custom_fields"
+          "id, domain, product_name, target_audience, abstract, short_description, medium_description, long_description, design_guide_raw, design_guide_abstract, core_keywords, competitors, services, team_members, custom_fields"
         )
         .eq("company_id", companyId)
         .maybeSingle(),
@@ -169,6 +181,11 @@ export default function CompanyData() {
         .from("company_custom_fields")
         .select("id, name, created_at")
         .order("created_at", { ascending: true }),
+      supabase.from("industries").select("id, name").order("name", { ascending: true }),
+      supabase
+        .from("company_industries")
+        .select("industry_id")
+        .eq("company_id", companyId),
     ]);
 
     if (companyResult.error) {
@@ -186,6 +203,28 @@ export default function CompanyData() {
       setCustomFieldDefs(customFieldsResult.data || []);
     }
 
+    if (industriesResult.error) {
+      console.error("Failed to load industries:", industriesResult.error);
+      setError(industriesResult.error.message || "Failed to load industries");
+      setIndustries([]);
+    } else {
+      setIndustries(industriesResult.data || []);
+    }
+
+    if (companyIndustriesResult.error) {
+      console.error("Failed to load company industries:", companyIndustriesResult.error);
+      setError(
+        companyIndustriesResult.error.message || "Failed to load company categories"
+      );
+      setSelectedIndustryIds([]);
+    } else {
+      setSelectedIndustryIds(
+        (companyIndustriesResult.data || [])
+          .map((row) => row.industry_id)
+          .filter(Boolean)
+      );
+    }
+
     if (profileResult.error) {
       console.error("Failed to load company profile:", profileResult.error);
       setError(profileResult.error.message || "Failed to load company profile");
@@ -198,6 +237,7 @@ export default function CompanyData() {
       setFields({
         domain: profile.domain || "",
         product_name: profile.product_name || "",
+        target_audience: profile.target_audience || "",
         abstract: profile.abstract || "",
         short_description: profile.short_description || "",
         medium_description: profile.medium_description || "",
@@ -233,6 +273,14 @@ export default function CompanyData() {
 
   const updateField = (key, value) => {
     setFields((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const toggleIndustry = (industryId) => {
+    setSelectedIndustryIds((prev) =>
+      prev.includes(industryId)
+        ? prev.filter((id) => id !== industryId)
+        : [...prev, industryId]
+    );
   };
 
   const updatePillarKeyword = (index, value) => {
@@ -503,6 +551,7 @@ export default function CompanyData() {
       company_id: companyId,
       domain: fields.domain.trim() || null,
       product_name: fields.product_name.trim() || null,
+      target_audience: fields.target_audience.trim() || null,
       abstract: fields.abstract.trim() || null,
       short_description: fields.short_description.trim() || null,
       medium_description: fields.medium_description.trim() || null,
@@ -532,6 +581,36 @@ export default function CompanyData() {
       setError(upsertError.message || "Failed to save");
       setSaving(false);
       return;
+    }
+
+    const { error: deleteIndustriesError } = await supabase
+      .from("company_industries")
+      .delete()
+      .eq("company_id", companyId);
+
+    if (deleteIndustriesError) {
+      console.error("Failed to clear company categories:", deleteIndustriesError);
+      setError(deleteIndustriesError.message || "Failed to save categories");
+      setSaving(false);
+      return;
+    }
+
+    if (selectedIndustryIds.length > 0) {
+      const { error: insertIndustriesError } = await supabase
+        .from("company_industries")
+        .insert(
+          selectedIndustryIds.map((industry_id) => ({
+            company_id: companyId,
+            industry_id,
+          }))
+        );
+
+      if (insertIndustriesError) {
+        console.error("Failed to save company categories:", insertIndustriesError);
+        setError(insertIndustriesError.message || "Failed to save categories");
+        setSaving(false);
+        return;
+      }
     }
 
     setProfileId(data?.id || profileId);
@@ -579,9 +658,16 @@ export default function CompanyData() {
       })
       .join("\n");
 
+    const categoryLines = industries
+      .filter((industry) => selectedIndustryIds.includes(industry.id))
+      .map((industry) => `- ${industry.name}`)
+      .join("\n");
+
     const fixedEntries = [
       ["Domain", fields.domain],
       ["Product Name", fields.product_name],
+      ["Category", categoryLines],
+      ["Target Description / Persona / ICP", fields.target_audience],
       ["Pillar Keywords", pillarLines],
       ["Competitors", competitorLines],
       ["Services / Products", serviceLines],
@@ -604,6 +690,7 @@ export default function CompanyData() {
       const trimmed = (value || "").trim();
       if (!trimmed) continue;
       if (
+        label === "Category" ||
         label === "Pillar Keywords" ||
         label === "Competitors" ||
         label === "Services / Products" ||
@@ -724,6 +811,15 @@ export default function CompanyData() {
     String(fields.design_guide_raw || "").trim() ||
       String(fields.design_guide_abstract || "").trim()
   );
+  const industryQuery = industryFilter.trim().toLowerCase();
+  const filteredIndustries = industryQuery
+    ? industries.filter((industry) =>
+        industry.name.toLowerCase().includes(industryQuery)
+      )
+    : industries;
+  const selectedIndustries = industries.filter((industry) =>
+    selectedIndustryIds.includes(industry.id)
+  );
 
   return (
     <div>
@@ -753,6 +849,72 @@ export default function CompanyData() {
             id="product_name"
             value={fields.product_name}
             onChange={(e) => updateField("product_name", e.target.value)}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>Category</Label>
+          {selectedIndustries.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {selectedIndustries.map((industry) => (
+                <Badge
+                  key={industry.id}
+                  variant="secondary"
+                  className="gap-1 pr-1 font-normal"
+                >
+                  {industry.name}
+                  <button
+                    type="button"
+                    className="inline-flex rounded-sm p-0.5 hover:bg-muted"
+                    onClick={() => toggleIndustry(industry.id)}
+                    aria-label={`Remove ${industry.name}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              ))}
+            </div>
+          )}
+          <Input
+            value={industryFilter}
+            onChange={(e) => setIndustryFilter(e.target.value)}
+            placeholder="Filter industries..."
+          />
+          <div className="max-h-48 space-y-1 overflow-y-auto rounded-md border border-border p-2">
+            {filteredIndustries.length === 0 ? (
+              <p className="px-1 py-2 text-sm text-muted-foreground">
+                {industries.length === 0
+                  ? "No industries available. Run the industries migration."
+                  : "No matches."}
+              </p>
+            ) : (
+              filteredIndustries.map((industry) => {
+                const checked = selectedIndustryIds.includes(industry.id);
+                return (
+                  <label
+                    key={industry.id}
+                    className="flex cursor-pointer items-center gap-2 rounded-sm px-1 py-1.5 text-sm hover:bg-muted"
+                  >
+                    <Checkbox
+                      checked={checked}
+                      onCheckedChange={() => toggleIndustry(industry.id)}
+                    />
+                    <span>{industry.name}</span>
+                  </label>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="target_audience">Target Description / Persona / ICP</Label>
+          <Textarea
+            id="target_audience"
+            value={fields.target_audience}
+            onChange={(e) => updateField("target_audience", e.target.value)}
+            placeholder="Who you serve — ICP, persona, and target audience details."
+            className="min-h-[100px]"
           />
         </div>
 
