@@ -28,6 +28,7 @@ import TheRoute from '@/pages/tools/TheRoute';
 import SiteBuildFlow from '@/pages/tools/SiteBuildFlow';
 import SiteBuildPrompt from '@/pages/general/SiteBuildPrompt';
 import SeoAiAdvisor from '@/pages/tools/SeoAiAdvisor';
+import ExternalAuditSnapshot from '@/pages/tools/ExternalAuditSnapshot';
 
 const AuthenticatedApp = () => {
   // Keep public auth routes mounted while session/profile settles.
@@ -51,6 +52,7 @@ const AuthenticatedApp = () => {
           <Route path="/company/:companyId/site-content-build" element={<SiteContentBuild />} />
           <Route path="/company/:companyId/article-topic-suggestion" element={<ArticleTopicSuggestion />} />
           <Route path="/company/:companyId/seo-ai-advisor" element={<SeoAiAdvisor />} />
+          <Route path="/company/:companyId/external-audit-snapshot" element={<ExternalAuditSnapshot />} />
           <Route path="/company/:companyId/article-generation" element={<ArticleGeneration />} />
           <Route path="/company/:companyId/articles" element={<Articles />} />
           <Route path="/company/:companyId/cluster-image-generator" element={<ClusterImageGenerator />} />

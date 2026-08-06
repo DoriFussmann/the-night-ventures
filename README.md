@@ -52,6 +52,7 @@ npx vercel dev
    | `SUPABASE_SERVICE_ROLE_KEY` | Service role (server only) |
    | `ANTHROPIC_API_KEY` | Anthropic API (plan-cluster, generate-article, design-guide routes) |
    | `OPENAI_API_KEY` | OpenAI API (Site Content Build image generation via gpt-image-2) |
+   | `GOOGLE_PAGESPEED_API_KEY` | Google PageSpeed Insights API (External Audit Snapshot) |
    | `RESEND_API_KEY` | From Resend dashboard |
    | `RESEND_FROM_EMAIL` | Verified sender (or Resend onboarding address for tests) |
    | `INQUIRY_TO_EMAIL` | Default `dori@thenightventures.com` |

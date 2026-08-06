@@ -157,6 +157,7 @@ Legend:
 | Anthropic web search tool | `web_search_20250305` / `web_search` | Used by plan-cluster and generate-article |
 | MCP | — | **Not used** in this repo’s API code. Semrush MCP is used externally via Claude.ai / the “Keyword Slip” artifact (see stages 3 and 5) |
 | DataForSEO | `api/topic-generator.js` only | Env: `DATAFORSEO_LOGIN`, `DATAFORSEO_PASSWORD`; **not called by current Topic Generator UI** |
+| Google PageSpeed Insights | `api/audit-snapshot.js` | Env: `GOOGLE_PAGESPEED_API_KEY`; mobile + desktop category scores + CrUX field data |
 | Semrush | External (Claude.ai MCP + Keyword Slip artifact) | No Semrush API client in this repo; paste `Keyword;Volume;KD` into Topic Generator |
 | Supabase | Client + migrations | Profiles, companies, coverage, generated articles, etc. |
 
@@ -170,7 +171,7 @@ Legend:
 ### Hosting / env (pipeline-relevant)
 
 - Hosting: Vercel (see `README.md`).
-- Secrets used by pipeline APIs: `ANTHROPIC_API_KEY` (required by plan/generate and design-guide routes), `OPENAI_API_KEY` (required by Site Content Build image generation / `api/generate-image.js`), Supabase URL/keys, optional DataForSEO for the unwired topic-generator route.
+- Secrets used by pipeline APIs: `ANTHROPIC_API_KEY` (required by plan/generate and design-guide routes), `OPENAI_API_KEY` (required by Site Content Build image generation / `api/generate-image.js`), `GOOGLE_PAGESPEED_API_KEY` (required by External Audit Snapshot / `api/audit-snapshot.js`), Supabase URL/keys, optional DataForSEO for the unwired topic-generator route.
 
 ---
 
@@ -217,6 +218,8 @@ Checklist from what exists in this repository today (routes, tables, APIs). “T
 - [ ] Articles library `status = published` sync — **genuinely unresolved**: no mechanism updates `generated_articles.status` when an article is published via the CMS (separate app, no callback into TNV). Decision still open: leave the library as a permanent “drafts” record independent of live status (simplest), or eventually add a lightweight “mark published” action in the Articles library UI mirroring the one already built in Topic Generator’s coverage view
 - [x] `ANTHROPIC_API_KEY` documented in `.env.example` (added; was a real gap in the scaffold)
 - [x] `OPENAI_API_KEY` documented in `.env.example` / README / this file (sibling of Anthropic; required for `api/generate-image.js`)
+- [x] `GOOGLE_PAGESPEED_API_KEY` documented in `.env.example` / README / this file (External Audit Snapshot / `api/audit-snapshot.js`)
+- [x] External Audit Snapshot: `POST/GET /api/audit-snapshot`, `audit_snapshots` table, PageSpeed + robots.txt bot access + JSON-LD checks with history/trends UI
 
 ### Designed / pending (not built here)
 
@@ -235,6 +238,8 @@ Checklist from what exists in this repository today (routes, tables, APIs). “T
 ---
 
 ## 8. Last Updated
+
+**2026-08-05** — External Audit Snapshot tool (`api/audit-snapshot.js`, `audit_snapshots` migration, PageSpeed + robots.txt + JSON-LD checks, history/trends UI); `GOOGLE_PAGESPEED_API_KEY` documented.
 
 **2026-08-03** — Scaffold filled with CMS/Astro architecture, keyword-selection history, Semrush paste workflow, publish handoff, future stages (launch-order ranking, monthly update scan), and design-decision rationales from project conversation.
 
