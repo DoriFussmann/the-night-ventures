@@ -31,7 +31,8 @@ export const STAGES = [
   { stage_key: "site-content", name: "Site Content", order_index: 5 },
   { stage_key: "seed-content", name: "Seed Content", order_index: 6 },
   { stage_key: "connection-layer", name: "Connection Layer", order_index: 7 },
-  { stage_key: "seed-qa", name: "Initial Seed Content QA", order_index: 8 },
+  { stage_key: "links-wiring", name: "Links Wiring", order_index: 8 },
+  { stage_key: "seed-qa", name: "Initial Seed Content QA", order_index: 9 },
 ];
 
 export const PREDEFINED_ITEMS = {
@@ -535,6 +536,60 @@ export const PREDEFINED_ITEMS = {
       title: "Run a GTmetrix baseline",
       description:
         "Run your live site through GTmetrix and record the baseline scores.",
+      prompts: [],
+    },
+  ],
+  "links-wiring": [
+    {
+      item_key: "go-to-seo-destination-site",
+      title: "Go to SEO Destination Site",
+      description:
+        "Open the destination SEO site project (local repo) that you are wiring links for.",
+      prompts: [],
+    },
+    {
+      item_key: "run-npm-run-cms",
+      title: "Run npm run cms",
+      description:
+        "In the destination site terminal, run npm run cms and open the CMS URL it gives you.",
+      prompts: [],
+    },
+    {
+      item_key: "go-to-articles-health-tools",
+      title: "Go to Articles Health Tools",
+      description: "In the CMS, open Articles Health Tools.",
+      prompts: [],
+    },
+    {
+      item_key: "scan-and-wire-links",
+      title: "Scan articles and wire all Internal Links and External Links",
+      description:
+        "Scan articles and wire all Internal Links and External Links so every article is fully linked.",
+      prompts: [],
+    },
+    {
+      item_key: "publish",
+      title: "Publish",
+      description: "Publish all articles after links have been wired.",
+      prompts: [],
+    },
+    {
+      item_key: "commit-and-push",
+      title: "Commit and Push",
+      description: "Commit the link wiring changes and push to the remote repo.",
+      prompts: [],
+    },
+    {
+      item_key: "deploy",
+      title: "Deploy",
+      description: "Deploy so the wired links go live (or confirm the push triggered a deploy).",
+      prompts: [],
+    },
+    {
+      item_key: "quick-check-live-site",
+      title: "Quick Check on live site",
+      description:
+        "Spot-check the live site: open a few articles and confirm internal and external links work as expected.",
       prompts: [],
     },
   ],

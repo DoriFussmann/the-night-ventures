@@ -52,6 +52,29 @@ function normalizeForCompare(state) {
   return JSON.stringify({ stages, items });
 }
 
+function applyStageDoneIfAllItemsDone(stages, items, stageKey) {
+  const stageItems = items.filter((item) => item.stage_key === stageKey);
+  if (
+    stageItems.length === 0 ||
+    !stageItems.every((item) => (item.status || "open") === "done")
+  ) {
+    return stages;
+  }
+  return stages.map((stage) =>
+    stage.stage_key === stageKey && (stage.status || "open") !== "done"
+      ? { ...stage, status: "done" }
+      : stage
+  );
+}
+
+function syncAllStagesDoneFromItems(stages, items) {
+  let next = stages;
+  for (const stage of stages) {
+    next = applyStageDoneIfAllItemsDone(next, items, stage.stage_key);
+  }
+  return next;
+}
+
 function StatusBadge({ status, onCycle }) {
   const meta = STATUS_META[status] || STATUS_META.open;
   return (
@@ -343,6 +366,33 @@ export default function SiteBuildFlow() {
         String(a.created_at).localeCompare(String(b.created_at))
     );
 
+    // Promote stages to Done when every item is already Done (covers pre-existing data).
+    const syncedStages = syncAllStagesDoneFromItems(stages, items);
+    const stagesToPersist = syncedStages.filter((stage) => {
+      const prior = stages.find((s) => s.stage_key === stage.stage_key);
+      return prior && (prior.status || "open") !== (stage.status || "open");
+    });
+    if (stagesToPersist.length > 0) {
+      const now = new Date().toISOString();
+      const persistResults = await Promise.all(
+        stagesToPersist.map((stage) =>
+          supabase
+            .from("setup_flow_stages")
+            .update({ status: "done", updated_at: now })
+            .eq("company_id", companyId)
+            .eq("stage_key", stage.stage_key)
+        )
+      );
+      const persistError = persistResults.find((r) => r.error)?.error;
+      if (persistError) {
+        console.error(persistError);
+        setError(persistError.message || "Failed to sync stage status");
+        setLoading(false);
+        return;
+      }
+    }
+    stages = syncedStages;
+
     const next = { stages, items };
     setSavedState(cloneState(next));
     setDraftState(cloneState(next));
@@ -399,14 +449,29 @@ export default function SiteBuildFlow() {
   const cycleItemStatus = (stageKey, itemKey) => {
     setDraftState((prev) => {
       if (!prev) return prev;
+      const items = prev.items.map((item) =>
+        item.stage_key === stageKey && item.item_key === itemKey
+          ? { ...item, status: nextStatus(item.status || "open") }
+          : item
+      );
       return {
         ...prev,
-        items: prev.items.map((item) =>
-          item.stage_key === stageKey && item.item_key === itemKey
-            ? { ...item, status: nextStatus(item.status || "open") }
-            : item
-        ),
+        items,
+        stages: applyStageDoneIfAllItemsDone(prev.stages, items, stageKey),
       };
+    });
+  };
+
+  const markStageAllDone = (stageKey) => {
+    setDraftState((prev) => {
+      if (!prev) return prev;
+      const items = prev.items.map((item) =>
+        item.stage_key === stageKey ? { ...item, status: "done" } : item
+      );
+      const stages = prev.stages.map((stage) =>
+        stage.stage_key === stageKey ? { ...stage, status: "done" } : stage
+      );
+      return { ...prev, items, stages };
     });
   };
 
@@ -539,6 +604,19 @@ export default function SiteBuildFlow() {
               type="button"
               variant="outline"
               size="sm"
+              onClick={() => markStageAllDone(activeStageKey)}
+              disabled={
+                saving ||
+                activeItems.length === 0 ||
+                activeItems.every((item) => (item.status || "open") === "done")
+              }
+            >
+              Mark All Done
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
               onClick={handleBackToDefault}
               disabled={!isDirty || saving}
             >
@@ -578,13 +656,8 @@ export default function SiteBuildFlow() {
             const selected = activeStageKey === stage.stage_key;
 
             return (
-              <button
+              <div
                 key={stage.stage_key}
-                type="button"
-                onClick={() => {
-                  setActiveStageKey(stage.stage_key);
-                  setExpandedItemKey(null);
-                }}
                 className={cn(
                   "w-full rounded-lg border px-3 py-2.5 text-left transition-colors",
                   selected
@@ -593,18 +666,43 @@ export default function SiteBuildFlow() {
                 )}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <span className="text-sm leading-snug text-foreground">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveStageKey(stage.stage_key);
+                      setExpandedItemKey(null);
+                    }}
+                    className="min-w-0 flex-1 text-left text-sm leading-snug text-foreground"
+                  >
                     {stage.name}
-                  </span>
+                  </button>
                   <StatusBadge
                     status={status}
                     onCycle={() => cycleStageStatus(stage.stage_key)}
                   />
                 </div>
-                <p className="mt-1.5 text-[11px] text-muted-foreground">
-                  ({doneCount} of {stageItems.length} done)
-                </p>
-              </button>
+                <div className="mt-1.5 flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveStageKey(stage.stage_key);
+                      setExpandedItemKey(null);
+                    }}
+                    className="text-left text-[11px] text-muted-foreground"
+                  >
+                    ({doneCount} of {stageItems.length} done)
+                  </button>
+                  {stageItems.length > 0 && doneCount < stageItems.length && (
+                    <button
+                      type="button"
+                      onClick={() => markStageAllDone(stage.stage_key)}
+                      className="shrink-0 text-[11px] font-medium text-foreground underline-offset-2 hover:underline"
+                    >
+                      Mark All Done
+                    </button>
+                  )}
+                </div>
+              </div>
             );
           })}
         </div>

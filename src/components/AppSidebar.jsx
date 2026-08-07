@@ -14,6 +14,7 @@ import {
   Lightbulb,
   PenLine,
   BookOpen,
+  RefreshCw,
   Image,
   Sparkles,
   MessageSquareText,
@@ -106,6 +107,7 @@ export default function AppSidebar({ user }) {
     { label: "External Audit Snapshot", path: `/company/${activeCompanyId}/external-audit-snapshot`, icon: Camera },
     { label: "Article Generator", path: `/company/${activeCompanyId}/article-generation`, icon: PenLine },
     { label: "Articles", path: `/company/${activeCompanyId}/articles`, icon: BookOpen },
+    { label: "Articles Update", path: `/company/${activeCompanyId}/articles-update`, icon: RefreshCw },
     { label: "Cluster Images", path: `/company/${activeCompanyId}/cluster-image-generator`, icon: Image },
     { label: "Image Generator", path: `/company/${activeCompanyId}/image-generator`, icon: Sparkles },
   ];

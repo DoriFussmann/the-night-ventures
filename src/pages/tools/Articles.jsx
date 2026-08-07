@@ -34,6 +34,11 @@ import {
   buildArticlesSummaryMarkdown,
 } from "./articleGeneration/buildArticlesSummaryMarkdown";
 import { buildBackfillFrontmatterPrompt } from "./articleGeneration/buildBackfillFrontmatterPrompt";
+import {
+  daysSinceUpdate,
+  daysSinceUpdateBadgeClass,
+  formatDaysSinceUpdateLabel,
+} from "./articleGeneration/daysSinceUpdate";
 import { downloadMarkdownFile } from "./articleGeneration/serializeArticleMarkdown";
 
 const TYPE_OPTIONS = [
@@ -104,6 +109,19 @@ function PillarBadge({ keyword }) {
   return (
     <span className="inline-flex shrink-0 items-center rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground max-w-[10rem] truncate">
       {keyword}
+    </span>
+  );
+}
+
+function DaysSinceUpdateBadge({ dateValue }) {
+  const days = daysSinceUpdate(dateValue);
+  if (days == null) return null;
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[11px] font-medium tabular-nums ${daysSinceUpdateBadgeClass(days)}`}
+      title={`updatedDate: ${dateValue}`}
+    >
+      {formatDaysSinceUpdateLabel(days)}
     </span>
   );
 }
@@ -592,6 +610,9 @@ export default function Articles() {
                 <PillarBadge keyword={article.pillar_keyword} />
                 <TypeBadge type={articleDisplayType(article)} />
                 <StatusBadge status={article.status} />
+                <DaysSinceUpdateBadge
+                  dateValue={article.updated_date || article.date}
+                />
                 <span className="shrink-0 text-xs text-muted-foreground tabular-nums w-[5.5rem] text-right">
                   {formatDisplayDate(article.updated_date || article.date)}
                 </span>
