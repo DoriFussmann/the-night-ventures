@@ -147,12 +147,24 @@ export default function CompanyData() {
   const [industries, setIndustries] = useState([]);
   const [selectedIndustryIds, setSelectedIndustryIds] = useState([]);
   const [industryFilter, setIndustryFilter] = useState("");
+  const [industryPickerOpen, setIndustryPickerOpen] = useState(false);
+  const [targetAudienceOpen, setTargetAudienceOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState("");
   const [error, setError] = useState("");
   const [pillarsOpen, setPillarsOpen] = useState(false);
   const [openPillars, setOpenPillars] = useState({});
+  const [competitorsOpen, setCompetitorsOpen] = useState(false);
+  const [servicesOpen, setServicesOpen] = useState(false);
+  const [teamOpen, setTeamOpen] = useState(false);
+  const [contactSocialOpen, setContactSocialOpen] = useState(false);
+  const [abstractOpen, setAbstractOpen] = useState(false);
+  const [shortDescriptionOpen, setShortDescriptionOpen] = useState(false);
+  const [mediumDescriptionOpen, setMediumDescriptionOpen] = useState(false);
+  const [longDescriptionOpen, setLongDescriptionOpen] = useState(false);
+  const [designGuidelinesOpen, setDesignGuidelinesOpen] = useState(false);
+  const [openCustomFields, setOpenCustomFields] = useState({});
   const [designGuideOpen, setDesignGuideOpen] = useState(false);
   const [designGuideDraftRaw, setDesignGuideDraftRaw] = useState("");
   const [designGuideDraftAbstract, setDesignGuideDraftAbstract] = useState("");
@@ -719,7 +731,7 @@ export default function CompanyData() {
       ["Domain", fields.domain],
       ["Product Name", fields.product_name],
       ["Category", categoryLines],
-      ["Target Description / Persona / ICP", fields.target_audience],
+      ["Target Description", fields.target_audience],
       ["Pillar Keywords", pillarLines],
       ["Competitors", competitorLines],
       ["Services / Products", serviceLines],
@@ -862,6 +874,10 @@ export default function CompanyData() {
 
   const pillars = normalizePillarKeywords(fields.core_keywords);
   const pillarTotal = pillars.length;
+  const competitors = normalizeCompetitors(fields.competitors);
+  const services = normalizeServices(fields.services);
+  const teamMembers = normalizeTeamMembers(fields.team_members);
+  const socialLinks = normalizeSocialLinks(fields.social_links);
   const hasDesignGuide = Boolean(
     String(fields.design_guide_raw || "").trim() ||
       String(fields.design_guide_abstract || "").trim()
@@ -888,107 +904,139 @@ export default function CompanyData() {
       {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
 
       <form onSubmit={handleSave} className="space-y-5">
-        <div className="space-y-2">
-          <Label htmlFor="domain">Domain</Label>
-          <Input
-            id="domain"
-            value={fields.domain}
-            onChange={(e) => updateField("domain", e.target.value)}
-            placeholder="example.com"
-          />
-        </div>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+          <div className="space-y-2">
+            <Label htmlFor="domain">Domain</Label>
+            <Input
+              id="domain"
+              value={fields.domain}
+              onChange={(e) => updateField("domain", e.target.value)}
+              placeholder="example.com"
+            />
+          </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="product_name">Product Name</Label>
-          <Input
-            id="product_name"
-            value={fields.product_name}
-            onChange={(e) => updateField("product_name", e.target.value)}
-          />
-        </div>
+          <div className="space-y-2">
+            <Label htmlFor="product_name">Product Name</Label>
+            <Input
+              id="product_name"
+              value={fields.product_name}
+              onChange={(e) => updateField("product_name", e.target.value)}
+            />
+          </div>
 
-        <div className="space-y-2">
-          <Label>Category</Label>
-          {selectedIndustries.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {selectedIndustries.map((industry) => (
-                <Badge
-                  key={industry.id}
-                  variant="secondary"
-                  className="gap-1 pr-1 font-normal"
-                >
-                  {industry.name}
-                  <button
-                    type="button"
-                    className="inline-flex rounded-sm p-0.5 hover:bg-muted"
-                    onClick={() => toggleIndustry(industry.id)}
-                    aria-label={`Remove ${industry.name}`}
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </Badge>
-              ))}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <Label>Category</Label>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setIndustryPickerOpen((open) => {
+                    if (open) setIndustryFilter("");
+                    return !open;
+                  });
+                }}
+              >
+                {industryPickerOpen ? "Done" : "+ Add"}
+              </Button>
             </div>
-          )}
-          <Input
-            value={industryFilter}
-            onChange={(e) => setIndustryFilter(e.target.value)}
-            placeholder="Filter industries..."
-          />
-          <div className="max-h-48 space-y-1 overflow-y-auto rounded-md border border-border p-2">
-            {filteredIndustries.length === 0 ? (
-              <p className="px-1 py-2 text-sm text-muted-foreground">
-                {industries.length === 0
-                  ? "No industries available. Run the industries migration."
-                  : "No matches."}
-              </p>
-            ) : (
-              filteredIndustries.map((industry) => {
-                const checked = selectedIndustryIds.includes(industry.id);
-                return (
-                  <label
+            {selectedIndustries.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {selectedIndustries.map((industry) => (
+                  <Badge
                     key={industry.id}
-                    className="flex cursor-pointer items-center gap-2 rounded-sm px-1 py-1.5 text-sm hover:bg-muted"
+                    variant="secondary"
+                    className="gap-1 pr-1 font-normal"
                   >
-                    <Checkbox
-                      checked={checked}
-                      onCheckedChange={() => toggleIndustry(industry.id)}
-                    />
-                    <span>{industry.name}</span>
-                  </label>
-                );
-              })
+                    {industry.name}
+                    <button
+                      type="button"
+                      className="inline-flex rounded-sm p-0.5 hover:bg-muted"
+                      onClick={() => toggleIndustry(industry.id)}
+                      aria-label={`Remove ${industry.name}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+            ) : (
+              !industryPickerOpen && (
+                <p className="text-sm text-muted-foreground">None selected</p>
+              )
             )}
+            {industryPickerOpen && (
+              <>
+                <Input
+                  value={industryFilter}
+                  onChange={(e) => setIndustryFilter(e.target.value)}
+                  placeholder="Filter industries..."
+                />
+                <div className="max-h-48 space-y-1 overflow-y-auto rounded-md border border-border p-2">
+                  {filteredIndustries.length === 0 ? (
+                    <p className="px-1 py-2 text-sm text-muted-foreground">
+                      {industries.length === 0
+                        ? "No industries available. Run the industries migration."
+                        : "No matches."}
+                    </p>
+                  ) : (
+                    filteredIndustries.map((industry) => {
+                      const checked = selectedIndustryIds.includes(industry.id);
+                      return (
+                        <label
+                          key={industry.id}
+                          className="flex cursor-pointer items-center gap-2 rounded-sm px-1 py-1.5 text-sm hover:bg-muted"
+                        >
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={() => toggleIndustry(industry.id)}
+                          />
+                          <span>{industry.name}</span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <Label>Target Description</Label>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setTargetAudienceOpen(true)}
+              >
+                Details
+              </Button>
+            </div>
           </div>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="target_audience">Target Description / Persona / ICP</Label>
-          <Textarea
-            id="target_audience"
-            value={fields.target_audience}
-            onChange={(e) => updateField("target_audience", e.target.value)}
-            placeholder="Who you serve — ICP, persona, and target audience details."
-            className="min-h-[100px]"
-          />
-        </div>
-
-        <Collapsible open={pillarsOpen} onOpenChange={setPillarsOpen} className="space-y-3">
+        <Collapsible
+          open={pillarsOpen}
+          onOpenChange={setPillarsOpen}
+          className="rounded-md border border-border"
+        >
           <CollapsibleTrigger asChild>
             <button
               type="button"
-              className="flex w-full items-center justify-between text-left"
+              className="flex h-9 w-full items-center justify-between gap-3 px-3 text-left"
             >
               <Label className="cursor-pointer">Pillar Keywords ({pillarTotal})</Label>
               <ChevronDown
-                className={`h-4 w-4 text-muted-foreground transition-transform ${
+                className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
                   pillarsOpen ? "rotate-180" : ""
                 }`}
               />
             </button>
           </CollapsibleTrigger>
 
-          <CollapsibleContent className="space-y-3">
+          <CollapsibleContent className="space-y-3 border-t border-border p-3">
             {pillars.map((pillar, index) => {
               const isOpen = Boolean(openPillars[index]);
               const left = supportingLeft(pillar);
@@ -1096,296 +1144,488 @@ export default function CompanyData() {
           </CollapsibleContent>
         </Collapsible>
 
-        <div className="space-y-3">
-          <Label>Competitors</Label>
-          {normalizeCompetitors(fields.competitors).map((competitor, index) => (
-            <div key={index} className="flex items-start gap-2">
-              <Input
-                value={competitor.name}
-                onChange={(e) => updateCompetitor(index, "name", e.target.value)}
-                placeholder="Name"
-                className="flex-1"
-                aria-label={`Competitor ${index + 1} name`}
-              />
-              <Input
-                value={competitor.url}
-                onChange={(e) => updateCompetitor(index, "url", e.target.value)}
-                placeholder="https://"
-                className="flex-1"
-                aria-label={`Competitor ${index + 1} URL`}
-              />
-              <button
-                type="button"
-                onClick={() => removeCompetitor(index)}
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-destructive"
-                title="Remove competitor"
-                aria-label="Remove competitor"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ))}
-          <Button type="button" variant="outline" size="sm" onClick={addCompetitor}>
-            + Add
-          </Button>
-        </div>
-
-        <div className="space-y-3">
-          <Label>Services / Products</Label>
-          {normalizeServices(fields.services).map((service, index) => (
-            <div
-              key={index}
-              className="space-y-2 rounded-md border border-border p-3"
+        <Collapsible
+          open={competitorsOpen}
+          onOpenChange={setCompetitorsOpen}
+          className="rounded-md border border-border"
+        >
+          <CollapsibleTrigger asChild>
+            <button
+              type="button"
+              className="flex h-9 w-full items-center justify-between gap-3 px-3 text-left"
             >
-              <div className="flex items-start gap-2">
-                <Input
-                  value={service.title}
-                  onChange={(e) => updateService(index, "title", e.target.value)}
-                  placeholder="Title"
-                  className="flex-1"
-                  aria-label={`Service ${index + 1} title`}
-                />
-                <button
-                  type="button"
-                  onClick={() => removeService(index)}
-                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-destructive"
-                  title="Remove service"
-                  aria-label="Remove service"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-              <Textarea
-                value={service.summary}
-                onChange={(e) => updateService(index, "summary", e.target.value)}
-                placeholder="Summary"
-                className="min-h-[72px]"
-                aria-label={`Service ${index + 1} summary`}
+              <Label className="cursor-pointer">
+                Competitors ({competitors.length})
+              </Label>
+              <ChevronDown
+                className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+                  competitorsOpen ? "rotate-180" : ""
+                }`}
               />
-              <Textarea
-                value={service.detail}
-                onChange={(e) => updateService(index, "detail", e.target.value)}
-                placeholder="Detail (optional)"
-                className="min-h-[72px]"
-                aria-label={`Service ${index + 1} detail`}
-              />
-            </div>
-          ))}
-          <Button type="button" variant="outline" size="sm" onClick={addService}>
-            + Add
-          </Button>
-        </div>
+            </button>
+          </CollapsibleTrigger>
 
-        <div className="space-y-3">
-          <Label>Team</Label>
-          {normalizeTeamMembers(fields.team_members).map((member, index) => (
-            <div
-              key={index}
-              className="space-y-2 rounded-md border border-border p-3"
-            >
-              <div className="flex items-start gap-2">
-                <Input
-                  value={member.name}
-                  onChange={(e) => updateTeamMember(index, "name", e.target.value)}
-                  placeholder="Name"
-                  className="flex-1"
-                  aria-label={`Team member ${index + 1} name`}
-                />
-                <Input
-                  value={member.role}
-                  onChange={(e) => updateTeamMember(index, "role", e.target.value)}
-                  placeholder="Role"
-                  className="flex-1"
-                  aria-label={`Team member ${index + 1} role`}
-                />
-                <button
-                  type="button"
-                  onClick={() => removeTeamMember(index)}
-                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-destructive"
-                  title="Remove team member"
-                  aria-label="Remove team member"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-              <Textarea
-                value={member.bio}
-                onChange={(e) => updateTeamMember(index, "bio", e.target.value)}
-                placeholder="Bio"
-                className="min-h-[72px]"
-                aria-label={`Team member ${index + 1} bio`}
-              />
-              <Input
-                value={member.credentials}
-                onChange={(e) =>
-                  updateTeamMember(index, "credentials", e.target.value)
-                }
-                placeholder="Credentials (optional)"
-                aria-label={`Team member ${index + 1} credentials`}
-              />
-              <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">
-                  sameAs URLs (optional)
-                </Label>
-                {(member.same_as || []).map((url, urlIndex) => (
-                  <div key={urlIndex} className="flex items-start gap-2">
-                    <Input
-                      value={url}
-                      onChange={(e) =>
-                        updateTeamSameAs(index, urlIndex, e.target.value)
-                      }
-                      placeholder="https://"
-                      className="flex-1"
-                      aria-label={`Team member ${index + 1} sameAs ${urlIndex + 1}`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeTeamSameAs(index, urlIndex)}
-                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-destructive"
-                      title="Remove URL"
-                      aria-label="Remove sameAs URL"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ))}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => addTeamSameAs(index)}
-                >
-                  + Add URL
-                </Button>
-              </div>
-            </div>
-          ))}
-          <Button type="button" variant="outline" size="sm" onClick={addTeamMember}>
-            + Add
-          </Button>
-        </div>
-
-        <div className="space-y-3 rounded-lg border border-border p-4">
-          <div>
-            <Label>Contact & Social</Label>
-            <p className="text-xs text-muted-foreground mt-1">
-              Used by Specific Prompt to auto-fill CONTACT_EMAIL and SAME_AS /
-              social links config findings.
-            </p>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="contact_email">Contact email</Label>
-            <Input
-              id="contact_email"
-              type="email"
-              value={fields.contact_email}
-              onChange={(e) => updateField("contact_email", e.target.value)}
-              placeholder="hello@example.com"
-            />
-          </div>
-          <div className="space-y-3">
-            <Label>Social links</Label>
-            {normalizeSocialLinks(fields.social_links).map((link, index) => (
+          <CollapsibleContent className="space-y-3 border-t border-border p-3">
+            {competitors.map((competitor, index) => (
               <div key={index} className="flex items-start gap-2">
                 <Input
-                  value={link.label}
-                  onChange={(e) =>
-                    updateSocialLink(index, "label", e.target.value)
-                  }
-                  placeholder="Label"
+                  value={competitor.name}
+                  onChange={(e) => updateCompetitor(index, "name", e.target.value)}
+                  placeholder="Name"
                   className="flex-1"
-                  aria-label={`Social link ${index + 1} label`}
+                  aria-label={`Competitor ${index + 1} name`}
                 />
                 <Input
-                  value={link.url}
-                  onChange={(e) => updateSocialLink(index, "url", e.target.value)}
+                  value={competitor.url}
+                  onChange={(e) => updateCompetitor(index, "url", e.target.value)}
                   placeholder="https://"
                   className="flex-1"
-                  aria-label={`Social link ${index + 1} URL`}
+                  aria-label={`Competitor ${index + 1} URL`}
                 />
                 <button
                   type="button"
-                  onClick={() => removeSocialLink(index)}
+                  onClick={() => removeCompetitor(index)}
                   className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-destructive"
-                  title="Remove social link"
-                  aria-label="Remove social link"
+                  title="Remove competitor"
+                  aria-label="Remove competitor"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
               </div>
             ))}
-            <Button type="button" variant="outline" size="sm" onClick={addSocialLink}>
+            <Button type="button" variant="outline" size="sm" onClick={addCompetitor}>
               + Add
             </Button>
-          </div>
-        </div>
+          </CollapsibleContent>
+        </Collapsible>
 
-        <div className="space-y-2">
-          <Label htmlFor="abstract">Abstract</Label>
-          <Textarea
-            id="abstract"
-            value={fields.abstract}
-            onChange={(e) => updateField("abstract", e.target.value)}
-            className="min-h-[80px]"
-          />
-        </div>
+        <Collapsible
+          open={servicesOpen}
+          onOpenChange={setServicesOpen}
+          className="rounded-md border border-border"
+        >
+          <CollapsibleTrigger asChild>
+            <button
+              type="button"
+              className="flex h-9 w-full items-center justify-between gap-3 px-3 text-left"
+            >
+              <Label className="cursor-pointer">
+                Services / Products ({services.length})
+              </Label>
+              <ChevronDown
+                className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+                  servicesOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+          </CollapsibleTrigger>
 
-        <div className="space-y-2">
-          <Label htmlFor="short_description">Short Description</Label>
-          <Textarea
-            id="short_description"
-            value={fields.short_description}
-            onChange={(e) => updateField("short_description", e.target.value)}
-            className="min-h-[80px]"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="medium_description">Medium Description</Label>
-          <Textarea
-            id="medium_description"
-            value={fields.medium_description}
-            onChange={(e) => updateField("medium_description", e.target.value)}
-            className="min-h-[120px]"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="long_description">Long Description</Label>
-          <Textarea
-            id="long_description"
-            value={fields.long_description}
-            onChange={(e) => updateField("long_description", e.target.value)}
-            className="min-h-[160px]"
-          />
-        </div>
-
-        <div className="space-y-3 rounded-md border border-border p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <Label>Design Guidelines</Label>
-            <Button type="button" variant="outline" size="sm" onClick={openDesignGuideModal}>
-              {hasDesignGuide ? "Update Design Guide" : "Paste Design Guide"}
+          <CollapsibleContent className="space-y-3 border-t border-border p-3">
+            {services.map((service, index) => (
+              <div
+                key={index}
+                className="space-y-2 rounded-md border border-border p-3"
+              >
+                <div className="flex items-start gap-2">
+                  <Input
+                    value={service.title}
+                    onChange={(e) => updateService(index, "title", e.target.value)}
+                    placeholder="Title"
+                    className="flex-1"
+                    aria-label={`Service ${index + 1} title`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeService(index)}
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-destructive"
+                    title="Remove service"
+                    aria-label="Remove service"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <Textarea
+                  value={service.summary}
+                  onChange={(e) => updateService(index, "summary", e.target.value)}
+                  placeholder="Summary"
+                  className="min-h-[72px]"
+                  aria-label={`Service ${index + 1} summary`}
+                />
+                <Textarea
+                  value={service.detail}
+                  onChange={(e) => updateService(index, "detail", e.target.value)}
+                  placeholder="Detail (optional)"
+                  className="min-h-[72px]"
+                  aria-label={`Service ${index + 1} detail`}
+                />
+              </div>
+            ))}
+            <Button type="button" variant="outline" size="sm" onClick={addService}>
+              + Add
             </Button>
-          </div>
-          {fields.design_guide_abstract.trim() ? (
-            <p className="whitespace-pre-wrap text-sm text-muted-foreground">
-              {fields.design_guide_abstract}
-            </p>
-          ) : (
-            <p className="text-sm text-muted-foreground">Not set yet</p>
-          )}
-        </div>
+          </CollapsibleContent>
+        </Collapsible>
 
-        {customFieldDefs.map((def) => (
-          <div key={def.id} className="space-y-2">
-            <Label htmlFor={`custom-${def.id}`}>{def.name}</Label>
-            <Input
-              id={`custom-${def.id}`}
-              value={customValues[def.name] || ""}
-              onChange={(e) => updateCustomValue(def.name, e.target.value)}
+        <Collapsible
+          open={teamOpen}
+          onOpenChange={setTeamOpen}
+          className="rounded-md border border-border"
+        >
+          <CollapsibleTrigger asChild>
+            <button
+              type="button"
+              className="flex h-9 w-full items-center justify-between gap-3 px-3 text-left"
+            >
+              <Label className="cursor-pointer">Team ({teamMembers.length})</Label>
+              <ChevronDown
+                className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+                  teamOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+          </CollapsibleTrigger>
+
+          <CollapsibleContent className="space-y-3 border-t border-border p-3">
+            {teamMembers.map((member, index) => (
+              <div
+                key={index}
+                className="space-y-2 rounded-md border border-border p-3"
+              >
+                <div className="flex items-start gap-2">
+                  <Input
+                    value={member.name}
+                    onChange={(e) => updateTeamMember(index, "name", e.target.value)}
+                    placeholder="Name"
+                    className="flex-1"
+                    aria-label={`Team member ${index + 1} name`}
+                  />
+                  <Input
+                    value={member.role}
+                    onChange={(e) => updateTeamMember(index, "role", e.target.value)}
+                    placeholder="Role"
+                    className="flex-1"
+                    aria-label={`Team member ${index + 1} role`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeTeamMember(index)}
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-destructive"
+                    title="Remove team member"
+                    aria-label="Remove team member"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <Textarea
+                  value={member.bio}
+                  onChange={(e) => updateTeamMember(index, "bio", e.target.value)}
+                  placeholder="Bio"
+                  className="min-h-[72px]"
+                  aria-label={`Team member ${index + 1} bio`}
+                />
+                <Input
+                  value={member.credentials}
+                  onChange={(e) =>
+                    updateTeamMember(index, "credentials", e.target.value)
+                  }
+                  placeholder="Credentials (optional)"
+                  aria-label={`Team member ${index + 1} credentials`}
+                />
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">
+                    sameAs URLs (optional)
+                  </Label>
+                  {(member.same_as || []).map((url, urlIndex) => (
+                    <div key={urlIndex} className="flex items-start gap-2">
+                      <Input
+                        value={url}
+                        onChange={(e) =>
+                          updateTeamSameAs(index, urlIndex, e.target.value)
+                        }
+                        placeholder="https://"
+                        className="flex-1"
+                        aria-label={`Team member ${index + 1} sameAs ${urlIndex + 1}`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeTeamSameAs(index, urlIndex)}
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-destructive"
+                        title="Remove URL"
+                        aria-label="Remove sameAs URL"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => addTeamSameAs(index)}
+                  >
+                    + Add URL
+                  </Button>
+                </div>
+              </div>
+            ))}
+            <Button type="button" variant="outline" size="sm" onClick={addTeamMember}>
+              + Add
+            </Button>
+          </CollapsibleContent>
+        </Collapsible>
+
+        <Collapsible
+          open={contactSocialOpen}
+          onOpenChange={setContactSocialOpen}
+          className="rounded-md border border-border"
+        >
+          <CollapsibleTrigger asChild>
+            <button
+              type="button"
+              className="flex h-9 w-full items-center justify-between gap-3 px-3 text-left"
+            >
+              <Label className="cursor-pointer">Contact & Social</Label>
+              <ChevronDown
+                className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+                  contactSocialOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+          </CollapsibleTrigger>
+
+          <CollapsibleContent className="space-y-3 border-t border-border p-3">
+            <p className="text-xs text-muted-foreground">
+              Used by Specific Prompt to auto-fill CONTACT_EMAIL and SAME_AS /
+              social links config findings.
+            </p>
+            <div className="space-y-2">
+              <Label htmlFor="contact_email">Contact email</Label>
+              <Input
+                id="contact_email"
+                type="email"
+                value={fields.contact_email}
+                onChange={(e) => updateField("contact_email", e.target.value)}
+                placeholder="hello@example.com"
+              />
+            </div>
+            <div className="space-y-3">
+              <Label>Social links</Label>
+              {socialLinks.map((link, index) => (
+                <div key={index} className="flex items-start gap-2">
+                  <Input
+                    value={link.label}
+                    onChange={(e) =>
+                      updateSocialLink(index, "label", e.target.value)
+                    }
+                    placeholder="Label"
+                    className="flex-1"
+                    aria-label={`Social link ${index + 1} label`}
+                  />
+                  <Input
+                    value={link.url}
+                    onChange={(e) => updateSocialLink(index, "url", e.target.value)}
+                    placeholder="https://"
+                    className="flex-1"
+                    aria-label={`Social link ${index + 1} URL`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeSocialLink(index)}
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-destructive"
+                    title="Remove social link"
+                    aria-label="Remove social link"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+              <Button type="button" variant="outline" size="sm" onClick={addSocialLink}>
+                + Add
+              </Button>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+
+        <Collapsible
+          open={abstractOpen}
+          onOpenChange={setAbstractOpen}
+          className="rounded-md border border-border"
+        >
+          <CollapsibleTrigger asChild>
+            <button
+              type="button"
+              className="flex h-9 w-full items-center justify-between gap-3 px-3 text-left"
+            >
+              <Label className="cursor-pointer">Abstract</Label>
+              <ChevronDown
+                className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+                  abstractOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="border-t border-border p-3">
+            <Textarea
+              id="abstract"
+              value={fields.abstract}
+              onChange={(e) => updateField("abstract", e.target.value)}
+              className="min-h-[80px]"
             />
-          </div>
-        ))}
+          </CollapsibleContent>
+        </Collapsible>
+
+        <Collapsible
+          open={shortDescriptionOpen}
+          onOpenChange={setShortDescriptionOpen}
+          className="rounded-md border border-border"
+        >
+          <CollapsibleTrigger asChild>
+            <button
+              type="button"
+              className="flex h-9 w-full items-center justify-between gap-3 px-3 text-left"
+            >
+              <Label className="cursor-pointer">Short Description</Label>
+              <ChevronDown
+                className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+                  shortDescriptionOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="border-t border-border p-3">
+            <Textarea
+              id="short_description"
+              value={fields.short_description}
+              onChange={(e) => updateField("short_description", e.target.value)}
+              className="min-h-[80px]"
+            />
+          </CollapsibleContent>
+        </Collapsible>
+
+        <Collapsible
+          open={mediumDescriptionOpen}
+          onOpenChange={setMediumDescriptionOpen}
+          className="rounded-md border border-border"
+        >
+          <CollapsibleTrigger asChild>
+            <button
+              type="button"
+              className="flex h-9 w-full items-center justify-between gap-3 px-3 text-left"
+            >
+              <Label className="cursor-pointer">Medium Description</Label>
+              <ChevronDown
+                className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+                  mediumDescriptionOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="border-t border-border p-3">
+            <Textarea
+              id="medium_description"
+              value={fields.medium_description}
+              onChange={(e) => updateField("medium_description", e.target.value)}
+              className="min-h-[120px]"
+            />
+          </CollapsibleContent>
+        </Collapsible>
+
+        <Collapsible
+          open={longDescriptionOpen}
+          onOpenChange={setLongDescriptionOpen}
+          className="rounded-md border border-border"
+        >
+          <CollapsibleTrigger asChild>
+            <button
+              type="button"
+              className="flex h-9 w-full items-center justify-between gap-3 px-3 text-left"
+            >
+              <Label className="cursor-pointer">Long Description</Label>
+              <ChevronDown
+                className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+                  longDescriptionOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="border-t border-border p-3">
+            <Textarea
+              id="long_description"
+              value={fields.long_description}
+              onChange={(e) => updateField("long_description", e.target.value)}
+              className="min-h-[160px]"
+            />
+          </CollapsibleContent>
+        </Collapsible>
+
+        <Collapsible
+          open={designGuidelinesOpen}
+          onOpenChange={setDesignGuidelinesOpen}
+          className="rounded-md border border-border"
+        >
+          <CollapsibleTrigger asChild>
+            <button
+              type="button"
+              className="flex h-9 w-full items-center justify-between gap-3 px-3 text-left"
+            >
+              <Label className="cursor-pointer">Design Guidelines</Label>
+              <ChevronDown
+                className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+                  designGuidelinesOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="space-y-3 border-t border-border p-3">
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              <Button type="button" variant="outline" size="sm" onClick={openDesignGuideModal}>
+                {hasDesignGuide ? "Update Design Guide" : "Paste Design Guide"}
+              </Button>
+            </div>
+            {fields.design_guide_abstract.trim() ? (
+              <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+                {fields.design_guide_abstract}
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">Not set yet</p>
+            )}
+          </CollapsibleContent>
+        </Collapsible>
+
+        {customFieldDefs.map((def) => {
+          const isOpen = Boolean(openCustomFields[def.id]);
+          return (
+            <Collapsible
+              key={def.id}
+              open={isOpen}
+              onOpenChange={(open) =>
+                setOpenCustomFields((prev) => ({ ...prev, [def.id]: open }))
+              }
+              className="rounded-md border border-border"
+            >
+              <CollapsibleTrigger asChild>
+                <button
+                  type="button"
+                  className="flex h-9 w-full items-center justify-between gap-3 px-3 text-left"
+                >
+                  <Label className="cursor-pointer">{def.name}</Label>
+                  <ChevronDown
+                    className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+                      isOpen ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="border-t border-border p-3">
+                <Input
+                  id={`custom-${def.id}`}
+                  value={customValues[def.name] || ""}
+                  onChange={(e) => updateCustomValue(def.name, e.target.value)}
+                />
+              </CollapsibleContent>
+            </Collapsible>
+          );
+        })}
 
         <div className="flex flex-wrap items-center gap-3 pt-2">
           <Button type="button" variant="outline" onClick={handleAddField}>
@@ -1402,6 +1642,32 @@ export default function CompanyData() {
           )}
         </div>
       </form>
+
+      <Dialog open={targetAudienceOpen} onOpenChange={setTargetAudienceOpen}>
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Target Description</DialogTitle>
+            <DialogDescription>
+              Who you serve — ICP, persona, and target audience details.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="target_audience">Details</Label>
+            <Textarea
+              id="target_audience"
+              value={fields.target_audience}
+              onChange={(e) => updateField("target_audience", e.target.value)}
+              placeholder="Who you serve — ICP, persona, and target audience details."
+              className="min-h-[220px]"
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" onClick={() => setTargetAudienceOpen(false)}>
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={designGuideOpen}

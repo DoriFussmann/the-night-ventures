@@ -15,10 +15,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   normalizeServices,
   normalizeTeamMembers,
 } from "./templateToPrompt/customFieldKeys";
+import { SITE_CONTENT_AUDIT_PROMPT } from "./siteContentBuild/auditPrompt";
 import { buildSiteContentPrompt } from "./siteContentBuild/buildSiteContentPrompt";
 import { parsePlaceholders } from "./siteContentBuild/parsePlaceholders";
 import {
@@ -33,7 +35,7 @@ const PAGE_OPTIONS = [
     key: "homepage",
     label: "Homepage refinement",
     description:
-      "Expand hero/steps into a fuller homepage with additional sections",
+      "Rebuild homepage with the fixed structural section order (hero, trust, alternating, offering, optional testimonials, FAQ)",
     defaultChecked: true,
   },
   {
@@ -59,7 +61,8 @@ const PAGE_OPTIONS = [
   {
     key: "faq",
     label: "FAQ",
-    description: "Only enable if you have real common questions to seed",
+    description:
+      "Dedicated /faq/ route — only included when real Q&As are pasted below (homepage already gets an FAQ section)",
     defaultChecked: false,
   },
   {
@@ -153,11 +156,14 @@ export default function SiteContentBuild() {
   const [designGuideAbstract, setDesignGuideAbstract] = useState("");
   const [competitors, setCompetitors] = useState([]);
 
+  const [auditCopyMessage, setAuditCopyMessage] = useState("");
+  const [copyMessage, setCopyMessage] = useState("");
+  const [auditReport, setAuditReport] = useState("");
+
   const [pages, setPages] = useState(defaultPageSelection);
   const [faqContent, setFaqContent] = useState("");
 
   const [assembledPrompt, setAssembledPrompt] = useState("");
-  const [copyMessage, setCopyMessage] = useState("");
 
   const [placeholderReport, setPlaceholderReport] = useState("");
   const [placeholderRows, setPlaceholderRows] = useState([]);
@@ -234,19 +240,20 @@ export default function SiteContentBuild() {
 
   const anyPageSelected = Object.values(pages).some(Boolean);
   const designGuideMissing = !designGuideAbstract.trim();
+  const auditMissing = !auditReport.trim();
 
   const subtitle = useMemo(() => {
     if (companyName) {
-      return `Stage 6 — build remaining ${companyName} site pages from Company Data after Make It Specific.`;
+      return `Stage 6 — audit structure, then build remaining ${companyName} site pages from Company Data.`;
     }
-    return "Stage 6 — build remaining site pages from Company Data after Make It Specific.";
+    return "Stage 6 — audit structure, then build remaining site pages from Company Data.";
   }, [companyName]);
 
-  const copyText = async (text) => {
+  const copyText = async (text, setMessage) => {
     try {
       await navigator.clipboard.writeText(text);
-      setCopyMessage("Copied");
-      window.setTimeout(() => setCopyMessage(""), 2000);
+      setMessage("Copied");
+      window.setTimeout(() => setMessage(""), 2000);
     } catch (err) {
       console.error("Clipboard copy failed:", err);
       setError("Failed to copy to clipboard");
@@ -255,6 +262,12 @@ export default function SiteContentBuild() {
 
   const handleGenerate = () => {
     setError("");
+
+    if (auditMissing) {
+      setError("Paste the audit report from Tab 1 before generating the prompt.");
+      setAssembledPrompt("");
+      return;
+    }
 
     if (!anyPageSelected) {
       setError("Select at least one page to include in the prompt.");
@@ -272,6 +285,7 @@ export default function SiteContentBuild() {
       designGuideAbstract,
       pages,
       faqContent,
+      auditReport,
     });
 
     setAssembledPrompt(prompt);
@@ -403,396 +417,466 @@ export default function SiteContentBuild() {
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
-      {/* Page selection */}
-      <section className="space-y-4">
-        <div>
-          <h2 className="text-xs text-foreground">Pages to build</h2>
+      <Tabs defaultValue="audit">
+        <TabsList>
+          <TabsTrigger value="audit">Audit Prompt</TabsTrigger>
+          <TabsTrigger value="build">Build Prompt</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="audit" className="space-y-4 pt-2">
           <p className="text-sm text-muted-foreground">
-            Only checked pages are included in the generated Cursor prompt.
+            Run this first, in the target site&apos;s repo, before generating the
+            build prompt.
           </p>
-        </div>
-
-        <ul className="space-y-3">
-          {PAGE_OPTIONS.map((opt) => (
-            <li
-              key={opt.key}
-              className="rounded-lg border border-border p-4 space-y-2"
-            >
-              <label className="flex items-start gap-3 cursor-pointer">
-                <Checkbox
-                  checked={pages[opt.key] === true}
-                  onCheckedChange={(v) => togglePage(opt.key, v)}
-                  className="mt-0.5"
-                />
-                <span className="space-y-1">
-                  <span className="block text-sm font-medium text-foreground">
-                    {opt.label}
-                  </span>
-                  {opt.description ? (
-                    <span className="block text-sm text-muted-foreground">
-                      {opt.description}
-                    </span>
-                  ) : null}
-                </span>
-              </label>
-              {opt.warning ? (
-                <Alert variant="destructive">
-                  <AlertDescription>{opt.warning}</AlertDescription>
-                </Alert>
-              ) : null}
-              {opt.note ? (
-                <p className="text-sm text-muted-foreground pl-7">{opt.note}</p>
-              ) : null}
-              {opt.key === "faq" && pages.faq ? (
-                <div className="space-y-2 pl-7 pt-1">
-                  <Label htmlFor="faq-content">
-                    FAQ content (real Q&amp;As only — leave blank for a
-                    structural placeholder)
-                  </Label>
-                  <Textarea
-                    id="faq-content"
-                    value={faqContent}
-                    onChange={(e) => setFaqContent(e.target.value)}
-                    className="min-h-[120px]"
-                    placeholder={"Q: …\nA: …\n\nQ: …\nA: …"}
-                  />
-                </div>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      {/* Company Data (read-only) */}
-      <section className="space-y-4">
-        <div>
-          <h2 className="text-xs text-foreground">From Company Data</h2>
-          <p className="text-sm text-muted-foreground">
-            Read-only pull used to assemble the prompt. Edit values in{" "}
-            <Link
-              to={`/company/${companyId}/company-data`}
-              className="text-primary font-medium underline underline-offset-2"
-            >
-              Company Data
-            </Link>
-            .
-          </p>
-        </div>
-
-        {designGuideMissing && (
-          <Alert variant="destructive">
-            <AlertDescription>
-              No Design Guidelines set — generated pages will use generic
-              styling. Set this in Company Data first for on-brand results.
-            </AlertDescription>
-          </Alert>
-        )}
-
-        <div className="grid gap-4 sm:grid-cols-2 rounded-lg border border-border p-4">
-          <ReadOnlyField label="Product name" value={productName} />
-          <ReadOnlyField label="Domain" value={domain} />
-          <ReadOnlyField
-            label="Short description"
-            value={shortDescription}
-            multiline
-          />
-          <ReadOnlyField
-            label="Medium description"
-            value={mediumDescription}
-            multiline
-          />
-        </div>
-
-        <div className="space-y-3 rounded-lg border border-border p-4">
-          <h3 className="text-sm font-medium text-foreground">Services</h3>
-          {usableServices.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              None added yet — add them in Company Data.
-            </p>
-          ) : (
-            <ul className="space-y-2 text-sm text-foreground">
-              {usableServices.map((s, i) => (
-                <li key={`svc-${i}`}>
-                  <span className="font-medium">{s.title || "(untitled)"}</span>
-                  {s.summary ? (
-                    <span className="text-muted-foreground"> — {s.summary}</span>
-                  ) : null}
-                  {s.detail ? (
-                    <p className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap">
-                      {s.detail}
-                    </p>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        <div className="space-y-3 rounded-lg border border-border p-4">
-          <h3 className="text-sm font-medium text-foreground">Team</h3>
-          {usableTeam.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              None added yet — add them in Company Data.
-            </p>
-          ) : (
-            <ul className="space-y-3 text-sm text-foreground">
-              {usableTeam.map((t, i) => (
-                <li key={`team-${i}`}>
-                  <span className="font-medium">{t.name || "(unnamed)"}</span>
-                  {t.role ? (
-                    <span className="text-muted-foreground"> — {t.role}</span>
-                  ) : null}
-                  {t.bio ? (
-                    <p className="mt-1 text-muted-foreground whitespace-pre-wrap">
-                      {t.bio}
-                    </p>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        <div className="space-y-3 rounded-lg border border-border p-4">
-          <h3 className="text-sm font-medium text-foreground">
-            Design guide abstract
-          </h3>
-          {designGuideAbstract.trim() ? (
-            <p className="text-sm text-foreground whitespace-pre-wrap">
-              {designGuideAbstract}
-            </p>
-          ) : (
-            <p className="text-sm text-muted-foreground italic">Not set</p>
-          )}
-        </div>
-
-        <div className="space-y-3 rounded-lg border border-border p-4">
-          <h3 className="text-sm font-medium text-foreground">Competitors</h3>
-          {usableCompetitors.length === 0 ? (
-            <p className="text-sm text-muted-foreground">None listed.</p>
-          ) : (
-            <ul className="space-y-1 text-sm text-foreground">
-              {usableCompetitors.map((c, i) => (
-                <li key={`comp-${i}`}>
-                  <span className="font-medium">{c.name || "(unnamed)"}</span>
-                  {c.url ? (
-                    <span className="text-muted-foreground"> — {c.url}</span>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </section>
-
-      <div>
-        <Button type="button" onClick={handleGenerate} disabled={!anyPageSelected}>
-          Generate Prompt
-        </Button>
-      </div>
-
-      {assembledPrompt && (
-        <section className="space-y-3">
-          <h2 className="text-xs text-foreground">Assembled prompt</h2>
           <PromptCodeBlock
-            value={assembledPrompt}
-            onCopy={() => copyText(assembledPrompt)}
-            copyMessage={copyMessage}
+            value={SITE_CONTENT_AUDIT_PROMPT}
+            onCopy={() =>
+              copyText(SITE_CONTENT_AUDIT_PROMPT, setAuditCopyMessage)
+            }
+            copyMessage={auditCopyMessage}
           />
-        </section>
-      )}
+        </TabsContent>
 
-      {assembledPrompt && (
-        <section className="space-y-4">
-          <div>
-            <h2 className="text-xs text-foreground">
-              Generate Placeholder Images
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              After Cursor reports image placeholders, paste the checklist here
-              (one{" "}
-              <span className="font-mono text-xs">Label: description</span> per
-              line). Each image uses the Design Guidelines from Company Data as
-              style context — generate and download, then upload into the CMS.
-            </p>
-          </div>
-
-          {designGuideMissing && (
-            <Alert variant="destructive">
-              <AlertDescription>
-                No Design Guidelines set — generated images will not follow brand
-                direction. Set this in Company Data first for on-brand results.
-              </AlertDescription>
-            </Alert>
-          )}
-
-          <div className="space-y-2">
-            <Label htmlFor="placeholder-report">Cursor placeholder report</Label>
-            <Textarea
-              id="placeholder-report"
-              value={placeholderReport}
-              onChange={(e) => setPlaceholderReport(e.target.value)}
-              className="min-h-[140px] font-mono text-xs"
-              placeholder={
-                "Team photo: professional headshot of Dori Fussmann\nHero image: founder-investor connection/trust"
-              }
-              disabled={generationBusy}
-            />
-          </div>
-
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="space-y-2 w-full sm:w-[200px]">
-              <Label htmlFor="image-size">Size (all images)</Label>
-              <Select
-                value={imageSize}
-                onValueChange={setImageSize}
-                disabled={generationBusy}
-              >
-                <SelectTrigger id="image-size">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {IMAGE_SIZES.map((size) => (
-                    <SelectItem key={size} value={size}>
-                      {size}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+        <TabsContent value="build" className="space-y-8 pt-2">
+          {/* Audit report (required) */}
+          <section className="space-y-3">
+            <h2 className="text-xs text-foreground">Audit report</h2>
+            <div className="space-y-2">
+              <Label htmlFor="audit-report">
+                Paste the audit report from Tab 1 here.
+              </Label>
+              <Textarea
+                id="audit-report"
+                value={auditReport}
+                onChange={(e) => setAuditReport(e.target.value)}
+                className="min-h-[180px]"
+                placeholder="Paste the structured audit report here…"
+                required
+              />
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleParsePlaceholders}
-              disabled={generationBusy || !placeholderReport.trim()}
-            >
-              Parse placeholders
-            </Button>
-            <Button
-              type="button"
-              onClick={handleGenerateAll}
-              disabled={
-                generationBusy || placeholderRows.length === 0
-              }
-            >
-              {batchRunning ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Generating…
-                </>
-              ) : (
-                "Generate All"
-              )}
-            </Button>
-          </div>
+          </section>
 
-          {batchRunning && (
-            <div className="rounded-lg border border-border bg-card px-4 py-4 space-y-3">
-              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>
-                  Generating {batchStep} of {placeholderRows.length}
-                  {batchLabel ? `: ${batchLabel}` : ""}
-                </span>
-              </div>
-              <Progress value={batchProgressPct} className="h-1.5" />
-              <p className="text-xs text-muted-foreground">
-                Images run one at a time. Failures are skipped so the rest of the
-                batch can finish.
+          {/* Page selection */}
+          <section className="space-y-4">
+            <div>
+              <h2 className="text-xs text-foreground">Pages to build</h2>
+              <p className="text-sm text-muted-foreground">
+                Only checked pages are included in the generated Cursor prompt.
               </p>
             </div>
+
+            <ul className="space-y-3">
+              {PAGE_OPTIONS.map((opt) => (
+                <li
+                  key={opt.key}
+                  className="rounded-lg border border-border p-4 space-y-2"
+                >
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <Checkbox
+                      checked={pages[opt.key] === true}
+                      onCheckedChange={(v) => togglePage(opt.key, v)}
+                      className="mt-0.5"
+                    />
+                    <span className="space-y-1">
+                      <span className="block text-sm font-medium text-foreground">
+                        {opt.label}
+                      </span>
+                      {opt.description ? (
+                        <span className="block text-sm text-muted-foreground">
+                          {opt.description}
+                        </span>
+                      ) : null}
+                    </span>
+                  </label>
+                  {opt.warning ? (
+                    <Alert variant="destructive">
+                      <AlertDescription>{opt.warning}</AlertDescription>
+                    </Alert>
+                  ) : null}
+                  {opt.note ? (
+                    <p className="text-sm text-muted-foreground pl-7">
+                      {opt.note}
+                    </p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+
+            {(pages.homepage || pages.faq) && (
+              <div className="space-y-2 rounded-lg border border-border p-4">
+                <Label htmlFor="faq-content">
+                  FAQ content (real Q&amp;As — used on the homepage FAQ section;
+                  also required to emit a dedicated /faq/ page when FAQ is
+                  checked. Leave blank for structural placeholders only.)
+                </Label>
+                <Textarea
+                  id="faq-content"
+                  value={faqContent}
+                  onChange={(e) => setFaqContent(e.target.value)}
+                  className="min-h-[120px]"
+                  placeholder={"Q: …\nA: …\n\nQ: …\nA: …"}
+                />
+              </div>
+            )}
+          </section>
+
+          {/* Company Data (read-only) */}
+          <section className="space-y-4">
+            <div>
+              <h2 className="text-xs text-foreground">From Company Data</h2>
+              <p className="text-sm text-muted-foreground">
+                Read-only pull used to assemble the prompt. Edit values in{" "}
+                <Link
+                  to={`/company/${companyId}/company-data`}
+                  className="text-primary font-medium underline underline-offset-2"
+                >
+                  Company Data
+                </Link>
+                .
+              </p>
+            </div>
+
+            {designGuideMissing && (
+              <Alert variant="destructive">
+                <AlertDescription>
+                  No Design Guidelines set — generated pages will use generic
+                  styling. Set this in Company Data first for on-brand results.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            <div className="grid gap-4 sm:grid-cols-2 rounded-lg border border-border p-4">
+              <ReadOnlyField label="Product name" value={productName} />
+              <ReadOnlyField label="Domain" value={domain} />
+              <ReadOnlyField
+                label="Short description"
+                value={shortDescription}
+                multiline
+              />
+              <ReadOnlyField
+                label="Medium description"
+                value={mediumDescription}
+                multiline
+              />
+            </div>
+
+            <div className="space-y-3 rounded-lg border border-border p-4">
+              <h3 className="text-sm font-medium text-foreground">Services</h3>
+              {usableServices.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  None added yet — add them in Company Data.
+                </p>
+              ) : (
+                <ul className="space-y-2 text-sm text-foreground">
+                  {usableServices.map((s, i) => (
+                    <li key={`svc-${i}`}>
+                      <span className="font-medium">
+                        {s.title || "(untitled)"}
+                      </span>
+                      {s.summary ? (
+                        <span className="text-muted-foreground">
+                          {" "}
+                          — {s.summary}
+                        </span>
+                      ) : null}
+                      {s.detail ? (
+                        <p className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap">
+                          {s.detail}
+                        </p>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="space-y-3 rounded-lg border border-border p-4">
+              <h3 className="text-sm font-medium text-foreground">Team</h3>
+              {usableTeam.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  None added yet — add them in Company Data.
+                </p>
+              ) : (
+                <ul className="space-y-3 text-sm text-foreground">
+                  {usableTeam.map((t, i) => (
+                    <li key={`team-${i}`}>
+                      <span className="font-medium">
+                        {t.name || "(unnamed)"}
+                      </span>
+                      {t.role ? (
+                        <span className="text-muted-foreground">
+                          {" "}
+                          — {t.role}
+                        </span>
+                      ) : null}
+                      {t.bio ? (
+                        <p className="mt-1 text-muted-foreground whitespace-pre-wrap">
+                          {t.bio}
+                        </p>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="space-y-3 rounded-lg border border-border p-4">
+              <h3 className="text-sm font-medium text-foreground">
+                Design guide abstract
+              </h3>
+              {designGuideAbstract.trim() ? (
+                <p className="text-sm text-foreground whitespace-pre-wrap">
+                  {designGuideAbstract}
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground italic">Not set</p>
+              )}
+            </div>
+
+            <div className="space-y-3 rounded-lg border border-border p-4">
+              <h3 className="text-sm font-medium text-foreground">
+                Competitors
+              </h3>
+              {usableCompetitors.length === 0 ? (
+                <p className="text-sm text-muted-foreground">None listed.</p>
+              ) : (
+                <ul className="space-y-1 text-sm text-foreground">
+                  {usableCompetitors.map((c, i) => (
+                    <li key={`comp-${i}`}>
+                      <span className="font-medium">
+                        {c.name || "(unnamed)"}
+                      </span>
+                      {c.url ? (
+                        <span className="text-muted-foreground">
+                          {" "}
+                          — {c.url}
+                        </span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
+
+          <div>
+            <Button
+              type="button"
+              onClick={handleGenerate}
+              disabled={!anyPageSelected || auditMissing}
+            >
+              Generate Prompt
+            </Button>
+          </div>
+
+          {assembledPrompt && (
+            <section className="space-y-3">
+              <h2 className="text-xs text-foreground">Assembled prompt</h2>
+              <PromptCodeBlock
+                value={assembledPrompt}
+                onCopy={() => copyText(assembledPrompt, setCopyMessage)}
+                copyMessage={copyMessage}
+              />
+            </section>
           )}
 
-          {placeholderRows.length > 0 && (
-            <ul className="space-y-3">
-              {placeholderRows.map((row) => {
-                const src = imageSrcFromResult(row.result);
-                const isRowBusy =
-                  row.status === "running" ||
-                  (generationBusy && singleRunningId === row.id);
-                return (
-                  <li
-                    key={row.id}
-                    className="rounded-lg border border-border p-4 space-y-3"
+          {assembledPrompt && (
+            <section className="space-y-4">
+              <div>
+                <h2 className="text-xs text-foreground">
+                  Generate Placeholder Images
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  After Cursor reports image placeholders, paste the checklist
+                  here (one{" "}
+                  <span className="font-mono text-xs">Label: description</span>{" "}
+                  per line). Each image uses the Design Guidelines from Company
+                  Data as style context — generate and download, then upload into
+                  the CMS.
+                </p>
+              </div>
+
+              {designGuideMissing && (
+                <Alert variant="destructive">
+                  <AlertDescription>
+                    No Design Guidelines set — generated images will not follow
+                    brand direction. Set this in Company Data first for on-brand
+                    results.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="placeholder-report">
+                  Cursor placeholder report
+                </Label>
+                <Textarea
+                  id="placeholder-report"
+                  value={placeholderReport}
+                  onChange={(e) => setPlaceholderReport(e.target.value)}
+                  className="min-h-[140px] font-mono text-xs"
+                  placeholder={
+                    "Team photo: professional headshot of Dori Fussmann\nHero image: founder-investor connection/trust"
+                  }
+                  disabled={generationBusy}
+                />
+              </div>
+
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="space-y-2 w-full sm:w-[200px]">
+                  <Label htmlFor="image-size">Size (all images)</Label>
+                  <Select
+                    value={imageSize}
+                    onValueChange={setImageSize}
+                    disabled={generationBusy}
                   >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="space-y-1 min-w-0 flex-1">
-                        <p className="text-sm font-medium text-foreground">
-                          {row.label}
-                        </p>
-                        <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                          {row.description}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Status:{" "}
-                          {row.status === "idle" && "Ready"}
-                          {row.status === "running" && "Generating…"}
-                          {row.status === "done" && "Done"}
-                          {row.status === "failed" && "Failed"}
-                        </p>
-                        {row.error ? (
-                          <p className="text-xs text-destructive">{row.error}</p>
-                        ) : null}
-                      </div>
-                      <div className="flex flex-wrap gap-2 shrink-0">
-                        {row.status === "done" ? (
-                          <>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleDownload(row)}
-                              disabled={generationBusy}
-                            >
-                              <Download className="w-3.5 h-3.5" />
-                              Download
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleGenerateOne(row.id)}
-                              disabled={generationBusy}
-                            >
-                              Regenerate
-                            </Button>
-                          </>
-                        ) : (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleGenerateOne(row.id)}
-                            disabled={generationBusy}
-                          >
-                            {isRowBusy ? (
+                    <SelectTrigger id="image-size">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {IMAGE_SIZES.map((size) => (
+                        <SelectItem key={size} value={size}>
+                          {size}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleParsePlaceholders}
+                  disabled={generationBusy || !placeholderReport.trim()}
+                >
+                  Parse placeholders
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleGenerateAll}
+                  disabled={generationBusy || placeholderRows.length === 0}
+                >
+                  {batchRunning ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Generating…
+                    </>
+                  ) : (
+                    "Generate All"
+                  )}
+                </Button>
+              </div>
+
+              {batchRunning && (
+                <div className="rounded-lg border border-border bg-card px-4 py-4 space-y-3">
+                  <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>
+                      Generating {batchStep} of {placeholderRows.length}
+                      {batchLabel ? `: ${batchLabel}` : ""}
+                    </span>
+                  </div>
+                  <Progress value={batchProgressPct} className="h-1.5" />
+                  <p className="text-xs text-muted-foreground">
+                    Images run one at a time. Failures are skipped so the rest of
+                    the batch can finish.
+                  </p>
+                </div>
+              )}
+
+              {placeholderRows.length > 0 && (
+                <ul className="space-y-3">
+                  {placeholderRows.map((row) => {
+                    const src = imageSrcFromResult(row.result);
+                    const isRowBusy =
+                      row.status === "running" ||
+                      (generationBusy && singleRunningId === row.id);
+                    return (
+                      <li
+                        key={row.id}
+                        className="rounded-lg border border-border p-4 space-y-3"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="space-y-1 min-w-0 flex-1">
+                            <p className="text-sm font-medium text-foreground">
+                              {row.label}
+                            </p>
+                            <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                              {row.description}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Status:{" "}
+                              {row.status === "idle" && "Ready"}
+                              {row.status === "running" && "Generating…"}
+                              {row.status === "done" && "Done"}
+                              {row.status === "failed" && "Failed"}
+                            </p>
+                            {row.error ? (
+                              <p className="text-xs text-destructive">
+                                {row.error}
+                              </p>
+                            ) : null}
+                          </div>
+                          <div className="flex flex-wrap gap-2 shrink-0">
+                            {row.status === "done" ? (
                               <>
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                Generating…
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleDownload(row)}
+                                  disabled={generationBusy}
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                  Download
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleGenerateOne(row.id)}
+                                  disabled={generationBusy}
+                                >
+                                  Regenerate
+                                </Button>
                               </>
-                            ) : row.status === "failed" ? (
-                              "Retry"
                             ) : (
-                              "Generate"
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleGenerateOne(row.id)}
+                                disabled={generationBusy}
+                              >
+                                {isRowBusy ? (
+                                  <>
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    Generating…
+                                  </>
+                                ) : row.status === "failed" ? (
+                                  "Retry"
+                                ) : (
+                                  "Generate"
+                                )}
+                              </Button>
                             )}
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                    {src ? (
-                      <img
-                        src={src}
-                        alt={row.label}
-                        className="max-h-64 w-auto rounded-md border border-border"
-                      />
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
+                          </div>
+                        </div>
+                        {src ? (
+                          <img
+                            src={src}
+                            alt={row.label}
+                            className="max-h-64 w-auto rounded-md border border-border"
+                          />
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
           )}
-        </section>
-      )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

@@ -20,7 +20,6 @@ import {
   Camera,
   LogOut,
   ArrowLeft,
-  Route,
   Construction,
 } from "lucide-react";
 
@@ -82,13 +81,9 @@ export default function AppSidebar({ user }) {
   // (e.g. "← Rupert") does not appear before a selection is made.
   const isCompanyPicker = location.pathname === "/";
   const activeCompanyId = routeCompanyId || (isCompanyPicker ? "" : readLastCompanyId());
-  const routePath = activeCompanyId
-    ? `/company/${activeCompanyId}/the-route`
-    : "";
   const siteBuildFlowPath = activeCompanyId
     ? `/company/${activeCompanyId}/site-build-flow`
     : "";
-  const isRouteActive = location.pathname === routePath;
   const isSiteBuildFlowActive = location.pathname === siteBuildFlowPath;
 
   const generalNav = [
@@ -213,17 +208,6 @@ export default function AppSidebar({ user }) {
           >
             <Construction className="w-3.5 h-3.5 shrink-0" />
             <span className="leading-tight">Site Build Flow</span>
-          </Link>
-          <Link
-            to={routePath}
-            className={`w-full flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors ${
-              isRouteActive
-                ? "border-border bg-accent text-foreground"
-                : "border-border text-foreground/80 hover:bg-accent hover:text-foreground"
-            }`}
-          >
-            <Route className="w-3.5 h-3.5 shrink-0" />
-            <span className="leading-tight">The Route</span>
           </Link>
         </div>
       )}
