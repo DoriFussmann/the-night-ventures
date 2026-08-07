@@ -22,7 +22,7 @@ In-app draft writer. Lives at `src/pages/tools/ArticleGeneration.jsx` (route `/c
 
 ### Articles library
 
-In-app library of saved full drafts. Lives at `src/pages/tools/Articles.jsx` (route `/company/:companyId/articles`), backed by `generated_articles`. Owns: browse/filter/search saved drafts, read frontmatter + body, download `.md`, delete. Does not perform CMS publish. Schema allows `status` `drafted` | `published`, but nothing currently advances library status when an article is published via the separate CMS (no callback into TNV). Open decision: leave the library as a permanent drafts record, or add a manual “mark published” action mirroring Topic Generator’s coverage view (see Section 7).
+In-app library of saved full drafts. Lives at `src/pages/tools/Articles.jsx` (route `/company/:companyId/articles`), backed by `generated_articles`. Owns: browse/filter/search saved drafts, read frontmatter + body (including read-only `status` / `published_at` / `published_url`), download summary `.md`, delete. Status is **not** editable here — Topic Generator is the single publish control; marking published there syncs the matching `generated_articles` row (see KD-09). Also hosts the one-time **Backfill Frontmatter** generate-and-copy prompt for historical site articles that predate the keyword frontmatter fields (see below).
 
 ### Coverage store
 
@@ -63,7 +63,7 @@ Source of truth: `supabase/migrations/`. Below are the tables central to the con
 - **`companies`** — Workspace company records (`id`, `name`). All pipeline rows key off `company_id`.
 - **`company_profiles`** — One profile per company: positioning copy (`domain`, `product_name`, abstract/short/medium/long descriptions, `custom_fields`), SEO architecture in `core_keywords` (JSON array of `{ keyword, supporting: string[] }`; UI defaults toward 5 pillars × 5 supporting; Rupert locked at 7×5), and `competitors` (JSON array of `{ name, url }` for Plan Cluster).
 - **`content_coverage`** — One row per company. `pillars` JSON: `{ slug, keyword, pillarArticle?, supporting: [{ slug, keyword, plannedArticles, clusterRationale? }] }`. Planned articles carry type, target keyword, status, titles, key messages, frontmatter-after-draft, publish metadata, etc. (shape enforced in UI code, not SQL columns).
-- **`generated_articles`** — Full saved drafts from Article Generator: plan fields (`pillar_keyword`, `supporting_keyword`, `type`, `target_keyword`, `status`), frontmatter fields, markdown `body`, and `where_things_stand_sources` (JSON `{ url, note }[]` for manual external-link fill — not written into `.md` frontmatter). Unique on `(company_id, slug)`. Default `draft = true`, default library `status = 'drafted'`.
+- **`generated_articles`** — Full saved drafts from Article Generator: plan fields (`pillar_keyword`, `supporting_keyword`, `type`, `target_keyword`, `status`, `published_at`, `published_url`), frontmatter fields, markdown `body`, and `where_things_stand_sources` (JSON `{ url, note }[]` for manual external-link fill — not written into `.md` frontmatter). Unique on `(company_id, slug)`. Default `draft = true`, default library `status = 'drafted'`. `status` / `published_at` / `published_url` are set when Topic Generator marks the matching coverage article published (matched by `company_id` + `slug`, else pillar/supporting + target keyword/title).
 
 ### Compact table
 
@@ -72,11 +72,24 @@ Source of truth: `supabase/migrations/`. Below are the tables central to the con
 | `companies` | `id`, `name`, `created_at` | Parent entity |
 | `company_profiles` | `company_id` (unique), `domain`, `product_name`, descriptions, `custom_fields`, `core_keywords`, `competitors`, `updated_at` | Keyword architecture + positioning |
 | `content_coverage` | `company_id` (unique), `pillars` (jsonb), `updated_at` | Planning / coverage tree |
-| `generated_articles` | `company_id`, `slug` (unique together), plan + frontmatter fields, `body`, `where_things_stand_sources`, `draft`, `status`, timestamps | Articles library |
+| `generated_articles` | `company_id`, `slug` (unique together), plan + frontmatter fields, `body`, `where_things_stand_sources`, `draft`, `status`, `published_at`, `published_url`, timestamps | Articles library |
 
 **`generated_articles.type`:** `comprehensive` \| `howto` \| `comparison` \| `faq` \| `flex`  
-**`generated_articles.status`:** `drafted` \| `published`  
+**`generated_articles.status`:** `drafted` \| `published` (set only via Topic Generator publish sync; Articles library displays it read-only)  
 **Coverage article status (in JSON, not a SQL enum):** `planned` \| `drafted` \| `published`
+
+### Article Generator → `.md` keyword frontmatter (Links Health groundwork)
+
+Article Generator (`api/generate-article.js` + `serializeArticleMarkdown.js`) writes four plan-derived fields into CMS-ready `.md` frontmatter going forward:
+
+- `pillarKeyword` (string)
+- `supportingKeyword` (string; omitted for pillar hub articles with no supporting keyword)
+- `articleType` (string: `comprehensive` \| `howto` \| `comparison` \| `faq` \| `flex`)
+- `targetKeyword` (string — the specific query this article was written for)
+
+These are optional on the destination-site schema today (site/CMS recognition is a separate destination-repo change). They are prerequisite plumbing for a planned **Links Health Tool** that will live in each destination site’s own CMS (not in TNV) — not built yet.
+
+Already-published site articles generated before this change need a one-time backfill: Articles library → **Backfill Frontmatter** builds a copyable Cursor prompt from `status = 'published'` rows (with a fallback to all rows if none are marked published yet). New generations do not need that tool. Library `published` status itself is driven by Topic Generator publish (plus one-time coverage→library sync scripts when catching up historical marks).
 
 ---
 
@@ -121,13 +134,13 @@ Legend:
     Drop plan `.md` → select articles → generate one-at-a-time via `POST /api/generate-article` (comprehensive first). Failures skip; retries supported. Successful runs update coverage to `drafted` when a matching planned row is found.
 
 11. **Save to Articles library and/or download `.md` / zip** — [TNV-AUTO]  
-    Upsert `generated_articles`; serialize CMS-ready markdown (`draft: true`, empty author/links/images).
+    Upsert `generated_articles`; serialize CMS-ready markdown (`draft: true`, empty author/links/images, plus `pillarKeyword` / optional `supportingKeyword` / `articleType` / `targetKeyword`).
 
 12. **Manual CMS publish prep** — [MANUAL-EXTERNAL]  
     See CMS description in Section 2. Concretely, per article: (1) open the separate CMS app at localhost:3737 (or wherever deployed), (2) drag & drop the Article Generator’s downloaded `.md`, (3) review the field checklist the CMS shows (this is what surfaced the “wrong file” confusion during testing — the *plan* `.md` from Topic Generator has no frontmatter at all and will show everything missing; only the Article Generator’s *output* `.md` is CMS-ready), (4) drag & drop a hero image — currently one of 7 pillar-branded template images kept locally by the user, assigned by matching the article’s pillar (decided deliberately over AI-generated or per-article designed images, as the simplest option that scales to ~150 articles), (5) select the real author (`team` entry, currently one real bio with `sameAs` including LinkedIn — deliberately not a fictional/placeholder persona, since Person JSON-LD and E-E-A-T signals matter for this YMYL-adjacent financial/investment content), (6) manually add `internalLinks` (cluster siblings + pillar, using real slugs — TNV’s plan proposes *which* articles to link but not live hrefs, since those don’t exist until sibling articles are actually published) and `externalLinks` (using the `where_things_stand_sources` shown in the Articles library detail modal as the primary candidate list), (7) click Generate in the CMS, which validates and writes the file into the Astro site’s content collection with `draft` set appropriately.
 
 13. **Mark published in Topic Generator** — [TNV-AUTO]  
-    Status cycle can set `published` and store `publishedUrl` / `publishedAt` on coverage articles. This is in-app tracking, not an automated CMS webhook.
+    Single source of truth: Topic Generator status cycle sets coverage `published` + `publishedUrl` / `publishedAt`, then syncs the matching `generated_articles` row (`status`, `published_at`, `published_url`). Match prefers `company_id` + `slug`, else pillar/supporting + target keyword/title. If no library row matches, coverage still saves and a non-blocking warning is shown. Articles library only displays the synced status (no publish control there).
 
 14. **Public site (Astro)** — [MANUAL-EXTERNAL]  
     Astro build (`astro build`) picks up any non-`draft: true` article in `site/src/content/articles/` and generates its static route; deploy mechanics (Vercel or similar; exact host outside this repo’s visibility) are outside this repo. No CMS→Astro webhook or auto-deploy has been discussed or built; presumed manual `git push` / deploy trigger after a CMS write, matching the “manual, one article at a time” nature of the CMS itself.
@@ -189,6 +202,8 @@ Running log of durable product/engineering choices and why.
 | KD-06 | “Where Things Stand” sources are stored on `generated_articles.where_things_stand_sources`, **not** in `.md` frontmatter | Deliberate: `externalLinks` in the `.md` frontmatter was kept as a manual-only field (the user chose to handle all internal/external linking by hand). Rather than lose the genuinely useful, web-search-sourced citations found while writing the “Where Things Stand” section, they’re persisted separately as candidate sources for the user to manually promote into `externalLinks` later — without automating a decision (which links go live) the user wanted to keep manual. |
 | KD-07 | Keyword difficulty capping / filtering | No hard KD cap is enforced in code; it was applied as a *human judgment rule* during the manual pillar/supporting-keyword selection phase (done in Claude chat, not in this app) — roughly KD ≤35–40 for supporting keywords on this brand-new, zero-authority domain, with a small number of explicitly justified exceptions (e.g. “angel investors for startups” cluster averaging ~KD 47, accepted because no viable lower-KD alternative existed and the topic was judged too central to skip). This reasoning lives in the planning conversation, not as an enforced product rule, since different companies/domains would need different caps. (DataForSEO KD scoring exists only in unwired `api/topic-generator.js`.) |
 | KD-08 | Manual publish remains outside TNV (CMS + Astro) | The Astro site’s CMS is a separate, already-existing Express app with its own validation and asset-handling logic (see Section 2); duplicating that logic inside TNV as a second, independently-written path to the same content schema was judged more likely to cause silent drift/breakage than reusing the trusted existing path. TNV’s role was scoped as “produce a correct CMS-ready `.md`,” not “become a second CMS.” |
+| KD-09 | Topic Generator is the **only** publish control; it syncs `generated_articles.status` / `published_at` / `published_url` | Avoided duplicate Mark Published UI in Articles library. Coverage remains the human workflow surface (URL required in practice); library status is derived so Backfill Frontmatter and similar tools can filter on `status = 'published'` without a second click. No CMS→TNV webhook (see KD-08). |
+| KD-10 | Plan keywords are written into `.md` as `pillarKeyword` / `supportingKeyword` / `articleType` / `targetKeyword` | Groundwork for a future Links Health Tool in each destination site’s CMS (not TNV). Fields are additive optional frontmatter today; destination schema recognition is a separate site-repo change. `supportingKeyword` is omitted on pillar hubs. Historical articles use the Articles library Backfill Frontmatter prompt once. |
 
 Add new rows here whenever a durable product/engineering choice is made.
 
@@ -208,14 +223,17 @@ Checklist from what exists in this repository today (routes, tables, APIs). “T
 - [x] Article Generator UI: parse plan `.md`, select, sequential generate, retry, zip/individual download
 - [x] `POST /api/generate-article` (web search, WTS section, validation/post-process)
 - [x] Save to `generated_articles` + Articles library UI (list/filter/read/download/delete)
+- [x] Topic Generator publish syncs matching `generated_articles` (`status` / `published_at` / `published_url`; migrations `024`–`025`)
+- [x] Articles library status display is read-only (no Mark Published control)
+- [x] Article Generator writes `pillarKeyword` / `supportingKeyword` / `articleType` / `targetKeyword` into `.md` frontmatter
+- [x] Backfill Frontmatter generate-and-copy tool (Articles library; published rows + all-rows fallback)
 - [x] Coverage update to `drafted` after successful generation
-- [x] Migrations through `013_generated_articles_wts_sources.sql`
+- [x] Migrations through `025_generated_articles_published_url.sql`
 - [x] Helper unit-style scripts under `scripts/test-generate-*.mjs` (local postprocess / sample checks)
 
 ### Present but unwired / partial
 
 - [ ] `api/topic-generator.js` (DataForSEO find_topics) — **no `src/` caller**
-- [ ] Articles library `status = published` sync — **genuinely unresolved**: no mechanism updates `generated_articles.status` when an article is published via the CMS (separate app, no callback into TNV). Decision still open: leave the library as a permanent “drafts” record independent of live status (simplest), or eventually add a lightweight “mark published” action in the Articles library UI mirroring the one already built in Topic Generator’s coverage view
 - [x] `ANTHROPIC_API_KEY` documented in `.env.example` (added; was a real gap in the scaffold)
 - [x] `OPENAI_API_KEY` documented in `.env.example` / README / this file (sibling of Anthropic; required for `api/generate-image.js`)
 - [x] `GOOGLE_PAGESPEED_API_KEY` documented in `.env.example` / README / this file (External Audit Snapshot / `api/audit-snapshot.js`)
@@ -228,6 +246,7 @@ Checklist from what exists in this repository today (routes, tables, APIs). “T
 - [ ] Monthly update scan — TNV review queue for substantive WTS updates only; write-back via CMS or manual `.md` drop; auto lastmod bumps explicitly rejected (see stage 16)
 - [ ] CMS write endpoint for approved monthly updates — not built
 - [ ] CMS / Astro automation or sync from TNV — deliberately out of scope (see KD-08); presumed manual deploy after CMS write
+- [ ] Links Health Tool — planned for each destination site’s own CMS (not TNV); TNV only supplies keyword frontmatter plumbing + historical backfill prompt (see KD-10)
 - [x] Specific Prompt tool — Audit Prompt + Personalize Prompt (client-side assembly from Company Data)
 
 ### Doc freshness check
@@ -238,6 +257,8 @@ Checklist from what exists in this repository today (routes, tables, APIs). “T
 ---
 
 ## 8. Last Updated
+
+**2026-08-07** — Article Generator writes `pillarKeyword` / `supportingKeyword` / `articleType` / `targetKeyword` into `.md`; Topic Generator is sole publish control and syncs `generated_articles` (`024`/`025`); Articles library status read-only; Backfill Frontmatter prompt (Links Health Tool groundwork; site CMS tool not built yet).
 
 **2026-08-05** — External Audit Snapshot tool (`api/audit-snapshot.js`, `audit_snapshots` migration, PageSpeed + robots.txt + JSON-LD checks, history/trends UI); `GOOGLE_PAGESPEED_API_KEY` documented.
 

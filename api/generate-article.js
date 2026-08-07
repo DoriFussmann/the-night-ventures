@@ -840,23 +840,32 @@ function processArticleBody(body) {
   return `${beforePart}\n${wtsBlock}${after}`
 }
 
-function coerceFrontmatter(raw, { pillarKeyword, targetKeyword, supportingKeyword } = {}) {
+function coerceFrontmatter(
+  raw,
+  { pillarKeyword, targetKeyword, supportingKeyword, articleType } = {}
+) {
   const fm = raw && typeof raw === 'object' ? raw : {}
   const today = todayIsoDate()
   const pillar = String(pillarKeyword || '').trim()
+  const supporting = String(supportingKeyword || '').trim()
+  const target = String(targetKeyword || '').trim()
+  const type = String(articleType || '').trim() || 'flex'
 
-  return {
+  const frontmatter = {
     title: String(fm.title || '').trim(),
     description: String(fm.description || '').trim(),
     slug: String(fm.slug || '').trim(),
     date: String(fm.date || '').trim() || today,
     updatedDate: String(fm.updatedDate || '').trim() || today,
     category: String(fm.category || '').trim() || pillar,
+    pillarKeyword: pillar,
+    articleType: type,
+    targetKeyword: target,
     tags: asStringArray(fm.tags),
     imageAlt: String(fm.imageAlt || '').trim(),
     keywords: buildKeywords({
-      targetKeyword,
-      supportingKeyword,
+      targetKeyword: target,
+      supportingKeyword: supporting,
       pillarKeyword: pillar,
     }),
     faqs: normalizeFaqs(fm.faqs),
@@ -868,6 +877,13 @@ function coerceFrontmatter(raw, { pillarKeyword, targetKeyword, supportingKeywor
     image2: null,
     image3: null,
   }
+
+  // Pillar hub articles have no supporting keyword — omit rather than empty string.
+  if (supporting) {
+    frontmatter.supportingKeyword = supporting
+  }
+
+  return frontmatter
 }
 
 function buildUserPrompt({
@@ -1098,6 +1114,7 @@ export default async function handler(req, res) {
       pillarKeyword,
       targetKeyword: article.targetKeyword,
       supportingKeyword,
+      articleType: article.type,
     }
     let whereThingsStandSources = extractWhereThingsStandSources(parsed.frontmatter)
     let frontmatter = coerceFrontmatter(parsed.frontmatter, coerceOpts)

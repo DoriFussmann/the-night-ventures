@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
-import { Download, Loader2, Search, Trash2 } from "lucide-react";
+import { Copy, Download, Loader2, Search, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +33,7 @@ import {
   articlesSummaryFilename,
   buildArticlesSummaryMarkdown,
 } from "./articleGeneration/buildArticlesSummaryMarkdown";
+import { buildBackfillFrontmatterPrompt } from "./articleGeneration/buildBackfillFrontmatterPrompt";
 import { downloadMarkdownFile } from "./articleGeneration/serializeArticleMarkdown";
 
 const TYPE_OPTIONS = [
@@ -209,6 +210,13 @@ export default function Articles() {
   const [pillarFilter, setPillarFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
 
+  const [backfillPrompt, setBackfillPrompt] = useState("");
+  const [backfillScope, setBackfillScope] = useState(null); // "published" | "all" | null
+  const [backfillEmptyPublished, setBackfillEmptyPublished] = useState(false);
+  const [backfillLoading, setBackfillLoading] = useState(false);
+  const [backfillCopyMessage, setBackfillCopyMessage] = useState("");
+  const [backfillCount, setBackfillCount] = useState(0);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(searchInput.trim());
@@ -323,6 +331,71 @@ export default function Articles() {
     setDeleteId(null);
   };
 
+  const generateBackfillPrompt = async ({ includeAll }) => {
+    if (!companyId || backfillLoading) return;
+
+    setBackfillLoading(true);
+    setError("");
+    setBackfillCopyMessage("");
+    setBackfillEmptyPublished(false);
+
+    try {
+      let query = supabase
+        .from("generated_articles")
+        .select(
+          "slug, pillar_keyword, supporting_keyword, type, target_keyword, status"
+        )
+        .eq("company_id", companyId)
+        .not("slug", "is", null)
+        .order("slug", { ascending: true });
+
+      if (!includeAll) {
+        query = query.eq("status", "published");
+      }
+
+      const { data, error: fetchError } = await query;
+      if (fetchError) {
+        throw new Error(fetchError.message || "Failed to load articles");
+      }
+
+      const rows = (data || []).filter((row) => String(row.slug || "").trim());
+
+      if (!includeAll && rows.length === 0) {
+        setBackfillPrompt("");
+        setBackfillScope(null);
+        setBackfillCount(0);
+        setBackfillEmptyPublished(true);
+        return;
+      }
+
+      const prompt = buildBackfillFrontmatterPrompt(rows);
+      setBackfillPrompt(prompt);
+      setBackfillScope(includeAll ? "all" : "published");
+      setBackfillCount(rows.length);
+      setBackfillEmptyPublished(false);
+    } catch (err) {
+      console.error(err);
+      setError(err?.message || "Failed to build backfill prompt");
+      setBackfillPrompt("");
+      setBackfillScope(null);
+      setBackfillCount(0);
+    } finally {
+      setBackfillLoading(false);
+    }
+  };
+
+  const copyBackfillPrompt = async () => {
+    if (!backfillPrompt) return;
+    try {
+      await navigator.clipboard.writeText(backfillPrompt);
+      setBackfillCopyMessage("Copied");
+      setTimeout(() => setBackfillCopyMessage(""), 2000);
+    } catch (err) {
+      console.error("Copy failed:", err);
+      setBackfillCopyMessage("Copy failed");
+    }
+  };
+
   const downloadSummary = async () => {
     if (!companyId || downloadingSummary || articles.length === 0) return;
 
@@ -390,8 +463,9 @@ export default function Articles() {
       <div>
         <h1 className="text-xs text-foreground mb-1">Articles</h1>
         <p className="text-sm text-muted-foreground">
-          Saved drafts from Article Generator — full frontmatter and body,
-          read-only.
+          Saved drafts from Article Generator — full frontmatter and body.
+          Status is read-only here; mark articles published in Topic Generator
+          after shipping through the site CMS.
         </p>
       </div>
 
@@ -551,6 +625,13 @@ export default function Articles() {
                   <PillarBadge keyword={selected.pillar_keyword} />
                   <TypeBadge type={articleDisplayType(selected)} />
                   <StatusBadge status={selected.status} />
+                  {selected.status === "published" && selected.published_at ? (
+                    <span className="text-xs text-muted-foreground">
+                      {formatDisplayDate(
+                        String(selected.published_at).slice(0, 10)
+                      )}
+                    </span>
+                  ) : null}
                   <Button
                     type="button"
                     variant="outline"
@@ -578,16 +659,36 @@ export default function Articles() {
                     <DetailRow label="author" value={selected.author} />
                     <DetailRow label="imageAlt" value={selected.image_alt} />
                     <DetailRow
-                      label="targetKeyword"
-                      value={selected.target_keyword}
+                      label="pillarKeyword"
+                      value={selected.pillar_keyword}
                     />
                     <DetailRow
                       label="supportingKeyword"
                       value={selected.supporting_keyword}
                     />
                     <DetailRow
+                      label="articleType"
+                      value={selected.type}
+                    />
+                    <DetailRow
+                      label="targetKeyword"
+                      value={selected.target_keyword}
+                    />
+                    <DetailRow
                       label="draft"
                       value={selected.draft ? "true" : "false"}
+                    />
+                    <DetailRow
+                      label="publishedAt"
+                      value={
+                        selected.published_at
+                          ? String(selected.published_at).slice(0, 10)
+                          : null
+                      }
+                    />
+                    <DetailRow
+                      label="publishedUrl"
+                      value={selected.published_url}
                     />
                   </div>
                   <div className="space-y-2 text-sm">
@@ -706,6 +807,89 @@ export default function Articles() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <section className="space-y-3 rounded-lg border border-border p-4">
+        <div>
+          <h2 className="text-sm font-medium text-foreground">
+            Backfill Frontmatter
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            One-time Cursor prompt for already-published site articles that
+            predate{" "}
+            <span className="font-mono text-xs">pillarKeyword</span> /{" "}
+            <span className="font-mono text-xs">supportingKeyword</span> /{" "}
+            <span className="font-mono text-xs">articleType</span> /{" "}
+            <span className="font-mono text-xs">targetKeyword</span> in generated
+            output. New Article Generator downloads already include these
+            fields.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={!companyId || loading || backfillLoading || !hasAnyArticles}
+            onClick={() => generateBackfillPrompt({ includeAll: false })}
+          >
+            {backfillLoading ? (
+              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+            ) : null}
+            Generate from Published
+          </Button>
+          {backfillPrompt && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={copyBackfillPrompt}
+            >
+              <Copy className="h-3.5 w-3.5 mr-1.5" />
+              Copy
+            </Button>
+          )}
+          {backfillCopyMessage && (
+            <span className="text-sm text-muted-foreground">
+              {backfillCopyMessage}
+            </span>
+          )}
+        </div>
+
+        {backfillEmptyPublished && (
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 space-y-2">
+            <p>
+              No articles marked Published yet — mark your live articles as
+              Published in Topic Generator first, or backfill all rows
+              regardless of status.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={backfillLoading}
+              onClick={() => generateBackfillPrompt({ includeAll: true })}
+            >
+              Backfill all rows anyway
+            </Button>
+          </div>
+        )}
+
+        {backfillPrompt && (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              {backfillCount} article
+              {backfillCount === 1 ? "" : "s"} · scope:{" "}
+              {backfillScope === "all"
+                ? "all rows (status ignored)"
+                : "published only"}
+            </p>
+            <pre className="max-h-[360px] overflow-auto rounded-lg border border-border bg-muted/30 p-4 text-xs font-mono whitespace-pre-wrap text-foreground">
+              {backfillPrompt}
+            </pre>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

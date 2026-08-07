@@ -1,6 +1,11 @@
 /**
  * Upsert generated article drafts into the Articles library.
  * Conflict target: (company_id, slug) — re-save updates the existing row.
+ *
+ * Plan columns `pillar_keyword`, `supporting_keyword`, `type`, and
+ * `target_keyword` are the persisted source for the matching .md frontmatter
+ * fields (`pillarKeyword`, `supportingKeyword`, `articleType`, `targetKeyword`).
+ * No extra columns are required for those four.
  */
 
 function asStringArray(value) {

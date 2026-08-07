@@ -21,6 +21,7 @@ export function serializeArticleMarkdown(frontmatter, body) {
   const tags = Array.isArray(fm.tags) ? fm.tags : [];
   const keywords = Array.isArray(fm.keywords) ? fm.keywords : [];
   const faqs = Array.isArray(fm.faqs) ? fm.faqs : [];
+  const supportingKeyword = String(fm.supportingKeyword || "").trim();
 
   const lines = ["---"];
   lines.push(`title: ${yamlEscape(fm.title || "")}`);
@@ -30,6 +31,12 @@ export function serializeArticleMarkdown(frontmatter, body) {
   lines.push(`updatedDate: ${String(fm.updatedDate || "").trim()}`);
   lines.push(`author: null`);
   lines.push(`category: ${yamlEscape(fm.category || "")}`);
+  lines.push(`pillarKeyword: ${yamlEscape(fm.pillarKeyword || "")}`);
+  if (supportingKeyword) {
+    lines.push(`supportingKeyword: ${yamlEscape(supportingKeyword)}`);
+  }
+  lines.push(`articleType: ${yamlEscape(fm.articleType || "")}`);
+  lines.push(`targetKeyword: ${yamlEscape(fm.targetKeyword || "")}`);
 
   lines.push("tags:");
   for (const tag of tags) {

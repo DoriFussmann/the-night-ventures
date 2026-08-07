@@ -27,6 +27,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { parseClusterMarkdown } from "./articleGeneration/parseClusterMarkdown";
+import { syncGeneratedArticlePublished } from "./articleGeneration/syncGeneratedArticlePublished";
 
 const ARTICLE_TYPES = [
   { value: "comprehensive", label: "Comprehensive" },
@@ -586,6 +587,7 @@ export default function ArticleTopicSuggestion() {
   const [publishOpen, setPublishOpen] = useState(false);
   const [publishContext, setPublishContext] = useState(null);
   const [publishUrl, setPublishUrl] = useState("");
+  const [librarySyncWarning, setLibrarySyncWarning] = useState("");
   const [detailArticle, setDetailArticle] = useState(null);
   const [detailCluster, setDetailCluster] = useState(null);
 
@@ -1338,16 +1340,39 @@ export default function ArticleTopicSuggestion() {
     const now = new Date().toISOString();
     const url = publishUrl.trim();
 
+    const pillar = pillars.find(
+      (item) => item.slug === publishContext.pillarSlug
+    );
+    const pillarKeyword = pillar?.keyword || "";
+    let supportingKeyword = "";
+    let coverageArticle = null;
+
+    if (publishContext.kind === "pillar") {
+      coverageArticle =
+        pillar?.pillarArticle && typeof pillar.pillarArticle === "object"
+          ? pillar.pillarArticle
+          : {};
+    } else {
+      const supporting = (pillar?.supporting || []).find(
+        (sup) => sup.slug === publishContext.supportingSlug
+      );
+      supportingKeyword = supporting?.keyword || "";
+      coverageArticle =
+        (supporting?.plannedArticles || []).find(
+          (item) => item.id === publishContext.articleId
+        ) || {};
+    }
+
     if (publishContext.kind === "pillar") {
       await applyPillars((prev) =>
-        prev.map((pillar) => {
-          if (pillar.slug !== publishContext.pillarSlug) return pillar;
+        prev.map((item) => {
+          if (item.slug !== publishContext.pillarSlug) return item;
           const existing =
-            pillar.pillarArticle && typeof pillar.pillarArticle === "object"
-              ? pillar.pillarArticle
+            item.pillarArticle && typeof item.pillarArticle === "object"
+              ? item.pillarArticle
               : {};
           return {
-            ...pillar,
+            ...item,
             pillarArticle: {
               ...existing,
               status: "published",
@@ -1360,30 +1385,53 @@ export default function ArticleTopicSuggestion() {
       );
     } else {
       await applyPillars((prev) =>
-        prev.map((pillar) => {
-          if (pillar.slug !== publishContext.pillarSlug) return pillar;
+        prev.map((item) => {
+          if (item.slug !== publishContext.pillarSlug) return item;
           return {
-            ...pillar,
-            supporting: pillar.supporting.map((sup) => {
+            ...item,
+            supporting: item.supporting.map((sup) => {
               if (sup.slug !== publishContext.supportingSlug) return sup;
               return {
                 ...sup,
-                plannedArticles: sup.plannedArticles.map((item) =>
-                  item.id === publishContext.articleId
+                plannedArticles: sup.plannedArticles.map((article) =>
+                  article.id === publishContext.articleId
                     ? {
-                        ...item,
+                        ...article,
                         status: "published",
                         publishedUrl: url || undefined,
                         publishedAt: now,
                         updatedAt: now,
                       }
-                    : item
+                    : article
                 ),
               };
             }),
           };
         })
       );
+    }
+
+    const syncResult = await syncGeneratedArticlePublished({
+      companyId,
+      pillarKeyword,
+      supportingKeyword:
+        publishContext.kind === "pillar" ? undefined : supportingKeyword,
+      article: {
+        slug: coverageArticle?.slug,
+        title: coverageArticle?.title,
+        targetKeyword: coverageArticle?.targetKeyword,
+      },
+      publishedUrl: url,
+      publishedAt: now,
+    });
+
+    if (!syncResult.matched) {
+      setLibrarySyncWarning(
+        syncResult.warning ||
+          "No matching Articles library entry found for this article"
+      );
+    } else {
+      setLibrarySyncWarning("");
     }
 
     setPublishOpen(false);
@@ -1463,6 +1511,21 @@ export default function ArticleTopicSuggestion() {
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
+
+      {librarySyncWarning && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 flex items-start justify-between gap-3">
+          <p>{librarySyncWarning}</p>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="shrink-0 h-7 px-2"
+            onClick={() => setLibrarySyncWarning("")}
+          >
+            Dismiss
+          </Button>
+        </div>
+      )}
 
       {pillars.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border px-4 py-8 text-sm">
