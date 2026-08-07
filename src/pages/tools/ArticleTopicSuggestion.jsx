@@ -581,6 +581,9 @@ export default function ArticleTopicSuggestion() {
   const [proposalLoading, setProposalLoading] = useState(false);
   const [proposalError, setProposalError] = useState("");
   const [keywordData, setKeywordData] = useState("");
+  const [keywordDataLoading, setKeywordDataLoading] = useState(false);
+  const [keywordDataError, setKeywordDataError] = useState("");
+  const [targetAudience, setTargetAudience] = useState("");
   const [steeringNotes, setSteeringNotes] = useState("");
   const [expandedProposalId, setExpandedProposalId] = useState(null);
 
@@ -646,7 +649,9 @@ export default function ArticleTopicSuggestion() {
       supabase.from("companies").select("name").eq("id", companyId).maybeSingle(),
       supabase
         .from("company_profiles")
-        .select("core_keywords, abstract, short_description, competitors")
+        .select(
+          "core_keywords, abstract, short_description, competitors, target_audience"
+        )
         .eq("company_id", companyId)
         .maybeSingle(),
       supabase
@@ -673,6 +678,7 @@ export default function ArticleTopicSuggestion() {
 
     setAbstract(profileResult.data?.abstract || "");
     setShortDescription(profileResult.data?.short_description || "");
+    setTargetAudience(profileResult.data?.target_audience || "");
     setCompetitors(
       Array.isArray(profileResult.data?.competitors)
         ? profileResult.data.competitors
@@ -744,8 +750,50 @@ export default function ArticleTopicSuggestion() {
     setProposalArticles([]);
     setProposalError("");
     setKeywordData("");
+    setKeywordDataError("");
+    setKeywordDataLoading(false);
     setSteeringNotes("");
     setExpandedProposalId(null);
+  };
+
+  const pullKeywordDataForProposal = async ({
+    keyword,
+    pillarKeyword = "",
+  }) => {
+    if (!companyId || !keyword || keywordDataLoading || proposalLoading) return;
+    setKeywordDataLoading(true);
+    setKeywordDataError("");
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      if (!token) throw new Error("Not signed in");
+
+      const res = await fetch("/api/pull-keyword-data", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          companyId,
+          keyword,
+          pillarKeyword,
+          audienceFilter: targetAudience,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || `Pull keyword data failed (${res.status})`);
+      }
+      const text = String(data.text || "").trim();
+      if (!text) throw new Error("No keyword rows returned");
+      setKeywordData(text);
+    } catch (err) {
+      console.error("Pull keyword data failed:", err);
+      setKeywordDataError(err.message || "Failed to pull keyword data");
+    } finally {
+      setKeywordDataLoading(false);
+    }
   };
 
   const requestClusterProposal = async ({
@@ -855,6 +903,7 @@ export default function ArticleTopicSuggestion() {
     setProposalArticles([]);
     setProposalError("");
     setKeywordData("");
+    setKeywordDataError("");
     setSteeringNotes("");
     setExpandedProposalId(null);
   };
@@ -1008,6 +1057,7 @@ export default function ArticleTopicSuggestion() {
     setProposalArticles([]);
     setProposalError("");
     setKeywordData("");
+    setKeywordDataError("");
     setSteeringNotes("");
     setExpandedProposalId(null);
   };
@@ -1724,17 +1774,47 @@ export default function ArticleTopicSuggestion() {
                       {showPillarProposal && (
                         <div className="rounded-md border border-border bg-background px-3 py-3 space-y-3">
                           <div className="space-y-1.5">
-                            <Label htmlFor={`keyword_data_${pillarKey}`}>
-                              Keyword data (optional)
-                            </Label>
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <Label htmlFor={`keyword_data_${pillarKey}`}>
+                                Keyword data (optional)
+                              </Label>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs"
+                                disabled={
+                                  proposalLoading ||
+                                  keywordDataLoading ||
+                                  saving ||
+                                  !pillar.keyword
+                                }
+                                onClick={() =>
+                                  void pullKeywordDataForProposal({
+                                    keyword: pillar.keyword,
+                                    pillarKeyword: pillar.keyword,
+                                  })
+                                }
+                              >
+                                {keywordDataLoading ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : null}
+                                Pull Keyword Data
+                              </Button>
+                            </div>
                             <Textarea
                               id={`keyword_data_${pillarKey}`}
                               value={keywordData}
                               onChange={(e) => setKeywordData(e.target.value)}
-                              placeholder="Paste Semrush keyword data (queries, volumes, difficulty)…"
+                              placeholder="Paste keyword data, or pull via DataForSEO (Keyword;Volume;DFS Comp Index)…"
                               rows={4}
-                              disabled={proposalLoading}
+                              disabled={proposalLoading || keywordDataLoading}
                             />
+                            {keywordDataError && (
+                              <p className="text-xs text-destructive">
+                                {keywordDataError}
+                              </p>
+                            )}
                           </div>
 
                           {proposalArticles.length === 0 &&
@@ -1743,7 +1823,7 @@ export default function ArticleTopicSuggestion() {
                               <Button
                                 type="button"
                                 size="sm"
-                                disabled={saving}
+                                disabled={saving || keywordDataLoading}
                                 onClick={() =>
                                   requestPillarProposal({
                                     pillar,
@@ -2125,17 +2205,47 @@ export default function ArticleTopicSuggestion() {
                               {isDetailOpen && showProposal && (
                                 <div className="border-t border-border px-3 py-3 space-y-3 bg-muted/10">
                                   <div className="space-y-1.5">
-                                    <Label htmlFor={`keyword_data_${detailKey}`}>
-                                      Keyword data (optional)
-                                    </Label>
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                      <Label htmlFor={`keyword_data_${detailKey}`}>
+                                        Keyword data (optional)
+                                      </Label>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-7 text-xs"
+                                        disabled={
+                                          proposalLoading ||
+                                          keywordDataLoading ||
+                                          saving ||
+                                          !sup.keyword
+                                        }
+                                        onClick={() =>
+                                          void pullKeywordDataForProposal({
+                                            keyword: sup.keyword,
+                                            pillarKeyword: pillar.keyword,
+                                          })
+                                        }
+                                      >
+                                        {keywordDataLoading ? (
+                                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                        ) : null}
+                                        Pull Keyword Data
+                                      </Button>
+                                    </div>
                                     <Textarea
                                       id={`keyword_data_${detailKey}`}
                                       value={keywordData}
                                       onChange={(e) => setKeywordData(e.target.value)}
-                                      placeholder="Paste Semrush keyword data (queries, volumes, difficulty)…"
+                                      placeholder="Paste keyword data, or pull via DataForSEO (Keyword;Volume;DFS Comp Index)…"
                                       rows={4}
-                                      disabled={proposalLoading}
+                                      disabled={proposalLoading || keywordDataLoading}
                                     />
+                                    {keywordDataError && (
+                                      <p className="text-xs text-destructive">
+                                        {keywordDataError}
+                                      </p>
+                                    )}
                                   </div>
 
                                   {proposalArticles.length === 0 &&
@@ -2144,7 +2254,7 @@ export default function ArticleTopicSuggestion() {
                                     <Button
                                       type="button"
                                       size="sm"
-                                      disabled={saving}
+                                      disabled={saving || keywordDataLoading}
                                       onClick={() =>
                                         requestClusterProposal({
                                           pillar,

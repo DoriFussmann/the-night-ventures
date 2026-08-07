@@ -6,20 +6,14 @@ import {
   Camera,
   X,
   AlertTriangle,
+  Circle,
   ExternalLink,
 } from 'lucide-react'
-import {
-  Line,
-  LineChart,
-  CartesianGrid,
-  XAxis,
-  YAxis,
-} from 'recharts'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import {
   Table,
@@ -29,14 +23,25 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-} from '@/components/ui/chart'
 import { cn } from '@/lib/utils'
 import ScoreGauge, { scoreTone } from './auditSnapshot/ScoreGauge'
-import { listSnapshots, runSnapshot } from './auditSnapshot/api'
+import { listSnapshots, runPanel, persistSnapshot } from './auditSnapshot/api'
+
+const PANELS = [
+  {
+    id: 'semrush',
+    label: 'AI Bot Access',
+    hint: 'robots.txt allow/block for search & AI bots',
+  },
+  { id: 'pagespeed', label: 'PageSpeed Insights', hint: 'Mobile + desktop scores' },
+  { id: 'moz', label: 'Moz', hint: 'Authority + crawl freshness' },
+  {
+    id: 'dataforseo',
+    label: 'DataForSEO',
+    hint: 'Domain visibility + pillar keyword volumes',
+  },
+  { id: 'technical', label: 'Technical Checks', hint: 'Meta, sitemap, robots, JSON-LD' },
+]
 
 const CATEGORY_LABELS = [
   { key: 'performance', label: 'Performance' },
@@ -45,23 +50,22 @@ const CATEGORY_LABELS = [
   { key: 'seo', label: 'SEO' },
 ]
 
-const CHART_CONFIG = {
-  performance: { label: 'Performance', color: 'hsl(142 71% 35%)' },
-  accessibility: { label: 'Accessibility', color: 'hsl(221 70% 50%)' },
-  bestPractices: { label: 'Best Practices', color: 'hsl(38 92% 45%)' },
-  seo: { label: 'SEO', color: 'hsl(280 60% 45%)' },
-}
-
 function formatRunAt(iso) {
   if (!iso) return '—'
-  const d = new Date(iso)
-  return d.toLocaleString(undefined, {
+  return new Date(iso).toLocaleString(undefined, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
   })
+}
+
+function formatNumber(value) {
+  if (value == null || value === '') return '—'
+  const n = Number(value)
+  if (!Number.isFinite(n)) return String(value)
+  return n.toLocaleString()
 }
 
 function scoreCellClass(score) {
@@ -72,111 +76,355 @@ function scoreCellClass(score) {
   return 'text-muted-foreground'
 }
 
-function CwVitalsSummary({ cwv }) {
-  const origin = cwv?.origin || cwv?.url
-  if (!origin?.overallCategory && !origin?.metrics) {
-    return (
-      <p className="text-xs text-muted-foreground">
-        No Chrome UX Report field data for this URL/origin.
+function StatusIcon({ status }) {
+  if (status === 'loading') {
+    return <Loader2 className="h-4 w-4 animate-spin text-foreground/70" />
+  }
+  if (status === 'done') {
+    return <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+  }
+  if (status === 'error') {
+    return <X className="h-4 w-4 text-red-600 dark:text-red-400" />
+  }
+  return <Circle className="h-3.5 w-3.5 text-muted-foreground/50" />
+}
+
+function SourceList({ panelState, activePanel }) {
+  return (
+    <ul className="space-y-1">
+      {PANELS.map((panel) => {
+        const state = panelState[panel.id] || { status: 'pending' }
+        const active = activePanel === panel.id
+        return (
+          <li
+            key={panel.id}
+            className={cn(
+              'flex items-start gap-3 rounded-md px-3 py-2.5 transition-colors',
+              active && 'bg-accent/60',
+              state.status === 'done' && 'bg-emerald-500/5',
+              state.status === 'error' && 'bg-red-500/5'
+            )}
+          >
+            <div className="mt-0.5 shrink-0">
+              <StatusIcon status={state.status} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p
+                className={cn(
+                  'text-sm font-medium',
+                  state.status === 'pending' && 'text-muted-foreground'
+                )}
+              >
+                {panel.label}
+              </p>
+              <p className="text-[11px] text-muted-foreground">{panel.hint}</p>
+              {(state.status === 'error' || state.warning) && state.error && (
+                <p
+                  className={cn(
+                    'mt-1 text-[11px]',
+                    state.status === 'error'
+                      ? 'text-red-600 dark:text-red-400'
+                      : 'text-amber-700 dark:text-amber-400'
+                  )}
+                >
+                  {state.error}
+                </p>
+              )}
+              {state.status === 'loading' && (
+                <p className="mt-1 text-[11px] text-muted-foreground">Running…</p>
+              )}
+            </div>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+function MetricTile({ label, value }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+        {label}
       </p>
+      <p className="text-lg font-semibold tabular-nums">{value}</p>
+    </div>
+  )
+}
+
+function VisibilitySection({ dataforseo }) {
+  if (!dataforseo) {
+    return (
+      <p className="text-xs text-muted-foreground">Waiting for DataForSEO…</p>
     )
   }
 
-  const metrics = origin.metrics || {}
-  const rows = [
-    { key: 'lcp', label: 'LCP' },
-    { key: 'inp', label: 'INP' },
-    { key: 'cls', label: 'CLS' },
-  ]
+  if (!dataforseo.ok) {
+    return (
+      <div className="flex items-start gap-2 text-xs text-red-600 dark:text-red-400">
+        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        <span>{dataforseo.error || 'DataForSEO failed'}</span>
+      </div>
+    )
+  }
+
+  const summary = dataforseo.domainSummary
 
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-muted-foreground">Core Web Vitals</span>
-        {origin.overallCategory && (
-          <Badge variant="outline" className="text-[10px]">
-            {origin.overallCategory}
-          </Badge>
+    <div className="space-y-4">
+      <p className="text-[11px] text-muted-foreground">
+        Domain metrics from DataForSEO (Semrush Domain Overview needs API v3
+        units, which are not configured).
+      </p>
+      {dataforseo.domainError && (
+        <p className="text-xs text-amber-700 dark:text-amber-400">
+          Domain summary: {dataforseo.domainError}
+        </p>
+      )}
+      {summary && (
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <MetricTile label="DFS rank" value={formatNumber(summary.rank)} />
+          <MetricTile
+            label="Referring domains"
+            value={formatNumber(summary.referringDomains)}
+          />
+          <MetricTile
+            label="Referring main domains"
+            value={formatNumber(summary.referringMainDomains)}
+          />
+          <MetricTile
+            label="Backlinks"
+            value={formatNumber(summary.backlinks)}
+          />
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-foreground/80">
+          Pillar keywords (DataForSEO)
+        </p>
+        {dataforseo.keywordsError && (
+          <p className="text-xs text-amber-700 dark:text-amber-400">
+            {dataforseo.keywordsError}
+          </p>
         )}
-      </div>
-      <div className="flex flex-wrap gap-3 text-xs">
-        {rows.map(({ key, label }) => {
-          const m = metrics[key]
-          if (!m) return null
-          return (
-            <span key={key} className="tabular-nums text-foreground/80">
-              <span className="text-muted-foreground">{label}</span>{' '}
-              {m.percentile ?? '—'}
-              {m.category ? (
-                <span className="text-muted-foreground"> · {m.category}</span>
-              ) : null}
-            </span>
+        {(dataforseo.keywords || []).length > 0 ? (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Keyword</TableHead>
+                <TableHead className="text-right">Volume</TableHead>
+                <TableHead className="text-right">Competition</TableHead>
+                <TableHead className="text-right">CPC</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(dataforseo.keywords || []).map((row) => (
+                <TableRow key={row.keyword || Math.random()}>
+                  <TableCell className="text-xs font-medium">
+                    {row.keyword || '—'}
+                  </TableCell>
+                  <TableCell className="text-right text-xs tabular-nums">
+                    {formatNumber(row.searchVolume)}
+                  </TableCell>
+                  <TableCell className="text-right text-xs">
+                    {row.competition ?? '—'}
+                  </TableCell>
+                  <TableCell className="text-right text-xs tabular-nums">
+                    {row.cpc != null ? `$${Number(row.cpc).toFixed(2)}` : '—'}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        ) : (
+          !dataforseo.keywordsError && (
+            <p className="text-xs text-muted-foreground">No keyword rows</p>
           )
-        })}
+        )}
       </div>
     </div>
   )
 }
 
-function PagespeedPanel({ title, result }) {
-  if (!result) {
+function TechnicalSection({ technical }) {
+  if (!technical) {
     return (
-      <section className="rounded-lg border border-border bg-card/40 p-4">
-        <h3 className="text-sm font-semibold">{title}</h3>
-        <p className="mt-2 text-xs text-muted-foreground">No data</p>
-      </section>
+      <p className="text-xs text-muted-foreground">
+        Waiting for technical checks…
+      </p>
+    )
+  }
+  if (!technical.ok) {
+    return (
+      <div className="flex items-start gap-2 text-xs text-red-600 dark:text-red-400">
+        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        <span>{technical.error || 'Technical checks failed'}</span>
+      </div>
     )
   }
 
-  if (!result.ok) {
-    return (
-      <section className="rounded-lg border border-border bg-card/40 p-4">
-        <h3 className="text-sm font-semibold">{title}</h3>
-        <div className="mt-3 flex items-start gap-2 text-xs text-red-600 dark:text-red-400">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>{result.error || 'PageSpeed check failed'}</span>
-        </div>
-      </section>
-    )
-  }
-
-  const scores = result.scores || {}
-
+  const checks = technical.checks || []
   return (
-    <section className="rounded-lg border border-border bg-card/40 p-4 sm:p-5">
-      <div className="mb-4 flex items-baseline justify-between gap-2">
-        <h3 className="text-sm font-semibold">{title}</h3>
-        {result.finalUrl && (
-          <a
-            href={result.finalUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex max-w-[55%] items-center gap-1 truncate text-[11px] text-muted-foreground hover:text-foreground"
-          >
-            <ExternalLink className="h-3 w-3 shrink-0" />
-            <span className="truncate">{result.finalUrl}</span>
-          </a>
-        )}
-      </div>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        {CATEGORY_LABELS.map(({ key, label }) => (
-          <ScoreGauge key={key} label={label} score={scores[key]} />
-        ))}
-      </div>
-      <div className="mt-5 border-t border-border/60 pt-3">
-        <CwVitalsSummary cwv={result.coreWebVitals} />
-      </div>
-    </section>
+    <ul className="space-y-2">
+      {checks.map((check) => (
+        <li key={check.id} className="flex items-start gap-2 text-xs">
+          {check.pass ? (
+            <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+          ) : (
+            <X className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-600 dark:text-red-400" />
+          )}
+          <span className={check.pass ? 'text-foreground/85' : 'text-red-700 dark:text-red-400'}>
+            {check.finding}
+          </span>
+        </li>
+      ))}
+    </ul>
   )
 }
 
-function BotAccessTable({ botAccess }) {
+function PerformanceSection({ pagespeed }) {
+  if (!pagespeed) {
+    return (
+      <p className="text-xs text-muted-foreground">Waiting for PageSpeed…</p>
+    )
+  }
+  if (!pagespeed.ok) {
+    return (
+      <div className="flex items-start gap-2 text-xs text-red-600 dark:text-red-400">
+        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        <span>{pagespeed.error || 'PageSpeed failed'}</span>
+      </div>
+    )
+  }
+
+  const blocks = [
+    { title: 'Mobile', result: pagespeed.mobile },
+    { title: 'Desktop', result: pagespeed.desktop },
+  ]
+
+  return (
+    <div className="space-y-5">
+      {blocks.map(({ title, result }) => (
+        <div key={title}>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <p className="text-xs font-medium">{title}</p>
+            {result?.finalUrl && (
+              <a
+                href={result.finalUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex max-w-[60%] items-center gap-1 truncate text-[11px] text-muted-foreground hover:text-foreground"
+              >
+                <ExternalLink className="h-3 w-3 shrink-0" />
+                <span className="truncate">{result.finalUrl}</span>
+              </a>
+            )}
+          </div>
+          {!result?.ok ? (
+            <p className="text-xs text-red-600 dark:text-red-400">
+              {result?.error || `${title} check failed`}
+            </p>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {CATEGORY_LABELS.map(({ key, label }) => (
+                <ScoreGauge
+                  key={key}
+                  label={label}
+                  score={result.scores?.[key]}
+                  size={96}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function AuthoritySection({ moz }) {
+  if (!moz) {
+    return <p className="text-xs text-muted-foreground">Waiting for Moz…</p>
+  }
+  if (!moz.ok && !moz.metrics) {
+    return (
+      <div className="space-y-3">
+        {moz.stale?.isStale && moz.stale?.banner && (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Stale / unmatched crawl data</AlertTitle>
+            <AlertDescription>{moz.stale.banner}</AlertDescription>
+          </Alert>
+        )}
+        <div className="flex items-start gap-2 text-xs text-red-600 dark:text-red-400">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>{moz.error || 'Moz failed'}</span>
+        </div>
+      </div>
+    )
+  }
+
+  const m = moz.metrics || {}
+  return (
+    <div className="space-y-4">
+      {moz.stale?.isStale && moz.stale?.banner && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Stale / unmatched crawl data</AlertTitle>
+          <AlertDescription>
+            <p>{moz.stale.banner}</p>
+            {Array.isArray(moz.stale.reasons) && moz.stale.reasons.length > 0 && (
+              <ul className="mt-2 list-disc pl-4 text-xs">
+                {moz.stale.reasons.map((r) => (
+                  <li key={r}>{r}</li>
+                ))}
+              </ul>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <MetricTile label="Domain Authority" value={formatNumber(m.domainAuthority)} />
+        <MetricTile label="Page Authority" value={formatNumber(m.pageAuthority)} />
+        <MetricTile label="Spam Score" value={formatNumber(m.spamScore)} />
+        <MetricTile
+          label="Linking root domains"
+          value={formatNumber(m.linkingRootDomains)}
+        />
+      </div>
+      <div className="space-y-1 text-[11px] text-muted-foreground">
+        <p>
+          Target: <span className="text-foreground/80">{moz.target}</span>
+          {moz.fallbackUsed ? ' (fell back to apex)' : ''}
+        </p>
+        {m.lastCrawled && (
+          <p>
+            Last crawled: {m.lastCrawled}
+            {moz.crawlAgeDays != null ? ` (${moz.crawlAgeDays} days ago)` : ''}
+          </p>
+        )}
+        {m.title && <p>Moz title: {m.title}</p>}
+      </div>
+    </div>
+  )
+}
+
+function AiSearchSection({ semrush }) {
+  if (!semrush) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        Waiting for bot-access check…
+      </p>
+    )
+  }
+
+  const botAccess = semrush.botAccess
   if (!botAccess) {
     return (
       <p className="text-xs text-muted-foreground">No bot access data</p>
     )
   }
-
   if (!botAccess.ok) {
     return (
       <div className="flex items-start gap-2 text-xs text-red-600 dark:text-red-400">
@@ -186,9 +434,7 @@ function BotAccessTable({ botAccess }) {
     )
   }
 
-  const bots = botAccess.bots || {}
-  const rows = Object.entries(bots)
-
+  const rows = Object.entries(botAccess.bots || {})
   return (
     <div className="space-y-2">
       {botAccess.robotsUrl && (
@@ -245,229 +491,98 @@ function BotAccessTable({ botAccess }) {
   )
 }
 
-function JsonLdPanel({ jsonld, sampleUrl }) {
-  if (!jsonld) {
-    return (
-      <p className="text-xs text-muted-foreground">No JSON-LD data</p>
-    )
-  }
-
-  if (!jsonld.ok) {
-    return (
-      <div className="space-y-2">
-        <div className="flex items-start gap-2 text-xs text-red-600 dark:text-red-400">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>{jsonld.error || 'JSON-LD check failed'}</span>
-        </div>
-        {(sampleUrl || jsonld.sampleUrl) && (
-          <p className="text-[11px] text-muted-foreground">
-            Sample URL: {sampleUrl || jsonld.sampleUrl}
-          </p>
-        )}
-      </div>
-    )
-  }
-
-  const types = jsonld.types || {}
-  const typeRows = Object.entries(types)
-
+function DashboardSection({ title, children, ready }) {
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        {(sampleUrl || jsonld.sampleUrl) && (
-          <a
-            href={sampleUrl || jsonld.sampleUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
-          >
-            <ExternalLink className="h-3 w-3" />
-            <span className="truncate max-w-[420px]">
-              {sampleUrl || jsonld.sampleUrl}
-            </span>
-          </a>
-        )}
-        <Badge variant="outline" className="text-[10px]">
-          {jsonld.blockCount ?? 0} script
-          {(jsonld.blockCount ?? 0) === 1 ? '' : 's'}
-        </Badge>
-        {jsonld.allBlocksValidJson ? (
-          <Badge
-            variant="outline"
-            className="border-emerald-500/40 text-[10px] text-emerald-600 dark:text-emerald-400"
-          >
-            Valid JSON
-          </Badge>
-        ) : (
-          <Badge
-            variant="outline"
-            className="border-red-500/40 text-[10px] text-red-600 dark:text-red-400"
-          >
-            {jsonld.parseFailures || 0} parse error
-            {(jsonld.parseFailures || 0) === 1 ? '' : 's'}
-          </Badge>
-        )}
-      </div>
-
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Expected @type</TableHead>
-            <TableHead className="w-[120px]">Status</TableHead>
-            <TableHead>Matched as</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {typeRows.map(([type, info]) => {
-            const present = Boolean(info?.present)
-            return (
-              <TableRow key={type}>
-                <TableCell className="font-medium">
-                  {type}
-                  {type === 'Article' && (
-                    <span className="ml-1 text-[10px] text-muted-foreground">
-                      (Article or BlogPosting)
-                    </span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <span
-                    className={cn(
-                      'inline-flex items-center gap-1.5 text-xs font-medium',
-                      present
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : 'text-red-600 dark:text-red-400'
-                    )}
-                  >
-                    {present ? (
-                      <Check className="h-3.5 w-3.5" />
-                    ) : (
-                      <X className="h-3.5 w-3.5" />
-                    )}
-                    {present ? 'Present' : 'Missing'}
-                  </span>
-                </TableCell>
-                <TableCell className="text-xs text-muted-foreground">
-                  {info?.matchedAs || '—'}
-                </TableCell>
-              </TableRow>
-            )
-          })}
-        </TableBody>
-      </Table>
-    </div>
+    <section
+      className={cn(
+        'rounded-lg border border-border bg-card/40 p-4 sm:p-5 transition-opacity',
+        !ready && 'opacity-60'
+      )}
+    >
+      <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-foreground/90">
+        {title}
+      </h3>
+      {children}
+    </section>
   )
 }
 
-function HistorySection({ snapshots, onSelect, selectedId }) {
-  const chartData = useMemo(() => {
-    const chronological = [...snapshots].reverse()
-    return chronological.map((s) => {
-      const scores = s.pagespeed_mobile?.scores || {}
-      return {
-        id: s.id,
-        label: formatRunAt(s.run_at),
-        performance: scores.performance ?? null,
-        accessibility: scores.accessibility ?? null,
-        bestPractices: scores.bestPractices ?? null,
-        seo: scores.seo ?? null,
-      }
-    })
-  }, [snapshots])
-
-  if (snapshots.length === 0) {
+function HistoryList({ snapshots, selectedId, onSelect }) {
+  if (!snapshots.length) {
     return (
       <p className="text-xs text-muted-foreground">
-        No past snapshots yet. Run a snapshot to start the trend history.
+        No past snapshots yet. Run a snapshot to start history.
       </p>
     )
   }
 
   return (
-    <div className="space-y-5">
-      {chartData.length >= 2 && (
-        <ChartContainer config={CHART_CONFIG} className="aspect-[16/7] w-full">
-          <LineChart data={chartData} margin={{ left: 8, right: 12, top: 8 }}>
-            <CartesianGrid vertical={false} strokeDasharray="3 3" />
-            <XAxis
-              dataKey="label"
-              tickLine={false}
-              axisLine={false}
-              tickMargin={8}
-              minTickGap={28}
-              className="text-[10px]"
-            />
-            <YAxis
-              domain={[0, 100]}
-              tickLine={false}
-              axisLine={false}
-              width={32}
-              className="text-[10px]"
-            />
-            <ChartTooltip content={<ChartTooltipContent />} />
-            {Object.keys(CHART_CONFIG).map((key) => (
-              <Line
-                key={key}
-                type="monotone"
-                dataKey={key}
-                stroke={`var(--color-${key})`}
-                strokeWidth={2}
-                dot={{ r: 3 }}
-                connectNulls
-              />
-            ))}
-          </LineChart>
-        </ChartContainer>
-      )}
-
-      <div>
-        <p className="mb-2 text-xs font-medium text-muted-foreground">
-          Past runs (mobile scores)
-        </p>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Date</TableHead>
-              <TableHead className="text-right">Perf</TableHead>
-              <TableHead className="text-right">A11y</TableHead>
-              <TableHead className="text-right">BP</TableHead>
-              <TableHead className="text-right">SEO</TableHead>
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Date</TableHead>
+          <TableHead className="text-right">Perf (m)</TableHead>
+          <TableHead className="text-right">DA</TableHead>
+              <TableHead className="text-right">Ref. domains</TableHead>
+          <TableHead>Moz</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {snapshots.map((s) => {
+          const results = s.results || {}
+          const perf = results.pagespeed?.mobile?.scores?.performance
+          const da = results.moz?.metrics?.domainAuthority
+          const kw = results.dataforseo?.domainSummary?.referringDomains
+          const stale = results.moz?.stale?.isStale
+          const active = s.id === selectedId
+          return (
+            <TableRow
+              key={s.id}
+              className={cn('cursor-pointer', active && 'bg-accent/50')}
+              onClick={() => onSelect?.(s)}
+            >
+              <TableCell className="text-xs font-medium">
+                {formatRunAt(s.run_at)}
+              </TableCell>
+              <TableCell
+                className={cn(
+                  'text-right text-xs tabular-nums font-medium',
+                  scoreCellClass(perf)
+                )}
+              >
+                {perf ?? '—'}
+              </TableCell>
+              <TableCell className="text-right text-xs tabular-nums">
+                {da ?? '—'}
+              </TableCell>
+              <TableCell className="text-right text-xs tabular-nums">
+                {kw ?? '—'}
+              </TableCell>
+              <TableCell className="text-xs">
+                {stale ? (
+                  <Badge
+                    variant="outline"
+                    className="border-amber-500/40 text-[10px] text-amber-700 dark:text-amber-400"
+                  >
+                    Stale warn
+                  </Badge>
+                ) : results.moz ? (
+                  <span className="text-muted-foreground">OK</span>
+                ) : (
+                  '—'
+                )}
+              </TableCell>
             </TableRow>
-          </TableHeader>
-          <TableBody>
-            {snapshots.map((s) => {
-              const scores = s.pagespeed_mobile?.scores || {}
-              const active = s.id === selectedId
-              return (
-                <TableRow
-                  key={s.id}
-                  className={cn(
-                    'cursor-pointer',
-                    active && 'bg-accent/50'
-                  )}
-                  onClick={() => onSelect?.(s)}
-                >
-                  <TableCell className="text-xs font-medium">
-                    {formatRunAt(s.run_at)}
-                  </TableCell>
-                  {CATEGORY_LABELS.map(({ key }) => (
-                    <TableCell
-                      key={key}
-                      className={cn(
-                        'text-right text-xs tabular-nums font-medium',
-                        scoreCellClass(scores[key])
-                      )}
-                    >
-                      {scores[key] ?? '—'}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              )
-            })}
-          </TableBody>
-        </Table>
-      </div>
-    </div>
+          )
+        })}
+      </TableBody>
+    </Table>
+  )
+}
+
+function emptyPanelState() {
+  return Object.fromEntries(
+    PANELS.map((p) => [p.id, { status: 'pending', error: null }])
   )
 }
 
@@ -481,9 +596,19 @@ export default function ExternalAuditSnapshot() {
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const [snapshots, setSnapshots] = useState([])
   const [active, setActive] = useState(null)
+  const [liveResults, setLiveResults] = useState(null)
+  const [panelState, setPanelState] = useState(emptyPanelState)
+  const [activePanel, setActivePanel] = useState(null)
   const [meta, setMeta] = useState(null)
+
+  const displayResults = useMemo(() => {
+    if (running && liveResults) return liveResults
+    if (liveResults && !active) return liveResults
+    return active?.results || liveResults || null
+  }, [running, liveResults, active])
 
   const load = useCallback(async () => {
     if (!companyId) return
@@ -522,6 +647,7 @@ export default function ExternalAuditSnapshot() {
     if (historyResult.error && !historyResult.snapshots?.length) {
       setError(historyResult.error)
     }
+    setNotice(historyResult.warning || '')
 
     const list = historyResult.snapshots || []
     setSnapshots(list)
@@ -542,23 +668,92 @@ export default function ExternalAuditSnapshot() {
     if (!companyId || running) return
     setRunning(true)
     setError('')
+    setNotice('')
+    setActive(null)
+    setMeta(null)
+    setLiveResults({})
+    setPanelState(emptyPanelState())
+    setActivePanel(null)
+
+    const collected = {}
+    let runMeta = null
+
     try {
-      const data = await runSnapshot({
+      for (const panel of PANELS) {
+        setActivePanel(panel.id)
+        setPanelState((prev) => ({
+          ...prev,
+          [panel.id]: { status: 'loading', error: null },
+        }))
+
+        try {
+          const data = await runPanel({
+            companyId,
+            panel: panel.id,
+            siteUrl: siteUrl.trim() || undefined,
+            sampleUrl: sampleUrl.trim() || undefined,
+          })
+          runMeta = data.meta || runMeta
+          const result = data.result || { ok: false, error: 'Empty panel result' }
+          collected[panel.id] = result
+          setLiveResults({ ...collected })
+          const warning =
+            result.ok && (result.overviewError || result.stale?.isStale)
+              ? result.overviewError || result.stale?.banner || null
+              : null
+          setPanelState((prev) => ({
+            ...prev,
+            [panel.id]: {
+              status: result.ok ? 'done' : 'error',
+              error: result.ok
+                ? warning
+                : result.error || 'Panel failed',
+              warning: Boolean(warning),
+            },
+          }))
+        } catch (err) {
+          const message = err?.message || `${panel.label} failed`
+          collected[panel.id] = { ok: false, error: message, panel: panel.id }
+          setLiveResults({ ...collected })
+          setPanelState((prev) => ({
+            ...prev,
+            [panel.id]: { status: 'error', error: message },
+          }))
+        }
+      }
+
+      setActivePanel(null)
+      setMeta(runMeta)
+
+      const persisted = await persistSnapshot({
         companyId,
-        siteUrl: siteUrl.trim() || undefined,
-        sampleUrl: sampleUrl.trim() || undefined,
+        siteUrl: runMeta?.siteUrl || siteUrl.trim() || undefined,
+        sampleUrl: runMeta?.sampleUrl || sampleUrl.trim() || undefined,
+        results: collected,
       })
-      setMeta(data.meta || null)
-      setActive(data.snapshot)
-      setSnapshots((prev) => {
-        const rest = prev.filter((s) => s.id !== data.snapshot.id)
-        return [data.snapshot, ...rest]
-      })
+
+      setMeta(persisted.meta || runMeta)
+      setActive(persisted.snapshot)
+      setLiveResults(persisted.snapshot?.results || collected)
+      if (persisted.meta?.warning) {
+        setNotice(persisted.meta.warning)
+      }
+      if (persisted.snapshot?.id) {
+        setSnapshots((prev) => {
+          const rest = prev.filter((s) => s.id !== persisted.snapshot.id)
+          return [persisted.snapshot, ...rest]
+        })
+      }
     } catch (err) {
       console.error(err)
       setError(err?.message || 'Snapshot failed')
+      // Keep any progressive results visible even if persist fails.
+      if (Object.keys(collected).length > 0) {
+        setLiveResults(collected)
+      }
     } finally {
       setRunning(false)
+      setActivePanel(null)
     }
   }
 
@@ -566,13 +761,41 @@ export default function ExternalAuditSnapshot() {
     ? `${companyName} — External Audit Snapshot`
     : 'External Audit Snapshot'
 
+  const historyPanelState = useMemo(() => {
+    if (running || liveResults) return panelState
+    if (!active?.results) return emptyPanelState()
+    const next = emptyPanelState()
+    for (const panel of PANELS) {
+      const result = active.results[panel.id]
+      if (!result) {
+        next[panel.id] = { status: 'pending', error: null }
+      } else if (result.ok) {
+        const warning =
+          result.overviewError ||
+          (result.stale?.isStale ? result.stale.banner : null) ||
+          null
+        next[panel.id] = {
+          status: 'done',
+          error: warning,
+          warning: Boolean(warning),
+        }
+      } else {
+        next[panel.id] = {
+          status: 'error',
+          error: result.error || 'Failed',
+        }
+      }
+    }
+    return next
+  }, [running, liveResults, panelState, active])
+
   return (
-    <div className="mx-auto max-w-5xl space-y-8 px-1 pb-16 pt-2">
+    <div className="mx-auto max-w-6xl space-y-6 px-1 pb-16 pt-2">
       <header className="space-y-1">
         <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
         <p className="text-sm text-muted-foreground">
-          Point-in-time PageSpeed scores, AI/search bot access via robots.txt,
-          and JSON-LD schema checks — stored for trend comparison.
+          Run bot-access, PageSpeed, Moz, DataForSEO, and first-party technical
+          checks sequentially — dashboard fills in as each source completes.
         </p>
       </header>
 
@@ -582,32 +805,39 @@ export default function ExternalAuditSnapshot() {
         </Alert>
       )}
 
+      {notice && !error && (
+        <Alert>
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>{notice}</AlertDescription>
+        </Alert>
+      )}
+
       <section className="rounded-lg border border-border bg-card/40 p-4 sm:p-5 space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="siteUrl">Site URL</Label>
             <Input
               id="siteUrl"
-              placeholder={domain || 'https://example.com'}
+              placeholder={domain || 'https://www.example.com'}
               value={siteUrl}
               onChange={(e) => setSiteUrl(e.target.value)}
               disabled={running || loading}
             />
             <p className="text-[11px] text-muted-foreground">
-              Defaults to Company Data domain when left as-is.
+              Defaults to Company Data domain (www host preferred).
             </p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="sampleUrl">Sample article URL (optional)</Label>
             <Input
               id="sampleUrl"
-              placeholder="Auto: most recently published from coverage"
+              placeholder="Auto: most recent published article"
               value={sampleUrl}
               onChange={(e) => setSampleUrl(e.target.value)}
               disabled={running || loading}
             />
             <p className="text-[11px] text-muted-foreground">
-              Used for JSON-LD validation. Leave blank to auto-select.
+              Used for JSON-LD validation in technical checks.
             </p>
           </div>
         </div>
@@ -617,7 +847,7 @@ export default function ExternalAuditSnapshot() {
             {running ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Running snapshot…
+                Running sources…
               </>
             ) : (
               <>
@@ -626,17 +856,16 @@ export default function ExternalAuditSnapshot() {
               </>
             )}
           </Button>
-          {running && (
+          {running && activePanel && (
             <span className="text-xs text-muted-foreground">
-              PageSpeed can take 30–60s for mobile + desktop…
+              Now: {PANELS.find((p) => p.id === activePanel)?.label}
+              {activePanel === 'pagespeed' ? ' (can take 30–60s)…' : '…'}
             </span>
           )}
           {meta?.siteUrl && !running && (
             <span className="text-xs text-muted-foreground">
               Last run against {meta.siteUrl}
-              {meta.sampleSource === 'content_coverage' && meta.sampleTitle
-                ? ` · article: ${meta.sampleTitle}`
-                : ''}
+              {meta.sampleTitle ? ` · article: ${meta.sampleTitle}` : ''}
             </span>
           )}
         </div>
@@ -647,55 +876,89 @@ export default function ExternalAuditSnapshot() {
           <Loader2 className="h-4 w-4 animate-spin" />
           Loading…
         </div>
-      ) : active ? (
-        <div className="space-y-6">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="text-sm font-semibold tracking-wide text-foreground/90">
-              Snapshot results
-            </h2>
-            <span className="text-xs text-muted-foreground">
-              {formatRunAt(active.run_at)}
-            </span>
-          </div>
-
-          <PagespeedPanel
-            title="PageSpeed — Mobile"
-            result={active.pagespeed_mobile}
-          />
-          <PagespeedPanel
-            title="PageSpeed — Desktop"
-            result={active.pagespeed_desktop}
-          />
-
-          <section className="rounded-lg border border-border bg-card/40 p-4 sm:p-5">
-            <h3 className="mb-3 text-sm font-semibold">Bot access (robots.txt)</h3>
-            <BotAccessTable botAccess={active.bot_access} />
-          </section>
-
-          <section className="rounded-lg border border-border bg-card/40 p-4 sm:p-5">
-            <h3 className="mb-3 text-sm font-semibold">JSON-LD validity</h3>
-            <JsonLdPanel
-              jsonld={active.jsonld_check}
-              sampleUrl={active.sample_url}
-            />
-          </section>
-        </div>
       ) : (
-        <p className="text-sm text-muted-foreground">
-          No snapshots yet. Enter a site URL and run your first audit.
-        </p>
+        <div className="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
+          <aside className="rounded-lg border border-border bg-card/40 p-3 h-fit lg:sticky lg:top-4">
+            <h2 className="mb-2 px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Sources
+            </h2>
+            <SourceList
+              panelState={historyPanelState}
+              activePanel={activePanel}
+            />
+          </aside>
+
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="text-sm font-semibold tracking-wide text-foreground/90">
+                Summary dashboard
+              </h2>
+              {(active?.run_at || running) && (
+                <span className="text-xs text-muted-foreground">
+                  {running ? 'Live run' : formatRunAt(active.run_at)}
+                </span>
+              )}
+            </div>
+
+            {!displayResults ? (
+              <p className="text-sm text-muted-foreground">
+                No snapshots yet. Run a snapshot to populate the dashboard.
+              </p>
+            ) : (
+              <>
+                <DashboardSection
+                  title="Visibility"
+                  ready={Boolean(displayResults.dataforseo)}
+                >
+                  <VisibilitySection dataforseo={displayResults.dataforseo} />
+                </DashboardSection>
+
+                <DashboardSection
+                  title="Technical Health"
+                  ready={Boolean(displayResults.technical)}
+                >
+                  <TechnicalSection technical={displayResults.technical} />
+                </DashboardSection>
+
+                <DashboardSection
+                  title="Performance"
+                  ready={Boolean(displayResults.pagespeed)}
+                >
+                  <PerformanceSection pagespeed={displayResults.pagespeed} />
+                </DashboardSection>
+
+                <DashboardSection
+                  title="Authority"
+                  ready={Boolean(displayResults.moz)}
+                >
+                  <AuthoritySection moz={displayResults.moz} />
+                </DashboardSection>
+
+                <DashboardSection
+                  title="AI Search Access"
+                  ready={Boolean(displayResults.semrush)}
+                >
+                  <AiSearchSection semrush={displayResults.semrush} />
+                </DashboardSection>
+              </>
+            )}
+          </div>
+        </div>
       )}
 
       <section className="rounded-lg border border-border bg-card/40 p-4 sm:p-5">
-        <h2 className="mb-4 text-sm font-semibold">History & trends</h2>
+        <h2 className="mb-2 text-sm font-semibold">History</h2>
         <p className="mb-4 text-xs text-muted-foreground">
-          Mobile category scores over time. Click a past run to view its full
-          snapshot above.
+          Past runs by date — click to view that snapshot&apos;s results above.
         </p>
-        <HistorySection
+        <HistoryList
           snapshots={snapshots}
           selectedId={active?.id}
-          onSelect={setActive}
+          onSelect={(s) => {
+            setActive(s)
+            setLiveResults(null)
+            setPanelState(emptyPanelState())
+          }}
         />
       </section>
     </div>

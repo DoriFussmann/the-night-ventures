@@ -21,14 +21,50 @@ export async function listSnapshots(companyId) {
   return data
 }
 
-export async function runSnapshot({ companyId, siteUrl, sampleUrl }) {
+/** Run a single audit source panel. */
+export async function runPanel({ companyId, panel, siteUrl, sampleUrl }) {
   const headers = await authHeaders()
   const res = await fetch('/api/audit-snapshot', {
     method: 'POST',
     headers,
-    body: JSON.stringify({ companyId, siteUrl, sampleUrl }),
+    body: JSON.stringify({
+      action: 'runPanel',
+      companyId,
+      panel,
+      siteUrl,
+      sampleUrl,
+    }),
   })
   const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data.error || 'Failed to run snapshot')
+  if (!res.ok) throw new Error(data.error || `Failed to run ${panel}`)
   return data
+}
+
+/** Persist a completed multi-panel snapshot. */
+export async function persistSnapshot({
+  companyId,
+  siteUrl,
+  sampleUrl,
+  results,
+}) {
+  const headers = await authHeaders()
+  const res = await fetch('/api/audit-snapshot', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      action: 'persist',
+      companyId,
+      siteUrl,
+      sampleUrl,
+      results,
+    }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || 'Failed to save snapshot')
+  return data
+}
+
+/** @deprecated Prefer runPanel + persistSnapshot for progressive UI. */
+export async function runSnapshot(args) {
+  return persistSnapshot(args)
 }

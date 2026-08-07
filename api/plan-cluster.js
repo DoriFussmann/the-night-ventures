@@ -33,7 +33,7 @@ Respond ONLY with valid JSON, no markdown fences:
 { "pillarRationale": "", "article": { "title", "targetKeyword", "type": "comprehensive", "searchIntent", "keyMessages": [], "wordCount", "internalLinks", "ctaAngle" } }`
 
 const KEYWORD_DATA_INSTRUCTION =
-  'When keyword data is provided, every article\'s targetKeyword MUST be selected from or directly grounded in these real queries — do not invent keyword phrasings. Use volume and difficulty to prioritize which intents deserve articles. Absorb near-duplicate variants into one article rather than splitting them.'
+  'When keyword data is provided, every article\'s targetKeyword MUST be selected from or directly grounded in these real queries — do not invent keyword phrasings. Use volume and the third-column competition/difficulty metric to prioritize which intents deserve articles. If the header says "DFS Comp Index", that is DataForSEO paid competition (0–100), NOT Semrush KD — still use higher volume + lower competition as a relative priority signal. Absorb near-duplicate variants into one article rather than splitting them.'
 
 const WEB_SEARCH_INSTRUCTION =
   'Before finalizing, you may search to check what currently ranks for the main target queries; let the dominant content formats in real results inform each article\'s type and angle. Where relevant, check how the KNOWN COMPETITORS cover this supporting keyword and note gaps we can exploit — but never treat any other site as our competitor. Note SERP- or competitor-driven decisions in clusterRationale.'
@@ -322,7 +322,7 @@ function buildUserPrompt({
   if (keywordData) {
     parts.push(
       '',
-      'REAL KEYWORD DATA (from Semrush — volumes and difficulty):',
+      'REAL KEYWORD DATA (Keyword;Volume;competition-or-difficulty — may be Semrush KD or DataForSEO DFS Comp Index):',
       keywordData
     )
   }
