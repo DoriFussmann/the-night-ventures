@@ -17,14 +17,30 @@ import {
 
 const STATUS_SUGGESTIONS = ["Not started", "In progress", "Done"];
 
+const TASK_TYPES = {
+  site: {
+    label: "Site",
+    table: "website_build_tasks",
+  },
+  biz_dev: {
+    label: "Biz Dev",
+    table: "business_dev_initiatives",
+  },
+};
+
 const EMPTY_FORM = {
+  type: "site",
   item: "",
   comments: "",
   owner: "",
   status: "",
 };
 
-export default function WebsiteBuildTracker() {
+function rowKey(row) {
+  return `${row.type}:${row.id}`;
+}
+
+export default function Tasks() {
   const { companyId } = useParams();
   const [companyName, setCompanyName] = useState("");
   const [rows, setRows] = useState([]);
@@ -32,7 +48,7 @@ export default function WebsiteBuildTracker() {
   const [error, setError] = useState("");
 
   const [formOpen, setFormOpen] = useState(false);
-  const [editingId, setEditingId] = useState(null);
+  const [editingKey, setEditingKey] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
 
@@ -42,10 +58,15 @@ export default function WebsiteBuildTracker() {
     setLoading(true);
     setError("");
 
-    const [companyResult, rowsResult] = await Promise.all([
+    const [companyResult, siteResult, bizResult] = await Promise.all([
       supabase.from("companies").select("name").eq("id", companyId).maybeSingle(),
       supabase
-        .from("website_build_tasks")
+        .from(TASK_TYPES.site.table)
+        .select("id, company_id, item, comments, owner, status, created_at")
+        .eq("company_id", companyId)
+        .order("created_at", { ascending: true }),
+      supabase
+        .from(TASK_TYPES.biz_dev.table)
         .select("id, company_id, item, comments, owner, status, created_at")
         .eq("company_id", companyId)
         .order("created_at", { ascending: true }),
@@ -58,12 +79,17 @@ export default function WebsiteBuildTracker() {
       setCompanyName(companyResult.data?.name || "");
     }
 
-    if (rowsResult.error) {
-      console.error(rowsResult.error);
-      setError(rowsResult.error.message || "Failed to load tasks");
+    if (siteResult.error || bizResult.error) {
+      const loadError = siteResult.error || bizResult.error;
+      console.error(loadError);
+      setError(loadError.message || "Failed to load tasks");
       setRows([]);
     } else {
-      setRows(rowsResult.data || []);
+      const combined = [
+        ...(siteResult.data || []).map((row) => ({ ...row, type: "site" })),
+        ...(bizResult.data || []).map((row) => ({ ...row, type: "biz_dev" })),
+      ].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      setRows(combined);
     }
 
     setLoading(false);
@@ -74,14 +100,15 @@ export default function WebsiteBuildTracker() {
   }, [loadData]);
 
   const openAdd = () => {
-    setEditingId(null);
+    setEditingKey(null);
     setForm(EMPTY_FORM);
     setFormOpen(true);
   };
 
   const openEdit = (row) => {
-    setEditingId(row.id);
+    setEditingKey(rowKey(row));
     setForm({
+      type: row.type,
       item: row.item || "",
       comments: row.comments || "",
       owner: row.owner || "",
@@ -100,9 +127,15 @@ export default function WebsiteBuildTracker() {
       return;
     }
 
+    if (!TASK_TYPES[form.type]) {
+      setError("Type is required");
+      return;
+    }
+
     setSaving(true);
     setError("");
 
+    const table = TASK_TYPES[form.type].table;
     const payload = {
       company_id: companyId,
       item,
@@ -111,21 +144,39 @@ export default function WebsiteBuildTracker() {
       status: form.status.trim() || null,
     };
 
+    const editingRow = editingKey
+      ? rows.find((row) => rowKey(row) === editingKey)
+      : null;
+
     let result;
-    if (editingId) {
-      result = await supabase
-        .from("website_build_tasks")
-        .update(payload)
-        .eq("id", editingId)
-        .eq("company_id", companyId)
-        .select()
-        .single();
+    if (editingRow) {
+      // Type change: delete from old table, insert into new.
+      if (editingRow.type !== form.type) {
+        const { error: deleteError } = await supabase
+          .from(TASK_TYPES[editingRow.type].table)
+          .delete()
+          .eq("id", editingRow.id)
+          .eq("company_id", companyId);
+
+        if (deleteError) {
+          console.error(deleteError);
+          setError(deleteError.message || "Failed to move task");
+          setSaving(false);
+          return;
+        }
+
+        result = await supabase.from(table).insert(payload).select().single();
+      } else {
+        result = await supabase
+          .from(table)
+          .update(payload)
+          .eq("id", editingRow.id)
+          .eq("company_id", companyId)
+          .select()
+          .single();
+      }
     } else {
-      result = await supabase
-        .from("website_build_tasks")
-        .insert(payload)
-        .select()
-        .single();
+      result = await supabase.from(table).insert(payload).select().single();
     }
 
     if (result.error) {
@@ -135,15 +186,20 @@ export default function WebsiteBuildTracker() {
       return;
     }
 
-    if (editingId) {
-      setRows((prev) => prev.map((row) => (row.id === editingId ? result.data : row)));
+    const saved = { ...result.data, type: form.type };
+
+    if (editingKey) {
+      setRows((prev) => {
+        const next = prev.map((row) => (rowKey(row) === editingKey ? saved : row));
+        return next.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      });
     } else {
-      setRows((prev) => [...prev, result.data]);
+      setRows((prev) => [...prev, saved]);
     }
 
     setSaving(false);
     setFormOpen(false);
-    setEditingId(null);
+    setEditingKey(null);
     setForm(EMPTY_FORM);
   };
 
@@ -151,7 +207,7 @@ export default function WebsiteBuildTracker() {
     if (!window.confirm(`Delete "${row.item}"?`)) return;
 
     const { error: deleteError } = await supabase
-      .from("website_build_tasks")
+      .from(TASK_TYPES[row.type].table)
       .delete()
       .eq("id", row.id)
       .eq("company_id", companyId);
@@ -162,22 +218,22 @@ export default function WebsiteBuildTracker() {
       return;
     }
 
-    setRows((prev) => prev.filter((item) => item.id !== row.id));
+    setRows((prev) => prev.filter((item) => rowKey(item) !== rowKey(row)));
   };
 
   if (loading) {
-    return <p className="text-sm text-muted-foreground">Loading tracker...</p>;
+    return <p className="text-sm text-muted-foreground">Loading tasks...</p>;
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-xs text-foreground mb-1">Website Build Tasks</h1>
+          <h1 className="text-xs text-foreground mb-1">Tasks</h1>
           <p className="text-sm text-muted-foreground">
             {companyName
-              ? `Track website build tasks for ${companyName}.`
-              : "Track website build tasks for this company."}
+              ? `Track site and biz dev tasks for ${companyName}.`
+              : "Track site and biz dev tasks for this company."}
           </p>
         </div>
         <Button type="button" onClick={openAdd}>
@@ -188,15 +244,12 @@ export default function WebsiteBuildTracker() {
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
-      {rows.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border px-4 py-8 text-sm text-muted-foreground">
-          No tasks yet. Add an item to get started.
-        </div>
-      ) : (
+      {rows.length > 0 && (
         <div className="rounded-lg border border-border overflow-hidden bg-card">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/40 text-left">
+                <th className="px-4 py-2.5 font-medium text-muted-foreground">Type</th>
                 <th className="px-4 py-2.5 font-medium text-muted-foreground">Item</th>
                 <th className="px-4 py-2.5 font-medium text-muted-foreground">Comments</th>
                 <th className="px-4 py-2.5 font-medium text-muted-foreground">Owner</th>
@@ -208,7 +261,10 @@ export default function WebsiteBuildTracker() {
             </thead>
             <tbody className="divide-y divide-border">
               {rows.map((row) => (
-                <tr key={row.id} className="hover:bg-accent/40">
+                <tr key={rowKey(row)} className="hover:bg-accent/40">
+                  <td className="px-4 py-3 align-top text-foreground/80">
+                    {TASK_TYPES[row.type]?.label || row.type}
+                  </td>
                   <td className="px-4 py-3 align-top font-medium text-foreground">{row.item}</td>
                   <td className="px-4 py-3 align-top text-muted-foreground whitespace-pre-wrap">
                     {row.comments || "—"}
@@ -245,19 +301,34 @@ export default function WebsiteBuildTracker() {
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>{editingId ? "Edit item" : "Add item"}</DialogTitle>
+            <DialogTitle>{editingKey ? "Edit item" : "Add item"}</DialogTitle>
             <DialogDescription>
-              {editingId
-                ? "Update this website build task."
-                : "Add a new website build task."}
+              {editingKey ? "Update this task." : "Add a new task."}
             </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleSave} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="wb-item">Item</Label>
+              <Label htmlFor="task-type">Type</Label>
+              <select
+                id="task-type"
+                value={form.type}
+                onChange={(e) => setForm((prev) => ({ ...prev, type: e.target.value }))}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                required
+              >
+                {Object.entries(TASK_TYPES).map(([value, meta]) => (
+                  <option key={value} value={value}>
+                    {meta.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="task-item">Item</Label>
               <Input
-                id="wb-item"
+                id="task-item"
                 value={form.item}
                 onChange={(e) => setForm((prev) => ({ ...prev, item: e.target.value }))}
                 required
@@ -265,9 +336,9 @@ export default function WebsiteBuildTracker() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="wb-comments">Comments</Label>
+              <Label htmlFor="task-comments">Comments</Label>
               <Textarea
-                id="wb-comments"
+                id="task-comments"
                 value={form.comments}
                 onChange={(e) => setForm((prev) => ({ ...prev, comments: e.target.value }))}
                 className="min-h-[80px]"
@@ -275,24 +346,24 @@ export default function WebsiteBuildTracker() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="wb-owner">Owner</Label>
+              <Label htmlFor="task-owner">Owner</Label>
               <Input
-                id="wb-owner"
+                id="task-owner"
                 value={form.owner}
                 onChange={(e) => setForm((prev) => ({ ...prev, owner: e.target.value }))}
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="wb-status">Status</Label>
+              <Label htmlFor="task-status">Status</Label>
               <Input
-                id="wb-status"
-                list="wb-status-suggestions"
+                id="task-status"
+                list="task-status-suggestions"
                 value={form.status}
                 onChange={(e) => setForm((prev) => ({ ...prev, status: e.target.value }))}
                 placeholder="Not started, In progress, Done..."
               />
-              <datalist id="wb-status-suggestions">
+              <datalist id="task-status-suggestions">
                 {STATUS_SUGGESTIONS.map((status) => (
                   <option key={status} value={status} />
                 ))}
@@ -305,7 +376,7 @@ export default function WebsiteBuildTracker() {
                 Cancel
               </Button>
               <Button type="submit" disabled={saving}>
-                {saving ? "Saving..." : editingId ? "Save changes" : "Add item"}
+                {saving ? "Saving..." : editingKey ? "Save changes" : "Add item"}
               </Button>
             </DialogFooter>
           </form>

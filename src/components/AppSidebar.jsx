@@ -4,9 +4,8 @@ import { useAuth } from "@/lib/AuthContext";
 import { supabase } from "@/lib/supabase";
 import {
   Database,
-  Share2,
+  BarChart3,
   ListTodo,
-  TrendingUp,
   FileText,
   Palette,
   Wand2,
@@ -22,6 +21,7 @@ import {
   LogOut,
   ArrowLeft,
   Construction,
+  ChevronUp,
 } from "lucide-react";
 
 function NavItem({ item }) {
@@ -93,24 +93,33 @@ export default function AppSidebar({ user }) {
 
   const companyNav = [
     { label: "Company Data", path: `/company/${activeCompanyId}/company-data`, icon: Database },
-    { label: "Social & Shops", path: `/company/${activeCompanyId}/social-media-tracker`, icon: Share2 },
-    { label: "Site Tasks", path: `/company/${activeCompanyId}/website-build-tracker`, icon: ListTodo },
-    { label: "Biz Dev Tasks", path: `/company/${activeCompanyId}/business-dev-tracker`, icon: TrendingUp },
+    { label: "Analytics", path: `/company/${activeCompanyId}/analytics`, icon: BarChart3 },
+    { label: "Tasks", path: `/company/${activeCompanyId}/tasks`, icon: ListTodo },
   ];
 
   const seoNav = [
-    { label: "Design Builder", path: `/company/${activeCompanyId}/design-guide-builder`, icon: Palette },
-    { label: "Specific Prompt", path: `/company/${activeCompanyId}/template-to-prompt`, icon: Wand2 },
-    { label: "Site Content Build", path: `/company/${activeCompanyId}/site-content-build`, icon: LayoutTemplate },
     { label: "Topic Generator", path: `/company/${activeCompanyId}/article-topic-suggestion`, icon: Lightbulb },
-    { label: "SEO AI Advisor", path: `/company/${activeCompanyId}/seo-ai-advisor`, icon: MessageSquareText },
-    { label: "External Audit Snapshot", path: `/company/${activeCompanyId}/external-audit-snapshot`, icon: Camera },
     { label: "Article Generator", path: `/company/${activeCompanyId}/article-generation`, icon: PenLine },
+    { type: "separator" },
     { label: "Articles", path: `/company/${activeCompanyId}/articles`, icon: BookOpen },
     { label: "Articles Update", path: `/company/${activeCompanyId}/articles-update`, icon: RefreshCw },
-    { label: "Cluster Images", path: `/company/${activeCompanyId}/cluster-image-generator`, icon: Image },
+    { type: "separator" },
+    { label: "SEO AI Advisor", path: `/company/${activeCompanyId}/seo-ai-advisor`, icon: MessageSquareText },
+    { label: "Technical Audit", path: `/company/${activeCompanyId}/external-audit-snapshot`, icon: Camera },
+  ];
+
+  const designTools = [
+    { label: "Design Builder", path: `/company/${activeCompanyId}/design-guide-builder`, icon: Palette },
     { label: "Image Generator", path: `/company/${activeCompanyId}/image-generator`, icon: Sparkles },
   ];
+  const isDesignToolActive = designTools.some((item) => location.pathname === item.path);
+
+  const dormantTools = [
+    { label: "Specific Prompt", path: `/company/${activeCompanyId}/template-to-prompt`, icon: Wand2 },
+    { label: "Cluster Images", path: `/company/${activeCompanyId}/cluster-image-generator`, icon: Image },
+    { label: "Site Content Build", path: `/company/${activeCompanyId}/site-content-build`, icon: LayoutTemplate },
+  ];
+  const isDormantToolActive = dormantTools.some((item) => location.pathname === item.path);
   useEffect(() => {
     let cancelled = false;
 
@@ -190,9 +199,13 @@ export default function AppSidebar({ user }) {
 
             <SectionHeader label="SEO Tools" />
             <div className="space-y-1.5">
-              {seoNav.map((item) => (
-                <NavItem key={item.path} item={item} />
-              ))}
+              {seoNav.map((item, index) =>
+                item.type === "separator" ? (
+                  <div key={`seo-sep-${index}`} className="my-1 border-t border-border" />
+                ) : (
+                  <NavItem key={item.path} item={item} />
+                )
+              )}
             </div>
           </>
         )}
@@ -211,6 +224,78 @@ export default function AppSidebar({ user }) {
             <Construction className="w-3.5 h-3.5 shrink-0" />
             <span className="leading-tight">Site Build Flow</span>
           </Link>
+
+          <div className="group relative">
+            <button
+              type="button"
+              className={`w-full flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors ${
+                isDesignToolActive
+                  ? "border-border bg-accent text-foreground"
+                  : "border-border text-foreground/80 group-hover:bg-accent group-hover:text-foreground"
+              }`}
+            >
+              <ChevronUp className="w-3.5 h-3.5 shrink-0 transition-transform group-hover:rotate-180" />
+              <span className="leading-tight">Design Tools</span>
+            </button>
+            <div className="pointer-events-none absolute bottom-full left-0 right-0 z-50 pb-1 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
+              <div className="rounded-md border border-border bg-card p-1 shadow-md">
+                {designTools.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = location.pathname === item.path;
+                  return (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      className={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs transition-colors ${
+                        isActive
+                          ? "bg-accent text-foreground"
+                          : "text-foreground/80 hover:bg-accent hover:text-foreground"
+                      }`}
+                    >
+                      <Icon className="w-3.5 h-3.5 shrink-0" />
+                      <span className="leading-tight">{item.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div className="group relative">
+            <button
+              type="button"
+              className={`w-full flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors ${
+                isDormantToolActive
+                  ? "border-border bg-accent text-foreground"
+                  : "border-border text-foreground/80 group-hover:bg-accent group-hover:text-foreground"
+              }`}
+            >
+              <ChevronUp className="w-3.5 h-3.5 shrink-0 transition-transform group-hover:rotate-180" />
+              <span className="leading-tight">Dormant Tools</span>
+            </button>
+            <div className="pointer-events-none absolute bottom-full left-0 right-0 z-50 pb-1 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
+              <div className="rounded-md border border-border bg-card p-1 shadow-md">
+                {dormantTools.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = location.pathname === item.path;
+                  return (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      className={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs transition-colors ${
+                        isActive
+                          ? "bg-accent text-foreground"
+                          : "text-foreground/80 hover:bg-accent hover:text-foreground"
+                      }`}
+                    >
+                      <Icon className="w-3.5 h-3.5 shrink-0" />
+                      <span className="leading-tight">{item.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
