@@ -1,4 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { pullKeywordData } from '../lib/pull-keyword-data/run.js'
+import { serpResults } from '../lib/seo-advisor/providers/dataforseo.js'
 
 function json(res, status, body) {
   res.statusCode = status
@@ -10,18 +12,8 @@ const MODEL = 'claude-sonnet-4-6'
 const MAX_TOKENS_CLUSTER = 6000
 const MAX_TOKENS_PILLAR = 3000
 
-const TASK_INSTRUCTION = `Plan an SEO article cluster for the supporting keyword above, under the given pillar. Propose 3 to 6 articles — only as many as genuinely distinct search intents exist; state in clusterRationale why this count. Exactly one article must be type 'comprehensive'.
-
-TYPE DEFINITIONS — assign the type that matches the article's actual structure: comprehensive = the definitive hub guide for this supporting keyword; howto = sequential process the reader executes; comparison = weighs two or more options/approaches against each other (X vs Y counts even if phrased as a question); faq = answers a set of related questions; flex = any other format (listicle, checklist, case study, cost breakdown) — name the format in the angle.
-
-HARD CONSTRAINTS, in priority order:
-(0) ANCHOR: The comprehensive article's targetKeyword MUST be exactly the current supporting keyword — no substitute, no variant. It is the hub that ranks for this territory; all sibling articles link to it.
-(a) TERRITORY: Never set targetKeyword to any reserved keyword, or to a close variant or same-intent phrasing of one. If provided keyword data contains rows belonging to another territory (e.g. the pillar's own query family), EXCLUDE those rows entirely — high volume is not a reason to poach. Every targetKeyword must plausibly belong to the current supporting keyword's search-intent territory.
-(b) COHERENCE: The targetKeyword must be a query that the article, as described by its title and keyMessages, directly and fully answers. If no provided keyword fits an article you want to write, use a realistic long-tail query in this territory and mark it '(no volume data)' — never attach a mismatched keyword just because it has volume. Prefer real rows from the provided keyword data over invented phrasings whenever a real row matches the article's intent; any invented targetKeyword must carry the literal suffix ' (no volume data)'.
-(c) NO INTERNAL OVERLAP: No two proposed articles may share a search intent, and none may overlap with any existing planned/published article in the content map.
-For each article provide: title (SEO title, targetKeyword phrasing near front), targetKeyword, type, searchIntent (one line), keyMessages (3-5 bullet strings), wordCount (2000 comprehensive, 1500 otherwise), internalLinks (sibling titles; every non-comprehensive links to the comprehensive; all reference the pillar), ctaAngle (one line bridging naturally to an expert-managed investor outreach service, without being an ad). Audience: startup founders raising capital.
-In clusterRationale, briefly confirm the territory check: name which reserved territories appeared in the keyword data and were excluded.
-Respond ONLY with valid JSON, no markdown fences: { "clusterRationale": "", "articles": [ { "title", "targetKeyword", "type", "searchIntent", "keyMessages": [], "wordCount", "internalLinks": [], "ctaAngle" } ] }`
+const TYPE_ORDER = ['comprehensive', 'howto', 'comparison', 'faq', 'flex']
+const ALLOWED_TYPES = new Set(TYPE_ORDER)
 
 const PILLAR_TASK_INSTRUCTION = `Plan the single comprehensive pillar article for the pillar keyword above. This is the hub page for its entire topic — the definitive, most complete resource a founder could find on this subject, that all of this pillar's supporting-keyword cluster articles will link into. It is NOT one of the supporting articles; do not narrow its scope to a single sub-intent.
 
@@ -36,9 +28,115 @@ const KEYWORD_DATA_INSTRUCTION =
   'When keyword data is provided, every article\'s targetKeyword MUST be selected from or directly grounded in these real queries — do not invent keyword phrasings. Use volume and the third-column competition/difficulty metric to prioritize which intents deserve articles. If the header says "DFS Comp Index", that is DataForSEO paid competition (0–100), NOT Semrush KD — still use higher volume + lower competition as a relative priority signal. Absorb near-duplicate variants into one article rather than splitting them.'
 
 const WEB_SEARCH_INSTRUCTION =
-  'Before finalizing, you may search to check what currently ranks for the main target queries; let the dominant content formats in real results inform each article\'s type and angle. Where relevant, check how the KNOWN COMPETITORS cover this supporting keyword and note gaps we can exploit — but never treat any other site as our competitor. Note SERP- or competitor-driven decisions in clusterRationale.'
+  'Before finalizing, you may search to check what currently ranks for the main target queries; let the dominant content formats in real results inform each article\'s type and angle. Where relevant, check how the KNOWN COMPETITORS cover this topic and note gaps we can exploit — but never treat any other site as our competitor. Note SERP- or competitor-driven decisions in clusterRationale.'
 
-const ALLOWED_TYPES = new Set(['comprehensive', 'howto', 'comparison', 'faq', 'flex'])
+/**
+ * Validate cluster articleTypeCounts from the request body.
+ * @returns {Record<string, number>|null} normalized counts, or null if empty/invalid shape
+ */
+function normalizeArticleTypeCounts(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return null
+  }
+  const out = {}
+  for (const type of TYPE_ORDER) {
+    if (!Object.prototype.hasOwnProperty.call(raw, type)) continue
+    const n = Number(raw[type])
+    if (!Number.isInteger(n) || n < 1) continue
+    out[type] = n
+  }
+  return Object.keys(out).length > 0 ? out : null
+}
+
+function countArticlesByType(articles) {
+  const counts = {}
+  for (const article of Array.isArray(articles) ? articles : []) {
+    const type = article?.type || 'flex'
+    counts[type] = (counts[type] || 0) + 1
+  }
+  return counts
+}
+
+/**
+ * Truncate excess types to requested counts; error if any requested type is short.
+ */
+function enforceArticleTypeCounts(proposal, articleTypeCounts) {
+  const before = countArticlesByType(proposal.articles)
+  console.log('plan-cluster type counts before enforce:', {
+    before,
+    requested: articleTypeCounts,
+  })
+
+  const buckets = Object.fromEntries(TYPE_ORDER.map((t) => [t, []]))
+  for (const article of proposal.articles) {
+    const type = ALLOWED_TYPES.has(article.type) ? article.type : 'flex'
+    buckets[type].push(article)
+  }
+
+  const kept = []
+  for (const type of TYPE_ORDER) {
+    const requested = articleTypeCounts[type] || 0
+    const got = buckets[type]
+    if (requested === 0) continue
+    if (got.length < requested) {
+      throw new Error(
+        `Proposal incomplete: requested ${requested} ${type} article${
+          requested === 1 ? '' : 's'
+        }, got ${got.length}`
+      )
+    }
+    // Keep first N in model order; drop extras (and any unrequested types via requested===0).
+    kept.push(...got.slice(0, requested))
+  }
+
+  const after = countArticlesByType(kept)
+  console.log('plan-cluster type counts after enforce:', {
+    after,
+    requested: articleTypeCounts,
+  })
+
+  return {
+    ...proposal,
+    articles: kept,
+  }
+}
+
+function buildClusterTaskInstruction(articleTypeCounts) {
+  const countsJson = JSON.stringify(articleTypeCounts)
+  const hasComprehensive = (articleTypeCounts.comprehensive || 0) >= 1
+
+  const constraints = []
+  if (hasComprehensive) {
+    constraints.push(
+      "(0) ANCHOR: The comprehensive article's targetKeyword MUST be exactly the current supporting keyword — no substitute, no variant. It is the hub that ranks for this territory; all sibling articles link to it."
+    )
+  }
+  constraints.push(
+    '(a) TERRITORY: Never set targetKeyword to any reserved keyword, or to a close variant or same-intent phrasing of one. If provided keyword data contains rows belonging to another territory (e.g. the pillar\'s own query family), EXCLUDE those rows entirely — high volume is not a reason to poach. Every targetKeyword must plausibly belong to the current supporting keyword\'s search-intent territory.'
+  )
+  constraints.push(
+    "(b) COHERENCE: The targetKeyword must be a query that the article, as described by its title and keyMessages, directly and fully answers. If no provided keyword fits an article you want to write, use a realistic long-tail query in this territory and mark it '(no volume data)' — never attach a mismatched keyword just because it has volume. Prefer real rows from the provided keyword data over invented phrasings whenever a real row matches the article's intent; any invented targetKeyword must carry the literal suffix ' (no volume data)'."
+  )
+  constraints.push(
+    '(c) NO INTERNAL OVERLAP: No two proposed articles may share a search intent, and none may overlap with any existing planned/published article in the content map.'
+  )
+
+  const internalLinksGuidance = hasComprehensive
+    ? 'sibling titles; every non-comprehensive links to the comprehensive; all reference the pillar'
+    : 'sibling titles where relevant; all articles reference and link toward the pillar page'
+
+  return [
+    `Plan an SEO article cluster for the supporting keyword above, under the given pillar. Produce EXACTLY the following set of articles, no more, no fewer, no other types: ${countsJson}. For each requested type, produce that many distinct articles of that type, each covering a genuinely different search intent within the type — if the count requested for a type exceeds the number of genuinely distinct intents you can identify, still produce the requested count but note in clusterRationale which ones are the weakest/most stretched.`,
+    '',
+    "TYPE DEFINITIONS — assign the type that matches the article's actual structure: comprehensive = the definitive hub guide for this supporting keyword; howto = sequential process the reader executes; comparison = weighs two or more options/approaches against each other (X vs Y counts even if phrased as a question); faq = answers a set of related questions; flex = any other format (listicle, checklist, case study, cost breakdown) — name the format in the angle.",
+    '',
+    'HARD CONSTRAINTS, in priority order:',
+    ...constraints,
+    `For each article provide: title (SEO title, targetKeyword phrasing near front), targetKeyword, type, searchIntent (one line), keyMessages (3-5 bullet strings), wordCount (2000 comprehensive, 1500 otherwise), internalLinks (${internalLinksGuidance}), ctaAngle (one line bridging naturally to an expert-managed investor outreach service, without being an ad).`,
+    'In clusterRationale, briefly confirm the territory check: name which reserved territories appeared in the keyword data and were excluded.',
+    'Respond ONLY with valid JSON, no markdown fences: { "clusterRationale": "", "articles": [ { "title", "targetKeyword", "type", "searchIntent", "keyMessages": [], "wordCount", "internalLinks": [], "ctaAngle" } ] }',
+  ].join('\n')
+}
 
 function stripMarkdownFences(text) {
   let cleaned = String(text || '').trim()
@@ -175,6 +273,108 @@ function normalizeCompetitors(value) {
     .filter((item) => item.name || item.url)
 }
 
+/** Strip protocol/www/path for host comparison. */
+function normalizeHost(value) {
+  let d = String(value || '').trim().toLowerCase()
+  d = d.replace(/^https?:\/\//, '').replace(/^www\./, '')
+  d = d.split('/')[0].split('?')[0].split('#')[0]
+  return d.replace(/\.$/, '')
+}
+
+function hostsMatch(a, b) {
+  if (!a || !b) return false
+  if (a === b) return true
+  return a.endsWith(`.${b}`) || b.endsWith(`.${a}`)
+}
+
+function findMatchingCompetitor(itemDomain, competitors) {
+  const host = normalizeHost(itemDomain)
+  if (!host) return null
+  for (const competitor of competitors) {
+    const competitorHost = normalizeHost(competitor.url)
+    if (competitorHost && hostsMatch(host, competitorHost)) {
+      return competitor
+    }
+  }
+  return null
+}
+
+/**
+ * Cross-reference SERP items against known competitors.
+ * @returns {{ matchedCompetitors: object[], otherRankingDomains: object[] }|null}
+ */
+function buildCompetitorSerpGrounding(items, competitors) {
+  const list = Array.isArray(items) ? items : []
+  if (!list.length) return null
+
+  const matchedCompetitors = []
+  const otherRankingDomains = []
+
+  for (const item of list) {
+    const domain = item.domain || normalizeHost(item.url)
+    const competitor = findMatchingCompetitor(domain, competitors)
+    if (competitor) {
+      matchedCompetitors.push({
+        name: competitor.name || '(unnamed)',
+        rank: item.rank ?? null,
+        title: item.title || '(no title)',
+        url: item.url || '',
+        domain: domain || '',
+      })
+    } else if (otherRankingDomains.length < 5) {
+      otherRankingDomains.push({
+        rank: item.rank ?? null,
+        title: item.title || '(no title)',
+        domain: domain || normalizeHost(item.url) || '(unknown)',
+      })
+    }
+  }
+
+  return { matchedCompetitors, otherRankingDomains }
+}
+
+function buildCompetitorSerpSection(grounding) {
+  if (!grounding) return null
+
+  const lines = [
+    'COMPETITOR SERP CHECK (real ranking data for the target keyword, pulled just now):',
+    'Known competitors currently ranking for this exact keyword:',
+  ]
+
+  if (!grounding.matchedCompetitors.length) {
+    lines.push(
+      'None of the known competitors currently rank for this keyword — this is a gap.'
+    )
+  } else {
+    for (const match of grounding.matchedCompetitors) {
+      lines.push(
+        `- ${match.name} | rank ${match.rank ?? '?'} | ${match.title} | ${match.url}`
+      )
+    }
+  }
+
+  lines.push(
+    '',
+    'Other domains currently ranking (not in known competitor list, for context on SERP intent/format only — do not treat these as competitors):'
+  )
+  if (!grounding.otherRankingDomains.length) {
+    lines.push('- (none in top results outside the known competitor set)')
+  } else {
+    for (const other of grounding.otherRankingDomains) {
+      lines.push(
+        `- rank ${other.rank ?? '?'} | ${other.title} | ${other.domain}`
+      )
+    }
+  }
+
+  lines.push(
+    '',
+    "Use this real ranking data, together with any further web_search you do, to inform each article's type and angle — prioritizing intents where known competitors are weak or absent, and matching the content format that is actually winning in these results."
+  )
+
+  return lines.join('\n')
+}
+
 function normalizeInternalLinks(value) {
   if (typeof value === 'string' && value.trim()) {
     return [value.trim()]
@@ -248,7 +448,15 @@ function normalizePillarProposal(parsed) {
   }
 }
 
-function buildReservedKeywordSection(contentMap, supportingKeyword) {
+/**
+ * @param {unknown} contentMap
+ * @param {string} currentKeyword - the territory being planned (excluded from reserved list)
+ * @param {'supporting'|'pillar'} kind
+ */
+function buildReservedKeywordSection(contentMap, currentKeyword, kind = 'supporting') {
+  const currentNorm = String(currentKeyword || '')
+    .trim()
+    .toLowerCase()
   const lines = [
     'RESERVED KEYWORD TERRITORIES — every keyword below is claimed by another part of the site architecture, whether or not its articles exist yet:',
   ]
@@ -256,21 +464,33 @@ function buildReservedKeywordSection(contentMap, supportingKeyword) {
   const pillars = Array.isArray(contentMap) ? contentMap : []
   for (const pillar of pillars) {
     const pillarKw = String(pillar?.keyword || '').trim()
-    if (pillarKw) {
+    if (pillarKw && pillarKw.toLowerCase() !== currentNorm) {
       lines.push(`[pillar] ${pillarKw}`)
     }
     const supporting = Array.isArray(pillar?.supporting) ? pillar.supporting : []
     for (const sup of supporting) {
       const supportingKw = String(sup?.keyword || '').trim()
       if (!supportingKw) continue
+      if (supportingKw.toLowerCase() === currentNorm) continue
       lines.push(`[supporting] ${supportingKw} (under ${pillarKw || '(unknown pillar)'})`)
     }
   }
 
-  lines.push(
-    `The ONLY territory available to you is the current supporting keyword: ${supportingKeyword}.`
-  )
+  if (kind === 'pillar') {
+    lines.push(
+      `The ONLY territory available to you is the current pillar keyword: ${currentKeyword}.`
+    )
+  } else {
+    lines.push(
+      `The ONLY territory available to you is the current supporting keyword: ${currentKeyword}.`
+    )
+  }
   return lines.join('\n')
+}
+
+function audienceInstructionLine(audience) {
+  if (audience) return `Audience: ${audience}.`
+  return 'Audience: infer the likely audience from the company positioning above.'
 }
 
 function buildUserPrompt({
@@ -279,11 +499,14 @@ function buildUserPrompt({
   supportingKeyword,
   abstract,
   shortDescription,
+  audience,
   contentMap,
   competitors,
   keywordData,
+  competitorSerpGrounding,
   steeringNotes,
   previousProposal,
+  articleTypeCounts,
 }) {
   const parts = [
     'Company positioning:',
@@ -304,7 +527,15 @@ function buildUserPrompt({
   )
 
   if (mode === 'cluster') {
-    parts.push('', buildReservedKeywordSection(contentMap, supportingKeyword))
+    parts.push(
+      '',
+      buildReservedKeywordSection(contentMap, supportingKeyword, 'supporting')
+    )
+  } else {
+    parts.push(
+      '',
+      buildReservedKeywordSection(contentMap, pillarKeyword, 'pillar')
+    )
   }
 
   if (competitors.length > 0) {
@@ -319,6 +550,11 @@ function buildUserPrompt({
     }
   }
 
+  const serpSection = buildCompetitorSerpSection(competitorSerpGrounding)
+  if (serpSection) {
+    parts.push('', serpSection)
+  }
+
   if (keywordData) {
     parts.push(
       '',
@@ -328,15 +564,22 @@ function buildUserPrompt({
   }
 
   if (mode === 'pillar') {
-    parts.push('', PILLAR_TASK_INSTRUCTION)
+    const taskParts = [PILLAR_TASK_INSTRUCTION]
+    if (keywordData) {
+      taskParts.push(KEYWORD_DATA_INSTRUCTION)
+    }
+    taskParts.push(WEB_SEARCH_INSTRUCTION)
+    parts.push('', taskParts.join(' '))
   } else {
-    const taskParts = [TASK_INSTRUCTION]
+    const taskParts = [buildClusterTaskInstruction(articleTypeCounts)]
     if (keywordData) {
       taskParts.push(KEYWORD_DATA_INSTRUCTION)
     }
     taskParts.push(WEB_SEARCH_INSTRUCTION)
     parts.push('', taskParts.join(' '))
   }
+
+  parts.push('', audienceInstructionLine(audience))
 
   if (steeringNotes) {
     parts.push('', 'Steering notes from the editor (apply these):', steeringNotes)
@@ -378,14 +621,16 @@ export default async function handler(req, res) {
     const supportingKeyword = String(body.supportingKeyword || '').trim()
     const abstract = String(body.abstract || '').trim()
     const shortDescription = String(body.shortDescription || '').trim()
+    const audience = String(body.audience || '').trim()
     const contentMap = body.contentMap
     const competitors = normalizeCompetitors(body.competitors)
-    const keywordData = String(body.keywordData || '').trim()
     const steeringNotes = String(body.steeringNotes || '').trim()
     const previousProposal =
       body.previousProposal && typeof body.previousProposal === 'object'
         ? body.previousProposal
         : null
+    const articleTypeCounts =
+      mode === 'cluster' ? normalizeArticleTypeCounts(body.articleTypeCounts) : null
 
     if (!pillarKeyword) {
       return json(res, 400, { error: 'pillarKeyword is required' })
@@ -393,9 +638,76 @@ export default async function handler(req, res) {
     if (mode === 'cluster' && !supportingKeyword) {
       return json(res, 400, { error: 'supportingKeyword is required' })
     }
+    if (
+      mode === 'cluster' &&
+      (!articleTypeCounts || Object.keys(articleTypeCounts).length === 0)
+    ) {
+      return json(res, 400, {
+        error:
+          'articleTypeCounts is required for cluster mode with at least one type',
+      })
+    }
     if (contentMap == null) {
       return json(res, 400, { error: 'contentMap is required' })
     }
+
+    const targetKeyword =
+      mode === 'cluster' ? supportingKeyword : pillarKeyword
+
+    const [keywordData, competitorSerpGrounding] = await Promise.all([
+      (async () => {
+        try {
+          const pulled = await pullKeywordData({
+            keyword: targetKeyword,
+            pillarKeyword,
+            audienceFilter: audience,
+            anthropicApiKey: apiKey,
+          })
+          const text = String(pulled?.text || '').trim()
+          if (text) return text
+          console.warn(
+            'plan-cluster keyword pull returned no usable text; continuing without keyword data'
+          )
+          return ''
+        } catch (err) {
+          console.warn(
+            'plan-cluster keyword pull failed; continuing without keyword data:',
+            err?.message || err
+          )
+          return ''
+        }
+      })(),
+      (async () => {
+        if (competitors.length === 0) return null
+        try {
+          const result = await serpResults({
+            keyword: targetKeyword,
+            depth: 20,
+          })
+          if (!result?.available) {
+            console.warn(
+              'plan-cluster SERP grounding skipped:',
+              result?.reason || 'unavailable'
+            )
+            return null
+          }
+          const items = Array.isArray(result.items) ? result.items : []
+          if (!items.length) {
+            console.warn(
+              'plan-cluster SERP grounding returned no items; continuing without SERP section'
+            )
+            return null
+          }
+          return buildCompetitorSerpGrounding(items, competitors)
+        } catch (err) {
+          console.warn(
+            'plan-cluster SERP grounding failed; continuing without SERP section:',
+            err?.message || err
+          )
+          return null
+        }
+      })(),
+    ])
 
     const anthropic = new Anthropic({ apiKey })
     const prompt = buildUserPrompt({
@@ -404,11 +716,14 @@ export default async function handler(req, res) {
       supportingKeyword,
       abstract,
       shortDescription,
+      audience,
       contentMap,
       competitors,
       keywordData,
+      competitorSerpGrounding,
       steeringNotes,
       previousProposal,
+      articleTypeCounts,
     })
 
     const message = await anthropic.messages.create({
@@ -437,8 +752,14 @@ export default async function handler(req, res) {
 
     let proposal
     try {
-      proposal =
-        mode === 'pillar' ? normalizePillarProposal(parsed) : normalizeProposal(parsed)
+      if (mode === 'pillar') {
+        proposal = normalizePillarProposal(parsed)
+      } else {
+        proposal = enforceArticleTypeCounts(
+          normalizeProposal(parsed),
+          articleTypeCounts
+        )
+      }
     } catch (err) {
       console.error('plan-cluster normalize failed:', err)
       return json(res, 502, { error: err.message || 'Invalid proposal from model' })

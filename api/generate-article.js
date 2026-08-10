@@ -21,7 +21,7 @@ const FM_START = '<<<FRONTMATTER>>>'
 const BODY_START = '<<<BODY>>>'
 const BODY_END = '<<<END>>>'
 
-const TASK_INSTRUCTION = `Write the complete article body and all synthesized frontmatter fields for the spec above. Audience: startup founders raising capital, for Rupert (expert-managed investor outreach).
+const TASK_INSTRUCTION = `Write the complete article body and all synthesized frontmatter fields for the spec above.
 
 BODY REQUIREMENTS:
 - Use the provided keyMessages as the article's argument spine — expand, evidence, and structure them into flowing prose with proper H2/H3 markdown headings; do not simply restate them as a list.
@@ -886,10 +886,16 @@ function coerceFrontmatter(
   return frontmatter
 }
 
+function audienceInstructionLine(audience) {
+  if (audience) return `Audience: ${audience}.`
+  return 'Audience: infer the likely audience from the company positioning above.'
+}
+
 function buildUserPrompt({
   abstract,
   shortDescription,
   competitors,
+  audience,
   article,
   pillarKeyword,
   supportingKeyword,
@@ -948,6 +954,8 @@ function buildUserPrompt({
     '- keywords: optional in your JSON (server overwrites from targetKeyword / supportingKeyword / pillarKeyword).',
     '- whereThingsStandSources: array of { url, note } for web-search sources actually used in the Where Things Stand paragraph (empty array if none).',
     '- faqs: array of 2-4 { question, answer } objects, genuinely useful, distinct from the body content, not filler',
+    '',
+    audienceInstructionLine(audience),
     '',
     TASK_INSTRUCTION,
   )
@@ -1048,6 +1056,7 @@ export default async function handler(req, res) {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {}
     const abstract = String(body.abstract || '').trim()
     const shortDescription = String(body.shortDescription || '').trim()
+    const audience = String(body.audience || '').trim()
     const competitors = normalizeCompetitors(body.competitors)
     const pillarKeyword = String(body.pillarKeyword || '').trim()
     const supportingKeyword = String(body.supportingKeyword || '').trim()
@@ -1065,6 +1074,7 @@ export default async function handler(req, res) {
       abstract,
       shortDescription,
       competitors,
+      audience,
       article,
       pillarKeyword,
       supportingKeyword,

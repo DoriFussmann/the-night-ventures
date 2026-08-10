@@ -202,14 +202,15 @@ export function parseClusterMarkdown(markdown) {
 }
 
 /**
- * Pillar Article when exactly one comprehensive article; otherwise Cluster.
+ * Cluster when the export header includes a Supporting keyword; otherwise Pillar Article.
+ * @param {object} meta
+ * @returns {"Cluster"|"Pillar Article"}
  */
-export function resolveSourceType(meta, articles) {
-  const count = meta?.articleCount ?? articles?.length ?? 0;
-  if (count === 1 && articles?.[0]?.type === "comprehensive") {
-    return "Pillar Article";
+export function resolveSourceType(meta) {
+  if (String(meta?.supportingKeyword || "").trim()) {
+    return "Cluster";
   }
-  return "Cluster";
+  return "Pillar Article";
 }
 
 export function totalWordCount(articles) {

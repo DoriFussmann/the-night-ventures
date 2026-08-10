@@ -37,6 +37,33 @@ const ARTICLE_TYPES = [
   { value: "flex", label: "Flex" },
 ];
 
+const DEFAULT_ARTICLE_TYPE_COUNTS = {
+  comprehensive: 1,
+  howto: 1,
+  comparison: 1,
+  faq: 1,
+  flex: 1,
+};
+
+const DEFAULT_ARTICLE_TYPE_ENABLED = {
+  comprehensive: true,
+  howto: true,
+  comparison: true,
+  faq: true,
+  flex: true,
+};
+
+/** Build request payload: only enabled types with positive integer counts. */
+function buildArticleTypeCountsPayload(enabled, counts) {
+  const out = {};
+  for (const { value } of ARTICLE_TYPES) {
+    if (!enabled?.[value]) continue;
+    const n = Number(counts?.[value]);
+    if (Number.isInteger(n) && n >= 1) out[value] = n;
+  }
+  return out;
+}
+
 const ARTICLE_STATUSES = ["planned", "drafted", "published"];
 
 const TYPE_LABEL = Object.fromEntries(ARTICLE_TYPES.map((t) => [t.value, t.label]));
@@ -580,11 +607,14 @@ export default function ArticleTopicSuggestion() {
   const [proposalArticles, setProposalArticles] = useState([]);
   const [proposalLoading, setProposalLoading] = useState(false);
   const [proposalError, setProposalError] = useState("");
-  const [keywordData, setKeywordData] = useState("");
-  const [keywordDataLoading, setKeywordDataLoading] = useState(false);
-  const [keywordDataError, setKeywordDataError] = useState("");
   const [targetAudience, setTargetAudience] = useState("");
   const [steeringNotes, setSteeringNotes] = useState("");
+  const [articleTypeCounts, setArticleTypeCounts] = useState({
+    ...DEFAULT_ARTICLE_TYPE_COUNTS,
+  });
+  const [articleTypeEnabled, setArticleTypeEnabled] = useState({
+    ...DEFAULT_ARTICLE_TYPE_ENABLED,
+  });
   const [expandedProposalId, setExpandedProposalId] = useState(null);
 
   const [publishOpen, setPublishOpen] = useState(false);
@@ -749,51 +779,8 @@ export default function ArticleTopicSuggestion() {
     setProposalRationale("");
     setProposalArticles([]);
     setProposalError("");
-    setKeywordData("");
-    setKeywordDataError("");
-    setKeywordDataLoading(false);
     setSteeringNotes("");
     setExpandedProposalId(null);
-  };
-
-  const pullKeywordDataForProposal = async ({
-    keyword,
-    pillarKeyword = "",
-  }) => {
-    if (!companyId || !keyword || keywordDataLoading || proposalLoading) return;
-    setKeywordDataLoading(true);
-    setKeywordDataError("");
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData?.session?.access_token;
-      if (!token) throw new Error("Not signed in");
-
-      const res = await fetch("/api/pull-keyword-data", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          companyId,
-          keyword,
-          pillarKeyword,
-          audienceFilter: targetAudience,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.error || `Pull keyword data failed (${res.status})`);
-      }
-      const text = String(data.text || "").trim();
-      if (!text) throw new Error("No keyword rows returned");
-      setKeywordData(text);
-    } catch (err) {
-      console.error("Pull keyword data failed:", err);
-      setKeywordDataError(err.message || "Failed to pull keyword data");
-    } finally {
-      setKeywordDataLoading(false);
-    }
   };
 
   const requestClusterProposal = async ({
@@ -817,14 +804,23 @@ export default function ArticleTopicSuggestion() {
     }
 
     try {
+      const typeCounts = buildArticleTypeCountsPayload(
+        articleTypeEnabled,
+        articleTypeCounts
+      );
+      if (Object.keys(typeCounts).length === 0) {
+        throw new Error("Select at least one article type");
+      }
+
       const body = {
         pillarKeyword: pillar.keyword,
         supportingKeyword: supporting.keyword,
         abstract,
         shortDescription,
+        audience: targetAudience.trim(),
         contentMap: buildContentMapPayload(pillars),
         competitors,
-        keywordData: keywordData.trim(),
+        articleTypeCounts: typeCounts,
       };
 
       if (regenerate) {
@@ -902,9 +898,9 @@ export default function ArticleTopicSuggestion() {
     setProposalRationale("");
     setProposalArticles([]);
     setProposalError("");
-    setKeywordData("");
-    setKeywordDataError("");
     setSteeringNotes("");
+    setArticleTypeCounts({ ...DEFAULT_ARTICLE_TYPE_COUNTS });
+    setArticleTypeEnabled({ ...DEFAULT_ARTICLE_TYPE_ENABLED });
     setExpandedProposalId(null);
   };
 
@@ -991,9 +987,9 @@ export default function ArticleTopicSuggestion() {
         pillarKeyword: pillar.keyword,
         abstract,
         shortDescription,
+        audience: targetAudience.trim(),
         contentMap: buildContentMapPayload(pillars),
         competitors,
-        keywordData: keywordData.trim(),
       };
 
       if (regenerate) {
@@ -1056,8 +1052,6 @@ export default function ArticleTopicSuggestion() {
     setProposalRationale("");
     setProposalArticles([]);
     setProposalError("");
-    setKeywordData("");
-    setKeywordDataError("");
     setSteeringNotes("");
     setExpandedProposalId(null);
   };
@@ -1773,57 +1767,13 @@ export default function ArticleTopicSuggestion() {
 
                       {showPillarProposal && (
                         <div className="rounded-md border border-border bg-background px-3 py-3 space-y-3">
-                          <div className="space-y-1.5">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <Label htmlFor={`keyword_data_${pillarKey}`}>
-                                Keyword data (optional)
-                              </Label>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="h-7 text-xs"
-                                disabled={
-                                  proposalLoading ||
-                                  keywordDataLoading ||
-                                  saving ||
-                                  !pillar.keyword
-                                }
-                                onClick={() =>
-                                  void pullKeywordDataForProposal({
-                                    keyword: pillar.keyword,
-                                    pillarKeyword: pillar.keyword,
-                                  })
-                                }
-                              >
-                                {keywordDataLoading ? (
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                ) : null}
-                                Pull Keyword Data
-                              </Button>
-                            </div>
-                            <Textarea
-                              id={`keyword_data_${pillarKey}`}
-                              value={keywordData}
-                              onChange={(e) => setKeywordData(e.target.value)}
-                              placeholder="Paste keyword data, or pull via DataForSEO (Keyword;Volume;DFS Comp Index)…"
-                              rows={4}
-                              disabled={proposalLoading || keywordDataLoading}
-                            />
-                            {keywordDataError && (
-                              <p className="text-xs text-destructive">
-                                {keywordDataError}
-                              </p>
-                            )}
-                          </div>
-
                           {proposalArticles.length === 0 &&
                             !proposalLoading &&
                             !proposalError && (
                               <Button
                                 type="button"
                                 size="sm"
-                                disabled={saving || keywordDataLoading}
+                                disabled={saving}
                                 onClick={() =>
                                   requestPillarProposal({
                                     pillar,
@@ -2205,45 +2155,64 @@ export default function ArticleTopicSuggestion() {
                               {isDetailOpen && showProposal && (
                                 <div className="border-t border-border px-3 py-3 space-y-3 bg-muted/10">
                                   <div className="space-y-1.5">
-                                    <div className="flex flex-wrap items-center justify-between gap-2">
-                                      <Label htmlFor={`keyword_data_${detailKey}`}>
-                                        Keyword data (optional)
-                                      </Label>
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        variant="outline"
-                                        className="h-7 text-xs"
-                                        disabled={
-                                          proposalLoading ||
-                                          keywordDataLoading ||
-                                          saving ||
-                                          !sup.keyword
-                                        }
-                                        onClick={() =>
-                                          void pullKeywordDataForProposal({
-                                            keyword: sup.keyword,
-                                            pillarKeyword: pillar.keyword,
-                                          })
-                                        }
-                                      >
-                                        {keywordDataLoading ? (
-                                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                        ) : null}
-                                        Pull Keyword Data
-                                      </Button>
+                                    <Label>Article types</Label>
+                                    <div className="space-y-1.5 rounded-md border border-border bg-background px-3 py-2">
+                                      {ARTICLE_TYPES.map((t) => {
+                                        const checked = Boolean(
+                                          articleTypeEnabled[t.value]
+                                        );
+                                        return (
+                                          <div
+                                            key={t.value}
+                                            className="flex items-center gap-3"
+                                          >
+                                            <label className="flex flex-1 items-center gap-2 text-sm text-foreground cursor-pointer min-w-0">
+                                              <input
+                                                type="checkbox"
+                                                className="h-3.5 w-3.5 shrink-0"
+                                                checked={checked}
+                                                disabled={proposalLoading}
+                                                onChange={(e) =>
+                                                  setArticleTypeEnabled((prev) => ({
+                                                    ...prev,
+                                                    [t.value]: e.target.checked,
+                                                  }))
+                                                }
+                                              />
+                                              <span className="truncate">{t.label}</span>
+                                            </label>
+                                            <Input
+                                              type="number"
+                                              min={1}
+                                              step={1}
+                                              value={articleTypeCounts[t.value] ?? 1}
+                                              disabled={!checked || proposalLoading}
+                                              onChange={(e) => {
+                                                const raw = Number(e.target.value);
+                                                const next =
+                                                  Number.isFinite(raw) && raw >= 1
+                                                    ? Math.floor(raw)
+                                                    : 1;
+                                                setArticleTypeCounts((prev) => ({
+                                                  ...prev,
+                                                  [t.value]: next,
+                                                }));
+                                              }}
+                                              className="h-7 w-16 text-xs"
+                                              aria-label={`${t.label} quantity`}
+                                            />
+                                          </div>
+                                        );
+                                      })}
                                     </div>
-                                    <Textarea
-                                      id={`keyword_data_${detailKey}`}
-                                      value={keywordData}
-                                      onChange={(e) => setKeywordData(e.target.value)}
-                                      placeholder="Paste keyword data, or pull via DataForSEO (Keyword;Volume;DFS Comp Index)…"
-                                      rows={4}
-                                      disabled={proposalLoading || keywordDataLoading}
-                                    />
-                                    {keywordDataError && (
+                                    {Object.keys(
+                                      buildArticleTypeCountsPayload(
+                                        articleTypeEnabled,
+                                        articleTypeCounts
+                                      )
+                                    ).length === 0 && (
                                       <p className="text-xs text-destructive">
-                                        {keywordDataError}
+                                        Select at least one article type
                                       </p>
                                     )}
                                   </div>
@@ -2254,7 +2223,15 @@ export default function ArticleTopicSuggestion() {
                                     <Button
                                       type="button"
                                       size="sm"
-                                      disabled={saving || keywordDataLoading}
+                                      disabled={
+                                        saving ||
+                                        Object.keys(
+                                          buildArticleTypeCountsPayload(
+                                            articleTypeEnabled,
+                                            articleTypeCounts
+                                          )
+                                        ).length === 0
+                                      }
                                       onClick={() =>
                                         requestClusterProposal({
                                           pillar,
@@ -2469,7 +2446,15 @@ export default function ArticleTopicSuggestion() {
                                       type="button"
                                       size="sm"
                                       variant="outline"
-                                      disabled={saving}
+                                      disabled={
+                                        saving ||
+                                        Object.keys(
+                                          buildArticleTypeCountsPayload(
+                                            articleTypeEnabled,
+                                            articleTypeCounts
+                                          )
+                                        ).length === 0
+                                      }
                                       onClick={() =>
                                         requestClusterProposal({
                                           pillar,

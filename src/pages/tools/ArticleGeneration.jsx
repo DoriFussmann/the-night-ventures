@@ -6,6 +6,7 @@ import {
   Copy,
   Download,
   FileText,
+  Image as ImageIcon,
   Loader2,
   Trash2,
   Upload,
@@ -46,6 +47,12 @@ import {
 import { downloadArticlesZip } from "./articleGeneration/downloadZip";
 import { updateCoverageDrafted } from "./articleGeneration/updateCoverageDrafted";
 import { saveGeneratedArticles } from "./articleGeneration/saveGeneratedArticles";
+import {
+  downloadGeneratedImage,
+  generateOneImage,
+  imageSrcFromResult,
+} from "./aiImage/generateImageClient";
+import { cropImageTo16x9 } from "./aiImage/cropImage";
 
 const TYPE_COLORS = {
   comprehensive: "bg-violet-50 text-violet-700 border-violet-200",
@@ -109,7 +116,9 @@ function normalizeCompetitors(raw) {
 async function loadCompanyPositioning(companyId) {
   const { data, error } = await supabase
     .from("company_profiles")
-    .select("abstract, short_description, competitors")
+    .select(
+      "abstract, short_description, competitors, target_audience, design_guide_abstract"
+    )
     .eq("company_id", companyId)
     .maybeSingle();
 
@@ -121,7 +130,65 @@ async function loadCompanyPositioning(companyId) {
     abstract: data?.abstract || "",
     shortDescription: data?.short_description || "",
     competitors: normalizeCompetitors(data?.competitors),
+    audience: String(data?.target_audience || "").trim(),
+    designGuideAbstract: String(data?.design_guide_abstract || "").trim(),
   };
+}
+
+/** Descriptive blog-hero scene prompt from generated frontmatter + plan fields. */
+function buildArticleImagePrompt(article, frontmatter) {
+  const title = String(frontmatter?.title || article?.title || "").trim();
+  const description = String(frontmatter?.description || "").trim();
+  const type = String(article?.type || "").trim();
+  const searchIntent = String(article?.searchIntent || "").trim();
+
+  const typeHint =
+    type === "howto"
+      ? "practical how-to / process atmosphere"
+      : type === "comparison"
+        ? "balanced comparison / decision-making atmosphere"
+        : type === "faq"
+          ? "clarity and answers / approachable guidance atmosphere"
+          : type === "comprehensive"
+            ? "authoritative overview / landmark resource atmosphere"
+            : "editorial thought-leadership atmosphere";
+
+  const parts = [
+    "Photorealistic blog hero image, wide landscape composition, no text, no letters, no watermarks, no logos.",
+    title ? `Topic: ${title}.` : "",
+    description ? `Mood and subject: ${description}` : "",
+    searchIntent ? `Reader intent: ${searchIntent}.` : "",
+    `Visual tone: ${typeHint}.`,
+    "Show a single cohesive scene that evokes the article's subject — people, environments, or symbolic objects — not a collage or UI mockup.",
+  ];
+
+  return parts.filter(Boolean).join(" ");
+}
+
+async function generateAndCropArticleImage({
+  article,
+  frontmatter,
+  styleContext,
+}) {
+  const prompt = buildArticleImagePrompt(article, frontmatter);
+  const raw = await generateOneImage({
+    prompt,
+    size: "1536x1024",
+    styleContext: styleContext || "",
+  });
+  const src = imageSrcFromResult(raw);
+  if (!src) {
+    throw new Error("No image returned");
+  }
+  return cropImageTo16x9(src);
+}
+
+function skippedImageState() {
+  return { status: "skipped", result: null, error: null };
+}
+
+function pendingImageState() {
+  return { status: "pending", result: null, error: null };
 }
 
 async function generateOneArticle({
@@ -138,6 +205,7 @@ async function generateOneArticle({
       abstract: positioning.abstract,
       shortDescription: positioning.shortDescription,
       competitors: positioning.competitors,
+      audience: positioning.audience,
       pillarKeyword,
       supportingKeyword: supportingKeyword || undefined,
       batchContext,
@@ -177,7 +245,8 @@ function buildBatchContextEntry(frontmatter, article) {
   };
 }
 
-function initJobRows(ordered) {
+function initJobRows(ordered, generateImageIndices) {
+  const wantImage = generateImageIndices || new Set();
   return ordered.map(({ index, article }) => ({
     index,
     title: article.title || "(untitled)",
@@ -190,7 +259,49 @@ function initJobRows(ordered) {
     markdown: null,
     lengthAdjusted: false,
     whereThingsStandSources: [],
+    image: wantImage.has(index) ? pendingImageState() : skippedImageState(),
   }));
+}
+
+function ImageStatusBadge({ image }) {
+  const status = image?.status || "skipped";
+  if (status === "done") {
+    return (
+      <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+        <ImageIcon className="h-3 w-3" />
+        Image ready
+      </span>
+    );
+  }
+  if (status === "failed") {
+    return (
+      <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-destructive/30 bg-destructive/5 px-2 py-0.5 text-[11px] font-medium text-destructive">
+        <ImageIcon className="h-3 w-3" />
+        Image failed
+      </span>
+    );
+  }
+  if (status === "running") {
+    return (
+      <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        Image…
+      </span>
+    );
+  }
+  if (status === "pending") {
+    return (
+      <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+        <ImageIcon className="h-3 w-3" />
+        Image pending
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+      No image
+    </span>
+  );
 }
 
 function normalizeSources(value) {
@@ -282,6 +393,10 @@ export default function ArticleGeneration() {
   const [fileName, setFileName] = useState("");
   const [parsed, setParsed] = useState(null);
   const [selected, setSelected] = useState(() => new Set());
+  const [generateImageIndices, setGenerateImageIndices] = useState(
+    () => new Set()
+  );
+  const [designGuideAbstract, setDesignGuideAbstract] = useState("");
   const [detailIndex, setDetailIndex] = useState(null);
 
   const [phase, setPhase] = useState("intake"); // intake | generating | summary
@@ -291,6 +406,7 @@ export default function ArticleGeneration() {
   const [coverageWarning, setCoverageWarning] = useState(null);
   const [runError, setRunError] = useState(null);
   const [retryingIndex, setRetryingIndex] = useState(null);
+  const [retryingImageIndex, setRetryingImageIndex] = useState(null);
   const [readerIndex, setReaderIndex] = useState(null);
   const [deleteIndex, setDeleteIndex] = useState(null);
   const [savedIndexes, setSavedIndexes] = useState(() => new Set());
@@ -309,6 +425,7 @@ export default function ArticleGeneration() {
   const resetIntake = () => {
     setParsed(null);
     setSelected(new Set());
+    setGenerateImageIndices(new Set());
     setDetailIndex(null);
     setParseError(null);
     setFileName("");
@@ -319,6 +436,7 @@ export default function ArticleGeneration() {
     setCoverageWarning(null);
     setRunError(null);
     setRetryingIndex(null);
+    setRetryingImageIndex(null);
     setReaderIndex(null);
     setDeleteIndex(null);
     clearSaveState();
@@ -328,6 +446,7 @@ export default function ArticleGeneration() {
     const indices = new Set(result.articles.map((_, i) => i));
     setParsed(result);
     setSelected(indices);
+    setGenerateImageIndices(new Set());
     setDetailIndex(null);
     setParseError(null);
     setFileName(name || "");
@@ -338,6 +457,7 @@ export default function ArticleGeneration() {
     setCoverageWarning(null);
     setRunError(null);
     setRetryingIndex(null);
+    setRetryingImageIndex(null);
     setReaderIndex(null);
     setDeleteIndex(null);
     clearSaveState();
@@ -355,6 +475,7 @@ export default function ArticleGeneration() {
       setParseError("Please drop a single .md markdown file.");
       setParsed(null);
       setSelected(new Set());
+      setGenerateImageIndices(new Set());
       setFileName("");
       return;
     }
@@ -366,6 +487,7 @@ export default function ArticleGeneration() {
     } catch (err) {
       setParsed(null);
       setSelected(new Set());
+      setGenerateImageIndices(new Set());
       setDetailIndex(null);
       setFileName(file.name || "");
       setParseError(err?.message || "Failed to parse this file.");
@@ -389,6 +511,24 @@ export default function ArticleGeneration() {
       else next.delete(index);
       return next;
     });
+    if (!checked) {
+      setGenerateImageIndices((prev) => {
+        if (!prev.has(index)) return prev;
+        const next = new Set(prev);
+        next.delete(index);
+        return next;
+      });
+    }
+  };
+
+  const toggleGenerateImage = (index, checked) => {
+    if (!selected.has(index)) return;
+    setGenerateImageIndices((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(index);
+      else next.delete(index);
+      return next;
+    });
   };
 
   const selectAll = () => {
@@ -396,14 +536,15 @@ export default function ArticleGeneration() {
     setSelected(new Set(parsed.articles.map((_, i) => i)));
   };
 
-  const selectNone = () => setSelected(new Set());
+  const selectNone = () => {
+    setSelected(new Set());
+    setGenerateImageIndices(new Set());
+  };
 
   const detailArticle =
     parsed && detailIndex != null ? parsed.articles[detailIndex] : null;
 
-  const sourceType = parsed
-    ? resolveSourceType(parsed.meta, parsed.articles)
-    : null;
+  const sourceType = parsed ? resolveSourceType(parsed.meta) : null;
   const combinedWords = parsed ? totalWordCount(parsed.articles) : 0;
 
   const updateJob = (index, patch) => {
@@ -444,13 +585,15 @@ export default function ArticleGeneration() {
     let positioning;
     try {
       positioning = await loadCompanyPositioning(companyId);
+      setDesignGuideAbstract(positioning.designGuideAbstract || "");
     } catch (err) {
       setRunError(err?.message || "Failed to load company positioning.");
       return;
     }
 
+    const styleContext = positioning.designGuideAbstract || "";
     const ordered = orderSelectedArticles(parsed.articles, selected);
-    const rows = initJobRows(ordered);
+    const rows = initJobRows(ordered, generateImageIndices);
     setJobs(rows);
     setPhase("generating");
     setCurrentStep(0);
@@ -480,6 +623,10 @@ export default function ArticleGeneration() {
         const entry = buildBatchContextEntry(data.frontmatter, article);
         context.push(entry);
 
+        let image = generateImageIndices.has(index)
+          ? pendingImageState()
+          : skippedImageState();
+
         const successJob = {
           index,
           title: article.title || data.frontmatter?.title || "(untitled)",
@@ -494,14 +641,41 @@ export default function ArticleGeneration() {
           whereThingsStandSources: normalizeSources(
             data.whereThingsStandSources
           ),
+          image,
         };
         updateJob(index, successJob);
         successAcc.push(successJob);
+
+        if (generateImageIndices.has(index)) {
+          updateJob(index, {
+            image: { status: "running", result: null, error: null },
+          });
+          try {
+            const cropped = await generateAndCropArticleImage({
+              article,
+              frontmatter: data.frontmatter,
+              styleContext,
+            });
+            image = { status: "done", result: cropped, error: null };
+          } catch (imgErr) {
+            image = {
+              status: "failed",
+              result: null,
+              error: imgErr?.message || "Image generation failed",
+            };
+          }
+          updateJob(index, { image });
+          successAcc[successAcc.length - 1] = {
+            ...successAcc[successAcc.length - 1],
+            image,
+          };
+        }
       } catch (err) {
         updateJob(index, {
           status: "failed",
           error: err?.message || "Generation failed",
           validationErrors: err?.validationErrors || [],
+          image: skippedImageState(),
         });
       }
     }
@@ -526,6 +700,8 @@ export default function ArticleGeneration() {
 
     try {
       const positioning = await loadCompanyPositioning(companyId);
+      setDesignGuideAbstract(positioning.designGuideAbstract || "");
+      const styleContext = positioning.designGuideAbstract || "";
       const contextFromDone = jobs
         .filter((j) => j.status === "done" && j.frontmatter)
         .map((j) =>
@@ -541,6 +717,10 @@ export default function ArticleGeneration() {
       });
 
       const markdown = serializeArticleMarkdown(data.frontmatter, data.body);
+      let image = generateImageIndices.has(jobIndex)
+        ? pendingImageState()
+        : skippedImageState();
+
       const successJob = {
         index: jobIndex,
         title: article.title || data.frontmatter?.title || "(untitled)",
@@ -555,6 +735,7 @@ export default function ArticleGeneration() {
         whereThingsStandSources: normalizeSources(
           data.whereThingsStandSources
         ),
+        image,
       };
       updateJob(jobIndex, successJob);
       setSavedIndexes((prev) => {
@@ -563,6 +744,28 @@ export default function ArticleGeneration() {
         next.delete(jobIndex);
         return next;
       });
+
+      if (generateImageIndices.has(jobIndex)) {
+        updateJob(jobIndex, {
+          image: { status: "running", result: null, error: null },
+        });
+        try {
+          const cropped = await generateAndCropArticleImage({
+            article,
+            frontmatter: data.frontmatter,
+            styleContext,
+          });
+          image = { status: "done", result: cropped, error: null };
+        } catch (imgErr) {
+          image = {
+            status: "failed",
+            result: null,
+            error: imgErr?.message || "Image generation failed",
+          };
+        }
+        updateJob(jobIndex, { image });
+        successJob.image = image;
+      }
 
       const nextContext = [
         ...contextFromDone,
@@ -575,9 +778,50 @@ export default function ArticleGeneration() {
         status: "failed",
         error: err?.message || "Generation failed",
         validationErrors: err?.validationErrors || [],
+        image: skippedImageState(),
       });
     } finally {
       setRetryingIndex(null);
+    }
+  };
+
+  const retryImage = async (jobIndex) => {
+    if (!parsed || !companyId || retryingImageIndex != null) return;
+    const job = jobs.find((j) => j.index === jobIndex);
+    const article = parsed.articles[jobIndex];
+    if (!job?.frontmatter || !article || job.status !== "done") return;
+
+    setRetryingImageIndex(jobIndex);
+    updateJob(jobIndex, {
+      image: { status: "running", result: null, error: null },
+    });
+
+    try {
+      let styleContext = designGuideAbstract;
+      if (!styleContext) {
+        const positioning = await loadCompanyPositioning(companyId);
+        styleContext = positioning.designGuideAbstract || "";
+        setDesignGuideAbstract(styleContext);
+      }
+
+      const cropped = await generateAndCropArticleImage({
+        article,
+        frontmatter: job.frontmatter,
+        styleContext,
+      });
+      updateJob(jobIndex, {
+        image: { status: "done", result: cropped, error: null },
+      });
+    } catch (err) {
+      updateJob(jobIndex, {
+        image: {
+          status: "failed",
+          result: null,
+          error: err?.message || "Image generation failed",
+        },
+      });
+    } finally {
+      setRetryingImageIndex(null);
     }
   };
 
@@ -599,9 +843,20 @@ export default function ArticleGeneration() {
     setCoverageWarning(null);
     setRunError(null);
     setRetryingIndex(null);
+    setRetryingImageIndex(null);
     setReaderIndex(null);
     setDeleteIndex(null);
     clearSaveState();
+  };
+
+  const downloadOneArticle = async (job) => {
+    if (!job?.markdown) return;
+    const mdName = articleFilename(job.frontmatter);
+    downloadMarkdownFile(mdName, job.markdown);
+    if (job.image?.status === "done" && job.image?.result?.b64_json) {
+      const pngLabel = mdName.replace(/\.md$/i, "");
+      await downloadGeneratedImage(pngLabel, job.image.result);
+    }
   };
 
   const jobToSavePayload = (job) => {
@@ -750,8 +1005,8 @@ export default function ArticleGeneration() {
                   Drop a cluster or pillar .md file here
                 </p>
                 <p className="text-xs text-muted-foreground mb-3">
-                  Accepts Topic Generator exports — cluster (3–6 articles) or
-                  pillar (1 article)
+                  Accepts Topic Generator exports — cluster (types and count as
+                  configured) or pillar (1 article)
                 </p>
                 <span className="inline-flex h-8 items-center justify-center rounded-md border border-input bg-background px-3 text-xs font-medium shadow-sm">
                   Choose file
@@ -833,6 +1088,7 @@ export default function ArticleGeneration() {
               <ul className="rounded-lg border border-border divide-y divide-border overflow-hidden">
                 {parsed.articles.map((article, index) => {
                   const isChecked = selected.has(index);
+                  const wantImage = generateImageIndices.has(index);
                   return (
                     <li key={`${article.title}-${index}`}>
                       <div
@@ -863,6 +1119,25 @@ export default function ArticleGeneration() {
                         <span className="min-w-0 flex-1 truncate font-medium text-foreground">
                           {article.title}
                         </span>
+                        <label
+                          className={`shrink-0 inline-flex items-center gap-1.5 text-[11px] ${
+                            isChecked
+                              ? "text-muted-foreground cursor-pointer"
+                              : "text-muted-foreground/40 cursor-not-allowed"
+                          }`}
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => e.stopPropagation()}
+                        >
+                          <Checkbox
+                            checked={wantImage}
+                            disabled={!isChecked}
+                            onCheckedChange={(checked) =>
+                              toggleGenerateImage(index, checked === true)
+                            }
+                            aria-label={`Generate image for ${article.title}`}
+                          />
+                          Generate Image
+                        </label>
                         <TypeBadge type={article.type} />
                         <span className="shrink-0 tabular-nums text-xs text-muted-foreground w-16 text-right">
                           {formatNumber(article.wordCount)}
@@ -898,8 +1173,11 @@ export default function ArticleGeneration() {
               </div>
               <Progress value={progressPct} className="h-1.5" />
               <p className="text-xs text-muted-foreground">
-                Articles run one at a time. Failures are skipped so the rest of
-                the batch can finish.
+                Articles run one at a time
+                {generateImageIndices.size > 0
+                  ? ", with hero images generated sequentially after each successful draft"
+                  : ""}
+                . Failures are skipped so the rest of the batch can finish.
               </p>
             </div>
           )}
@@ -931,6 +1209,10 @@ export default function ArticleGeneration() {
                       successJobs.map((j) => ({
                         frontmatter: j.frontmatter,
                         markdown: j.markdown,
+                        image:
+                          j.image?.status === "done" && j.image?.result?.b64_json
+                            ? j.image.result
+                            : null,
                       })),
                       `${(parsed?.meta?.pillar || "articles")
                         .toLowerCase()
@@ -1035,6 +1317,12 @@ export default function ArticleGeneration() {
                           {job.frontmatter?.title || job.title}
                         </span>
                         <TypeBadge type={job.type} />
+                        {(phase === "summary" ||
+                          job.image?.status === "running" ||
+                          job.image?.status === "done" ||
+                          job.image?.status === "failed") && (
+                          <ImageStatusBadge image={job.image} />
+                        )}
                         {canOpenReader && (
                           <span className="text-[11px] text-muted-foreground">
                             View article
@@ -1046,9 +1334,17 @@ export default function ArticleGeneration() {
                           {job.error}
                         </p>
                       )}
+                      {job.image?.status === "failed" && job.image?.error && (
+                        <p className="text-xs text-destructive break-words">
+                          Image: {job.image.error}
+                        </p>
+                      )}
                       {job.status === "done" && job.frontmatter?.slug && (
                         <p className="text-xs text-muted-foreground">
                           {articleFilename(job.frontmatter)}
+                          {job.image?.status === "done"
+                            ? ` · ${articleFilename(job.frontmatter).replace(/\.md$/i, ".png")}`
+                            : ""}
                         </p>
                       )}
                       {job.status === "done" && job.lengthAdjusted && (
@@ -1066,15 +1362,56 @@ export default function ArticleGeneration() {
                           size="sm"
                           onClick={(e) => {
                             e.stopPropagation();
-                            downloadMarkdownFile(
-                              articleFilename(job.frontmatter),
-                              job.markdown
-                            );
+                            downloadOneArticle(job);
                           }}
                         >
                           Download
                         </Button>
                       )}
+                      {phase === "summary" &&
+                        job.status === "done" &&
+                        job.image?.status === "done" &&
+                        job.image?.result?.b64_json && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const base = articleFilename(job.frontmatter).replace(
+                                /\.md$/i,
+                                ""
+                              );
+                              downloadGeneratedImage(base, job.image.result);
+                            }}
+                          >
+                            <ImageIcon className="h-3.5 w-3.5 mr-1.5" />
+                            Image
+                          </Button>
+                        )}
+                      {phase === "summary" &&
+                        job.status === "done" &&
+                        job.image?.status === "failed" && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={retryingImageIndex != null}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              retryImage(job.index);
+                            }}
+                          >
+                            {retryingImageIndex === job.index ? (
+                              <>
+                                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                                Retrying image…
+                              </>
+                            ) : (
+                              "Retry image"
+                            )}
+                          </Button>
+                        )}
                       {phase === "summary" && job.status === "done" && (
                         savedIndexes.has(job.index) ? (
                           <div className="flex items-center gap-2 text-xs">

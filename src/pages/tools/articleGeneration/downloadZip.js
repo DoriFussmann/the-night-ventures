@@ -1,9 +1,16 @@
 import JSZip from "jszip";
 import { articleFilename } from "./serializeArticleMarkdown";
 
+function b64ToUint8Array(b64) {
+  const binary = atob(String(b64 || ""));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
 /**
- * Bundle successful articles into a zip of individual .md files.
- * @param {Array<{ frontmatter: object, markdown: string }>} articles
+ * Bundle successful articles into a zip of .md files (and matching .png heroes).
+ * @param {Array<{ frontmatter: object, markdown: string, image?: { b64_json?: string } | null }>} articles
  * @param {string} [zipName]
  */
 export async function downloadArticlesZip(articles, zipName = "articles.zip") {
@@ -21,6 +28,12 @@ export async function downloadArticlesZip(articles, zipName = "articles.zip") {
     }
     used.add(name);
     zip.file(name, item.markdown || "");
+
+    const b64 = item?.image?.b64_json;
+    if (b64) {
+      const pngName = name.replace(/\.md$/i, ".png");
+      zip.file(pngName, b64ToUint8Array(b64));
+    }
   }
 
   const blob = await zip.generateAsync({ type: "blob" });
