@@ -42,11 +42,11 @@ WHERE THINGS STAND SECTION (mandatory, comes after the main body, before any clo
 <the paragraph>
 <!-- WHERE-THINGS-STAND:END -->
 
-FRONTMATTER: Generate title, description, slug, tags, imageAlt, faqs per the constraints above. keywords may be omitted or left empty — the server overwrites them. Also set: date and updatedDate to today's date (ISO format), category to the pillar keyword name, draft to true, author to null, internalLinks to an empty array, externalLinks to an empty array, image/image2/image3 to null. Include whereThingsStandSources as an array of { url, note } for sources used in the Where Things Stand paragraph (empty array if none).
+FRONTMATTER: Generate title, description, slug, tags, imageAlt, faqs per the constraints above. keywords may be omitted or left empty — the server overwrites them. Also set: date and updatedDate to today's date (ISO format), category to the pillar keyword name, draft to true, author to null, internalLinks to an empty array, externalLinks to an empty array, image/image2/image3 to null. Include whereThingsStandSources as an array of { url, note } for sources used in the Where Things Stand paragraph (empty array if none). Include competitorsMentioned: an array of every specific brand, company, or product name named anywhere in the article body (not generic category references). List every specific brand or company name mentioned in the body, even ones from the KNOWN COMPETITORS list. If none were mentioned, return an empty array.
 
 OUTPUT FORMAT (mandatory — do not wrap in markdown fences, do not write any preamble or closing note):
 <<<FRONTMATTER>>>
-{ "title", "description", "slug", "date", "updatedDate", "category", "tags": [], "imageAlt", "keywords": [], "faqs": [{"question","answer"}], "draft": true, "author": null, "internalLinks": [], "externalLinks": [], "image": null, "image2": null, "image3": null, "whereThingsStandSources": [{"url","note"}] }
+{ "title", "description", "slug", "date", "updatedDate", "category", "tags": [], "imageAlt", "keywords": [], "faqs": [{"question","answer"}], "draft": true, "author": null, "internalLinks": [], "externalLinks": [], "image": null, "image2": null, "image3": null, "whereThingsStandSources": [{"url","note"}], "competitorsMentioned": [] }
 <<<BODY>>>
 <full markdown body as plain text with real newlines, including the Where Things Stand section>
 <<<END>>>`
@@ -338,7 +338,35 @@ function countOccurrences(haystack, needle) {
   return count
 }
 
-function validateGeneratedArticle(frontmatter, body) {
+function looksLikeCapitalizedBrandPhrases(body) {
+  // Soft heuristic only: 2+ consecutive Capitalized words in prose
+  // (ignore markdown headings / HTML comments — Title Case is common there).
+  const prose = String(body || '')
+    .replace(/^#+\s+.*$/gm, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+  return /(?:\b[A-Z][a-zA-Z0-9&']+(?:\s+[A-Z][a-zA-Z0-9&']+)+\b)/.test(prose)
+}
+
+function isAuthorizedCompetitorMention(mentioned, authorizedNames) {
+  const m = String(mentioned || '')
+    .toLowerCase()
+    .trim()
+  if (!m) return true
+  return authorizedNames.some((auth) => {
+    const a = String(auth || '')
+      .toLowerCase()
+      .trim()
+    if (!a) return false
+    // Exact or reasonable substring either way ("Etsy" vs "Etsy sellers").
+    return m === a || m.includes(a) || a.includes(m)
+  })
+}
+
+function validateGeneratedArticle(
+  frontmatter,
+  body,
+  { competitors = [], competitorsMentioned } = {}
+) {
   const errors = []
   const fm = frontmatter && typeof frontmatter === 'object' ? frontmatter : {}
   const title = String(fm.title || '')
@@ -391,6 +419,29 @@ function validateGeneratedArticle(frontmatter, body) {
       if (!faq.question) errors.push(`faqs[${i}].question is empty`)
       if (!faq.answer) errors.push(`faqs[${i}].answer is empty`)
     })
+  }
+
+  // Self-reported brand names — missing/non-array treated as empty (soft), not a hard fail.
+  const mentioned = Array.isArray(competitorsMentioned)
+    ? asStringArray(competitorsMentioned)
+    : asStringArray(fm.competitorsMentioned)
+  const authorized = (Array.isArray(competitors) ? competitors : [])
+    .map((c) => String(c?.name || '').trim())
+    .filter(Boolean)
+  const authorizedLabel = authorized.join(', ') || '(none)'
+
+  if (mentioned.length === 0 && looksLikeCapitalizedBrandPhrases(bodyText)) {
+    console.warn(
+      'generate-article: competitorsMentioned empty/missing but body appears to contain capitalized multi-word phrases that may be brand names'
+    )
+  }
+
+  for (const name of mentioned) {
+    if (!isAuthorizedCompetitorMention(name, authorized)) {
+      errors.push(
+        `Unauthorized competitor named: "${name}". Only these are allowed: ${authorizedLabel}. Remove or genericize this reference.`
+      )
+    }
   }
 
   return errors
@@ -917,8 +968,14 @@ function buildUserPrompt({
       const url = competitor.url || '(no url)'
       parts.push(`- ${label}: ${url}`)
     }
+    parts.push(
+      'If the article discusses or compares alternatives/other products, you may describe them generically (e.g. "other prompted journals" or "mass-market alternatives") WITHOUT naming a specific brand, UNLESS that brand is in the known competitors list above. Never name a brand, company, or product that is not in this list.'
+    )
   } else {
     parts.push('KNOWN COMPETITORS: (none saved)')
+    parts.push(
+      'No competitor brands are authorized. If the article discusses or compares alternatives/other products, describe them ONLY generically (e.g. "other prompted journals" or "mass-market alternatives") — do not name any specific brand, company, or product.'
+    )
   }
 
   parts.push(
@@ -953,6 +1010,7 @@ function buildUserPrompt({
     '- imageAlt: minimum 10 characters, genuinely descriptive of a plausible hero image for this article (even though the real image is added manually later)',
     '- keywords: optional in your JSON (server overwrites from targetKeyword / supportingKeyword / pillarKeyword).',
     '- whereThingsStandSources: array of { url, note } for web-search sources actually used in the Where Things Stand paragraph (empty array if none).',
+    '- competitorsMentioned: array of every specific brand/company/product name mentioned anywhere in the article body (not generic category references). List every specific brand or company name mentioned in the body, even ones from the KNOWN COMPETITORS list. If none were mentioned, return an empty array.',
     '- faqs: array of 2-4 { question, answer } objects, genuinely useful, distinct from the body content, not filler',
     '',
     audienceInstructionLine(audience),
@@ -983,7 +1041,7 @@ function buildParseRecoveryMessage() {
     'Your previous response could not be parsed. Do not apologize or explain.',
     'Resend the COMPLETE article now using this exact delimiter format (no markdown fences, no preamble):',
     `${FM_START}`,
-    '{ "title": "...", "description": "...", "slug": "...", "date": "YYYY-MM-DD", "updatedDate": "YYYY-MM-DD", "category": "...", "tags": [], "imageAlt": "...", "keywords": [], "faqs": [{"question":"...","answer":"..."}], "draft": true, "author": null, "internalLinks": [], "externalLinks": [], "image": null, "image2": null, "image3": null, "whereThingsStandSources": [{"url":"...","note":"..."}] }',
+    '{ "title": "...", "description": "...", "slug": "...", "date": "YYYY-MM-DD", "updatedDate": "YYYY-MM-DD", "category": "...", "tags": [], "imageAlt": "...", "keywords": [], "faqs": [{"question":"...","answer":"..."}], "draft": true, "author": null, "internalLinks": [], "externalLinks": [], "image": null, "image2": null, "image3": null, "whereThingsStandSources": [{"url":"...","note":"..."}], "competitorsMentioned": [] }',
     `${BODY_START}`,
     '<full markdown body including Where Things Stand markers>',
     `${BODY_END}`,
@@ -1126,10 +1184,21 @@ export default async function handler(req, res) {
       supportingKeyword,
       articleType: article.type,
     }
+    const validationOpts = () => ({
+      competitors,
+      // Read from raw model frontmatter before coerce strips working fields.
+      competitorsMentioned: parsed?.frontmatter?.competitorsMentioned,
+    })
     let whereThingsStandSources = extractWhereThingsStandSources(parsed.frontmatter)
+    // coerceFrontmatter whitelists schema fields only — competitorsMentioned is
+    // intentionally omitted from the returned CMS frontmatter after validation.
     let frontmatter = coerceFrontmatter(parsed.frontmatter, coerceOpts)
     let articleBody = processArticleBody(String(parsed.body || ''))
-    let validationErrors = validateGeneratedArticle(frontmatter, articleBody)
+    let validationErrors = validateGeneratedArticle(
+      frontmatter,
+      articleBody,
+      validationOpts()
+    )
     let lengthAdjusted = false
 
     // Up to 2 corrective retries (3 total generation attempts).
@@ -1158,7 +1227,11 @@ export default async function handler(req, res) {
         whereThingsStandSources = extractWhereThingsStandSources(parsed.frontmatter)
         frontmatter = coerceFrontmatter(parsed.frontmatter, coerceOpts)
         articleBody = processArticleBody(String(parsed.body || ''))
-        validationErrors = validateGeneratedArticle(frontmatter, articleBody)
+        validationErrors = validateGeneratedArticle(
+          frontmatter,
+          articleBody,
+          validationOpts()
+        )
       } catch (err) {
         console.error('generate-article corrective parse failed:', err)
         return json(res, 422, {
@@ -1177,7 +1250,11 @@ export default async function handler(req, res) {
       if (fallback.changed) {
         frontmatter = fallback.frontmatter
         lengthAdjusted = true
-        validationErrors = validateGeneratedArticle(frontmatter, articleBody)
+        validationErrors = validateGeneratedArticle(
+          frontmatter,
+          articleBody,
+          validationOpts()
+        )
       }
     }
 
