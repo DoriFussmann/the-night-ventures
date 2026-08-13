@@ -1,5 +1,7 @@
 /** Predefined Site Build Flow stages and items (seeded per company on first load). */
 
+import { PHASE_1_AUDIT_PROMPT } from "../templateToPrompt/phase1AuditPrompt";
+
 export const STATUSES = ["open", "wip", "done"];
 
 export const STATUS_META = {
@@ -27,12 +29,10 @@ export const STAGES = [
   { stage_key: "infra-qa", name: "Initial Infrastructure Build QA", order_index: 1 },
   { stage_key: "design", name: "Design", order_index: 2 },
   { stage_key: "deployment", name: "Deployment", order_index: 3 },
-  { stage_key: "make-it-specific", name: "From Template to Specific Site", order_index: 4 },
-  { stage_key: "site-content", name: "Site Content", order_index: 5 },
-  { stage_key: "seed-content", name: "Seed Content", order_index: 6 },
-  { stage_key: "connection-layer", name: "Connection Layer", order_index: 7 },
-  { stage_key: "links-wiring", name: "Links Wiring", order_index: 8 },
-  { stage_key: "seed-qa", name: "Initial Seed Content QA", order_index: 9 },
+  { stage_key: "site-activation", name: "Site Activation", order_index: 4 },
+  { stage_key: "connection-layer", name: "Connection Layer", order_index: 5 },
+  { stage_key: "links-wiring", name: "Links Wiring", order_index: 6 },
+  { stage_key: "seed-qa", name: "Initial Seed Content QA", order_index: 7 },
 ];
 
 export const PREDEFINED_ITEMS = {
@@ -175,21 +175,17 @@ export const PREDEFINED_ITEMS = {
   design: [
     {
       item_key: "create-new-theme-in-design-builder",
-      title: "Create a new theme in Design Builder",
-      description: "Go to Design Builder in TNV, create a New Theme.",
+      title: "Open Design Builder",
+      description:
+        "Go to Design Builder in TNV. Confirm Company Data is loaded; fill optional brand-vibe fields if you have a preference.",
       prompts: [],
     },
     {
       item_key: "generate-or-provide-design-guide",
-      title: "Generate or provide Design Guide.md",
+      title: "Generate Design Guide.md",
       description:
-        "Drag & drop your design guidelines document into the New Theme's drop area, or use an LLM to draft one from scratch.",
-      prompts: [
-        {
-          label: "LLM prompt to draft a design guide",
-          text: "I want to create a Design Guidelines document. Based on what you know and what you are reading and your view on the business, can you provide such documentation? generally, I like the font Inter thin, and not using Bold. No dark mode required, and light mode.",
-        },
-      ],
+        "Click Generate Design Guide. Review the markdown, edit if needed, then Save (this also writes Company Data Design Guidelines and generates the abstract).",
+      prompts: [],
     },
     {
       item_key: "download-design-guide",
@@ -213,9 +209,9 @@ export const PREDEFINED_ITEMS = {
     },
     {
       item_key: "generate-design-guidelines-abstract",
-      title: "Generate Design Guidelines abstract in Company Data",
+      title: "Confirm Design Guidelines abstract",
       description:
-        "Go to Company Data, click Design Guidelines, paste the Design Guide.md content there to generate the design abstract used elsewhere in TNV.",
+        "Saving in Design Builder already writes the Design Guide and generates the abstract in Company Data. Open Company Data → Design Guidelines to confirm the abstract looks right.",
       prompts: [],
     },
   ],
@@ -316,13 +312,18 @@ export const PREDEFINED_ITEMS = {
       prompts: [],
     },
   ],
-  "make-it-specific": [
+  "site-activation": [
     {
       item_key: "run-the-audit-prompt",
       title: "Run the audit prompt",
       description:
         "Go to Specific Prompt in TNV, copy the Audit Prompt (Tab 1), paste into Cursor and run it.",
-      prompts: [],
+      prompts: [
+        {
+          label: "Phase 1 audit prompt",
+          text: PHASE_1_AUDIT_PROMPT,
+        },
+      ],
     },
     {
       item_key: "generate-the-personalize-prompt",
@@ -330,6 +331,8 @@ export const PREDEFINED_ITEMS = {
       description:
         "Paste Cursor's audit response into Specific Prompt's Personalize Prompt tab (Tab 2).",
       prompts: [],
+      linkTo: "/company/:companyId/template-to-prompt?tab=personalize",
+      linkLabel: "Open Specific Prompt →",
     },
     {
       item_key: "resolve-remaining-input-fields",
@@ -351,52 +354,6 @@ export const PREDEFINED_ITEMS = {
         "Visit your live custom domain and do a quick visual review.",
       prompts: [],
     },
-  ],
-  "site-content": [
-    {
-      item_key: "go-to-site-content-build",
-      title: "Go to Site Content Build",
-      description:
-        "Open Site Content Build in TNV (SEO Tools). Confirm Company Data has product name, descriptions, services, team, and Design Guidelines abstract filled — Generate Prompt pulls these in automatically.",
-      prompts: [],
-    },
-    {
-      item_key: "run-audit-prompt-in-cursor",
-      title: "Run Audit Prompt on the destination website",
-      description:
-        "In Site Content Build → Audit Prompt (Tab 1), copy the prompt. Paste it into Cursor in the destination website repo and run it (read-only).",
-      prompts: [],
-    },
-    {
-      item_key: "paste-audit-into-build-prompt",
-      title: "Paste Cursor audit into Build Prompt",
-      description:
-        "Go to Site Content Build → Build Prompt (Tab 2). Paste Cursor's audit report into the Audit report field.",
-      prompts: [],
-    },
-    {
-      item_key: "generate-site-content-prompt",
-      title: "Generate Prompt",
-      description:
-        "Before generating, confirm the From Company Data panel looks complete. Select pages to build, optionally paste real FAQ Q&As, then click Generate Prompt at the bottom. If Design Guidelines or services/team are missing, fix them in Company Data and regenerate.",
-      prompts: [],
-    },
-    {
-      item_key: "paste-generated-prompt-into-cursor",
-      title: "Paste generated prompt into Cursor to build",
-      description:
-        "Copy the Assembled prompt from Site Content Build and paste it into Cursor in the destination site repo to build the pages.",
-      prompts: [],
-    },
-    {
-      item_key: "wait-complete-and-review",
-      title: "Wait for complete and review",
-      description:
-        "When Cursor finishes, review the built pages: clean build, new routes, nav/footer links. Commit and push when satisfied.",
-      prompts: [],
-    },
-  ],
-  "seed-content": [
     {
       item_key: "add-pillar-keywords",
       title: "Add pillar keywords to Company Data",
@@ -409,13 +366,6 @@ export const PREDEFINED_ITEMS = {
       title: "Determine supporting keywords",
       description:
         "For each pillar, work out supporting keywords (currently a manual process via Claude) and add them under the relevant pillar in Company Data.",
-      prompts: [],
-    },
-    {
-      item_key: "pull-keyword-data-via-keyword-slip",
-      title: "Pull keyword data via Keyword Slip",
-      description:
-        "In Claude, use the Keyword Slip tool — enter the pillar and supporting keyword, confirm the Audience field matches your Company Data positioning, and copy the results.",
       prompts: [],
     },
     {
@@ -468,14 +418,7 @@ export const PREDEFINED_ITEMS = {
       prompts: [],
     },
     {
-      item_key: "wire-internal-and-external-links",
-      title: "Wire internal and external links",
-      description:
-        "Back in the CMS, edit each published article to add internal links (to cluster siblings and the pillar) and external links (from real sources). Republish each edited article.",
-      prompts: [],
-    },
-    {
-      item_key: "commit-and-push",
+      item_key: "commit-and-push-seed",
       title: "Commit and push",
       description: "Commit and push all changes.",
       prompts: [],
@@ -497,17 +440,17 @@ export const PREDEFINED_ITEMS = {
       prompts: [],
     },
     {
-      item_key: "submit-sitemap-bing-webmaster-tools",
-      title: "Submit sitemap to Bing Webmaster Tools",
-      description:
-        "In Bing Webmaster Tools, submit the same sitemap-index.xml URL. If you imported from Search Console, check whether the sitemap carried over automatically — if not, add it manually.",
-      prompts: [],
-    },
-    {
       item_key: "verify-bing-webmaster-tools",
       title: "Verify Bing Webmaster Tools",
       description:
         "Add your site to Bing Webmaster Tools — can import directly from Search Console.",
+      prompts: [],
+    },
+    {
+      item_key: "submit-sitemap-bing-webmaster-tools",
+      title: "Submit sitemap to Bing Webmaster Tools",
+      description:
+        "In Bing Webmaster Tools, submit the same sitemap-index.xml URL. If you imported from Search Console, check whether the sitemap carried over automatically — if not, add it manually.",
       prompts: [],
     },
     {
@@ -645,3 +588,15 @@ export const PREDEFINED_ITEMS = {
     },
   ],
 };
+
+export function resolveItemLink(stageKey, itemKey, companyId) {
+  if (!stageKey || !itemKey || !companyId) return null;
+  const entry = (PREDEFINED_ITEMS[stageKey] || []).find(
+    (item) => item.item_key === itemKey
+  );
+  if (!entry?.linkTo) return null;
+  return {
+    to: entry.linkTo.replaceAll(":companyId", companyId),
+    label: entry.linkLabel || "Open →",
+  };
+}

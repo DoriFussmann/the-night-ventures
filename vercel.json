@@ -3,9 +3,6 @@
   "outputDirectory": "dist",
   "framework": "vite",
   "rewrites": [
-    { "source": "/api/design-guide-abstract", "destination": "/api/design-guide?action=abstract" },
-    { "source": "/api/design-guide-complete", "destination": "/api/design-guide?action=complete" },
-    { "source": "/api/design-guide-extract", "destination": "/api/design-guide?action=extract" },
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]

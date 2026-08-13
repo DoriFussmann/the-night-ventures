@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ChevronDown, Copy, Loader2, Plus, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
@@ -74,8 +74,23 @@ function CompanyDataEmptyHint({ companyId }) {
   );
 }
 
+const TAB_VALUES = ["audit", "personalize"];
+
 export default function TemplateToPrompt() {
   const { companyId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const activeTab = TAB_VALUES.includes(tabParam) ? tabParam : "audit";
+
+  const handleTabChange = (value) => {
+    const next = new URLSearchParams(searchParams);
+    if (value === "audit") {
+      next.delete("tab");
+    } else {
+      next.set("tab", value);
+    }
+    setSearchParams(next, { replace: true });
+  };
 
   const [companyName, setCompanyName] = useState("");
   const [loading, setLoading] = useState(true);
@@ -303,7 +318,7 @@ export default function TemplateToPrompt() {
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
-      <Tabs defaultValue="audit">
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList>
           <TabsTrigger value="audit">Audit Prompt</TabsTrigger>
           <TabsTrigger value="personalize">Personalize Prompt</TabsTrigger>

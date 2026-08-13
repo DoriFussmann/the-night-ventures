@@ -6,8 +6,9 @@ import { Textarea } from "@/components/ui/textarea";
 
 const DOC_KEYS = [
   "site_build_prompt",
-  "site_build_checklist",
   "design_system_prompt",
+  "second_design_prompt",
+  "second_functionality_prompt",
 ];
 
 function downloadMarkdown(filename, content) {

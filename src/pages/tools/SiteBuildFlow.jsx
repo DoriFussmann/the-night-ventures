@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { ChevronDown, Copy, Loader2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { supabase } from "@/lib/supabase";
@@ -12,6 +12,7 @@ import {
   PREDEFINED_ITEMS,
   STATUS_META,
   nextStatus,
+  resolveItemLink,
 } from "./siteBuildFlow/seedData";
 
 const STAGE_SELECT =
@@ -282,8 +283,38 @@ export default function SiteBuildFlow() {
         );
       }
 
+      const allowedKeysByStage = new Map(
+        STAGES.map((stage) => [
+          stage.stage_key,
+          new Set(
+            (PREDEFINED_ITEMS[stage.stage_key] || []).map((entry) => entry.item_key)
+          ),
+        ])
+      );
+      const staleItems = items.filter((item) => {
+        const allowed = allowedKeysByStage.get(item.stage_key);
+        return allowed && !allowed.has(item.item_key);
+      });
+      if (staleItems.length > 0) {
+        const staleIds = staleItems.map((item) => item.id);
+        const { error: staleError } = await supabase
+          .from("setup_flow_items")
+          .delete()
+          .in("id", staleIds);
+
+        if (staleError) {
+          console.error(staleError);
+          setError(staleError.message || "Failed to remove retired checklist items");
+          setLoading(false);
+          return;
+        }
+
+        items = items.filter((item) => !staleIds.includes(item.id));
+      }
+
       const missingRows = [];
       const sortUpdates = [];
+      const promptUpdates = [];
 
       for (const stage of STAGES) {
         const predefined = PREDEFINED_ITEMS[stage.stage_key] || [];
@@ -307,8 +338,15 @@ export default function SiteBuildFlow() {
               note: null,
               sort_order: index,
             });
-          } else if (existing.sort_order !== index) {
-            sortUpdates.push({ id: existing.id, sort_order: index });
+          } else {
+            if (existing.sort_order !== index) {
+              sortUpdates.push({ id: existing.id, sort_order: index });
+            }
+            const seedPrompts = entry.prompts || [];
+            const existingPrompts = existing.prompts || [];
+            if (seedPrompts.length > 0 && existingPrompts.length === 0) {
+              promptUpdates.push({ id: existing.id, prompts: seedPrompts });
+            }
           }
         });
       }
@@ -351,6 +389,32 @@ export default function SiteBuildFlow() {
         items = items.map((item) =>
           sortById.has(item.id)
             ? { ...item, sort_order: sortById.get(item.id) }
+            : item
+        );
+      }
+
+      if (promptUpdates.length > 0) {
+        const now = new Date().toISOString();
+        const promptResults = await Promise.all(
+          promptUpdates.map((u) =>
+            supabase
+              .from("setup_flow_items")
+              .update({ prompts: u.prompts, updated_at: now })
+              .eq("id", u.id)
+          )
+        );
+        const promptError = promptResults.find((r) => r.error)?.error;
+        if (promptError) {
+          console.error(promptError);
+          setError(promptError.message || "Failed to sync checklist prompts");
+          setLoading(false);
+          return;
+        }
+
+        const promptsById = new Map(promptUpdates.map((u) => [u.id, u.prompts]));
+        items = items.map((item) =>
+          promptsById.has(item.id)
+            ? { ...item, prompts: promptsById.get(item.id) }
             : item
         );
       }
@@ -714,6 +778,11 @@ export default function SiteBuildFlow() {
             activeItems.map((item) => {
               const expanded = expandedItemKey === item.item_key;
               const noteId = `setup-flow-note-${item.item_key}`;
+              const itemLink = resolveItemLink(
+                item.stage_key,
+                item.item_key,
+                companyId
+              );
 
               return (
                 <div
@@ -762,6 +831,12 @@ export default function SiteBuildFlow() {
                       <div className="prose prose-sm max-w-none text-foreground prose-p:my-2">
                         <ReactMarkdown>{item.description || ""}</ReactMarkdown>
                       </div>
+
+                      {itemLink && (
+                        <Button asChild variant="outline" size="sm">
+                          <Link to={itemLink.to}>{itemLink.label}</Link>
+                        </Button>
+                      )}
 
                       {Array.isArray(item.prompts) && item.prompts.length > 0 && (
                         <div className="space-y-3">

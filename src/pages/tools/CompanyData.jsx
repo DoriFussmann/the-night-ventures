@@ -1154,7 +1154,7 @@ export default function CompanyData() {
     setDesignGuideDraftAbstract("");
 
     try {
-      const res = await fetch("/api/design-guide-abstract", {
+      const res = await fetch("/api/design-guide?action=abstract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ raw }),

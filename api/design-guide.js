@@ -1,5 +1,11 @@
 import Anthropic from '@anthropic-ai/sdk'
 
+export const config = {
+  maxDuration: 120,
+}
+
+const MODEL = 'claude-sonnet-4-6'
+
 function json(res, status, body) {
   res.statusCode = status
   res.setHeader('Content-Type', 'application/json')
@@ -8,12 +14,6 @@ function json(res, status, body) {
 
 function parseBody(req) {
   return typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {}
-}
-
-function parseModelJson(text) {
-  let cleaned = String(text || '').trim()
-  cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
-  return JSON.parse(cleaned)
 }
 
 function resolveAction(req, body) {
@@ -28,14 +28,54 @@ function resolveAction(req, body) {
   return ''
 }
 
+function unwrapMarkdown(text) {
+  let cleaned = String(text || '').trim()
+  cleaned = cleaned.replace(/^```(?:markdown|md)?\s*/i, '').replace(/\s*```$/i, '').trim()
+  return cleaned
+}
+
+function textFromMessage(message) {
+  const textBlock = Array.isArray(message?.content)
+    ? message.content.find((block) => block?.type === 'text')
+    : null
+  return String(textBlock?.text || '').trim()
+}
+
 const ABSTRACT_SYSTEM =
   "Read this project's full Design Guide document. Produce a concise Design Guide Abstract (2-4 paragraphs) that captures: the brand's core visual identity (color palette — name actual hex/color values if present in the source, typography choices, and overall aesthetic/tone in a few descriptive words), and any distinctive visual patterns or motifs worth reusing in derivative brand assets (e.g. graphics, cards, social images). Write it for reuse as context in future AI generation tasks — specific and concrete (real color values, real font names), not vague marketing language. Respond with only the abstract text, no preamble, no markdown headers."
 
-const COMPLETE_SYSTEM =
-  'You help complete a Design Guide document for a website build. You are given the fields already filled in ("context") and a list of missing field keys ("missingKeys"). Propose plausible, internally consistent suggested values for ONLY the keys in missingKeys — derive them from the context (match the stated brand feel, existing colors, typography, tone) using good design-system judgment. Return ONLY strict JSON mapping each missing key to a suggested string value, with no extra keys and no prose outside the JSON. Keep each value concise (under 20 words, except antiPatterns/toneAvoid/brandValues/homepageSections which can be a short list-style sentence). If context includes a "namedPalette" field describing colors by name rather than hex, and any color fields are in missingKeys, resolve each to a real, sensible hex value matching the named color as closely as possible — use your best judgment, staying true to the described mood. Color fields must always be valid hex strings in your output. If you have no reasonable basis for a specific key even given the context, omit that key rather than guessing wildly.'
+const GENERATE_SYSTEM = `You write a complete Design Guide.md for a real company website.
 
-const EXTRACT_SYSTEM =
-  'You extract design-guide data points from uploaded brand material. Return ONLY strict JSON (no markdown fences, no prose) with any of these keys you find clear evidence for — omit keys you have no evidence for, never invent values: brandName, brandFeel, mission, brandValues, emotionalGoal, brandRefs, namedPalette, colorPrimary, colorSecondary, colorAccent, colorBg, colorSurface, colorBorder, colorTextMuted, colorHeading, colorBody, colorSuccess, colorWarning, colorError, fontHeading, fontBody, fontMono, typeFeel, typeScale, lineHeight, fontWeights, baseUnit, maxArticleWidth, maxContainerWidth, breakpoints, gridSystem, compButtons, compCards, compForms, compNav, compFooter, compLinks, photoStyle, photoSubjects, photoUse, photoAvoid, iconSet, imageTreatment, illustrationStyle, illustrationThemes, toneAdjectives, motionLevel, motionIdeas, toneAvoid, voiceTone, voiceAvoidWords, voicePreferredPhrases, homepageSections, heroHeadline, heroSubheadline, heroCTA, antiPatterns. If the source material gives named colors without hex codes, put that description in namedPalette as text — do NOT guess hex codes from this extraction step. Color values must be hex strings ONLY if the source gives an actual hex/RGB value directly. Keep text values concise (under 20 words each, except brandValues/homepageSections/voicePreferredPhrases which may be short lists).'
+Output ONLY the markdown document. No preamble, no wrapping fences.
+
+This is a working brand/design-system document a developer will drop at the project root and apply. It must be specific to THIS company — use the real product name, domain, positioning, services, and audience from the context. Do not write a generic SaaS/agency template. Do not leave placeholders, TODOs, or "_(not set)_" rows. Do not dump a field-by-field form.
+
+Write in clear markdown with these sections (use these headings, expand with real guidance under each):
+
+# Design Guide
+
+## Brand identity
+Name, tagline if implied, intended feel in one sentence, mission, values, emotional goal for visitors, and a few reference brands/anti-references that actually fit this business.
+
+## Color palette
+A concrete, named palette with real hex values you reason from the brand feel and category — not empty tokens. Include primary, secondary, accent, background, surface, border, muted text, heading, body, success, warning, error. State whether dark mode is required (default: no, light mode only, unless the vibe says otherwise). State a minimum contrast target (WCAG AA unless the vibe asks for more). Briefly justify the palette in one short paragraph so a designer can tell it belongs to this brand.
+
+## Typography
+Specific font families (prefer widely available web fonts). Heading vs body (and mono if useful). Type feel, a practical type scale with px sizes, line-height, and which weights to use or avoid.
+
+## Spacing & layout
+Base unit, max article width, max container width, breakpoints, and grid/spacing rhythm. Editorial/content sites should feel readable, not dashboard-dense.
+
+## Imagery & photography
+What photos should look like, subjects, how they are used, what to avoid, icon direction, image treatment.
+
+## Tone, voice & motion
+Tone adjectives, voice do/don't, motion level and ideas. Match the company's actual writing posture.
+
+## Explicit anti-patterns
+A concrete list of things this brand must not do (generic startup purple, heavy bold, dark-mode-for-its-own-sake, stock-handshake photography, etc. — only if they actually clash with THIS brand).
+
+If the user left color/typography/tone as "no preference", choose confidently from the company context. Prefer restraint and specificity over decoration.`
 
 async function handleAbstract(req, res, body, apiKey) {
   const raw = String(body.raw || '').trim()
@@ -45,7 +85,7 @@ async function handleAbstract(req, res, body, apiKey) {
 
   const anthropic = new Anthropic({ apiKey })
   const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
+    model: MODEL,
     max_tokens: 800,
     system: ABSTRACT_SYSTEM,
     messages: [
@@ -63,11 +103,7 @@ async function handleAbstract(req, res, body, apiKey) {
     })
   }
 
-  const textBlock = Array.isArray(message?.content)
-    ? message.content.find((block) => block?.type === 'text')
-    : null
-  const abstract = String(textBlock?.text || '').trim()
-
+  const abstract = textFromMessage(message)
   if (!abstract) {
     return json(res, 502, { error: 'No text content in Anthropic response' })
   }
@@ -75,150 +111,63 @@ async function handleAbstract(req, res, body, apiKey) {
   return json(res, 200, { abstract })
 }
 
-async function handleComplete(req, res, body, apiKey) {
-  const context = body.context
-  const missingKeys = body.missingKeys
+async function handleGenerate(req, res, body, apiKey) {
+  const company = body.company
+  const vibe = body.vibe && typeof body.vibe === 'object' ? body.vibe : {}
 
-  if (!context || typeof context !== 'object' || Array.isArray(context)) {
-    return json(res, 400, { error: 'context must be an object' })
-  }
-  if (!Array.isArray(missingKeys) || missingKeys.length === 0) {
-    return json(res, 400, { error: 'missingKeys must be a non-empty array' })
+  if (!company || typeof company !== 'object' || Array.isArray(company)) {
+    return json(res, 400, { error: 'company must be an object' })
   }
 
-  const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-5',
-      max_tokens: 4096,
-      system: COMPLETE_SYSTEM,
-      messages: [
-        {
-          role: 'user',
-          content: [{ type: 'text', text: JSON.stringify({ context, missingKeys }) }],
-        },
-      ],
-    }),
+  const anthropic = new Anthropic({ apiKey })
+  const message = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 8000,
+    system: GENERATE_SYSTEM,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: [
+              'Write the Design Guide.md for this company.',
+              '',
+              'Company data:',
+              JSON.stringify(company, null, 2),
+              '',
+              'Brand vibe inputs (empty means no preference — choose for them):',
+              JSON.stringify(
+                {
+                  brandFeel: String(vibe.brandFeel || '').trim(),
+                  colorPreference: String(vibe.colorPreference || '').trim(),
+                  typographyPreference: String(vibe.typographyPreference || '').trim(),
+                  toneAdjectives: String(vibe.toneAdjectives || '').trim(),
+                  antiPatterns: String(vibe.antiPatterns || '').trim(),
+                },
+                null,
+                2
+              ),
+            ].join('\n'),
+          },
+        ],
+      },
+    ],
   })
 
-  const anthropicData = await anthropicRes.json().catch(() => null)
-
-  if (!anthropicRes.ok) {
-    const message =
-      anthropicData?.error?.message ||
-      anthropicData?.error ||
-      `Anthropic API error (${anthropicRes.status})`
-    console.error('design-guide complete Anthropic error:', message)
-    return json(res, 502, { error: String(message) })
+  if (message?.stop_reason === 'max_tokens') {
+    console.error('design-guide generate truncated at max_tokens')
+    return json(res, 502, {
+      error: 'Model response was truncated. Try generating again.',
+    })
   }
 
-  const textBlock = Array.isArray(anthropicData?.content)
-    ? anthropicData.content.find((block) => block?.type === 'text')
-    : null
-
-  if (!textBlock?.text) {
+  const markdown = unwrapMarkdown(textFromMessage(message))
+  if (!markdown) {
     return json(res, 502, { error: 'No text content in Anthropic response' })
   }
 
-  let parsed
-  try {
-    parsed = parseModelJson(textBlock.text)
-  } catch (parseErr) {
-    console.error('design-guide complete JSON parse failed:', parseErr)
-    return json(res, 502, { error: 'Failed to parse model JSON response' })
-  }
-
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return json(res, 502, { error: 'Model response was not a JSON object' })
-  }
-
-  return json(res, 200, parsed)
-}
-
-async function handleExtract(req, res, body, apiKey) {
-  const fileType = body.fileType
-  const content = body.content
-
-  if (fileType !== 'pdf' && fileType !== 'text') {
-    return json(res, 400, { error: 'fileType must be "pdf" or "text"' })
-  }
-  if (typeof content !== 'string' || !content.trim()) {
-    return json(res, 400, { error: 'content is required' })
-  }
-
-  let messageContent
-  if (fileType === 'pdf') {
-    messageContent = [
-      {
-        type: 'document',
-        source: {
-          type: 'base64',
-          media_type: 'application/pdf',
-          data: content,
-        },
-      },
-      {
-        type: 'text',
-        text: 'Extract design-guide data points from this document.',
-      },
-    ]
-  } else {
-    const text = content.length > 12000 ? content.slice(0, 12000) : content
-    messageContent = [{ type: 'text', text }]
-  }
-
-  const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-5',
-      max_tokens: 4096,
-      system: EXTRACT_SYSTEM,
-      messages: [{ role: 'user', content: messageContent }],
-    }),
-  })
-
-  const anthropicData = await anthropicRes.json().catch(() => null)
-
-  if (!anthropicRes.ok) {
-    const message =
-      anthropicData?.error?.message ||
-      anthropicData?.error ||
-      `Anthropic API error (${anthropicRes.status})`
-    console.error('design-guide extract Anthropic error:', message)
-    return json(res, 502, { error: String(message) })
-  }
-
-  const textBlock = Array.isArray(anthropicData?.content)
-    ? anthropicData.content.find((block) => block?.type === 'text')
-    : null
-
-  if (!textBlock?.text) {
-    return json(res, 502, { error: 'No text content in Anthropic response' })
-  }
-
-  let parsed
-  try {
-    parsed = parseModelJson(textBlock.text)
-  } catch (parseErr) {
-    console.error('design-guide extract JSON parse failed:', parseErr)
-    return json(res, 502, { error: 'Failed to parse model JSON response' })
-  }
-
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return json(res, 502, { error: 'Model response was not a JSON object' })
-  }
-
-  return json(res, 200, parsed)
+  return json(res, 200, { markdown })
 }
 
 export default async function handler(req, res) {
@@ -246,15 +195,12 @@ export default async function handler(req, res) {
     if (action === 'abstract') {
       return await handleAbstract(req, res, body, apiKey)
     }
-    if (action === 'complete') {
-      return await handleComplete(req, res, body, apiKey)
-    }
-    if (action === 'extract') {
-      return await handleExtract(req, res, body, apiKey)
+    if (action === 'generate') {
+      return await handleGenerate(req, res, body, apiKey)
     }
 
     return json(res, 400, {
-      error: 'action is required (abstract | complete | extract)',
+      error: 'action is required (abstract | generate)',
     })
   } catch (err) {
     console.error('design-guide error:', err)
