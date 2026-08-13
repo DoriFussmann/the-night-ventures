@@ -83,6 +83,30 @@ export const PREDEFINED_ITEMS = {
         "Copy the 'Build Prompt' from Site Build Prompt in TNV, and paste it into Cursor to scaffold the infrastructure.",
       prompts: [],
     },
+    {
+      item_key: "copy-infra-addendum-prompt",
+      title: "Infra Addendum Prompt",
+      description:
+        "Copy the prompt below and paste it into Cursor after the infrastructure scaffold, before applying the design system.",
+      prompts: [
+        {
+          label: "Infra Addendum Prompt",
+          text: `Add a batch upload mode to the "Add Article" screen, alongside the existing single-file flow — reuse all existing validation/write logic, do not duplicate it.
+
+1. Change the .md drop zone to accept multiple files at once (drag-and-drop or click-to-browse, multi-select).
+2. On drop, parse each file individually using the exact same parsing/validation logic already used for single-file upload. Render as a list — one row per file: filename/slug, a compact status (using the existing Missing Fields logic — collapsed panel per row, same pattern already built, showing only what's actually missing).
+3. BATCH-LEVEL CONTROLS (apply to all rows at once, with per-row override still available):
+   - One Author dropdown (same team-collection source as the single-file form) — selecting it fills every row's author field; any row can still be changed individually.
+   - One hero image drop zone — dropping an image here applies it as the hero for every row in the batch; any row can still get its own individual image dropped to override.
+4. Each row still shows its own remaining missing/invalid fields (if any) after batch-apply — e.g. if a specific file's title is out of the 55-60 char range, that's still flagged per-row, batch controls only cover author/image.
+5. "Generate All" button: enabled once every row has zero missing required fields. Runs the existing single-file Generate logic sequentially, one file at a time (not parallel — consistent with every other batch action across this project), with a progress indicator ("Generating 4 of 10: {slug}"). Per-row status updates live (pending → done ✓ / failed ✗ with reason) — a failure on one file does not stop the rest.
+6. Trigger generateLlmsTxt once after the full batch completes, not once per file — avoids redundant rebuilds.
+7. Keep the existing single-file flow fully intact and working — this is an additional mode, not a replacement.
+
+Verify: drop 5-10 real .md files at once, set author + hero image once via the batch controls, confirm per-row overrides still work, Generate All writes every file correctly with the same validation guarantees as the single-file flow, llms.txt rebuilds once at the end.`,
+        },
+      ],
+    },
   ],
   "infra-qa": [
     {
