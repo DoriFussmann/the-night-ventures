@@ -31,8 +31,9 @@ export const STAGES = [
   { stage_key: "deployment", name: "Deployment", order_index: 3 },
   { stage_key: "site-activation", name: "Site Activation", order_index: 4 },
   { stage_key: "connection-layer", name: "Connection Layer", order_index: 5 },
-  { stage_key: "links-wiring", name: "Links Wiring", order_index: 6 },
-  { stage_key: "seed-qa", name: "Initial Seed Content QA", order_index: 7 },
+  { stage_key: "post-activation-prompts", name: "Post Activation Prompts", order_index: 6 },
+  { stage_key: "links-wiring", name: "Links Wiring", order_index: 7 },
+  { stage_key: "seed-qa", name: "Initial Seed Content QA", order_index: 8 },
 ];
 
 export const PREDEFINED_ITEMS = {
@@ -503,6 +504,22 @@ Verify: drop 5-10 real .md files at once, set author + hero image once via the b
       title: "Run a GTmetrix baseline",
       description:
         "Run your live site through GTmetrix and record the baseline scores.",
+      prompts: [],
+    },
+  ],
+  "post-activation-prompts": [
+    {
+      item_key: "run-second-design-prompt",
+      title: "Run Second Design Prompt",
+      description:
+        "Go to Site Build Prompt in TNV, copy the 'Second Design Prompt', paste into Cursor and run it.",
+      prompts: [],
+    },
+    {
+      item_key: "run-second-functionality-prompt",
+      title: "Run Second Functionality Prompt",
+      description:
+        "Go to Site Build Prompt in TNV, copy the 'Second Functionality Prompt', paste into Cursor and run it.",
       prompts: [],
     },
   ],
