@@ -283,6 +283,7 @@ export default function SiteBuildFlow() {
         );
       }
 
+      const allowedStageKeys = new Set(STAGES.map((stage) => stage.stage_key));
       const allowedKeysByStage = new Map(
         STAGES.map((stage) => [
           stage.stage_key,
@@ -293,7 +294,8 @@ export default function SiteBuildFlow() {
       );
       const staleItems = items.filter((item) => {
         const allowed = allowedKeysByStage.get(item.stage_key);
-        return allowed && !allowed.has(item.item_key);
+        if (!allowed) return !allowedStageKeys.has(item.stage_key);
+        return !allowed.has(item.item_key);
       });
       if (staleItems.length > 0) {
         const staleIds = staleItems.map((item) => item.id);
@@ -312,9 +314,31 @@ export default function SiteBuildFlow() {
         items = items.filter((item) => !staleIds.includes(item.id));
       }
 
+      const staleStages = stages.filter(
+        (stage) => !allowedStageKeys.has(stage.stage_key)
+      );
+      if (staleStages.length > 0) {
+        const staleStageKeys = staleStages.map((stage) => stage.stage_key);
+        const { error: staleStageError } = await supabase
+          .from("setup_flow_stages")
+          .delete()
+          .eq("company_id", companyId)
+          .in("stage_key", staleStageKeys);
+
+        if (staleStageError) {
+          console.error(staleStageError);
+          setError(staleStageError.message || "Failed to remove retired stages");
+          setLoading(false);
+          return;
+        }
+
+        stages = stages.filter((stage) => allowedStageKeys.has(stage.stage_key));
+      }
+
       const missingRows = [];
       const sortUpdates = [];
       const promptUpdates = [];
+      const metaUpdates = [];
 
       for (const stage of STAGES) {
         const predefined = PREDEFINED_ITEMS[stage.stage_key] || [];
@@ -341,6 +365,16 @@ export default function SiteBuildFlow() {
           } else {
             if (existing.sort_order !== index) {
               sortUpdates.push({ id: existing.id, sort_order: index });
+            }
+            if (
+              existing.title !== entry.title ||
+              (existing.description || "") !== (entry.description || "")
+            ) {
+              metaUpdates.push({
+                id: existing.id,
+                title: entry.title,
+                description: entry.description || "",
+              });
             }
             const seedPrompts = entry.prompts || [];
             const existingPrompts = existing.prompts || [];
@@ -389,6 +423,40 @@ export default function SiteBuildFlow() {
         items = items.map((item) =>
           sortById.has(item.id)
             ? { ...item, sort_order: sortById.get(item.id) }
+            : item
+        );
+      }
+
+      if (metaUpdates.length > 0) {
+        const now = new Date().toISOString();
+        const metaResults = await Promise.all(
+          metaUpdates.map((u) =>
+            supabase
+              .from("setup_flow_items")
+              .update({
+                title: u.title,
+                description: u.description,
+                updated_at: now,
+              })
+              .eq("id", u.id)
+          )
+        );
+        const metaError = metaResults.find((r) => r.error)?.error;
+        if (metaError) {
+          console.error(metaError);
+          setError(metaError.message || "Failed to sync checklist item text");
+          setLoading(false);
+          return;
+        }
+
+        const metaById = new Map(metaUpdates.map((u) => [u.id, u]));
+        items = items.map((item) =>
+          metaById.has(item.id)
+            ? {
+                ...item,
+                title: metaById.get(item.id).title,
+                description: metaById.get(item.id).description,
+              }
             : item
         );
       }

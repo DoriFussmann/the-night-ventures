@@ -31,9 +31,8 @@ export const STAGES = [
   { stage_key: "deployment", name: "Deployment", order_index: 3 },
   { stage_key: "site-activation", name: "Site Activation", order_index: 4 },
   { stage_key: "connection-layer", name: "Connection Layer", order_index: 5 },
-  { stage_key: "post-activation-prompts", name: "Post Activation Prompts", order_index: 6 },
-  { stage_key: "links-wiring", name: "Links Wiring", order_index: 7 },
-  { stage_key: "seed-qa", name: "Initial Seed Content QA", order_index: 8 },
+  { stage_key: "links-wiring", name: "Links Wiring", order_index: 6 },
+  { stage_key: "seed-qa", name: "Initial Seed Content QA", order_index: 7 },
 ];
 
 export const PREDEFINED_ITEMS = {
@@ -79,16 +78,16 @@ export const PREDEFINED_ITEMS = {
     },
     {
       item_key: "copy-build-prompt-into-cursor",
-      title: "Copy Build Prompt into Cursor",
+      title: "Copy Site Build Prompt into Cursor",
       description:
-        "Copy the 'Build Prompt' from Site Build Prompt in TNV, and paste it into Cursor to scaffold the infrastructure.",
+        "Copy the Site Build Prompt from TNV, and paste it into Cursor to scaffold the site.",
       prompts: [],
     },
     {
       item_key: "copy-infra-addendum-prompt",
       title: "Infra Addendum Prompt",
       description:
-        "Copy the prompt below and paste it into Cursor after the infrastructure scaffold, before applying the design system.",
+        "Copy the prompt below and paste it into Cursor after the Site Build Prompt scaffold.",
       prompts: [
         {
           label: "Infra Addendum Prompt",
@@ -223,13 +222,6 @@ Verify: drop 5-10 real .md files at once, set author + hero image once via the b
       title: "Add Design Guide.md to project root",
       description:
         "Place the downloaded file at the root of your local project folder.",
-      prompts: [],
-    },
-    {
-      item_key: "copy-apply-design-system-prompt",
-      title: "Copy Apply Design System Prompt into Cursor",
-      description:
-        "Go to Site Build Prompt in TNV, copy the 'Apply Design System Prompt', paste into Cursor (confirm Design Guide.md is present in the root first).",
       prompts: [],
     },
     {
@@ -504,22 +496,6 @@ Verify: drop 5-10 real .md files at once, set author + hero image once via the b
       title: "Run a GTmetrix baseline",
       description:
         "Run your live site through GTmetrix and record the baseline scores.",
-      prompts: [],
-    },
-  ],
-  "post-activation-prompts": [
-    {
-      item_key: "run-second-design-prompt",
-      title: "Run Second Design Prompt",
-      description:
-        "Go to Site Build Prompt in TNV, copy the 'Second Design Prompt', paste into Cursor and run it.",
-      prompts: [],
-    },
-    {
-      item_key: "run-second-functionality-prompt",
-      title: "Run Second Functionality Prompt",
-      description:
-        "Go to Site Build Prompt in TNV, copy the 'Second Functionality Prompt', paste into Cursor and run it.",
       prompts: [],
     },
   ],

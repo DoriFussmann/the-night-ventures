@@ -3,13 +3,11 @@ import { Copy, Download } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+// @ts-ignore Vite raw import
+import SITE_BUILD_PROMPT from "./siteBuildPromptContent.txt?raw";
 
-const DOC_KEYS = [
-  "site_build_prompt",
-  "design_system_prompt",
-  "second_design_prompt",
-  "second_functionality_prompt",
-];
+const DOC_KEY = "site_build_prompt";
+const DOC_TITLE = "Site Build Prompt";
 
 function downloadMarkdown(filename, content) {
   const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
@@ -44,6 +42,7 @@ function DocumentSection({ doc }) {
       .from("general_documents")
       .update({
         content,
+        title: DOC_TITLE,
         updated_at: new Date().toISOString(),
       })
       .eq("id", doc.id);
@@ -75,14 +74,14 @@ function DocumentSection({ doc }) {
 
   return (
     <section className="space-y-3">
-      <h2 className="text-xs text-foreground">{doc.title}</h2>
+      <h2 className="text-xs text-foreground">{doc.title || DOC_TITLE}</h2>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <Textarea
         value={content}
         onChange={(e) => setContent(e.target.value)}
-        className="min-h-[280px] font-body text-sm"
+        className="min-h-[70vh] font-body text-sm"
       />
 
       <div className="flex flex-wrap items-center gap-3">
@@ -106,57 +105,95 @@ function DocumentSection({ doc }) {
 }
 
 export default function SiteBuildPrompt() {
-  const [docs, setDocs] = useState([]);
+  const [doc, setDoc] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const loadDocs = useCallback(async () => {
+  const loadDoc = useCallback(async () => {
     setLoading(true);
     setError("");
 
     const { data, error: fetchError } = await supabase
       .from("general_documents")
       .select("id, key, title, content, updated_at")
-      .in("key", DOC_KEYS);
+      .eq("key", DOC_KEY)
+      .maybeSingle();
 
     if (fetchError) {
       console.error(fetchError);
-      setError(fetchError.message || "Failed to load documents");
-      setDocs([]);
+      setError(fetchError.message || "Failed to load document");
+      setDoc(null);
       setLoading(false);
       return;
     }
 
-    const byKey = Object.fromEntries((data || []).map((row) => [row.key, row]));
-    setDocs(DOC_KEYS.map((key) => byKey[key]).filter(Boolean));
+    if (!data) {
+      setDoc(null);
+      setLoading(false);
+      return;
+    }
+
+    const stored = (data.content || "").replace(/\r\n/g, "\n");
+    const stalePriorDraft =
+      !stored.includes("Date coercion, build this in from the start") ||
+      !stored.includes("Initialize a local git repo");
+    const needsCanonical =
+      data.title !== DOC_TITLE || !stored.trim() || stalePriorDraft;
+
+    if (!needsCanonical) {
+      setDoc(data);
+      setLoading(false);
+      return;
+    }
+
+    const next = {
+      title: DOC_TITLE,
+      content: SITE_BUILD_PROMPT.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n"),
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error: updateError } = await supabase
+      .from("general_documents")
+      .update(next)
+      .eq("id", data.id);
+
+    if (updateError) {
+      console.error(updateError);
+      setError(updateError.message || "Failed to update Site Build Prompt");
+      setDoc({ ...data, ...next });
+      setLoading(false);
+      return;
+    }
+
+    setDoc({ ...data, ...next });
     setLoading(false);
   }, []);
 
   useEffect(() => {
-    loadDocs();
-  }, [loadDocs]);
+    loadDoc();
+  }, [loadDoc]);
 
   if (loading) {
-    return <p className="text-sm text-muted-foreground">Loading documents...</p>;
+    return <p className="text-sm text-muted-foreground">Loading document...</p>;
   }
 
   return (
     <div className="space-y-10">
       <div>
-        <h1 className="text-xs text-foreground mb-1">Site Build Documents</h1>
+        <h1 className="text-xs text-foreground mb-1">Site Build Prompt</h1>
         <p className="text-sm text-muted-foreground">
-          Global reference documents for site builds. Edits apply across all companies.
+          Global reference prompt for site builds. Edits apply across all companies.
         </p>
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
-      {docs.length === 0 ? (
+      {!doc ? (
         <p className="text-sm text-muted-foreground">
-          No documents found. Run the general_documents migration first.
+          No document found. Run the general_documents migration first.
         </p>
       ) : (
-        docs.map((doc) => <DocumentSection key={doc.id} doc={doc} />)
+        <DocumentSection doc={doc} />
       )}
     </div>
   );
