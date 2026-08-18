@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ChevronDown, Copy, Loader2 } from "lucide-react";
+import { ChevronDown, Copy, Download, Loader2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,11 @@ import {
   nextStatus,
   resolveItemLink,
 } from "./siteBuildFlow/seedData";
+import {
+  SITE_BUILD_FLOW_MARKDOWN_FILENAME,
+  buildSiteBuildFlowMarkdown,
+  downloadMarkdown,
+} from "./siteBuildFlow/buildFlowMarkdown";
 
 const STAGE_SELECT =
   "company_id, stage_key, order_index, status, updated_at";
@@ -627,6 +632,12 @@ export default function SiteBuildFlow() {
     setError("");
   };
 
+  const handleDownloadMarkdown = () => {
+    if (!draftState) return;
+    const markdown = buildSiteBuildFlowMarkdown(STAGES, draftState.items || []);
+    downloadMarkdown(SITE_BUILD_FLOW_MARKDOWN_FILENAME, markdown);
+  };
+
   const handleSave = async () => {
     if (!companyId || !draftState) return;
 
@@ -732,6 +743,15 @@ export default function SiteBuildFlow() {
                 Unsaved changes
               </span>
             )}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleDownloadMarkdown}
+            >
+              <Download className="h-3.5 w-3.5" />
+              Download .md
+            </Button>
             <Button
               type="button"
               variant="outline"

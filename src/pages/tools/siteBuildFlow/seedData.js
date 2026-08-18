@@ -1,7 +1,5 @@
 /** Predefined Site Build Flow stages and items (seeded per company on first load). */
 
-import { PHASE_1_AUDIT_PROMPT } from "../templateToPrompt/phase1AuditPrompt";
-
 export const STATUSES = ["open", "wip", "done"];
 
 export const STATUS_META = {
@@ -131,46 +129,6 @@ export const PREDEFINED_ITEMS = {
       linkTo: "/company/:companyId/company-data",
       linkLabel: "Open Company Data →",
     },
-    {
-      item_key: "download-company-data-md",
-      title: "Download Company Data as Markdown",
-      description:
-        "In Company Data, use Download as Markdown. You will paste this file's contents into the Layer 2 prompt next.",
-      prompts: [],
-      linkTo: "/company/:companyId/company-data",
-      linkLabel: "Open Company Data →",
-    },
-    {
-      item_key: "paste-company-data-into-layer-2-prompt",
-      title: "Paste Company Data into the Layer 2 build prompt",
-      description:
-        "Copy the Layer 2 build prompt, then paste the full contents of the Company Data .md at the end so the company data is inside the prompt. Paste the combined prompt into Cursor and run it.",
-      prompts: [],
-    },
-    {
-      item_key: "copy-infra-addendum-prompt",
-      title: "Infra Addendum Prompt",
-      description:
-        "Copy the prompt below and paste it into Cursor after the Layer 2 build, if the cloned template does not already include batch article upload in the CMS.",
-      prompts: [
-        {
-          label: "Infra Addendum Prompt",
-          text: `Add a batch upload mode to the "Add Article" screen, alongside the existing single-file flow — reuse all existing validation/write logic, do not duplicate it.
-
-1. Change the .md drop zone to accept multiple files at once (drag-and-drop or click-to-browse, multi-select).
-2. On drop, parse each file individually using the exact same parsing/validation logic already used for single-file upload. Render as a list — one row per file: filename/slug, a compact status (using the existing Missing Fields logic — collapsed panel per row, same pattern already built, showing only what's actually missing).
-3. BATCH-LEVEL CONTROLS (apply to all rows at once, with per-row override still available):
-   - One Author dropdown (same team-collection source as the single-file form) — selecting it fills every row's author field; any row can still be changed individually.
-   - One hero image drop zone — dropping an image here applies it as the hero for every row in the batch; any row can still get its own individual image dropped to override.
-4. Each row still shows its own remaining missing/invalid fields (if any) after batch-apply — e.g. if a specific file's title is out of the 55-60 char range, that's still flagged per-row, batch controls only cover author/image.
-5. "Generate All" button: enabled once every row has zero missing required fields. Runs the existing single-file Generate logic sequentially, one file at a time (not parallel — consistent with every other batch action across this project), with a progress indicator ("Generating 4 of 10: {slug}"). Per-row status updates live (pending → done ✓ / failed ✗ with reason) — a failure on one file does not stop the rest.
-6. Trigger generateLlmsTxt once after the full batch completes, not once per file — avoids redundant rebuilds.
-7. Keep the existing single-file flow fully intact and working — this is an additional mode, not a replacement.
-
-Verify: drop 5-10 real .md files at once, set author + hero image once via the batch controls, confirm per-row overrides still work, Generate All writes every file correctly with the same validation guarantees as the single-file flow, llms.txt rebuilds once at the end.`,
-        },
-      ],
-    },
   ],
   "infra-qa": [
     {
@@ -195,37 +153,6 @@ Verify: drop 5-10 real .md files at once, set author + hero image once via the b
       prompts: [],
     },
     {
-      item_key: "validate-json-ld-via-cursor",
-      title: "Validate JSON-LD via Cursor",
-      description:
-        "Copy the local article URL and ask Cursor to check its structured data.",
-      prompts: [
-        {
-          label: "JSON-LD validation prompt",
-          text: "http://localhost:4321/articles/[your-article-slug]/ — Run this article's page through a JSON-LD structured data validator and tell me if it passes with zero errors.",
-        },
-      ],
-    },
-    {
-      item_key: "check-generated-site-wide-files",
-      title: "Check generated site-wide files",
-      description:
-        "In a new terminal, run npm run build, then ask Cursor to show the generated files.",
-      prompts: [
-        {
-          label: "Show generated files prompt",
-          text: "Show me the contents of dist/llms.txt, dist/sitemap-index.xml, dist/robots.txt, and dist/rss.xml",
-        },
-      ],
-    },
-    {
-      item_key: "verify-site-wide-files",
-      title: "Verify site-wide files look correct",
-      description:
-        "llms.txt: starts with site name as a header, followed by published articles (title, short description, link). sitemap-index.xml: short snippet linking to a file like sitemap-0.xml, containing your real domain, not example.com. robots.txt: a few lines allowing indexing, ending with a Sitemap: link to your real domain. rss.xml: an RSS feed listing all published articles.",
-      prompts: [],
-    },
-    {
       item_key: "confirm-drafts-excluded",
       title: "Confirm draft articles are fully excluded",
       description: "Ask Cursor to create and verify a draft test article.",
@@ -242,22 +169,6 @@ Verify: drop 5-10 real .md files at once, set author + hero image once via the b
       description:
         "Run npm run cms, open the URL it gives you. Try adding an article with missing/invalid fields and confirm the checklist responds correctly (shows what's missing, blocks Generate with a visible reason).",
       prompts: [],
-    },
-    {
-      item_key: "grep-for-template-leftovers",
-      title: "Grep for template leftovers",
-      description:
-        "Ask Cursor to search for leftover placeholder identity strings outside the config file.",
-      prompts: [
-        {
-          label: "Leftover check prompt",
-          text: "Search the whole project for the literal text example.com and Site Name outside of the main settings file, and tell me what you find. Also confirm the social links list is still empty.",
-        },
-        {
-          label: "Follow-up if leftovers found",
-          text: "I ran step 7 of the checklist and found leftover example.com and Site Name references in [list the files Cursor reported]. Please remove or update these hardcoded fallbacks so they strictly pull from site/src/config/site.ts, and then re-run npm run build to update the dist folder.",
-        },
-      ],
     },
   ],
   deployment: [
@@ -353,32 +264,22 @@ Verify: drop 5-10 real .md files at once, set author + hero image once via the b
   ],
   "site-activation": [
     {
-      item_key: "run-the-audit-prompt",
-      title: "Run the audit prompt",
+      item_key: "run-specific-prompt",
+      title: "Run Specific Prompt",
       description:
-        "Go to Specific Prompt in TNV, copy the Audit Prompt (Tab 1), paste into Cursor and run it.",
-      prompts: [
-        {
-          label: "Phase 1 audit prompt",
-          text: PHASE_1_AUDIT_PROMPT,
-        },
-      ],
-    },
-    {
-      item_key: "generate-the-personalize-prompt",
-      title: "Generate the Personalize Prompt",
-      description:
-        "Paste Cursor's audit response into Specific Prompt's Personalize Prompt tab (Tab 2).",
+        "In Additional Tools, open Specific Prompt. Run the Audit Prompt (Tab 1) in Cursor, then paste the audit response into the Personalize Prompt tab (Tab 2).",
       prompts: [],
-      linkTo: "/company/:companyId/template-to-prompt?tab=personalize",
+      linkTo: "/company/:companyId/template-to-prompt",
       linkLabel: "Open Specific Prompt →",
     },
     {
-      item_key: "resolve-remaining-input-fields",
-      title: "Resolve any remaining input fields",
+      item_key: "run-personalized-prompt-in-cursor",
+      title: "Run Personalized Prompt in Cursor",
       description:
-        "Fill in any fields still needing input, then let Cursor run the generated fill prompt.",
+        "Copy the generated Personalized Prompt from Specific Prompt and paste it into Cursor to run it.",
       prompts: [],
+      linkTo: "/company/:companyId/template-to-prompt?tab=personalize",
+      linkLabel: "Open Specific Prompt →",
     },
     {
       item_key: "commit-and-push",

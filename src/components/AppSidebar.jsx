@@ -6,7 +6,6 @@ import {
   Database,
   BarChart3,
   ListTodo,
-  FileText,
   Palette,
   Wand2,
   LayoutTemplate,
@@ -87,10 +86,6 @@ export default function AppSidebar({ user }) {
     : "";
   const isSiteBuildFlowActive = location.pathname === siteBuildFlowPath;
 
-  const generalNav = [
-    { label: "Site Build Prompt", path: "/general/site-build-prompt", icon: FileText },
-  ];
-
   const companyNav = [
     { label: "Company Data", path: `/company/${activeCompanyId}/company-data`, icon: Database },
     { label: "Analytics", path: `/company/${activeCompanyId}/analytics`, icon: BarChart3 },
@@ -114,12 +109,12 @@ export default function AppSidebar({ user }) {
   ];
   const isDesignToolActive = designTools.some((item) => location.pathname === item.path);
 
-  const dormantTools = [
+  const additionalTools = [
     { label: "Specific Prompt", path: `/company/${activeCompanyId}/template-to-prompt`, icon: Wand2 },
     { label: "Cluster Images", path: `/company/${activeCompanyId}/cluster-image-generator`, icon: Image },
     { label: "Site Content Build", path: `/company/${activeCompanyId}/site-content-build`, icon: LayoutTemplate },
   ];
-  const isDormantToolActive = dormantTools.some((item) => location.pathname === item.path);
+  const isAdditionalToolActive = additionalTools.some((item) => location.pathname === item.path);
   useEffect(() => {
     let cancelled = false;
 
@@ -181,13 +176,6 @@ export default function AppSidebar({ user }) {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-2.5 pb-3">
-        <SectionHeader label="General" />
-        <div className="space-y-1.5">
-          {generalNav.map((item) => (
-            <NavItem key={item.path} item={item} />
-          ))}
-        </div>
-
         {activeCompanyId && (
           <>
             <SectionHeader label="Company" />
@@ -265,17 +253,17 @@ export default function AppSidebar({ user }) {
             <button
               type="button"
               className={`w-full flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors ${
-                isDormantToolActive
+                isAdditionalToolActive
                   ? "border-border bg-accent text-foreground"
                   : "border-border text-foreground/80 group-hover:bg-accent group-hover:text-foreground"
               }`}
             >
               <ChevronUp className="w-3.5 h-3.5 shrink-0 transition-transform group-hover:rotate-180" />
-              <span className="leading-tight">Dormant Tools</span>
+              <span className="leading-tight">Additional Tools</span>
             </button>
             <div className="pointer-events-none absolute bottom-full left-0 right-0 z-50 pb-1 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
               <div className="rounded-md border border-border bg-card p-1 shadow-md">
-                {dormantTools.map((item) => {
+                {additionalTools.map((item) => {
                   const Icon = item.icon;
                   const isActive = location.pathname === item.path;
                   return (

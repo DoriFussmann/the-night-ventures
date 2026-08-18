@@ -110,12 +110,12 @@ export default function Companies() {
           No companies yet. Add one to get started.
         </p>
       ) : (
-        <ul className="space-y-2">
+        <ul className="space-y-1.5">
           {companies.map((company) => (
             <li key={company.id}>
               <Link
                 to={`/company/${company.id}/company-data`}
-                className="block w-full rounded-lg border border-border px-4 py-3 text-sm text-foreground transition-colors hover:bg-accent"
+                className="flex h-9 w-full items-center rounded-md border border-border px-3 text-sm text-foreground transition-colors hover:bg-muted/50"
               >
                 {company.name}
               </Link>
