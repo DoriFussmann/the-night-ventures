@@ -27,36 +27,23 @@ export function nextStatus(current) {
 export const STAGES = [
   { stage_key: "setup", name: "Setup", order_index: 0 },
   { stage_key: "infra-qa", name: "Initial Infrastructure Build QA", order_index: 1 },
-  { stage_key: "design", name: "Design", order_index: 2 },
-  { stage_key: "deployment", name: "Deployment", order_index: 3 },
-  { stage_key: "site-activation", name: "Site Activation", order_index: 4 },
-  { stage_key: "connection-layer", name: "Connection Layer", order_index: 5 },
-  { stage_key: "links-wiring", name: "Links Wiring", order_index: 6 },
-  { stage_key: "seed-qa", name: "Initial Seed Content QA", order_index: 7 },
+  { stage_key: "deployment", name: "Deployment", order_index: 2 },
+  { stage_key: "site-activation", name: "Site Activation", order_index: 3 },
+  { stage_key: "connection-layer", name: "Connection Layer", order_index: 4 },
+  { stage_key: "links-wiring", name: "Links Wiring", order_index: 5 },
+  { stage_key: "seed-qa", name: "Initial Seed Content QA", order_index: 6 },
 ];
 
 export const PREDEFINED_ITEMS = {
   setup: [
     {
-      item_key: "create-local-project-folder",
-      title: "Create local project folder",
-      description:
-        "On your local machine, create a new folder named identically to the future project's domain — lowercase, using hyphens to connect words (e.g. closing-day-ready).",
-      prompts: [],
-    },
-    {
-      item_key: "open-new-cursor-project",
-      title: "Open new Cursor project",
-      description:
-        "Open a new project in Cursor, pointed at the folder you just created.",
-      prompts: [],
-    },
-    {
       item_key: "add-new-company-in-tnv",
       title: "Add new company in TNV",
       description:
-        "In The Night Ventures, add a new company. Name can use uppercase letters and spaces here — this naming rule only applies to the local folder.",
+        "In The Night Ventures, add a new company. Name can use uppercase letters and spaces here — the hyphenated lowercase name is for the GitHub repo and local folder.",
       prompts: [],
+      linkTo: "/",
+      linkLabel: "Open Companies →",
     },
     {
       item_key: "fill-company-data",
@@ -69,6 +56,8 @@ export const PREDEFINED_ITEMS = {
           text: "I have a list of fields I am trying to fill for a new company which will provide content on an SEO site. The website is called [...], and it is aimed at providing information for [...]. I want to provide information about [...]. What I need is product name, competitors, services description, abstract, short description, medium description, long description, ICP / description of target persona.",
         },
       ],
+      linkTo: "/company/:companyId/company-data",
+      linkLabel: "Open Company Data →",
     },
     {
       item_key: "save-company-data",
@@ -77,17 +66,92 @@ export const PREDEFINED_ITEMS = {
       prompts: [],
     },
     {
-      item_key: "copy-build-prompt-into-cursor",
-      title: "Copy Site Build Prompt into Cursor",
+      item_key: "create-github-repo-from-template",
+      title: "Create GitHub repo from template",
       description:
-        "Copy the Site Build Prompt from TNV, and paste it into Cursor to scaffold the site.",
+        "On GitHub, create a new repository from the `blueprint-seo-template` template. Name it after the destination site — lowercase, hyphens between words (e.g. closing-day-ready).",
+      prompts: [],
+    },
+    {
+      item_key: "create-local-project-folder",
+      title: "Create local project folder",
+      description:
+        "On your local machine, create a new folder with the same name as the destination site / GitHub repo — lowercase, using hyphens to connect words (e.g. closing-day-ready).",
+      prompts: [],
+    },
+    {
+      item_key: "open-new-cursor-project",
+      title: "Open new Cursor project",
+      description:
+        "Open a new project in Cursor, pointed at the folder you just created. The project name should match the destination site.",
+      prompts: [],
+    },
+    {
+      item_key: "clone-github-repo",
+      title: "Clone the GitHub repo",
+      description:
+        "Clone the new GitHub repo (the one created from `blueprint-seo-template`) into the Cursor project folder.",
+      prompts: [],
+    },
+    {
+      item_key: "create-new-theme-in-design-builder",
+      title: "Open Design Builder",
+      description:
+        "Go to Design Builder in TNV. Confirm Company Data is loaded; fill optional brand-vibe fields if you have a preference.",
+      prompts: [],
+      linkTo: "/company/:companyId/design-guide-builder",
+      linkLabel: "Open Design Builder →",
+    },
+    {
+      item_key: "generate-or-provide-design-guide",
+      title: "Generate Design Guide.md",
+      description:
+        "Click Generate Design Guide. Review the markdown, edit if needed, then Save (this also writes Company Data Design Guidelines and generates the abstract).",
+      prompts: [],
+    },
+    {
+      item_key: "download-design-guide",
+      title: "Download Design Guide.md",
+      description: "Download the generated file.",
+      prompts: [],
+    },
+    {
+      item_key: "add-design-guide-to-project-root",
+      title: "Add Design Guide.md to project root",
+      description:
+        "Place the downloaded file at the root of the cloned project. The Layer 2 build prompt references this file.",
+      prompts: [],
+    },
+    {
+      item_key: "generate-design-guidelines-abstract",
+      title: "Confirm Design Guidelines abstract",
+      description:
+        "Saving in Design Builder already writes the Design Guide and generates the abstract in Company Data. Open Company Data → Design Guidelines to confirm the abstract looks right.",
+      prompts: [],
+      linkTo: "/company/:companyId/company-data",
+      linkLabel: "Open Company Data →",
+    },
+    {
+      item_key: "download-company-data-md",
+      title: "Download Company Data as Markdown",
+      description:
+        "In Company Data, use Download as Markdown. You will paste this file's contents into the Layer 2 prompt next.",
+      prompts: [],
+      linkTo: "/company/:companyId/company-data",
+      linkLabel: "Open Company Data →",
+    },
+    {
+      item_key: "paste-company-data-into-layer-2-prompt",
+      title: "Paste Company Data into the Layer 2 build prompt",
+      description:
+        "Copy the Layer 2 build prompt, then paste the full contents of the Company Data .md at the end so the company data is inside the prompt. Paste the combined prompt into Cursor and run it.",
       prompts: [],
     },
     {
       item_key: "copy-infra-addendum-prompt",
       title: "Infra Addendum Prompt",
       description:
-        "Copy the prompt below and paste it into Cursor after the Site Build Prompt scaffold.",
+        "Copy the prompt below and paste it into Cursor after the Layer 2 build, if the cloned template does not already include batch article upload in the CMS.",
       prompts: [
         {
           label: "Infra Addendum Prompt",
@@ -196,57 +260,15 @@ Verify: drop 5-10 real .md files at once, set author + hero image once via the b
       ],
     },
   ],
-  design: [
-    {
-      item_key: "create-new-theme-in-design-builder",
-      title: "Open Design Builder",
-      description:
-        "Go to Design Builder in TNV. Confirm Company Data is loaded; fill optional brand-vibe fields if you have a preference.",
-      prompts: [],
-    },
-    {
-      item_key: "generate-or-provide-design-guide",
-      title: "Generate Design Guide.md",
-      description:
-        "Click Generate Design Guide. Review the markdown, edit if needed, then Save (this also writes Company Data Design Guidelines and generates the abstract).",
-      prompts: [],
-    },
-    {
-      item_key: "download-design-guide",
-      title: "Download Design Guide.md",
-      description: "Download the generated file.",
-      prompts: [],
-    },
-    {
-      item_key: "add-design-guide-to-project-root",
-      title: "Add Design Guide.md to project root",
-      description:
-        "Place the downloaded file at the root of your local project folder.",
-      prompts: [],
-    },
-    {
-      item_key: "generate-design-guidelines-abstract",
-      title: "Confirm Design Guidelines abstract",
-      description:
-        "Saving in Design Builder already writes the Design Guide and generates the abstract in Company Data. Open Company Data → Design Guidelines to confirm the abstract looks right.",
-      prompts: [],
-    },
-  ],
   deployment: [
-    {
-      item_key: "create-github-repo",
-      title: "Create GitHub repo",
-      description:
-        "Create a new repo on GitHub with the same name as your local folder. Copy its URL.",
-      prompts: [],
-    },
     {
       item_key: "push-to-github",
       title: "Push to GitHub",
-      description: "In Cursor, push the local project to the new repo.",
+      description:
+        "The remote already exists from the template clone. In Cursor, commit remaining local changes and push to that repo.",
       prompts: [
         {
-          label: "Push command (edit URL)",
+          label: "Push command (edit URL if needed)",
           text: "Push to GitHub, https://github.com/[your-username]/[your-repo-name]",
         },
       ],
