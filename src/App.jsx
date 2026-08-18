@@ -48,6 +48,7 @@ const AuthenticatedApp = () => {
         <Route element={<AppShell />}>
           <Route path="/" element={<Companies />} />
           <Route path="/general/site-build-prompt" element={<SiteBuildPrompt />} />
+          <Route path="/company/:companyId/initial-site-build-prompt" element={<SiteBuildPrompt />} />
           <Route path="/company/:companyId/company-data" element={<CompanyData />} />
           <Route path="/company/:companyId/social-media-tracker" element={<SocialMediaTracker />} />
           <Route path="/company/:companyId/analytics" element={<Analytics />} />

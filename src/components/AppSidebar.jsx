@@ -6,6 +6,7 @@ import {
   Database,
   BarChart3,
   ListTodo,
+  FileText,
   Palette,
   Wand2,
   LayoutTemplate,
@@ -110,6 +111,7 @@ export default function AppSidebar({ user }) {
   const isDesignToolActive = designTools.some((item) => location.pathname === item.path);
 
   const additionalTools = [
+    { label: "Initial Site Build Prompt", path: `/company/${activeCompanyId}/initial-site-build-prompt`, icon: FileText },
     { label: "Specific Prompt", path: `/company/${activeCompanyId}/template-to-prompt`, icon: Wand2 },
     { label: "Cluster Images", path: `/company/${activeCompanyId}/cluster-image-generator`, icon: Image },
     { label: "Site Content Build", path: `/company/${activeCompanyId}/site-content-build`, icon: LayoutTemplate },
