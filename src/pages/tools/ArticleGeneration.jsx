@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -39,6 +41,10 @@ import {
   totalWordCount,
 } from "./articleGeneration/parseClusterMarkdown";
 import { orderSelectedArticles } from "./articleGeneration/orderSelectedArticles";
+import {
+  GENERATE_ARTICLE_MODEL,
+  buildUserPrompt,
+} from "../../../lib/generate-article/prompt.js";
 import {
   articleFilename,
   downloadMarkdownFile,
@@ -217,6 +223,7 @@ async function generateOneArticle({
         wordCount: article.wordCount,
         ctaAngle: article.ctaAngle,
         keyMessages: article.keyMessages,
+        expertInput: article.expertInput || "",
       },
     }),
   });
@@ -414,6 +421,12 @@ export default function ArticleGeneration() {
   const [savingAll, setSavingAll] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [sourcesCopied, setSourcesCopied] = useState(false);
+  const [promptOpen, setPromptOpen] = useState(false);
+  const [promptLoading, setPromptLoading] = useState(false);
+  const [promptError, setPromptError] = useState("");
+  const [promptEntries, setPromptEntries] = useState([]);
+  const [promptEntryIndex, setPromptEntryIndex] = useState(0);
+  const [promptCopied, setPromptCopied] = useState(false);
 
   const clearSaveState = () => {
     setSavedIndexes(new Set());
@@ -443,10 +456,15 @@ export default function ArticleGeneration() {
   };
 
   const applyParsed = (result, name) => {
-    const indices = new Set(result.articles.map((_, i) => i));
-    setParsed(result);
+    const articles = (result.articles || []).map((article) => ({
+      ...article,
+      expertInput: String(article.expertInput || ""),
+    }));
+    const next = { ...result, articles };
+    const indices = new Set(articles.map((_, i) => i));
+    setParsed(next);
     setSelected(indices);
-    setGenerateImageIndices(new Set());
+    setGenerateImageIndices(new Set(indices));
     setDetailIndex(null);
     setParseError(null);
     setFileName(name || "");
@@ -511,14 +529,12 @@ export default function ArticleGeneration() {
       else next.delete(index);
       return next;
     });
-    if (!checked) {
-      setGenerateImageIndices((prev) => {
-        if (!prev.has(index)) return prev;
-        const next = new Set(prev);
-        next.delete(index);
-        return next;
-      });
-    }
+    setGenerateImageIndices((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(index);
+      else next.delete(index);
+      return next;
+    });
   };
 
   const toggleGenerateImage = (index, checked) => {
@@ -533,7 +549,83 @@ export default function ArticleGeneration() {
 
   const selectAll = () => {
     if (!parsed) return;
-    setSelected(new Set(parsed.articles.map((_, i) => i)));
+    const indices = new Set(parsed.articles.map((_, i) => i));
+    setSelected(indices);
+    setGenerateImageIndices(new Set(indices));
+  };
+
+  const setExpertInput = (index, value) => {
+    setParsed((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        articles: prev.articles.map((article, i) =>
+          i === index ? { ...article, expertInput: value } : article
+        ),
+      };
+    });
+  };
+
+  const copyPromptText = async (text) => {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setPromptCopied(true);
+      window.setTimeout(() => setPromptCopied(false), 1500);
+    } catch {
+      setPromptCopied(false);
+    }
+  };
+
+  const openGeneratePrompt = async () => {
+    if (!parsed || !companyId) return;
+
+    setPromptOpen(true);
+    setPromptLoading(true);
+    setPromptError("");
+    setPromptCopied(false);
+    setPromptEntries([]);
+    setPromptEntryIndex(0);
+
+    try {
+      const positioning = await loadCompanyPositioning(companyId);
+      const indices =
+        selected.size > 0
+          ? selected
+          : new Set(parsed.articles.map((_, i) => i));
+      const ordered = orderSelectedArticles(parsed.articles, indices);
+      const entries = ordered.map(({ article }, step) => {
+        const batchContext = ordered.slice(0, step).map(({ article: prior }) => ({
+          title: prior.title || "",
+          slug: "",
+          type: prior.type || "",
+          targetKeyword: prior.targetKeyword || "",
+          oneLinerSummary:
+            "(sibling summary is filled after that article is generated)",
+        }));
+        return {
+          title: article.title || "(untitled)",
+          prompt: buildUserPrompt({
+            abstract: positioning.abstract,
+            shortDescription: positioning.shortDescription,
+            competitors: positioning.competitors,
+            audience: positioning.audience,
+            article,
+            pillarKeyword: parsed.meta.pillar || "",
+            supportingKeyword: parsed.meta.supportingKeyword || "",
+            batchContext,
+          }),
+        };
+      });
+      if (!entries.length) {
+        throw new Error("No articles to preview.");
+      }
+      setPromptEntries(entries);
+    } catch (err) {
+      setPromptError(err?.message || "Failed to build prompt preview.");
+    } finally {
+      setPromptLoading(false);
+    }
   };
 
   const selectNone = () => {
@@ -1085,29 +1177,20 @@ export default function ArticleGeneration() {
                 )}
               </div>
 
-              <ul className="rounded-lg border border-border divide-y divide-border overflow-hidden">
+              <ul className="space-y-3">
                 {parsed.articles.map((article, index) => {
                   const isChecked = selected.has(index);
                   const wantImage = generateImageIndices.has(index);
+                  const keyMessages = Array.isArray(article.keyMessages)
+                    ? article.keyMessages
+                    : [];
                   return (
-                    <li key={`${article.title}-${index}`}>
-                      <div
-                        role="button"
-                        tabIndex={0}
-                        className="flex items-center gap-3 px-3 py-2.5 text-sm hover:bg-muted/40 cursor-pointer transition-colors"
-                        onClick={() => setDetailIndex(index)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            setDetailIndex(index);
-                          }
-                        }}
-                      >
-                        <div
-                          className="shrink-0"
-                          onClick={(e) => e.stopPropagation()}
-                          onKeyDown={(e) => e.stopPropagation()}
-                        >
+                    <li
+                      key={`${article.title}-${index}`}
+                      className="rounded-lg border border-border bg-card px-4 py-3 space-y-3"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="pt-0.5 shrink-0">
                           <Checkbox
                             checked={isChecked}
                             onCheckedChange={(checked) =>
@@ -1116,33 +1199,69 @@ export default function ArticleGeneration() {
                             aria-label={`Select ${article.title}`}
                           />
                         </div>
-                        <span className="min-w-0 flex-1 truncate font-medium text-foreground">
-                          {article.title}
-                        </span>
-                        <label
-                          className={`shrink-0 inline-flex items-center gap-1.5 text-[11px] ${
-                            isChecked
-                              ? "text-muted-foreground cursor-pointer"
-                              : "text-muted-foreground/40 cursor-not-allowed"
-                          }`}
-                          onClick={(e) => e.stopPropagation()}
-                          onKeyDown={(e) => e.stopPropagation()}
-                        >
-                          <Checkbox
-                            checked={wantImage}
-                            disabled={!isChecked}
-                            onCheckedChange={(checked) =>
-                              toggleGenerateImage(index, checked === true)
-                            }
-                            aria-label={`Generate image for ${article.title}`}
-                          />
-                          Generate Image
-                        </label>
-                        <TypeBadge type={article.type} />
-                        <span className="shrink-0 tabular-nums text-xs text-muted-foreground w-16 text-right">
-                          {formatNumber(article.wordCount)}
-                        </span>
-                        <StatusBadge status={article.status} />
+                        <div className="min-w-0 flex-1 space-y-3">
+                          <div className="flex flex-wrap items-start gap-2">
+                            <h3 className="text-sm font-medium text-foreground leading-snug min-w-0 flex-1">
+                              {article.title}
+                            </h3>
+                            <TypeBadge type={article.type} />
+                            <label
+                              className={`shrink-0 inline-flex items-center gap-1.5 text-[11px] ${
+                                isChecked
+                                  ? "text-muted-foreground cursor-pointer"
+                                  : "text-muted-foreground/40 cursor-not-allowed"
+                              }`}
+                            >
+                              <Checkbox
+                                checked={wantImage}
+                                disabled={!isChecked}
+                                onCheckedChange={(checked) =>
+                                  toggleGenerateImage(index, checked === true)
+                                }
+                                aria-label={`Generate image for ${article.title}`}
+                              />
+                              Generate Image
+                            </label>
+                          </div>
+
+                          <div>
+                            <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">
+                              Key messages
+                            </p>
+                            {keyMessages.length > 0 ? (
+                              <ul className="list-disc pl-4 space-y-1 text-sm text-foreground">
+                                {keyMessages.map((msg, i) => (
+                                  <li key={i}>{msg}</li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="text-sm text-muted-foreground">—</p>
+                            )}
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <Label htmlFor={`expert-input-${index}`}>
+                              Expert Input
+                            </Label>
+                            <Textarea
+                              id={`expert-input-${index}`}
+                              value={article.expertInput || ""}
+                              onChange={(e) =>
+                                setExpertInput(index, e.target.value)
+                              }
+                              placeholder="Add your own view on this article…"
+                              rows={3}
+                            />
+                          </div>
+
+                          <button
+                            type="button"
+                            className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                            onClick={() => setDetailIndex(index)}
+                          >
+                            View details
+                          </button>
+                        </div>
                       </div>
                     </li>
                   );
@@ -1742,6 +1861,97 @@ export default function ArticleGeneration() {
         </AlertDialogContent>
       </AlertDialog>
 
+      <Dialog
+        open={promptOpen}
+        onOpenChange={(open) => {
+          setPromptOpen(open);
+          if (!open) {
+            setPromptCopied(false);
+            setPromptError("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col gap-0 p-0">
+          <DialogHeader className="px-6 pt-6 pb-3 pr-12">
+            <DialogTitle>Article generation prompt</DialogTitle>
+            <DialogDescription>
+              This is the full user prompt sent to {GENERATE_ARTICLE_MODEL}{" "}
+              with web search. Company Data, the plan .md fields, and Expert
+              Input are already filled in. Later articles in a batch receive
+              sibling summaries only after those drafts exist — this preview
+              uses a placeholder for that slot.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="px-6 pb-6 flex-1 min-h-0 flex flex-col gap-3">
+            {promptLoading && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground py-6">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading company data and building prompt…
+              </div>
+            )}
+            {promptError && (
+              <p className="text-sm text-destructive">{promptError}</p>
+            )}
+            {!promptLoading && !promptError && promptEntries.length > 0 && (
+              <>
+                <div className="flex flex-wrap items-center gap-2">
+                  {promptEntries.length > 1 && (
+                    <label className="flex items-center gap-2 text-xs text-muted-foreground min-w-0 flex-1">
+                      <span className="shrink-0">Article</span>
+                      <select
+                        className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-xs text-foreground"
+                        value={promptEntryIndex}
+                        onChange={(e) => {
+                          setPromptEntryIndex(Number(e.target.value));
+                          setPromptCopied(false);
+                        }}
+                      >
+                        {promptEntries.map((entry, i) => (
+                          <option key={`${entry.title}-${i}`} value={i}>
+                            {i + 1}. {entry.title}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  {promptEntries.length === 1 && (
+                    <p className="text-xs text-muted-foreground min-w-0 flex-1 truncate">
+                      {promptEntries[0].title}
+                    </p>
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="ml-auto shrink-0"
+                    onClick={() =>
+                      void copyPromptText(
+                        promptEntries[promptEntryIndex]?.prompt || ""
+                      )
+                    }
+                  >
+                    {promptCopied ? (
+                      <>
+                        <Check className="h-3.5 w-3.5" />
+                        Copied
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3.5 w-3.5" />
+                        Copy prompt
+                      </>
+                    )}
+                  </Button>
+                </div>
+                <pre className="flex-1 min-h-0 overflow-auto rounded-md border border-border bg-muted/30 p-3 text-[11px] leading-relaxed whitespace-pre-wrap break-words font-mono text-foreground">
+                  {promptEntries[promptEntryIndex]?.prompt}
+                </pre>
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Selection footer */}
       {phase === "intake" && parsed && (
         <div className="fixed bottom-0 left-52 right-0 z-20 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
@@ -1767,8 +1977,17 @@ export default function ArticleGeneration() {
             </div>
             <Button
               type="button"
+              variant="outline"
               size="sm"
               className="ml-auto"
+              disabled={!companyId || promptLoading}
+              onClick={() => void openGeneratePrompt()}
+            >
+              Show Article Generation Prompt
+            </Button>
+            <Button
+              type="button"
+              size="sm"
               disabled={selected.size === 0 || !companyId}
               onClick={runBatch}
             >
