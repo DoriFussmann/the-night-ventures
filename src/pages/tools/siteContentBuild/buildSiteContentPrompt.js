@@ -9,7 +9,14 @@ function valueOrFallback(value, fallback) {
 function formatServices(services) {
   const rows = Array.isArray(services) ? services : [];
   const usable = rows.filter(
-    (s) => filled(s?.title) || filled(s?.summary) || filled(s?.detail)
+    (s) =>
+      filled(s?.title) ||
+      filled(s?.summary) ||
+      filled(s?.detail) ||
+      filled(s?.isbn) ||
+      filled(s?.publisher) ||
+      filled(s?.author) ||
+      filled(s?.publicationDate)
   );
   if (usable.length === 0) {
     return "(None added in Company Data yet — do not invent services.)";
@@ -23,6 +30,12 @@ function formatServices(services) {
       ];
       if (filled(s.detail)) {
         lines.push(`   Detail: ${filled(s.detail)}`);
+      }
+      if (filled(s.isbn)) lines.push(`   ISBN: ${filled(s.isbn)}`);
+      if (filled(s.publisher)) lines.push(`   Publisher: ${filled(s.publisher)}`);
+      if (filled(s.author)) lines.push(`   Author: ${filled(s.author)}`);
+      if (filled(s.publicationDate)) {
+        lines.push(`   Publication date: ${filled(s.publicationDate)}`);
       }
       return lines.join("\n");
     })

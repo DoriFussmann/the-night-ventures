@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import { ArrowDown, ArrowUp, Check, ChevronDown, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronDown, Copy, Trash2, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,9 +23,11 @@ import {
 } from "@/components/ui/dialog";
 import {
   emptyServiceEntry,
+  formatServiceCopyBlock,
   normalizeServices,
   normalizeSocialLinks,
   normalizeTeamMembers,
+  serviceHasContent,
   trimServicesForSave,
   trimSocialLinksForSave,
   trimTeamMembersForSave,
@@ -51,6 +53,78 @@ async function copyTextToClipboard(value) {
     console.error("Copy failed:", err);
     return false;
   }
+}
+
+function CopyField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  mono = false,
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    const ok = await copyTextToClipboard(value);
+    if (!ok) return;
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <div className="space-y-1">
+      <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">
+        {label}
+      </Label>
+      <div className="flex items-center gap-1">
+        <Input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className={mono ? "font-mono" : undefined}
+          aria-label={label}
+        />
+        <button
+          type="button"
+          onClick={handleCopy}
+          disabled={!String(value || "").trim()}
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
+          title={`Copy ${label}`}
+          aria-label={`Copy ${label}`}
+        >
+          {copied ? (
+            <Check className="h-3.5 w-3.5 text-emerald-600" />
+          ) : (
+            <Copy className="h-3.5 w-3.5" />
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CopyProductButton({ service }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    const ok = await copyTextToClipboard(formatServiceCopyBlock(service));
+    if (!ok) return;
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      onClick={handleCopy}
+      disabled={!serviceHasContent(service)}
+    >
+      {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+      {copied ? "Copied" : "Copy this product"}
+    </Button>
+  );
 }
 
 function PanelModalActions({
@@ -774,11 +848,8 @@ export default function CompanyData() {
 
     if (panelId === "services") {
       return trimServicesForSave(fields.services)
-        .map((s) => {
-          const head = `- ${s.title || "(untitled)"}: ${s.summary || ""}`.trim();
-          return s.detail ? `${head}\n  ${s.detail}` : head;
-        })
-        .join("\n");
+        .map((s) => formatServiceCopyBlock(s))
+        .join("\n\n");
     }
 
     if (panelId === "social-shops") {
@@ -1018,11 +1089,8 @@ export default function CompanyData() {
       .join("\n");
 
     const serviceLines = trimServicesForSave(fields.services)
-      .map((s) => {
-        const head = `- ${s.title || "(untitled)"}: ${s.summary || ""}`.trim();
-        return s.detail ? `${head}\n  ${s.detail}` : head;
-      })
-      .join("\n");
+      .map((s) => formatServiceCopyBlock(s))
+      .join("\n\n");
 
     const categoryLines = industries
       .filter((industry) => selectedIndustryIds.includes(industry.id))
@@ -1337,10 +1405,7 @@ export default function CompanyData() {
         <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-5">
           <PanelTrigger
             title="Products & Services"
-            filled={services.some(
-              (item) =>
-                item.title.trim() || item.summary.trim() || item.detail.trim()
-            )}
+            filled={services.some(serviceHasContent)}
             onClick={() => setOpenPanel("services")}
           />
           <PanelTrigger
@@ -1827,7 +1892,8 @@ export default function CompanyData() {
           <DialogHeader className="shrink-0 space-y-1 border-b border-border px-6 py-4 pr-12 text-left">
             <DialogTitle>Products & Services ({services.length})</DialogTitle>
             <DialogDescription>
-              Titles, summaries, and optional detail for each offering.
+              One card per offering. For books, add ISBN, publisher, author, and
+              publication date, then copy a field or the whole product.
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-4">
@@ -1844,6 +1910,7 @@ export default function CompanyData() {
                     className="flex-1"
                     aria-label={`Service ${index + 1} title`}
                   />
+                  <CopyProductButton service={service} />
                   <button
                     type="button"
                     onClick={() => removeService(index)}
@@ -1868,6 +1935,35 @@ export default function CompanyData() {
                   className="min-h-[72px]"
                   aria-label={`Service ${index + 1} detail`}
                 />
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <CopyField
+                    label="ISBN"
+                    value={service.isbn}
+                    onChange={(value) => updateService(index, "isbn", value)}
+                    placeholder="979-8-9974987-0-2"
+                    mono
+                  />
+                  <CopyField
+                    label="Publisher"
+                    value={service.publisher}
+                    onChange={(value) => updateService(index, "publisher", value)}
+                    placeholder="Album Amicorum"
+                  />
+                  <CopyField
+                    label="Author"
+                    value={service.author}
+                    onChange={(value) => updateService(index, "author", value)}
+                    placeholder="Album Amicorum"
+                  />
+                  <CopyField
+                    label="Publication date"
+                    value={service.publicationDate}
+                    onChange={(value) =>
+                      updateService(index, "publicationDate", value)
+                    }
+                    placeholder="August 12, 2026"
+                  />
+                </div>
               </div>
             ))}
             <Button type="button" variant="outline" size="sm" onClick={addService}>
