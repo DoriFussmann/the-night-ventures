@@ -5,10 +5,6 @@ export function emptyServiceEntry() {
     title: "",
     summary: "",
     detail: "",
-    isbn: "",
-    publisher: "",
-    author: "",
-    publicationDate: "",
   };
 }
 
@@ -44,10 +40,6 @@ export function normalizeServices(value) {
       title: asText(item.title),
       summary: asText(item.summary),
       detail: asText(item.detail),
-      isbn: asText(item.isbn),
-      publisher: asText(item.publisher),
-      author: asText(item.author),
-      publicationDate: asText(item.publicationDate || item.publication_date),
     };
   });
 }
@@ -57,11 +49,7 @@ export function serviceHasContent(service) {
   return Boolean(
     String(s.title || "").trim() ||
       String(s.summary || "").trim() ||
-      String(s.detail || "").trim() ||
-      String(s.isbn || "").trim() ||
-      String(s.publisher || "").trim() ||
-      String(s.author || "").trim() ||
-      String(s.publicationDate || "").trim()
+      String(s.detail || "").trim()
   );
 }
 
@@ -70,12 +58,6 @@ export function formatServiceCopyBlock(service) {
   const lines = [`Title: ${s.title.trim() || "(untitled)"}`];
   if (s.summary.trim()) lines.push(`Summary: ${s.summary.trim()}`);
   if (s.detail.trim()) lines.push(`Detail: ${s.detail.trim()}`);
-  if (s.isbn.trim()) lines.push(`ISBN: ${s.isbn.trim()}`);
-  if (s.publisher.trim()) lines.push(`Publisher: ${s.publisher.trim()}`);
-  if (s.author.trim()) lines.push(`Author: ${s.author.trim()}`);
-  if (s.publicationDate.trim()) {
-    lines.push(`Publication date: ${s.publicationDate.trim()}`);
-  }
   return lines.join("\n");
 }
 
@@ -137,19 +119,11 @@ export function trimServicesForSave(services) {
       title: s.title.trim(),
       summary: s.summary.trim(),
       detail: s.detail.trim(),
-      isbn: s.isbn.trim(),
-      publisher: s.publisher.trim(),
-      author: s.author.trim(),
-      publicationDate: s.publicationDate.trim(),
     }))
     .filter(serviceHasContent)
     .map((s) => {
       const row = { title: s.title, summary: s.summary };
       if (s.detail) row.detail = s.detail;
-      if (s.isbn) row.isbn = s.isbn;
-      if (s.publisher) row.publisher = s.publisher;
-      if (s.author) row.author = s.author;
-      if (s.publicationDate) row.publicationDate = s.publicationDate;
       return row;
     });
 }

@@ -8,26 +8,10 @@ function valueOrNeeds(value) {
   return filled(value) || NEEDS_INPUT_MARKER;
 }
 
-function appendServiceMetaLines(lines, s, indent = "   ") {
-  if (filled(s.isbn)) lines.push(`${indent}ISBN: ${filled(s.isbn)}`);
-  if (filled(s.publisher)) lines.push(`${indent}Publisher: ${filled(s.publisher)}`);
-  if (filled(s.author)) lines.push(`${indent}Author: ${filled(s.author)}`);
-  if (filled(s.publicationDate)) {
-    lines.push(`${indent}Publication date: ${filled(s.publicationDate)}`);
-  }
-}
-
 function formatServices(services) {
   const rows = Array.isArray(services) ? services : [];
   const usable = rows.filter(
-    (s) =>
-      filled(s?.title) ||
-      filled(s?.summary) ||
-      filled(s?.detail) ||
-      filled(s?.isbn) ||
-      filled(s?.publisher) ||
-      filled(s?.author) ||
-      filled(s?.publicationDate)
+    (s) => filled(s?.title) || filled(s?.summary) || filled(s?.detail)
   );
   if (usable.length === 0) {
     return "(None added in Company Data yet — skip inventing services this run.)";
@@ -42,7 +26,6 @@ function formatServices(services) {
       if (filled(s.detail)) {
         lines.push(`   Detail: ${filled(s.detail)}`);
       }
-      appendServiceMetaLines(lines, s);
       return lines.join("\n");
     })
     .join("\n");

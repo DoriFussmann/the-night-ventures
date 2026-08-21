@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import { ArrowDown, ArrowUp, Check, ChevronDown, Copy, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronDown, Copy, Trash2, Upload, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,8 +33,19 @@ import {
   trimTeamMembersForSave,
 } from "./templateToPrompt/customFieldKeys";
 import SocialShopsPanel from "./SocialShopsPanel";
+import { parseCompanyMarkdown } from "./companyData/parseCompanyMarkdown";
+import {
+  getCompanyDataPoints,
+  mergeParsedCompanyFields,
+} from "./companyData/dataPoints";
+import { buildLlmUploadPrompt } from "./companyData/llmUploadPrompt";
 
-const HIDDEN_CUSTOM_FIELDS = new Set(["founded year"]);
+const HIDDEN_CUSTOM_FIELDS = new Set([
+  "founded year",
+  "business model",
+  "core value proposition",
+  "scope / boundaries",
+]);
 
 const DEFAULT_PILLAR_COUNT = 5;
 const DEFAULT_SUPPORTING_COUNT = 5;
@@ -53,54 +64,6 @@ async function copyTextToClipboard(value) {
     console.error("Copy failed:", err);
     return false;
   }
-}
-
-function CopyField({
-  label,
-  value,
-  onChange,
-  placeholder,
-  mono = false,
-}) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    const ok = await copyTextToClipboard(value);
-    if (!ok) return;
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1500);
-  };
-
-  return (
-    <div className="space-y-1">
-      <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">
-        {label}
-      </Label>
-      <div className="flex items-center gap-1">
-        <Input
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          className={mono ? "font-mono" : undefined}
-          aria-label={label}
-        />
-        <button
-          type="button"
-          onClick={handleCopy}
-          disabled={!String(value || "").trim()}
-          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
-          title={`Copy ${label}`}
-          aria-label={`Copy ${label}`}
-        >
-          {copied ? (
-            <Check className="h-3.5 w-3.5 text-emerald-600" />
-          ) : (
-            <Copy className="h-3.5 w-3.5" />
-          )}
-        </button>
-      </div>
-    </div>
-  );
 }
 
 function CopyProductButton({ service }) {
@@ -284,6 +247,9 @@ const EMPTY_PROFILE = {
   short_description: "",
   medium_description: "",
   long_description: "",
+  business_model: "",
+  core_value_proposition: "",
+  scope_boundaries: "",
   design_guide_raw: "",
   design_guide_abstract: "",
   core_keywords: normalizePillarKeywords([], { minCount: DEFAULT_PILLAR_COUNT }),
@@ -383,6 +349,10 @@ export default function CompanyData() {
   const [designGuideGenerating, setDesignGuideGenerating] = useState(false);
   const [designGuideSaving, setDesignGuideSaving] = useState(false);
   const [designGuideError, setDesignGuideError] = useState("");
+  const [markdownDragOver, setMarkdownDragOver] = useState(false);
+  const [missingOpen, setMissingOpen] = useState(false);
+  const [llmPromptOpen, setLlmPromptOpen] = useState(false);
+  const markdownInputRef = useRef(null);
 
   const loadData = useCallback(async () => {
     if (!companyId) return;
@@ -402,7 +372,7 @@ export default function CompanyData() {
       supabase
         .from("company_profiles")
         .select(
-          "id, domain, product_name, target_audience, abstract, short_description, medium_description, long_description, design_guide_raw, design_guide_abstract, core_keywords, competitors, services, team_members, contact_email, social_links, custom_fields"
+          "id, domain, product_name, target_audience, abstract, short_description, medium_description, long_description, business_model, core_value_proposition, scope_boundaries, design_guide_raw, design_guide_abstract, core_keywords, competitors, services, team_members, contact_email, social_links, custom_fields"
         )
         .eq("company_id", companyId)
         .maybeSingle(),
@@ -479,6 +449,9 @@ export default function CompanyData() {
         short_description: profile.short_description || "",
         medium_description: profile.medium_description || "",
         long_description: profile.long_description || "",
+        business_model: profile.business_model || "",
+        core_value_proposition: profile.core_value_proposition || "",
+        scope_boundaries: profile.scope_boundaries || "",
         design_guide_raw: profile.design_guide_raw || "",
         design_guide_abstract: profile.design_guide_abstract || "",
         core_keywords: normalizePillarKeywords(profile.core_keywords, {
@@ -785,6 +758,15 @@ export default function CompanyData() {
       case "long":
         updateField("long_description", "");
         break;
+      case "business_model":
+        updateField("business_model", "");
+        break;
+      case "core_value_proposition":
+        updateField("core_value_proposition", "");
+        break;
+      case "scope_boundaries":
+        updateField("scope_boundaries", "");
+        break;
       default:
         if (typeof panelId === "string" && panelId.startsWith("custom:")) {
           const defId = panelId.slice("custom:".length);
@@ -810,6 +792,11 @@ export default function CompanyData() {
     if (panelId === "short") return fields.short_description.trim();
     if (panelId === "medium") return fields.medium_description.trim();
     if (panelId === "long") return fields.long_description.trim();
+    if (panelId === "business_model") return fields.business_model.trim();
+    if (panelId === "core_value_proposition") {
+      return fields.core_value_proposition.trim();
+    }
+    if (panelId === "scope_boundaries") return fields.scope_boundaries.trim();
 
     if (panelId === "category") {
       return industries
@@ -927,14 +914,18 @@ export default function CompanyData() {
   };
 
   /** Persist profile to Supabase. Returns true on success. */
-  const persistProfile = async () => {
+  const persistProfile = async (overrides = {}) => {
     if (!companyId || saving) return false;
+
+    const currentFields = overrides.fields ?? fields;
+    const currentCustomValues = overrides.customValues ?? customValues;
+    const currentIndustryIds = overrides.selectedIndustryIds ?? selectedIndustryIds;
 
     setSaving(true);
     setSavedMessage("");
     setError("");
 
-    const competitors = normalizeCompetitors(fields.competitors)
+    const competitors = normalizeCompetitors(currentFields.competitors)
       .map((item) => ({
         name: item.name.trim(),
         url: item.url.trim(),
@@ -949,9 +940,9 @@ export default function CompanyData() {
       }
     }
 
-    const services = trimServicesForSave(fields.services);
-    const team_members = trimTeamMembersForSave(fields.team_members);
-    const social_links = trimSocialLinksForSave(fields.social_links);
+    const services = trimServicesForSave(currentFields.services);
+    const team_members = trimTeamMembersForSave(currentFields.team_members);
+    const social_links = trimSocialLinksForSave(currentFields.social_links);
 
     for (const member of team_members) {
       for (const url of member.same_as || []) {
@@ -973,10 +964,10 @@ export default function CompanyData() {
 
     const custom_fields = {};
     for (const def of customFieldDefs) {
-      custom_fields[def.name] = customValues[def.name] ?? "";
+      custom_fields[def.name] = currentCustomValues[def.name] ?? "";
     }
     // Preserve reserved keys written by other tools (e.g. Analytics `_analytics_tools`).
-    for (const [key, value] of Object.entries(customValues)) {
+    for (const [key, value] of Object.entries(currentCustomValues)) {
       if (key.startsWith("_") && !(key in custom_fields)) {
         custom_fields[key] = value;
       }
@@ -984,20 +975,24 @@ export default function CompanyData() {
 
     const payload = {
       company_id: companyId,
-      domain: fields.domain.trim() || null,
-      product_name: fields.product_name.trim() || null,
-      target_audience: fields.target_audience.trim() || null,
-      abstract: fields.abstract.trim() || null,
-      short_description: fields.short_description.trim() || null,
-      medium_description: fields.medium_description.trim() || null,
-      long_description: fields.long_description.trim() || null,
-      design_guide_raw: fields.design_guide_raw.trim() || null,
-      design_guide_abstract: fields.design_guide_abstract.trim() || null,
-      core_keywords: normalizePillarKeywords(fields.core_keywords),
+      domain: currentFields.domain.trim() || null,
+      product_name: currentFields.product_name.trim() || null,
+      target_audience: currentFields.target_audience.trim() || null,
+      abstract: currentFields.abstract.trim() || null,
+      short_description: currentFields.short_description.trim() || null,
+      medium_description: currentFields.medium_description.trim() || null,
+      long_description: currentFields.long_description.trim() || null,
+      business_model: (currentFields.business_model || "").trim() || null,
+      core_value_proposition:
+        (currentFields.core_value_proposition || "").trim() || null,
+      scope_boundaries: (currentFields.scope_boundaries || "").trim() || null,
+      design_guide_raw: currentFields.design_guide_raw.trim() || null,
+      design_guide_abstract: currentFields.design_guide_abstract.trim() || null,
+      core_keywords: normalizePillarKeywords(currentFields.core_keywords),
       competitors,
       services,
       team_members,
-      contact_email: fields.contact_email.trim() || null,
+      contact_email: currentFields.contact_email.trim() || null,
       social_links,
       custom_fields,
       updated_at: new Date().toISOString(),
@@ -1032,11 +1027,11 @@ export default function CompanyData() {
       return false;
     }
 
-    if (selectedIndustryIds.length > 0) {
+    if (currentIndustryIds.length > 0) {
       const { error: insertIndustriesError } = await supabase
         .from("company_industries")
         .insert(
-          selectedIndustryIds.map((industry_id) => ({
+          currentIndustryIds.map((industry_id) => ({
             company_id: companyId,
             industry_id,
           }))
@@ -1052,14 +1047,137 @@ export default function CompanyData() {
 
     setProfileId(data?.id || profileId);
     setSaving(false);
-    setSavedMessage("Saved");
-    window.setTimeout(() => setSavedMessage(""), 2500);
+    if (!overrides.skipSavedMessage) {
+      setSavedMessage("Saved");
+      window.setTimeout(() => setSavedMessage(""), 2500);
+    }
     return true;
   };
 
   const handleSave = async (e) => {
     e?.preventDefault?.();
     await persistProfile();
+  };
+
+  const importSocialShops = async (accounts, notes) => {
+    const accountRows = (accounts || [])
+      .map((account) => ({
+        company_id: companyId,
+        name: String(account.name || "").trim(),
+        type: account.type || "Other",
+        status: String(account.status || "").trim() || null,
+        url: String(account.url || "").trim() || null,
+        username: String(account.username || "").trim() || null,
+        access_details: String(account.access_details || "").trim() || null,
+        comments: String(account.comments || "").trim() || null,
+      }))
+      .filter((row) => row.name);
+    if (accountRows.length > 0) {
+      const { error: accountsError } = await supabase
+        .from("social_accounts")
+        .insert(accountRows);
+      if (accountsError) {
+        throw new Error(accountsError.message || "Failed to import Social & Shops");
+      }
+      setSocialShopsFilled(true);
+    }
+    const noteRows = (notes || [])
+      .map((text) => String(text || "").trim())
+      .filter(Boolean)
+      .map((text) => ({ company_id: companyId, text }));
+    if (noteRows.length > 0) {
+      const { error: notesError } = await supabase.from("social_notes").insert(noteRows);
+      if (notesError) {
+        throw new Error(notesError.message || "Failed to import Social & Shops notes");
+      }
+    }
+  };
+
+  const handleMarkdownFile = async (file) => {
+    if (!file || saving) return;
+    const name = String(file.name || "").toLowerCase();
+    if (!name.endsWith(".md") && !name.endsWith(".markdown")) {
+      setError("Please drop a .md markdown file.");
+      return;
+    }
+
+    setError("");
+    try {
+      const text = await file.text();
+      const parsed = parseCompanyMarkdown(text, {
+        extraLabels: customFieldDefs.map((def) => def.name),
+      });
+      const merged = mergeParsedCompanyFields({
+        parsed,
+        fields,
+        customValues,
+        customFieldDefs,
+        selectedIndustryIds,
+        industries,
+        socialShopsFilled,
+      });
+
+      if (merged.filled.length === 0) {
+        setSavedMessage(
+          merged.skipped.length > 0
+            ? "No empty fields to fill from that file"
+            : "No matching company fields found in that file"
+        );
+        window.setTimeout(() => setSavedMessage(""), 4000);
+        return;
+      }
+
+      const nextFields = {
+        ...merged.nextFields,
+        core_keywords: normalizePillarKeywords(merged.nextFields.core_keywords, {
+          minCount: 0,
+        }),
+        competitors: normalizeCompetitors(merged.nextFields.competitors),
+        services: normalizeServices(merged.nextFields.services),
+        team_members: normalizeTeamMembers(merged.nextFields.team_members),
+        social_links: normalizeSocialLinks(merged.nextFields.social_links),
+      };
+
+      setFields(nextFields);
+      setCustomValues(merged.nextCustom);
+      setSelectedIndustryIds(merged.nextIndustryIds);
+
+      const saved = await persistProfile({
+        fields: nextFields,
+        customValues: merged.nextCustom,
+        selectedIndustryIds: merged.nextIndustryIds,
+        skipSavedMessage: true,
+      });
+      if (!saved) return;
+
+      if (merged.socialAccounts) {
+        try {
+          await importSocialShops(merged.socialAccounts, merged.socialNotes);
+        } catch (err) {
+          console.error("Failed to import Social & Shops:", err);
+          setError(err?.message || "Failed to import Social & Shops");
+        }
+      }
+
+      const count = merged.filled.length;
+      setSavedMessage(
+        `Filled ${count} missing field${count === 1 ? "" : "s"} from ${file.name}`
+      );
+      window.setTimeout(() => setSavedMessage(""), 4000);
+    } catch (err) {
+      console.error("Failed to import company markdown:", err);
+      setError(err?.message || "Failed to import markdown");
+    }
+  };
+
+  const processMarkdownFiles = (fileList) => {
+    const files = Array.from(fileList || []);
+    if (files.length === 0) return;
+    if (files.length > 1) {
+      setError("Drop a single .md file.");
+      return;
+    }
+    handleMarkdownFile(files[0]);
   };
 
   const saveAndClosePanel = async () => {
@@ -1164,6 +1282,9 @@ export default function CompanyData() {
       ["Short Description", fields.short_description],
       ["Medium Description", fields.medium_description],
       ["Long Description", fields.long_description],
+      ["Business Model", fields.business_model],
+      ["Core Value Proposition", fields.core_value_proposition],
+      ["Scope / Boundaries", fields.scope_boundaries],
       ["Design Guide", fields.design_guide_raw],
       ["Design Abstract", fields.design_guide_abstract],
     ];
@@ -1210,6 +1331,14 @@ export default function CompanyData() {
     setDesignGuideAbstractReady(false);
     setDesignGuideError("");
     setDesignGuideOpen(true);
+  };
+
+  const openDataPoint = (id) => {
+    if (id === "design-guide") {
+      openDesignGuideModal();
+      return;
+    }
+    setOpenPanel(id);
   };
 
   const handleGenerateDesignGuideAbstract = async () => {
@@ -1361,15 +1490,83 @@ export default function CompanyData() {
   const selectedIndustries = industries.filter((industry) =>
     selectedIndustryIds.includes(industry.id)
   );
+  const dataPoints = getCompanyDataPoints({
+    fields,
+    selectedIndustryIds,
+    socialShopsFilled,
+    customFieldDefs,
+    customValues,
+  });
+  const completedCount = dataPoints.filter((point) => point.filled).length;
+  const missingPoints = dataPoints.filter((point) => !point.filled);
+  const llmUploadPrompt = buildLlmUploadPrompt({
+    companyName,
+    customFieldNames: customFieldDefs.map((def) => def.name),
+    industryNames: industries.map((industry) => industry.name),
+  });
 
   return (
     <div>
       <h1 className="text-xs text-foreground mb-1">
         {companyName || "Company Data"}
       </h1>
-      <p className="text-sm text-muted-foreground mb-6">
+      <p className="text-sm text-muted-foreground mb-4">
         Edit company profile fields and export as markdown.
       </p>
+
+      <div
+        role="button"
+        tabIndex={0}
+        className={`mb-2 rounded-md border border-dashed px-3 py-4 text-center transition-colors cursor-pointer ${
+          markdownDragOver ? "border-foreground bg-muted/40" : "border-border"
+        } ${saving ? "pointer-events-none opacity-60" : ""}`}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setMarkdownDragOver(true);
+        }}
+        onDragLeave={() => setMarkdownDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setMarkdownDragOver(false);
+          processMarkdownFiles(e.dataTransfer.files);
+        }}
+        onClick={() => markdownInputRef.current?.click()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            markdownInputRef.current?.click();
+          }
+        }}
+      >
+        <Upload className="mx-auto mb-1.5 h-5 w-5 text-muted-foreground" />
+        <p className="text-sm text-foreground">
+          Drop a .md file to fill empty fields
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Only missing fields are completed — existing values stay as they are
+        </p>
+        <input
+          ref={markdownInputRef}
+          type="file"
+          className="sr-only"
+          accept=".md,.markdown,text/markdown"
+          onChange={(e) => {
+            processMarkdownFiles(e.target.files);
+            e.target.value = "";
+          }}
+          onClick={(e) => e.stopPropagation()}
+        />
+      </div>
+      <div className="mb-6">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setLlmPromptOpen(true)}
+        >
+          LLM File Upload Prompt
+        </Button>
+      </div>
 
       {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
 
@@ -1432,6 +1629,24 @@ export default function CompanyData() {
 
         <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
           <PanelTrigger
+            title="Business Model"
+            filled={Boolean(fields.business_model.trim())}
+            onClick={() => setOpenPanel("business_model")}
+          />
+          <PanelTrigger
+            title="Core Value Proposition"
+            filled={Boolean(fields.core_value_proposition.trim())}
+            onClick={() => setOpenPanel("core_value_proposition")}
+          />
+          <PanelTrigger
+            title="Scope / Boundaries"
+            filled={Boolean(fields.scope_boundaries.trim())}
+            onClick={() => setOpenPanel("scope_boundaries")}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
+          <PanelTrigger
             title={`Pillar Keywords (${pillarTotal})`}
             filled={pillars.some(
               (pillar) =>
@@ -1477,6 +1692,78 @@ export default function CompanyData() {
           )}
         </div>
       </form>
+
+      <div className="mt-8 space-y-2 border-t border-border pt-4">
+        <p className="text-sm text-muted-foreground">
+          {completedCount} / {dataPoints.length} fields completed
+        </p>
+        {missingPoints.length > 0 ? (
+          <Collapsible open={missingOpen} onOpenChange={setMissingOpen}>
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                className="flex w-full items-center justify-between rounded-md py-1 text-left text-sm font-medium text-foreground hover:text-foreground"
+              >
+                Missing Data Points
+                <ChevronDown
+                  className={`h-4 w-4 text-muted-foreground transition-transform ${
+                    missingOpen ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <ul className="mt-1 space-y-0.5">
+                {missingPoints.map((point) => (
+                  <li key={point.id}>
+                    <button
+                      type="button"
+                      className="text-sm text-muted-foreground hover:text-foreground hover:underline"
+                      onClick={() => openDataPoint(point.id)}
+                    >
+                      {point.label}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </CollapsibleContent>
+          </Collapsible>
+        ) : (
+          <p className="text-sm text-muted-foreground">All fields completed.</p>
+        )}
+      </div>
+
+      <Dialog open={llmPromptOpen} onOpenChange={setLlmPromptOpen}>
+        <DialogContent className={PANEL_DIALOG_CLASS}>
+          <DialogHeader className="shrink-0 space-y-1 border-b border-border px-6 py-4 pr-12 text-left">
+            <DialogTitle>LLM File Upload Prompt</DialogTitle>
+            <DialogDescription>
+              Paste this into an LLM with your company context. Save the reply as
+              a .md file and drop it above to fill empty fields.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+            <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-foreground">
+              {llmUploadPrompt}
+            </pre>
+          </div>
+          <DialogFooter className="shrink-0 border-t border-border px-6 py-4 sm:justify-end">
+            <PanelModalActions
+              onCopy={async () => {
+                const ok = await copyTextToClipboard(llmUploadPrompt);
+                if (!ok) {
+                  setError("Copy failed");
+                  return false;
+                }
+                setError("");
+                return true;
+              }}
+              onClose={() => setLlmPromptOpen(false)}
+              showSave={false}
+            />
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Domain */}
       <Dialog
@@ -1892,8 +2179,7 @@ export default function CompanyData() {
           <DialogHeader className="shrink-0 space-y-1 border-b border-border px-6 py-4 pr-12 text-left">
             <DialogTitle>Products & Services ({services.length})</DialogTitle>
             <DialogDescription>
-              One card per offering. For books, add ISBN, publisher, author, and
-              publication date, then copy a field or the whole product.
+              One card per offering — title, summary, and optional detail.
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-4">
@@ -1935,35 +2221,6 @@ export default function CompanyData() {
                   className="min-h-[72px]"
                   aria-label={`Service ${index + 1} detail`}
                 />
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <CopyField
-                    label="ISBN"
-                    value={service.isbn}
-                    onChange={(value) => updateService(index, "isbn", value)}
-                    placeholder="979-8-9974987-0-2"
-                    mono
-                  />
-                  <CopyField
-                    label="Publisher"
-                    value={service.publisher}
-                    onChange={(value) => updateService(index, "publisher", value)}
-                    placeholder="Album Amicorum"
-                  />
-                  <CopyField
-                    label="Author"
-                    value={service.author}
-                    onChange={(value) => updateService(index, "author", value)}
-                    placeholder="Album Amicorum"
-                  />
-                  <CopyField
-                    label="Publication date"
-                    value={service.publicationDate}
-                    onChange={(value) =>
-                      updateService(index, "publicationDate", value)
-                    }
-                    placeholder="August 12, 2026"
-                  />
-                </div>
               </div>
             ))}
             <Button type="button" variant="outline" size="sm" onClick={addService}>
@@ -2151,6 +2408,134 @@ export default function CompanyData() {
               type="button"
               variant="destructive"
               onClick={() => confirmClearPanel("long", "Long Description")}
+            >
+              Delete
+            </Button>
+            <PanelModalActions
+              onCopy={() => handleCopyPanel(openPanel)}
+              onClose={() => setOpenPanel(null)}
+              onSave={saveAndClosePanel}
+              saving={saving}
+            />
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Business Model */}
+      <Dialog
+        open={openPanel === "business_model"}
+        onOpenChange={(open) => setOpenPanel(open ? "business_model" : null)}
+      >
+        <DialogContent className={PANEL_DIALOG_CLASS}>
+          <DialogHeader className="shrink-0 space-y-1 border-b border-border px-6 py-4 pr-12 text-left">
+            <DialogTitle>Business Model</DialogTitle>
+            <DialogDescription>
+              How the company makes money and delivers value.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+            <Textarea
+              id="business_model"
+              value={fields.business_model}
+              onChange={(e) => updateField("business_model", e.target.value)}
+              placeholder="Who pays, for what, and how — product, services, marketplace, membership, etc."
+              className="min-h-full h-full"
+            />
+          </div>
+          <DialogFooter className="shrink-0 gap-2 border-t border-border px-6 py-4 sm:justify-between">
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => confirmClearPanel("business_model", "Business Model")}
+            >
+              Delete
+            </Button>
+            <PanelModalActions
+              onCopy={() => handleCopyPanel(openPanel)}
+              onClose={() => setOpenPanel(null)}
+              onSave={saveAndClosePanel}
+              saving={saving}
+            />
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Core Value Proposition */}
+      <Dialog
+        open={openPanel === "core_value_proposition"}
+        onOpenChange={(open) =>
+          setOpenPanel(open ? "core_value_proposition" : null)
+        }
+      >
+        <DialogContent className={PANEL_DIALOG_CLASS}>
+          <DialogHeader className="shrink-0 space-y-1 border-b border-border px-6 py-4 pr-12 text-left">
+            <DialogTitle>Core Value Proposition</DialogTitle>
+            <DialogDescription>
+              The primary reason customers choose this company over alternatives.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+            <Textarea
+              id="core_value_proposition"
+              value={fields.core_value_proposition}
+              onChange={(e) =>
+                updateField("core_value_proposition", e.target.value)
+              }
+              placeholder="One clear promise — why this company, not a competitor."
+              className="min-h-full h-full"
+            />
+          </div>
+          <DialogFooter className="shrink-0 gap-2 border-t border-border px-6 py-4 sm:justify-between">
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() =>
+                confirmClearPanel(
+                  "core_value_proposition",
+                  "Core Value Proposition"
+                )
+              }
+            >
+              Delete
+            </Button>
+            <PanelModalActions
+              onCopy={() => handleCopyPanel(openPanel)}
+              onClose={() => setOpenPanel(null)}
+              onSave={saveAndClosePanel}
+              saving={saving}
+            />
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Scope / Boundaries */}
+      <Dialog
+        open={openPanel === "scope_boundaries"}
+        onOpenChange={(open) => setOpenPanel(open ? "scope_boundaries" : null)}
+      >
+        <DialogContent className={PANEL_DIALOG_CLASS}>
+          <DialogHeader className="shrink-0 space-y-1 border-b border-border px-6 py-4 pr-12 text-left">
+            <DialogTitle>Scope / Boundaries</DialogTitle>
+            <DialogDescription>
+              What is in scope — and what this company explicitly does not do.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+            <Textarea
+              id="scope_boundaries"
+              value={fields.scope_boundaries}
+              onChange={(e) => updateField("scope_boundaries", e.target.value)}
+              placeholder="In scope vs. out of scope. Name adjacent work you turn down."
+              className="min-h-full h-full"
+            />
+          </div>
+          <DialogFooter className="shrink-0 gap-2 border-t border-border px-6 py-4 sm:justify-between">
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() =>
+                confirmClearPanel("scope_boundaries", "Scope / Boundaries")
+              }
             >
               Delete
             </Button>
