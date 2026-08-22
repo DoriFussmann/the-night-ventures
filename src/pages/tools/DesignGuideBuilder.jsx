@@ -34,6 +34,10 @@ const EMPTY_TOKENS = {
   brand_voice: "",
 };
 
+const CURRENT_GUIDE_PREFIX = "# Design Guide\n\n```tokens";
+const KEPT_PREVIOUS_GUIDE =
+  "Kept the previous guide — nothing was generated.";
+
 function downloadMarkdown(filename, content) {
   const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -121,6 +125,7 @@ export default function DesignGuideBuilder() {
   const [error, setError] = useState("");
   const [savedMessage, setSavedMessage] = useState("");
   const [copyMessage, setCopyMessage] = useState("");
+  const [lastGeneratedAt, setLastGeneratedAt] = useState(null);
 
   const loadCompanyData = useCallback(async () => {
     if (!companyId) return;
@@ -183,6 +188,7 @@ export default function DesignGuideBuilder() {
     const raw = String(profile?.design_guide_raw || "").trim();
     setMarkdown(raw);
     setSavedMarkdown(raw);
+    setLastGeneratedAt(null);
 
     setLoading(false);
   }, [companyId]);
@@ -285,7 +291,10 @@ export default function DesignGuideBuilder() {
       const ok = window.confirm(
         "Replace the current Design Guide with a newly generated one?"
       );
-      if (!ok) return;
+      if (!ok) {
+        setError(KEPT_PREVIOUS_GUIDE);
+        return;
+      }
     }
 
     setGenerating(true);
@@ -296,13 +305,15 @@ export default function DesignGuideBuilder() {
       const data = await requestGenerate({ suggestOnly: false });
       const next = String(data.markdown || "").trim();
       if (!next) {
-        throw new Error("No Design Guide returned");
+        setError(KEPT_PREVIOUS_GUIDE);
+        return;
       }
       applyReturnedTokens(data.tokens, { emptyOnly: false });
       setMarkdown(next);
+      setLastGeneratedAt(Date.now());
     } catch (err) {
       console.error("Design Guide generate failed:", err);
-      setError(err.message || "Failed to generate Design Guide");
+      setError(KEPT_PREVIOUS_GUIDE);
     } finally {
       setGenerating(false);
     }
@@ -693,11 +704,23 @@ export default function DesignGuideBuilder() {
               "Generate Design Guide"
             )}
           </Button>
+          {lastGeneratedAt ? (
+            <span className="text-sm text-muted-foreground">Generated just now</span>
+          ) : null}
         </div>
       </section>
 
       <section className="space-y-3">
         <h2 className="text-xs text-foreground">Design Guide.md</h2>
+        {markdown.trim() &&
+          !markdown.trim().startsWith(CURRENT_GUIDE_PREFIX) && (
+            <Alert>
+              <AlertDescription>
+                This saved guide predates the current template. Generate to
+                replace it.
+              </AlertDescription>
+            </Alert>
+          )}
         <Textarea
           value={markdown}
           onChange={(e) => setMarkdown(e.target.value)}
@@ -725,6 +748,9 @@ export default function DesignGuideBuilder() {
             <Download className="w-4 h-4" />
             Download
           </Button>
+          {lastGeneratedAt ? (
+            <span className="text-sm text-muted-foreground">Generated just now</span>
+          ) : null}
           {savedMessage && (
             <span className="text-sm text-muted-foreground">{savedMessage}</span>
           )}
