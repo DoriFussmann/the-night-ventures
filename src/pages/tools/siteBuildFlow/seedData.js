@@ -1,3 +1,5 @@
+import { DESIGN_ACTIVATION_PROMPT } from "./designActivationPrompt";
+
 /** Predefined Site Build Flow stages and items (seeded per company on first load). */
 
 export const STATUSES = ["open", "wip", "done"];
@@ -115,9 +117,9 @@ export const PREDEFINED_ITEMS = {
     },
     {
       item_key: "add-design-guide-to-project-root",
-      title: "Add Design Guide.md to project root",
+      title: "Copy Design Guide.md to site/Design Guide.md",
       description:
-        "Place the downloaded file at the root of the cloned project. The Layer 2 build prompt references this file.",
+        "Copy the downloaded file to `site/Design Guide.md` in the cloned project (replace the Layer 1 placeholder). Do not put it at the repo root. Site Activation's Design Activation prompt reads this path.",
       prompts: [],
     },
     {
@@ -263,6 +265,27 @@ export const PREDEFINED_ITEMS = {
     },
   ],
   "site-activation": [
+    {
+      item_key: "place-design-guide-on-site",
+      title: "Copy Design Guide.md to site/Design Guide.md",
+      description:
+        "If you have not already: generate Design Guide.md in Design Builder, download it, and copy it to `site/Design Guide.md` in the cloned SEO site (replace the Layer 1 placeholder). Do not put it at the repo root. Confirm the file is at that path before running the next step.",
+      prompts: [],
+      linkTo: "/company/:companyId/design-guide-builder",
+      linkLabel: "Open Design Builder →",
+    },
+    {
+      item_key: "run-design-activation-prompt",
+      title: "Run Design Activation prompt in Cursor",
+      description:
+        "Open the destination site in Cursor. Copy the Design Activation prompt below and paste it into the agent. It restyles the Layer 1 site from `site/Design Guide.md` — it does not rewrite copy or identity.",
+      prompts: [
+        {
+          label: "Design Activation prompt",
+          text: DESIGN_ACTIVATION_PROMPT,
+        },
+      ],
+    },
     {
       item_key: "run-specific-prompt",
       title: "Run Specific Prompt",

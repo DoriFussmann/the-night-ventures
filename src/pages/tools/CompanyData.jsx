@@ -33,7 +33,10 @@ import {
   trimTeamMembersForSave,
 } from "./templateToPrompt/customFieldKeys";
 import SocialShopsPanel from "./SocialShopsPanel";
-import { parseCompanyMarkdown } from "./companyData/parseCompanyMarkdown";
+import {
+  formatBrandTokensMarkdown,
+  parseCompanyMarkdown,
+} from "./companyData/parseCompanyMarkdown";
 import {
   getCompanyDataPoints,
   mergeParsedCompanyFields,
@@ -252,6 +255,13 @@ const EMPTY_PROFILE = {
   scope_boundaries: "",
   design_guide_raw: "",
   design_guide_abstract: "",
+  brand_feel: "",
+  brand_accent: "",
+  brand_band: "",
+  brand_positive: "",
+  wordmark_primary: "",
+  wordmark_accent: "",
+  brand_voice: "",
   core_keywords: normalizePillarKeywords([], { minCount: DEFAULT_PILLAR_COUNT }),
   competitors: [],
   services: [],
@@ -372,7 +382,7 @@ export default function CompanyData() {
       supabase
         .from("company_profiles")
         .select(
-          "id, domain, product_name, target_audience, abstract, short_description, medium_description, long_description, business_model, core_value_proposition, scope_boundaries, design_guide_raw, design_guide_abstract, core_keywords, competitors, services, team_members, contact_email, social_links, custom_fields"
+          "id, domain, product_name, target_audience, abstract, short_description, medium_description, long_description, business_model, core_value_proposition, scope_boundaries, design_guide_raw, design_guide_abstract, brand_feel, brand_accent, brand_band, brand_positive, wordmark_primary, wordmark_accent, brand_voice, core_keywords, competitors, services, team_members, contact_email, social_links, custom_fields"
         )
         .eq("company_id", companyId)
         .maybeSingle(),
@@ -454,6 +464,13 @@ export default function CompanyData() {
         scope_boundaries: profile.scope_boundaries || "",
         design_guide_raw: profile.design_guide_raw || "",
         design_guide_abstract: profile.design_guide_abstract || "",
+        brand_feel: profile.brand_feel || "",
+        brand_accent: profile.brand_accent || "",
+        brand_band: profile.brand_band || "",
+        brand_positive: profile.brand_positive || "",
+        wordmark_primary: profile.wordmark_primary || "",
+        wordmark_accent: profile.wordmark_accent || "",
+        brand_voice: profile.brand_voice || "",
         core_keywords: normalizePillarKeywords(profile.core_keywords, {
           minCount: Array.isArray(profile.core_keywords) && profile.core_keywords.length > 0
             ? 0
@@ -988,6 +1005,13 @@ export default function CompanyData() {
       scope_boundaries: (currentFields.scope_boundaries || "").trim() || null,
       design_guide_raw: currentFields.design_guide_raw.trim() || null,
       design_guide_abstract: currentFields.design_guide_abstract.trim() || null,
+      brand_feel: (currentFields.brand_feel || "").trim() || null,
+      brand_accent: (currentFields.brand_accent || "").trim() || null,
+      brand_band: (currentFields.brand_band || "").trim() || null,
+      brand_positive: (currentFields.brand_positive || "").trim() || null,
+      wordmark_primary: (currentFields.wordmark_primary || "").trim() || null,
+      wordmark_accent: (currentFields.wordmark_accent || "").trim() || null,
+      brand_voice: (currentFields.brand_voice || "").trim() || null,
       core_keywords: normalizePillarKeywords(currentFields.core_keywords),
       competitors,
       services,
@@ -1285,6 +1309,7 @@ export default function CompanyData() {
       ["Business Model", fields.business_model],
       ["Core Value Proposition", fields.core_value_proposition],
       ["Scope / Boundaries", fields.scope_boundaries],
+      ["Brand Tokens", formatBrandTokensMarkdown(fields)],
       ["Design Guide", fields.design_guide_raw],
       ["Design Abstract", fields.design_guide_abstract],
     ];
@@ -1304,6 +1329,7 @@ export default function CompanyData() {
       "Products & Services",
       "Team Members",
       "Social Links",
+      "Brand Tokens",
       "Design Guide",
     ]);
 

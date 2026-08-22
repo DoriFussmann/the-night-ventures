@@ -306,6 +306,26 @@ export function mergeParsedCompanyFields({
     nextFields.social_links = parsed.social_links;
   }
 
+  const brandTokenKeys = [
+    "brand_feel",
+    "brand_accent",
+    "brand_band",
+    "brand_positive",
+    "wordmark_primary",
+    "wordmark_accent",
+    "brand_voice",
+  ];
+  let brandFilledAny = false;
+  for (const key of brandTokenKeys) {
+    if (!textFilled(fields[key]) && textFilled(parsed[key])) {
+      nextFields[key] = parsed[key];
+      brandFilledAny = true;
+    }
+  }
+  if (brandFilledAny) {
+    filled.push("Brand Tokens");
+  }
+
   return {
     nextFields,
     nextCustom,

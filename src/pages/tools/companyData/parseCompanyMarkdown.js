@@ -35,6 +35,7 @@ const LABEL_TO_KEY = {
   "design guide": "design_guide_raw",
   "design guidelines": "design_guide_raw",
   "design abstract": "design_guide_abstract",
+  "brand tokens": "brand_tokens",
   "team members": "team_members",
   team: "team_members",
   "contact email": "contact_email",
@@ -161,7 +162,11 @@ function collectBareLabelLines(text, extraLabels, sections, custom) {
   let match;
   while ((match = re.exec(text)) !== null) {
     const resolved = resolveKey(match[1], extraLabels);
-    if (resolved?.key === "design_guide_raw" || resolved?.key === "social_shops") {
+    if (
+      resolved?.key === "design_guide_raw" ||
+      resolved?.key === "social_shops" ||
+      resolved?.key === "brand_tokens"
+    ) {
       continue;
     }
     assignSection(sections, custom, resolved, match[2]);
@@ -398,6 +403,88 @@ function parseAccountDetailLines(lines) {
   return account;
 }
 
+const BRAND_TOKEN_FIELD_MAP = {
+  feel: "brand_feel",
+  "brand feel": "brand_feel",
+  accent: "brand_accent",
+  "brand accent": "brand_accent",
+  band: "brand_band",
+  "brand band": "brand_band",
+  positive: "brand_positive",
+  "brand positive": "brand_positive",
+  "wordmark primary": "wordmark_primary",
+  "wordmark (ink)": "wordmark_primary",
+  "wordmark ink": "wordmark_primary",
+  "wordmark accent": "wordmark_accent",
+  "wordmark (accent)": "wordmark_accent",
+  voice: "brand_voice",
+  "brand voice": "brand_voice",
+};
+
+function emptyBrandTokens() {
+  return {
+    brand_feel: "",
+    brand_accent: "",
+    brand_band: "",
+    brand_positive: "",
+    wordmark_primary: "",
+    wordmark_accent: "",
+    brand_voice: "",
+  };
+}
+
+function parseBrandTokens(value) {
+  const tokens = emptyBrandTokens();
+  const text = asText(value);
+  if (!text) return tokens;
+
+  const lines = text.split("\n");
+  let pendingKey = null;
+  for (const line of lines) {
+    const bullet = line.match(/^\s*[-*]\s+(.*)$/);
+    const content = bullet ? bullet[1] : line;
+    const labeled = content.match(/^([A-Za-z][A-Za-z ()]*):\s*(.*)$/);
+    if (labeled) {
+      const key = BRAND_TOKEN_FIELD_MAP[normalizeLabel(labeled[1])];
+      if (key) {
+        tokens[key] = asText(labeled[2]);
+        pendingKey = key;
+        continue;
+      }
+    }
+    if (pendingKey && asText(line)) {
+      tokens[pendingKey] = `${tokens[pendingKey]}\n${asText(line)}`.trim();
+    }
+  }
+  return tokens;
+}
+
+export function formatBrandTokensMarkdown(fields = {}) {
+  if (!brandTokensFilled(fields)) return "";
+  const lines = [
+    `Feel: ${asText(fields.brand_feel)}`,
+    `Accent: ${asText(fields.brand_accent)}`,
+    `Band: ${asText(fields.brand_band)}`,
+    `Positive: ${asText(fields.brand_positive)}`,
+    `Wordmark Primary: ${asText(fields.wordmark_primary)}`,
+    `Wordmark Accent: ${asText(fields.wordmark_accent)}`,
+    `Voice: ${asText(fields.brand_voice)}`,
+  ];
+  return lines.join("\n").trim();
+}
+
+export function brandTokensFilled(fields = {}) {
+  return Boolean(
+    asText(fields.brand_feel) ||
+      asText(fields.brand_accent) ||
+      asText(fields.brand_band) ||
+      asText(fields.brand_positive) ||
+      asText(fields.wordmark_primary) ||
+      asText(fields.wordmark_accent) ||
+      asText(fields.brand_voice)
+  );
+}
+
 function parseSocialShops(value) {
   const text = asText(value);
   if (!text) return { accounts: [], notes: [] };
@@ -490,6 +577,7 @@ export function parseCompanyMarkdown(markdown, options = {}) {
     scope_boundaries: parseTextField(sections.scope_boundaries),
     design_guide_raw: parseTextField(sections.design_guide_raw),
     design_guide_abstract: parseTextField(sections.design_guide_abstract),
+    ...parseBrandTokens(sections.brand_tokens),
     core_keywords: parsePillars(sections.core_keywords),
     competitors: parseCompetitors(sections.competitors),
     services: parseServices(sections.services),
@@ -514,6 +602,9 @@ export function parsedFieldPresent(parsed, key) {
   }
   if (key === "design-guide") {
     return Boolean(parsed.design_guide_raw || parsed.design_guide_abstract);
+  }
+  if (key === "brand_tokens" || key === "brand-tokens") {
+    return brandTokensFilled(parsed);
   }
   return Boolean(asText(parsed[key]));
 }

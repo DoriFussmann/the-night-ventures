@@ -12,6 +12,28 @@ import {
   normalizeTeamMembers,
 } from "./templateToPrompt/customFieldKeys";
 
+const HEX_RE = /^#[0-9A-Fa-f]{6}$/;
+
+const TOKEN_KEYS = [
+  "brand_feel",
+  "brand_accent",
+  "brand_band",
+  "brand_positive",
+  "wordmark_primary",
+  "wordmark_accent",
+  "brand_voice",
+];
+
+const EMPTY_TOKENS = {
+  brand_feel: "",
+  brand_accent: "",
+  brand_band: "",
+  brand_positive: "",
+  wordmark_primary: "",
+  wordmark_accent: "",
+  brand_voice: "",
+};
+
 function downloadMarkdown(filename, content) {
   const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -57,13 +79,17 @@ function ReadOnlyField({ label, value, multiline = false }) {
   );
 }
 
-const EMPTY_VIBE = {
-  brandFeel: "",
-  colorPreference: "",
-  typographyPreference: "",
-  toneAdjectives: "",
-  antiPatterns: "",
-};
+function ColorSwatch({ value }) {
+  const hex = String(value || "").trim();
+  if (!HEX_RE.test(hex)) return null;
+  return (
+    <span
+      aria-hidden="true"
+      className="h-6 w-6 shrink-0 rounded-sm border border-border"
+      style={{ backgroundColor: hex }}
+    />
+  );
+}
 
 export default function DesignGuideBuilder() {
   const { companyId } = useParams();
@@ -76,16 +102,21 @@ export default function DesignGuideBuilder() {
   const [shortDescription, setShortDescription] = useState("");
   const [mediumDescription, setMediumDescription] = useState("");
   const [longDescription, setLongDescription] = useState("");
+  const [targetAudience, setTargetAudience] = useState("");
+  const [businessModel, setBusinessModel] = useState("");
+  const [coreValueProposition, setCoreValueProposition] = useState("");
+  const [scopeBoundaries, setScopeBoundaries] = useState("");
   const [services, setServices] = useState([]);
   const [teamMembers, setTeamMembers] = useState([]);
   const [competitors, setCompetitors] = useState([]);
 
-  const [vibe, setVibe] = useState(EMPTY_VIBE);
+  const [tokens, setTokens] = useState(EMPTY_TOKENS);
   const [markdown, setMarkdown] = useState("");
   const [savedMarkdown, setSavedMarkdown] = useState("");
 
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [savedMessage, setSavedMessage] = useState("");
@@ -102,7 +133,7 @@ export default function DesignGuideBuilder() {
       supabase
         .from("company_profiles")
         .select(
-          "id, domain, product_name, abstract, short_description, medium_description, long_description, services, team_members, competitors, design_guide_raw"
+          "id, domain, product_name, abstract, short_description, medium_description, long_description, target_audience, business_model, core_value_proposition, scope_boundaries, services, team_members, competitors, design_guide_raw, brand_feel, brand_accent, brand_band, brand_positive, wordmark_primary, wordmark_accent, brand_voice"
         )
         .eq("company_id", companyId)
         .maybeSingle(),
@@ -132,9 +163,22 @@ export default function DesignGuideBuilder() {
     setShortDescription(profile?.short_description || "");
     setMediumDescription(profile?.medium_description || "");
     setLongDescription(profile?.long_description || "");
+    setTargetAudience(profile?.target_audience || "");
+    setBusinessModel(profile?.business_model || "");
+    setCoreValueProposition(profile?.core_value_proposition || "");
+    setScopeBoundaries(profile?.scope_boundaries || "");
     setServices(normalizeServices(profile?.services));
     setTeamMembers(normalizeTeamMembers(profile?.team_members));
     setCompetitors(normalizeCompetitors(profile?.competitors));
+    setTokens({
+      brand_feel: profile?.brand_feel || "",
+      brand_accent: profile?.brand_accent || "",
+      brand_band: profile?.brand_band || "",
+      brand_positive: profile?.brand_positive || "",
+      wordmark_primary: profile?.wordmark_primary || "",
+      wordmark_accent: profile?.wordmark_accent || "",
+      brand_voice: profile?.brand_voice || "",
+    });
 
     const raw = String(profile?.design_guide_raw || "").trim();
     setMarkdown(raw);
@@ -180,12 +224,63 @@ export default function DesignGuideBuilder() {
     usableServices.length,
   ]);
 
-  const updateVibe = (key, value) => {
-    setVibe((prev) => ({ ...prev, [key]: value }));
+  const updateToken = (key, value) => {
+    setTokens((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const companyPayload = () => ({
+    name: companyName,
+    product_name: productName,
+    domain,
+    abstract,
+    short_description: shortDescription,
+    medium_description: mediumDescription,
+    long_description: longDescription,
+    target_audience: targetAudience,
+    business_model: businessModel,
+    core_value_proposition: coreValueProposition,
+    scope_boundaries: scopeBoundaries,
+    services: usableServices,
+    team_members: usableTeam.map((t) => ({
+      name: t.name,
+      role: t.role,
+      bio: t.bio,
+    })),
+    competitors: usableCompetitors,
+    ...tokens,
+  });
+
+  const applyReturnedTokens = (returned, { emptyOnly }) => {
+    if (!returned || typeof returned !== "object") return;
+    setTokens((prev) => {
+      const next = { ...prev };
+      for (const key of TOKEN_KEYS) {
+        if (!(key in returned)) continue;
+        if (emptyOnly && String(prev[key] || "").trim()) continue;
+        next[key] = String(returned[key] ?? "");
+      }
+      return next;
+    });
+  };
+
+  const requestGenerate = async ({ suggestOnly }) => {
+    const res = await fetch("/api/design-guide?action=generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        company: companyPayload(),
+        suggestOnly: Boolean(suggestOnly),
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || `Generate failed (${res.status})`);
+    }
+    return data;
   };
 
   const handleGenerate = async () => {
-    if (generating) return;
+    if (generating || suggesting) return;
     if (markdown.trim()) {
       const ok = window.confirm(
         "Replace the current Design Guide with a newly generated one?"
@@ -198,43 +293,39 @@ export default function DesignGuideBuilder() {
     setSavedMessage("");
 
     try {
-      const res = await fetch("/api/design-guide?action=generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          company: {
-            name: companyName,
-            product_name: productName,
-            domain,
-            abstract,
-            short_description: shortDescription,
-            medium_description: mediumDescription,
-            long_description: longDescription,
-            services: usableServices,
-            team_members: usableTeam.map((t) => ({
-              name: t.name,
-              role: t.role,
-              bio: t.bio,
-            })),
-            competitors: usableCompetitors,
-          },
-          vibe,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.error || `Generate failed (${res.status})`);
-      }
+      const data = await requestGenerate({ suggestOnly: false });
       const next = String(data.markdown || "").trim();
       if (!next) {
         throw new Error("No Design Guide returned");
       }
+      applyReturnedTokens(data.tokens, { emptyOnly: false });
       setMarkdown(next);
     } catch (err) {
       console.error("Design Guide generate failed:", err);
       setError(err.message || "Failed to generate Design Guide");
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleSuggestTokens = async () => {
+    if (generating || suggesting) return;
+
+    setSuggesting(true);
+    setError("");
+    setSavedMessage("");
+
+    try {
+      const data = await requestGenerate({ suggestOnly: true });
+      if (!data.tokens || typeof data.tokens !== "object") {
+        throw new Error("No tokens returned");
+      }
+      applyReturnedTokens(data.tokens, { emptyOnly: true });
+    } catch (err) {
+      console.error("Suggest tokens failed:", err);
+      setError(err.message || "Failed to suggest tokens");
+    } finally {
+      setSuggesting(false);
     }
   };
 
@@ -271,6 +362,13 @@ export default function DesignGuideBuilder() {
       const rawPayload = {
         company_id: companyId,
         design_guide_raw: raw,
+        brand_feel: tokens.brand_feel.trim() || null,
+        brand_accent: tokens.brand_accent.trim() || null,
+        brand_band: tokens.brand_band.trim() || null,
+        brand_positive: tokens.brand_positive.trim() || null,
+        wordmark_primary: tokens.wordmark_primary.trim() || null,
+        wordmark_accent: tokens.wordmark_accent.trim() || null,
+        brand_voice: tokens.brand_voice.trim() || null,
         updated_at: new Date().toISOString(),
       };
       if (profileId) {
@@ -345,6 +443,7 @@ export default function DesignGuideBuilder() {
   }
 
   const dirty = markdown !== savedMarkdown;
+  const busy = generating || suggesting || saving;
 
   return (
     <div className="space-y-10">
@@ -400,6 +499,26 @@ export default function DesignGuideBuilder() {
           <ReadOnlyField
             label="Long description"
             value={longDescription}
+            multiline
+          />
+          <ReadOnlyField
+            label="Target audience"
+            value={targetAudience}
+            multiline
+          />
+          <ReadOnlyField
+            label="Business model"
+            value={businessModel}
+            multiline
+          />
+          <ReadOnlyField
+            label="Core value proposition"
+            value={coreValueProposition}
+            multiline
+          />
+          <ReadOnlyField
+            label="Scope / boundaries"
+            value={scopeBoundaries}
             multiline
           />
         </div>
@@ -465,73 +584,116 @@ export default function DesignGuideBuilder() {
 
       <section className="space-y-4">
         <div>
-          <h2 className="text-xs text-foreground">Brand vibe</h2>
+          <h2 className="text-xs text-foreground">Brand tokens</h2>
           <p className="text-sm text-muted-foreground">
-            Optional. Leave blank to let AI choose from Company Data.
+            Persisted on the company profile. Leave a field blank and use Suggest
+            tokens to fill it from Company Data.
           </p>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="brand-feel">Brand feel / personality</Label>
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="brand-feel">Feel</Label>
             <Input
               id="brand-feel"
-              value={vibe.brandFeel}
-              onChange={(e) => updateVibe("brandFeel", e.target.value)}
-              placeholder='e.g. "calm, trustworthy, editorial"'
+              value={tokens.brand_feel}
+              onChange={(e) => updateToken("brand_feel", e.target.value)}
+              placeholder="One sentence."
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="color-pref">Color preference</Label>
+            <Label htmlFor="brand-accent">Accent</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                id="brand-accent"
+                value={tokens.brand_accent}
+                onChange={(e) => updateToken("brand_accent", e.target.value)}
+                placeholder="#3A7D5E"
+              />
+              <ColorSwatch value={tokens.brand_accent} />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="brand-band">Band</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                id="brand-band"
+                value={tokens.brand_band}
+                onChange={(e) => updateToken("brand_band", e.target.value)}
+                placeholder="#1A1A2E"
+              />
+              <ColorSwatch value={tokens.brand_band} />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="brand-positive">Positive</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                id="brand-positive"
+                value={tokens.brand_positive}
+                onChange={(e) => updateToken("brand_positive", e.target.value)}
+                placeholder="#6a9a78"
+              />
+              <ColorSwatch value={tokens.brand_positive} />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="wordmark-primary">Wordmark (ink)</Label>
             <Input
-              id="color-pref"
-              value={vibe.colorPreference}
-              onChange={(e) => updateVibe("colorPreference", e.target.value)}
-              placeholder="no preference, let AI choose"
+              id="wordmark-primary"
+              value={tokens.wordmark_primary}
+              onChange={(e) => updateToken("wordmark_primary", e.target.value)}
+              placeholder="First part"
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="type-pref">Typography preference</Label>
+            <Label htmlFor="wordmark-accent">Wordmark (accent)</Label>
             <Input
-              id="type-pref"
-              value={vibe.typographyPreference}
-              onChange={(e) =>
-                updateVibe("typographyPreference", e.target.value)
-              }
-              placeholder="no preference, let AI choose"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="tone-adj">Tone adjectives</Label>
-            <Input
-              id="tone-adj"
-              value={vibe.toneAdjectives}
-              onChange={(e) => updateVibe("toneAdjectives", e.target.value)}
-              placeholder="optional short list"
+              id="wordmark-accent"
+              value={tokens.wordmark_accent}
+              onChange={(e) => updateToken("wordmark_accent", e.target.value)}
+              placeholder="Second part — blank if the name does not split"
             />
           </div>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="anti-patterns">Anti-patterns / things to avoid</Label>
+          <Label htmlFor="brand-voice">Voice</Label>
           <Textarea
-            id="anti-patterns"
-            value={vibe.antiPatterns}
-            onChange={(e) => updateVibe("antiPatterns", e.target.value)}
-            className="min-h-[80px]"
-            placeholder="optional"
+            id="brand-voice"
+            value={tokens.brand_voice}
+            onChange={(e) => updateToken("brand_voice", e.target.value)}
+            className="min-h-[100px]"
+            placeholder="Short do/don't, ≤120 words."
           />
         </div>
 
-        <Button type="button" onClick={handleGenerate} disabled={generating}>
-          {generating ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Generating…
-            </>
-          ) : (
-            "Generate Design Guide"
-          )}
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleSuggestTokens}
+            disabled={busy}
+          >
+            {suggesting ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Suggesting…
+              </>
+            ) : (
+              "Suggest tokens"
+            )}
+          </Button>
+          <Button type="button" onClick={handleGenerate} disabled={busy}>
+            {generating ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Generating…
+              </>
+            ) : (
+              "Generate Design Guide"
+            )}
+          </Button>
+        </div>
       </section>
 
       <section className="space-y-3">

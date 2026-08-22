@@ -1,10 +1,37 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { renderDesignGuide } from './_designGuideTemplate.js'
 
 export const config = {
   maxDuration: 120,
 }
 
 const MODEL = 'claude-sonnet-4-6'
+const HEX_RE = /^#[0-9A-Fa-f]{6}$/
+
+const TOKEN_DEFS = [
+  { posted: 'brand_feel', json: 'feel', required: true },
+  { posted: 'brand_accent', json: 'accent', required: true, hex: true },
+  { posted: 'brand_band', json: 'band', required: true, hex: true },
+  { posted: 'brand_positive', json: 'positive', required: true, hex: true },
+  { posted: 'wordmark_primary', json: 'wordmark_primary', required: true },
+  { posted: 'wordmark_accent', json: 'wordmark_accent', required: false },
+  { posted: 'brand_voice', json: 'voice', required: true },
+]
+
+const SUGGEST_SYSTEM = `You propose brand tokens for a fixed marketing-site design system. The palette, type scale, spacing, motion, and photography rules are already locked. You only fill missing brand tokens.
+
+Return ONLY a JSON object. No preamble, no markdown, no keys other than the ones the user listed as missing.
+
+Constraints:
+- feel: one sentence.
+- accent, band, positive: 6-digit hex strings starting with # (e.g. "#3A7D5E").
+- band must be dark enough for white text at WCAG AA.
+- accent must not be purple or electric blue. One restrained color for links, focus, and the nav underline only.
+- positive is a muted green for "gain / included" marks — not neon, not the accent.
+- wordmark_primary / wordmark_accent: split the brand name into two natural parts. If it cannot be split naturally, wordmark_primary is the full name and wordmark_accent is "".
+- voice: at most 120 words of do/don't in this register — measured, precise, candid; short declaratives; "you"; specifics over superlatives. Never exclamation marks, hype, emoji, urgency/scarcity, a hero headline that opens with "We", empty mission-speak, or AI-forward framing when the product is human.
+
+Do not invent a palette, type scale, spacing system, or motion language.`
 
 function json(res, status, body) {
   res.statusCode = status
@@ -34,6 +61,12 @@ function unwrapMarkdown(text) {
   return cleaned
 }
 
+function unwrapJson(text) {
+  let cleaned = String(text || '').trim()
+  cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
+  return cleaned
+}
+
 function textFromMessage(message) {
   const textBlock = Array.isArray(message?.content)
     ? message.content.find((block) => block?.type === 'text')
@@ -44,38 +77,115 @@ function textFromMessage(message) {
 const ABSTRACT_SYSTEM =
   "Read this project's full Design Guide document. Produce a concise Design Guide Abstract (2-4 paragraphs) that captures: the brand's core visual identity (color palette — name actual hex/color values if present in the source, typography choices, and overall aesthetic/tone in a few descriptive words), and any distinctive visual patterns or motifs worth reusing in derivative brand assets (e.g. graphics, cards, social images). Write it for reuse as context in future AI generation tasks — specific and concrete (real color values, real font names), not vague marketing language. Respond with only the abstract text, no preamble, no markdown headers."
 
-const GENERATE_SYSTEM = `You write a complete Design Guide.md for a real company website.
+function asText(value) {
+  return String(value ?? '').trim()
+}
 
-Output ONLY the markdown document. No preamble, no wrapping fences.
+export function stripDomain(domain) {
+  let host = asText(domain)
+  host = host.replace(/^https?:\/\//i, '')
+  host = host.replace(/^www\./i, '')
+  host = host.replace(/\/.*$/, '')
+  return host
+}
 
-This is a working brand/design-system document a developer will drop at the project root and apply. It must be specific to THIS company — use the real product name, domain, positioning, services, and audience from the context. Do not write a generic SaaS/agency template. Do not leave placeholders, TODOs, or "_(not set)_" rows. Do not dump a field-by-field form.
+export function isHexColor(value) {
+  return HEX_RE.test(asText(value))
+}
 
-Write in clear markdown with these sections (use these headings, expand with real guidance under each):
+function postedTokens(company) {
+  return {
+    brand_feel: asText(company.brand_feel),
+    brand_accent: asText(company.brand_accent),
+    brand_band: asText(company.brand_band),
+    brand_positive: asText(company.brand_positive),
+    wordmark_primary: asText(company.wordmark_primary),
+    wordmark_accent: asText(company.wordmark_accent),
+    brand_voice: asText(company.brand_voice),
+  }
+}
 
-# Design Guide
+function missingTokenKeys(tokens) {
+  return TOKEN_DEFS.filter((def) => {
+    if (def.posted === 'wordmark_accent') {
+      return !tokens.wordmark_primary
+    }
+    return !tokens[def.posted]
+  }).map((def) => def.json)
+}
 
-## Brand identity
-Name, tagline if implied, intended feel in one sentence, mission, values, emotional goal for visitors, and a few reference brands/anti-references that actually fit this business.
+function applySuggested(tokens, suggested) {
+  const next = { ...tokens }
+  if (!suggested || typeof suggested !== 'object' || Array.isArray(suggested)) {
+    return next
+  }
+  for (const def of TOKEN_DEFS) {
+    const incoming = suggested[def.json]
+    if (incoming == null) continue
+    if (def.posted === 'wordmark_accent') {
+      if (tokens.wordmark_primary) continue
+      next.wordmark_accent = asText(incoming)
+      continue
+    }
+    if (tokens[def.posted]) continue
+    next[def.posted] = asText(incoming)
+  }
+  return next
+}
 
-## Color palette
-A concrete, named palette with real hex values you reason from the brand feel and category — not empty tokens. Include primary, secondary, accent, background, surface, border, muted text, heading, body, success, warning, error. State whether dark mode is required (default: no, light mode only, unless the vibe says otherwise). State a minimum contrast target (WCAG AA unless the vibe asks for more). Briefly justify the palette in one short paragraph so a designer can tell it belongs to this brand.
+function invalidHexFields(tokens) {
+  return TOKEN_DEFS.filter((def) => def.hex && tokens[def.posted] && !isHexColor(tokens[def.posted]))
+    .map((def) => def.posted)
+}
 
-## Typography
-Specific font families (prefer widely available web fonts). Heading vs body (and mono if useful). Type feel, a practical type scale with px sizes, line-height, and which weights to use or avoid.
+function toRenderTokens(company, tokens) {
+  const brandName = asText(company.product_name) || asText(company.name)
+  return {
+    BRAND_NAME: brandName,
+    DOMAIN: stripDomain(company.domain),
+    FEEL: tokens.brand_feel,
+    ACCENT: tokens.brand_accent,
+    BAND: tokens.brand_band,
+    POSITIVE: tokens.brand_positive,
+    WORDMARK_PRIMARY: tokens.wordmark_primary,
+    WORDMARK_ACCENT: tokens.wordmark_accent,
+    VOICE: tokens.brand_voice,
+  }
+}
 
-## Spacing & layout
-Base unit, max article width, max container width, breakpoints, and grid/spacing rhythm. Editorial/content sites should feel readable, not dashboard-dense.
+function responseTokens(company, tokens) {
+  const rendered = toRenderTokens(company, tokens)
+  return {
+    brand_name: rendered.BRAND_NAME,
+    domain: rendered.DOMAIN,
+    brand_feel: tokens.brand_feel,
+    brand_accent: tokens.brand_accent,
+    brand_band: tokens.brand_band,
+    brand_positive: tokens.brand_positive,
+    wordmark_primary: tokens.wordmark_primary,
+    wordmark_accent: tokens.wordmark_accent,
+    brand_voice: tokens.brand_voice,
+  }
+}
 
-## Imagery & photography
-What photos should look like, subjects, how they are used, what to avoid, icon direction, image treatment.
-
-## Tone, voice & motion
-Tone adjectives, voice do/don't, motion level and ideas. Match the company's actual writing posture.
-
-## Explicit anti-patterns
-A concrete list of things this brand must not do (generic startup purple, heavy bold, dark-mode-for-its-own-sake, stock-handshake photography, etc. — only if they actually clash with THIS brand).
-
-If the user left color/typography/tone as "no preference", choose confidently from the company context. Prefer restraint and specificity over decoration.`
+function companyContext(company) {
+  return {
+    name: asText(company.name),
+    product_name: asText(company.product_name),
+    domain: stripDomain(company.domain),
+    abstract: asText(company.abstract),
+    short_description: asText(company.short_description),
+    medium_description: asText(company.medium_description),
+    long_description: asText(company.long_description),
+    target_audience: asText(company.target_audience),
+    business_model: asText(company.business_model),
+    core_value_proposition: asText(company.core_value_proposition),
+    scope_boundaries: asText(company.scope_boundaries),
+    services: company.services,
+    team_members: company.team_members,
+    competitors: company.competitors,
+  }
+}
 
 async function handleAbstract(req, res, body, apiKey) {
   const raw = String(body.raw || '').trim()
@@ -111,19 +221,20 @@ async function handleAbstract(req, res, body, apiKey) {
   return json(res, 200, { abstract })
 }
 
-async function handleGenerate(req, res, body, apiKey) {
-  const company = body.company
-  const vibe = body.vibe && typeof body.vibe === 'object' ? body.vibe : {}
-
-  if (!company || typeof company !== 'object' || Array.isArray(company)) {
-    return json(res, 400, { error: 'company must be an object' })
+async function suggestMissingTokens(apiKey, company, tokens, missingKeys) {
+  const anthropic = new Anthropic({ apiKey })
+  const alreadySet = {}
+  for (const def of TOKEN_DEFS) {
+    if (!missingKeys.includes(def.json) && (def.posted !== 'wordmark_accent' || tokens.wordmark_primary)) {
+      alreadySet[def.json] = tokens[def.posted]
+    }
   }
 
-  const anthropic = new Anthropic({ apiKey })
   const message = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: 8000,
-    system: GENERATE_SYSTEM,
+    max_tokens: 600,
+    temperature: 0.3,
+    system: SUGGEST_SYSTEM,
     messages: [
       {
         role: 'user',
@@ -131,23 +242,14 @@ async function handleGenerate(req, res, body, apiKey) {
           {
             type: 'text',
             text: [
-              'Write the Design Guide.md for this company.',
+              'Propose brand tokens for this company.',
+              `Return ONLY a JSON object with these missing keys: ${missingKeys.join(', ')}.`,
               '',
               'Company data:',
-              JSON.stringify(company, null, 2),
+              JSON.stringify(companyContext(company), null, 2),
               '',
-              'Brand vibe inputs (empty means no preference — choose for them):',
-              JSON.stringify(
-                {
-                  brandFeel: String(vibe.brandFeel || '').trim(),
-                  colorPreference: String(vibe.colorPreference || '').trim(),
-                  typographyPreference: String(vibe.typographyPreference || '').trim(),
-                  toneAdjectives: String(vibe.toneAdjectives || '').trim(),
-                  antiPatterns: String(vibe.antiPatterns || '').trim(),
-                },
-                null,
-                2
-              ),
+              'Already set (do not repeat or change):',
+              JSON.stringify(alreadySet, null, 2),
             ].join('\n'),
           },
         ],
@@ -157,17 +259,72 @@ async function handleGenerate(req, res, body, apiKey) {
 
   if (message?.stop_reason === 'max_tokens') {
     console.error('design-guide generate truncated at max_tokens')
-    return json(res, 502, {
-      error: 'Model response was truncated. Try generating again.',
+    throw Object.assign(new Error('Model response was truncated. Try generating again.'), {
+      statusCode: 502,
     })
   }
 
-  const markdown = unwrapMarkdown(textFromMessage(message))
-  if (!markdown) {
-    return json(res, 502, { error: 'No text content in Anthropic response' })
+  const raw = unwrapJson(unwrapMarkdown(textFromMessage(message)))
+  if (!raw) {
+    throw Object.assign(new Error('No text content in Anthropic response'), { statusCode: 502 })
   }
 
-  return json(res, 200, { markdown })
+  let parsed
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw Object.assign(new Error('Model did not return valid JSON'), { statusCode: 502 })
+  }
+
+  const merged = applySuggested(tokens, parsed)
+  const stillMissing = missingTokenKeys(merged)
+  if (stillMissing.length > 0) {
+    throw Object.assign(
+      new Error(`Model omitted required tokens: ${stillMissing.join(', ')}`),
+      { statusCode: 502 }
+    )
+  }
+  return merged
+}
+
+async function handleGenerate(req, res, body, apiKey) {
+  const company = body.company
+
+  if (!company || typeof company !== 'object' || Array.isArray(company)) {
+    return json(res, 400, { error: 'company must be an object' })
+  }
+
+  let tokens = postedTokens(company)
+  const missingKeys = missingTokenKeys(tokens)
+
+  if (missingKeys.length === 0) {
+    console.log('design-guide generate: skipped LLM (all tokens set)')
+  } else {
+    console.log('design-guide generate: calling LLM for missing tokens', missingKeys)
+    if (!apiKey) {
+      console.error('Missing ANTHROPIC_API_KEY')
+      return json(res, 500, { error: 'Server configuration error' })
+    }
+    try {
+      tokens = await suggestMissingTokens(apiKey, company, tokens, missingKeys)
+    } catch (err) {
+      const status = err.statusCode || 500
+      return json(res, status, { error: err.message || 'Failed to suggest tokens' })
+    }
+  }
+
+  const badHex = invalidHexFields(tokens)
+  if (badHex.length > 0) {
+    return json(res, 502, {
+      error: `Invalid hex token (expected #RRGGBB): ${badHex.join(', ')}`,
+    })
+  }
+
+  const markdown = renderDesignGuide(toRenderTokens(company, tokens))
+  return json(res, 200, {
+    markdown,
+    tokens: responseTokens(company, tokens),
+  })
 }
 
 export default async function handler(req, res) {
@@ -184,15 +341,14 @@ export default async function handler(req, res) {
 
   try {
     const apiKey = process.env.ANTHROPIC_API_KEY
-    if (!apiKey) {
-      console.error('Missing ANTHROPIC_API_KEY')
-      return json(res, 500, { error: 'Server configuration error' })
-    }
-
     const body = parseBody(req)
     const action = resolveAction(req, body)
 
     if (action === 'abstract') {
+      if (!apiKey) {
+        console.error('Missing ANTHROPIC_API_KEY')
+        return json(res, 500, { error: 'Server configuration error' })
+      }
       return await handleAbstract(req, res, body, apiKey)
     }
     if (action === 'generate') {
