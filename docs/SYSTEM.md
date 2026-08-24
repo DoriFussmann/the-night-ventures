@@ -162,7 +162,7 @@ Legend:
 ### App (from `package.json`)
 
 - **Runtime / UI:** React 18, Vite 6, React Router 6, Tailwind CSS 3, Radix UI primitives, TanStack React Query, Framer Motion, react-markdown, JSZip, Zod, date-fns / moment, Recharts, etc.
-- **Backend-for-frontend:** Vercel serverless functions under `api/` (`vercel.json` rewrites).
+- **Backend-for-frontend:** Vercel serverless functions under `api/` (`vercel.json` rewrites). Hobby is capped at **12 functions**; each top-level `api/*.js` file (except `_`-prefixed helpers) counts as one. Extra routes must be mounted on an existing function — Scan Live is `POST /api/scan-live-articles` rewritten onto `api/check-article-update.js?action=scan-live`.
 - **Auth / DB client:** `@supabase/supabase-js`.
 - **Also present (broader app, not content-pipeline-specific):** Resend (inquiries), Stripe packages, Leaflet, Three.js, Quill, etc.
 
@@ -263,7 +263,7 @@ Checklist from what exists in this repository today (routes, tables, APIs). “T
 
 ## 8. Last Updated
 
-**2026-08-24** — Articles Automation (`/company/:companyId/articles-automation`) runs one unplanned supporting cluster under a published pillar through existing Plan Cluster + Article Generator (images on), with Confirm/Decline and a 10-second Countdown to Confirm at each stage, then saves to the library and downloads the zip. Articles library Scan Live (`POST /api/scan-live-articles`) reads the published site’s sitemap and lists live articles (title, keyword, last date, URL, Related/Sources link counts) without writing to `generated_articles`. Removed the Articles library Backfill Frontmatter prompt.
+**2026-08-24** — Articles Automation (`/company/:companyId/articles-automation`) runs one unplanned supporting cluster under a published pillar through existing Plan Cluster + Article Generator (images on), with Confirm/Decline and a 10-second Countdown to Confirm at each stage, then saves to the library and downloads the zip. Articles library Scan Live (`POST /api/scan-live-articles`) reads the published site’s sitemap and lists live articles (title, keyword, last date, URL, Related/Sources link counts) without writing to `generated_articles`. Scan Live is mounted on `api/check-article-update.js` (`action=scan-live`) so the Hobby 12-function limit is not exceeded. Removed the Articles library Backfill Frontmatter prompt.
 
 **2026-08-07** — Article Generator writes `pillarKeyword` / `supportingKeyword` / `articleType` / `targetKeyword` into `.md`; Topic Generator is sole publish control and syncs `generated_articles` (`024`/`025`); Articles library status read-only; Backfill Frontmatter prompt (Links Health Tool groundwork; site CMS tool not built yet).
 

@@ -1,7 +1,22 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { handleScanLiveArticles } from '../lib/scan-live-articles/handler.js'
 
 export const config = {
   maxDuration: 120,
+}
+
+function requestAction(req) {
+  try {
+    const url = new URL(req.url || '/', 'http://localhost')
+    const fromQuery = url.searchParams.get('action')
+    if (fromQuery) return String(fromQuery).trim()
+    if (url.pathname.replace(/\/$/, '').endsWith('/scan-live-articles')) {
+      return 'scan-live'
+    }
+  } catch {
+    // ignore
+  }
+  return ''
 }
 
 function json(res, status, body) {
@@ -233,6 +248,12 @@ export {
 }
 
 export default async function handler(req, res) {
+  // Hobby is capped at 12 functions; Scan Live is mounted here instead of
+  // a 13th api/*.js file. Public URL: POST /api/scan-live-articles.
+  if (requestAction(req) === 'scan-live') {
+    return handleScanLiveArticles(req, res)
+  }
+
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*')
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')

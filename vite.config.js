@@ -40,12 +40,20 @@ function localApiPlugin() {
           }
 
           const pathname = url.split('?')[0]
-          const name = pathname.slice('/api/'.length).replace(/\/$/, '')
+          let name = pathname.slice('/api/'.length).replace(/\/$/, '')
           if (!name || name.includes('..') || name.includes('/')) {
             res.statusCode = 404
             res.setHeader('Content-Type', 'application/json')
             res.end(JSON.stringify({ error: 'Not found' }))
             return
+          }
+
+          // Keep public /api/scan-live-articles without a 13th Vercel function.
+          if (name === 'scan-live-articles') {
+            name = 'check-article-update'
+            const parsed = new URL(url, 'http://localhost')
+            parsed.searchParams.set('action', 'scan-live')
+            req.url = `/api/check-article-update${parsed.search}`
           }
 
           const filePath = path.resolve(__dirname, 'api', `${name}.js`)
