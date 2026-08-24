@@ -161,11 +161,12 @@ function buildArticleImagePrompt(article, frontmatter) {
 
   const parts = [
     "Photorealistic blog hero image, wide landscape composition, no text, no letters, no watermarks, no logos.",
+    "No people, no humans, no faces, no figures, no body parts, no silhouettes of people.",
     title ? `Topic: ${title}.` : "",
     description ? `Mood and subject: ${description}` : "",
     searchIntent ? `Reader intent: ${searchIntent}.` : "",
     `Visual tone: ${typeHint}.`,
-    "Show a single cohesive scene that evokes the article's subject — people, environments, or symbolic objects — not a collage or UI mockup.",
+    "Show a single cohesive scene that evokes the article's subject through environments, objects, materials, or symbolic still life — not a collage or UI mockup.",
   ];
 
   return parts.filter(Boolean).join(" ");
