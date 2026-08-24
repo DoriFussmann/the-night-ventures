@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
-import { Copy, Download, Loader2, Search, Trash2 } from "lucide-react";
+import { Download, ExternalLink, Loader2, Radar, Search, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
+import { scanLiveArticles } from "./articles/scanLiveApi";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -33,7 +34,6 @@ import {
   articlesSummaryFilename,
   buildArticlesSummaryMarkdown,
 } from "./articleGeneration/buildArticlesSummaryMarkdown";
-import { buildBackfillFrontmatterPrompt } from "./articleGeneration/buildBackfillFrontmatterPrompt";
 import {
   daysSinceUpdate,
   daysSinceUpdateBadgeClass,
@@ -42,7 +42,6 @@ import {
 import { downloadMarkdownFile } from "./articleGeneration/serializeArticleMarkdown";
 
 const TYPE_OPTIONS = [
-  { value: "pillar", label: "Pillar" },
   { value: "comprehensive", label: "Comprehensive" },
   { value: "howto", label: "How-to" },
   { value: "comparison", label: "Comparison" },
@@ -55,12 +54,21 @@ const TYPE_LABELS = Object.fromEntries(
 );
 
 const TYPE_COLORS = {
-  pillar: "bg-indigo-50 text-indigo-700 border-indigo-200",
   comprehensive: "bg-violet-50 text-violet-700 border-violet-200",
   howto: "bg-blue-50 text-blue-700 border-blue-200",
   comparison: "bg-amber-50 text-amber-800 border-amber-200",
   faq: "bg-teal-50 text-teal-700 border-teal-200",
   flex: "bg-slate-100 text-slate-600 border-slate-200",
+};
+
+const KEYWORD_ROLE_LABELS = {
+  pillar: "Pillar",
+  supporting: "Supporting",
+};
+
+const KEYWORD_ROLE_COLORS = {
+  pillar: "bg-indigo-50 text-indigo-700 border-indigo-200",
+  supporting: "bg-slate-100 text-slate-700 border-slate-200",
 };
 
 const STATUS_LABELS = {
@@ -77,18 +85,39 @@ function isPillarArticle(article) {
   return !String(article?.supporting_keyword || "").trim();
 }
 
-function articleDisplayType(article) {
-  if (isPillarArticle(article)) return "pillar";
-  return TYPE_COLORS[article?.type] ? article.type : "flex";
+function articleKeywordRole(article) {
+  if (!article) return "";
+  if (article.keywordRole) return article.keywordRole;
+  return isPillarArticle(article) ? "pillar" : "supporting";
+}
+
+function articleTypeKey(article) {
+  const type = String(article?.articleType || article?.type || "").trim().toLowerCase();
+  return TYPE_COLORS[type] ? type : "";
 }
 
 function TypeBadge({ type }) {
-  const key = TYPE_COLORS[type] ? type : "flex";
+  if (!type || !TYPE_COLORS[type]) {
+    return <span className="text-muted-foreground">—</span>;
+  }
   return (
     <span
-      className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${TYPE_COLORS[key]}`}
+      className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${TYPE_COLORS[type]}`}
     >
-      {TYPE_LABELS[key] || key}
+      {TYPE_LABELS[type] || type}
+    </span>
+  );
+}
+
+function KeywordTypeBadge({ role }) {
+  if (!role || !KEYWORD_ROLE_COLORS[role]) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${KEYWORD_ROLE_COLORS[role]}`}
+    >
+      {KEYWORD_ROLE_LABELS[role]}
     </span>
   );
 }
@@ -210,6 +239,15 @@ function formatDisplayDate(value) {
   return raw;
 }
 
+function uniqueSorted(values) {
+  const set = new Set();
+  for (const value of values) {
+    const key = String(value || "").trim();
+    if (key) set.add(key);
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
+}
+
 export default function Articles() {
   const { companyId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -226,14 +264,16 @@ export default function Articles() {
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [pillarFilter, setPillarFilter] = useState("all");
+  const [keywordRoleFilter, setKeywordRoleFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
 
-  const [backfillPrompt, setBackfillPrompt] = useState("");
-  const [backfillScope, setBackfillScope] = useState(null); // "published" | "all" | null
-  const [backfillEmptyPublished, setBackfillEmptyPublished] = useState(false);
-  const [backfillLoading, setBackfillLoading] = useState(false);
-  const [backfillCopyMessage, setBackfillCopyMessage] = useState("");
-  const [backfillCount, setBackfillCount] = useState(0);
+  const [scanLoading, setScanLoading] = useState(false);
+  const [scanError, setScanError] = useState("");
+  const [scanResult, setScanResult] = useState(null);
+  const [liveSearchInput, setLiveSearchInput] = useState("");
+  const [liveDebouncedSearch, setLiveDebouncedSearch] = useState("");
+  const [livePillarFilter, setLivePillarFilter] = useState("all");
+  const [liveClusterFilter, setLiveClusterFilter] = useState("all");
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -241,6 +281,22 @@ export default function Articles() {
     }, 300);
     return () => clearTimeout(timer);
   }, [searchInput]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setLiveDebouncedSearch(liveSearchInput.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [liveSearchInput]);
+
+  useEffect(() => {
+    setScanResult(null);
+    setScanError("");
+    setLiveSearchInput("");
+    setLiveDebouncedSearch("");
+    setLivePillarFilter("all");
+    setLiveClusterFilter("all");
+  }, [companyId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -297,7 +353,13 @@ export default function Articles() {
       if (pillarFilter !== "all" && article.pillar_keyword !== pillarFilter) {
         return false;
       }
-      if (typeFilter !== "all" && articleDisplayType(article) !== typeFilter) {
+      if (
+        keywordRoleFilter !== "all" &&
+        articleKeywordRole(article) !== keywordRoleFilter
+      ) {
+        return false;
+      }
+      if (typeFilter !== "all" && articleTypeKey(article) !== typeFilter) {
         return false;
       }
       if (!q) return true;
@@ -305,7 +367,7 @@ export default function Articles() {
       const target = String(article.target_keyword || "").toLowerCase();
       return title.includes(q) || target.includes(q);
     });
-  }, [articles, debouncedSearch, pillarFilter, typeFilter, slugFilter]);
+  }, [articles, debouncedSearch, pillarFilter, keywordRoleFilter, typeFilter, slugFilter]);
 
   const selected = useMemo(
     () => articles.find((article) => article.id === selectedId) || null,
@@ -349,68 +411,20 @@ export default function Articles() {
     setDeleteId(null);
   };
 
-  const generateBackfillPrompt = async ({ includeAll }) => {
-    if (!companyId || backfillLoading) return;
+  const runLiveScan = async () => {
+    if (!companyId || scanLoading) return;
 
-    setBackfillLoading(true);
-    setError("");
-    setBackfillCopyMessage("");
-    setBackfillEmptyPublished(false);
+    setScanLoading(true);
+    setScanError("");
 
     try {
-      let query = supabase
-        .from("generated_articles")
-        .select(
-          "slug, pillar_keyword, supporting_keyword, type, target_keyword, status"
-        )
-        .eq("company_id", companyId)
-        .not("slug", "is", null)
-        .order("slug", { ascending: true });
-
-      if (!includeAll) {
-        query = query.eq("status", "published");
-      }
-
-      const { data, error: fetchError } = await query;
-      if (fetchError) {
-        throw new Error(fetchError.message || "Failed to load articles");
-      }
-
-      const rows = (data || []).filter((row) => String(row.slug || "").trim());
-
-      if (!includeAll && rows.length === 0) {
-        setBackfillPrompt("");
-        setBackfillScope(null);
-        setBackfillCount(0);
-        setBackfillEmptyPublished(true);
-        return;
-      }
-
-      const prompt = buildBackfillFrontmatterPrompt(rows);
-      setBackfillPrompt(prompt);
-      setBackfillScope(includeAll ? "all" : "published");
-      setBackfillCount(rows.length);
-      setBackfillEmptyPublished(false);
+      const result = await scanLiveArticles(companyId);
+      setScanResult(result);
     } catch (err) {
       console.error(err);
-      setError(err?.message || "Failed to build backfill prompt");
-      setBackfillPrompt("");
-      setBackfillScope(null);
-      setBackfillCount(0);
+      setScanError(err?.message || "Failed to scan live articles");
     } finally {
-      setBackfillLoading(false);
-    }
-  };
-
-  const copyBackfillPrompt = async () => {
-    if (!backfillPrompt) return;
-    try {
-      await navigator.clipboard.writeText(backfillPrompt);
-      setBackfillCopyMessage("Copied");
-      setTimeout(() => setBackfillCopyMessage(""), 2000);
-    } catch (err) {
-      console.error("Copy failed:", err);
-      setBackfillCopyMessage("Copy failed");
+      setScanLoading(false);
     }
   };
 
@@ -473,18 +487,83 @@ export default function Articles() {
   const hasActiveFilters =
     Boolean(debouncedSearch) ||
     pillarFilter !== "all" ||
+    keywordRoleFilter !== "all" ||
     typeFilter !== "all" ||
     Boolean(slugFilter);
 
+  const liveArticles = Array.isArray(scanResult?.articles)
+    ? scanResult.articles
+    : [];
+
+  const livePillarOptions = useMemo(
+    () => uniqueSorted(liveArticles.map((row) => row.pillarKeyword)),
+    [liveArticles]
+  );
+
+  const liveClusterOptions = useMemo(() => {
+    const rows =
+      livePillarFilter === "all"
+        ? liveArticles
+        : liveArticles.filter((row) => row.pillarKeyword === livePillarFilter);
+    return uniqueSorted(rows.map((row) => row.cluster));
+  }, [liveArticles, livePillarFilter]);
+
+  const filteredLiveArticles = useMemo(() => {
+    const q = liveDebouncedSearch.toLowerCase();
+    return liveArticles.filter((row) => {
+      if (
+        livePillarFilter !== "all" &&
+        row.pillarKeyword !== livePillarFilter
+      ) {
+        return false;
+      }
+      if (liveClusterFilter !== "all" && row.cluster !== liveClusterFilter) {
+        return false;
+      }
+      if (!q) return true;
+      return String(row.title || "")
+        .toLowerCase()
+        .includes(q);
+    });
+  }, [
+    liveArticles,
+    liveDebouncedSearch,
+    livePillarFilter,
+    liveClusterFilter,
+  ]);
+
+  const liveFiltersActive =
+    Boolean(liveDebouncedSearch) ||
+    livePillarFilter !== "all" ||
+    liveClusterFilter !== "all";
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xs text-foreground mb-1">Articles</h1>
-        <p className="text-sm text-muted-foreground">
-          Saved drafts from Article Generator — full frontmatter and body.
-          Status is read-only here; mark articles published in Topic Generator
-          after shipping through the site CMS.
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-xs text-foreground mb-1">Articles</h1>
+          <p className="text-sm text-muted-foreground">
+            Saved drafts from Article Generator — full frontmatter and body.
+            Status is read-only here; mark articles published in Topic Generator
+            after shipping through the site CMS. Scan Live reads the published
+            site independently of this library.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-9 shrink-0"
+          disabled={!companyId || scanLoading}
+          onClick={runLiveScan}
+        >
+          {scanLoading ? (
+            <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+          ) : (
+            <Radar className="h-3.5 w-3.5 mr-1.5" />
+          )}
+          {scanLoading ? "Scanning live site…" : "Scan Live"}
+        </Button>
       </div>
 
       {error && (
@@ -492,6 +571,189 @@ export default function Articles() {
           {error}
         </p>
       )}
+
+      {scanError && (
+        <p className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
+          {scanError}
+        </p>
+      )}
+
+      {scanResult && (
+        <section className="space-y-3">
+          <div>
+            <h2 className="text-sm font-medium text-foreground">Live on site</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {liveFiltersActive
+                ? `${filteredLiveArticles.length} of ${liveArticles.length} articles`
+                : `${liveArticles.length} ${
+                    liveArticles.length === 1 ? "article" : "articles"
+                  }`}{" "}
+              from{" "}
+              <a
+                href={scanResult.articlesIndexUrl || scanResult.siteUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="underline underline-offset-2 hover:text-foreground"
+              >
+                {displayLiveUrl(scanResult.siteUrl)}
+              </a>
+              {scanResult.scannedAt
+                ? ` · scanned ${formatScannedAt(scanResult.scannedAt)}`
+                : ""}
+              . Read-only — this does not save into the library below.
+            </p>
+          </div>
+
+          {liveArticles.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
+              <p className="text-sm text-foreground font-medium">
+                No live articles found
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Sitemap, RSS, and the /articles/ listing returned no article
+                URLs for this domain.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div className="relative flex-1">
+                  <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={liveSearchInput}
+                    onChange={(e) => setLiveSearchInput(e.target.value)}
+                    placeholder="Search by title…"
+                    className="pl-8 h-9"
+                  />
+                </div>
+                <Select
+                  value={livePillarFilter}
+                  onValueChange={(value) => {
+                    setLivePillarFilter(value);
+                    setLiveClusterFilter("all");
+                  }}
+                >
+                  <SelectTrigger className="w-full sm:w-[200px] h-9">
+                    <SelectValue placeholder="Keyword (pillar)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All pillars</SelectItem>
+                    {livePillarOptions.map((pillar) => (
+                      <SelectItem key={pillar} value={pillar}>
+                        {pillar}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={liveClusterFilter}
+                  onValueChange={setLiveClusterFilter}
+                >
+                  <SelectTrigger className="w-full sm:w-[200px] h-9">
+                    <SelectValue placeholder="Cluster" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All clusters</SelectItem>
+                    {liveClusterOptions.map((cluster) => (
+                      <SelectItem key={cluster} value={cluster}>
+                        {cluster}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {filteredLiveArticles.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
+                  <p className="text-sm text-foreground font-medium">
+                    No matching live articles
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Try clearing search or filters.
+                  </p>
+                </div>
+              ) : (
+            <div className="overflow-x-auto rounded-lg border border-border">
+              <table className="w-full min-w-[56rem] text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-muted/30 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                    <th className="px-3 py-2 font-medium">Title</th>
+                    <th className="px-3 py-2 font-medium">Keyword</th>
+                    <th className="px-3 py-2 font-medium whitespace-nowrap">
+                      Keyword type
+                    </th>
+                    <th className="px-3 py-2 font-medium">Type</th>
+                    <th className="px-3 py-2 font-medium whitespace-nowrap">
+                      Last Date
+                    </th>
+                    <th className="px-3 py-2 font-medium text-center">URL</th>
+                    <th className="px-3 py-2 font-medium text-right whitespace-nowrap">
+                      Internal
+                    </th>
+                    <th className="px-3 py-2 font-medium text-right whitespace-nowrap">
+                      External
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {filteredLiveArticles.map((row) => (
+                    <tr key={row.slug || row.url} className="align-top">
+                      <td className="px-3 py-2.5 font-medium text-foreground">
+                        {row.title || row.slug || "(untitled)"}
+                        {row.error ? (
+                          <p className="mt-0.5 text-xs font-normal text-destructive">
+                            {row.error}
+                          </p>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2.5 text-muted-foreground">
+                        {row.keyword || "—"}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <KeywordTypeBadge role={row.keywordRole} />
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <TypeBadge type={row.articleType} />
+                      </td>
+                      <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">
+                        {row.lastDate || "—"}
+                      </td>
+                      <td className="px-3 py-2.5 text-center">
+                        {row.url ? (
+                          <a
+                            href={row.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={`Open ${row.url}`}
+                            aria-label={`Open ${row.title || row.slug || "article"}`}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </a>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 tabular-nums text-right text-foreground">
+                        {row.internalLinks == null ? "—" : row.internalLinks}
+                      </td>
+                      <td className="px-3 py-2.5 tabular-nums text-right text-foreground">
+                        {row.externalLinks == null ? "—" : row.externalLinks}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+              )}
+            </>
+          )}
+        </section>
+      )}
+
+      {scanResult ? (
+        <h2 className="text-sm font-medium text-foreground">Saved drafts</h2>
+      ) : null}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative flex-1">
@@ -519,6 +781,20 @@ export default function Articles() {
                 {pillar}
               </SelectItem>
             ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={keywordRoleFilter}
+          onValueChange={setKeywordRoleFilter}
+          disabled={!hasAnyArticles}
+        >
+          <SelectTrigger className="w-full sm:w-[160px] h-9">
+            <SelectValue placeholder="Keyword type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All keywords</SelectItem>
+            <SelectItem value="pillar">Pillar</SelectItem>
+            <SelectItem value="supporting">Supporting</SelectItem>
           </SelectContent>
         </Select>
         <Select
@@ -576,14 +852,14 @@ export default function Articles() {
         <div className="rounded-lg border border-dashed border-border px-4 py-10 text-center">
           <p className="text-sm text-foreground font-medium">No articles saved yet</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Generate drafts in{" "}
+            This library only shows drafts saved from{" "}
             <Link
               to={`/company/${companyId}/article-generation`}
               className="underline underline-offset-2 hover:text-foreground"
             >
               Article Generator
             </Link>
-            , then use Save to add them here.
+            . Use Scan Live to list articles already on the published site.
           </p>
         </div>
       ) : filtered.length === 0 ? (
@@ -608,7 +884,8 @@ export default function Articles() {
                   {article.title || "(untitled)"}
                 </span>
                 <PillarBadge keyword={article.pillar_keyword} />
-                <TypeBadge type={articleDisplayType(article)} />
+                <KeywordTypeBadge role={articleKeywordRole(article)} />
+                <TypeBadge type={articleTypeKey(article)} />
                 <StatusBadge status={article.status} />
                 <DaysSinceUpdateBadge
                   dateValue={article.updated_date || article.date}
@@ -644,7 +921,8 @@ export default function Articles() {
                 </DialogHeader>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <PillarBadge keyword={selected.pillar_keyword} />
-                  <TypeBadge type={articleDisplayType(selected)} />
+                  <KeywordTypeBadge role={articleKeywordRole(selected)} />
+                  <TypeBadge type={articleTypeKey(selected)} />
                   <StatusBadge status={selected.status} />
                   {selected.status === "published" && selected.published_at ? (
                     <span className="text-xs text-muted-foreground">
@@ -828,91 +1106,21 @@ export default function Articles() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      <section className="space-y-3 rounded-lg border border-border p-4">
-        <div>
-          <h2 className="text-sm font-medium text-foreground">
-            Backfill Frontmatter
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            One-time Cursor prompt for already-published site articles that
-            predate{" "}
-            <span className="font-mono text-xs">pillarKeyword</span> /{" "}
-            <span className="font-mono text-xs">supportingKeyword</span> /{" "}
-            <span className="font-mono text-xs">articleType</span> /{" "}
-            <span className="font-mono text-xs">targetKeyword</span> in generated
-            output. New Article Generator downloads already include these
-            fields.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={!companyId || loading || backfillLoading || !hasAnyArticles}
-            onClick={() => generateBackfillPrompt({ includeAll: false })}
-          >
-            {backfillLoading ? (
-              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-            ) : null}
-            Generate from Published
-          </Button>
-          {backfillPrompt && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={copyBackfillPrompt}
-            >
-              <Copy className="h-3.5 w-3.5 mr-1.5" />
-              Copy
-            </Button>
-          )}
-          {backfillCopyMessage && (
-            <span className="text-sm text-muted-foreground">
-              {backfillCopyMessage}
-            </span>
-          )}
-        </div>
-
-        {backfillEmptyPublished && (
-          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 space-y-2">
-            <p>
-              No articles marked Published yet — mark your live articles as
-              Published in Topic Generator first, or backfill all rows
-              regardless of status.
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={backfillLoading}
-              onClick={() => generateBackfillPrompt({ includeAll: true })}
-            >
-              Backfill all rows anyway
-            </Button>
-          </div>
-        )}
-
-        {backfillPrompt && (
-          <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">
-              {backfillCount} article
-              {backfillCount === 1 ? "" : "s"} · scope:{" "}
-              {backfillScope === "all"
-                ? "all rows (status ignored)"
-                : "published only"}
-            </p>
-            <pre className="max-h-[360px] overflow-auto rounded-lg border border-border bg-muted/30 p-4 text-xs font-mono whitespace-pre-wrap text-foreground">
-              {backfillPrompt}
-            </pre>
-          </div>
-        )}
-      </section>
     </div>
   );
+}
+
+function displayLiveUrl(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/+$/, "");
+}
+
+function formatScannedAt(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString();
 }
 
 function DetailRow({ label, value, mono }) {

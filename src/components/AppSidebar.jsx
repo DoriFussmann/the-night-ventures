@@ -18,6 +18,7 @@ import {
   Sparkles,
   MessageSquareText,
   Camera,
+  Workflow,
   LogOut,
   ArrowLeft,
   Construction,
@@ -96,6 +97,7 @@ export default function AppSidebar({ user }) {
   const seoNav = [
     { label: "Topic Generator", path: `/company/${activeCompanyId}/article-topic-suggestion`, icon: Lightbulb },
     { label: "Article Generator", path: `/company/${activeCompanyId}/article-generation`, icon: PenLine },
+    { label: "Articles Automation", path: `/company/${activeCompanyId}/articles-automation`, icon: Workflow },
     { type: "separator" },
     { label: "Articles", path: `/company/${activeCompanyId}/articles`, icon: BookOpen },
     { label: "Articles Update", path: `/company/${activeCompanyId}/articles-update`, icon: RefreshCw },
