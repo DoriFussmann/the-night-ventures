@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Copy, Plus, Trash2, X } from "lucide-react";
+import { Check, Copy, Download, Pencil, Plus, Trash2, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -33,6 +33,26 @@ function parseAdditions(raw) {
   } catch {
     return [];
   }
+}
+
+function downloadMarkdown(filename, content) {
+  const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function additionsToMarkdown(items) {
+  const blocks = (Array.isArray(items) ? items : [])
+    .map((item) => String(item?.content || "").trim())
+    .filter(Boolean);
+  if (blocks.length === 0) return "";
+  return [`# ${ADDITIONS_TITLE}`, "", ...blocks].join("\n\n") + "\n";
 }
 
 function CopyButton({ text, label = "Copy" }) {
@@ -75,6 +95,8 @@ function AdditionsPanel() {
   const [savedMessage, setSavedMessage] = useState("");
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [editDraft, setEditDraft] = useState("");
 
   const loadItems = useCallback(async () => {
     setLoading(true);
@@ -153,6 +175,56 @@ function AdditionsPanel() {
     if (saving) return;
     const ok = await persistItems(items.filter((item) => item.id !== id));
     if (!ok) return;
+    if (editingId === id) {
+      setEditingId(null);
+      setEditDraft("");
+    }
+  };
+
+  const handleStartEdit = (item) => {
+    if (saving) return;
+    setAdding(false);
+    setDraft("");
+    setEditingId(item.id);
+    setEditDraft(item.content);
+    setError("");
+  };
+
+  const handleSaveEdit = async () => {
+    const content = editDraft.trim();
+    if (!editingId || !content || saving) return;
+
+    const next = items.map((item) =>
+      item.id === editingId ? { ...item, content } : item
+    );
+    const ok = await persistItems(next);
+    if (ok) {
+      setEditingId(null);
+      setEditDraft("");
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditDraft("");
+  };
+
+  const handleConsolidate = () => {
+    const markdown = additionsToMarkdown(items);
+    if (!markdown.trim()) return;
+    downloadMarkdown("additions-to-update-version.md", markdown);
+  };
+
+  const handleDeleteAll = async () => {
+    if (saving || items.length === 0) return;
+    if (!window.confirm("Delete all additions?")) return;
+
+    const ok = await persistItems([]);
+    if (!ok) return;
+    setAdding(false);
+    setDraft("");
+    setEditingId(null);
+    setEditDraft("");
   };
 
   return (
@@ -161,20 +233,46 @@ function AdditionsPanel() {
         <h2 className="text-sm font-medium text-foreground leading-snug">
           {ADDITIONS_TITLE}
         </h2>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="w-full"
-          onClick={() => {
-            setAdding(true);
-            setError("");
-          }}
-          disabled={saving || adding}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Add Change
-        </Button>
+        <div className="flex flex-col gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={handleConsolidate}
+            disabled={saving || items.length === 0}
+          >
+            <Download className="h-3.5 w-3.5" />
+            Consolidate to .md
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full text-destructive hover:text-destructive"
+            onClick={handleDeleteAll}
+            disabled={saving || items.length === 0}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Delete All
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={() => {
+              setAdding(true);
+              setEditingId(null);
+              setEditDraft("");
+              setError("");
+            }}
+            disabled={saving || adding}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add Change
+          </Button>
+        </div>
       </div>
 
       {savedMessage ? (
@@ -231,9 +329,43 @@ function AdditionsPanel() {
               key={item.id}
               className="rounded-md border border-border bg-muted/30 p-3 space-y-2"
             >
-              <p className="text-sm text-foreground whitespace-pre-wrap break-words">
-                {item.content}
-              </p>
+              {editingId === item.id ? (
+                <div className="space-y-2">
+                  <Textarea
+                    value={editDraft}
+                    onChange={(e) => setEditDraft(e.target.value)}
+                    className="min-h-[96px] text-sm"
+                    autoFocus
+                    disabled={saving}
+                  />
+                  <div className="flex items-center justify-end gap-1">
+                    <button
+                      type="button"
+                      onClick={handleCancelEdit}
+                      disabled={saving}
+                      className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40"
+                      title="Cancel"
+                      aria-label="Cancel edit"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveEdit}
+                      disabled={saving || !editDraft.trim()}
+                      className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40"
+                      title="Save"
+                      aria-label="Save"
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-foreground whitespace-pre-wrap break-words">
+                  {item.content}
+                </p>
+              )}
               <div className="flex items-center justify-between gap-2">
                 {item.created_at ? (
                   <p className="text-[11px] text-muted-foreground">
@@ -242,16 +374,30 @@ function AdditionsPanel() {
                 ) : (
                   <span />
                 )}
-                <button
-                  type="button"
-                  onClick={() => handleDelete(item.id)}
-                  disabled={saving}
-                  className="p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-accent disabled:opacity-40"
-                  title="Delete"
-                  aria-label="Delete change"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
+                <div className="flex items-center gap-0.5">
+                  {editingId === item.id ? null : (
+                    <button
+                      type="button"
+                      onClick={() => handleStartEdit(item)}
+                      disabled={saving}
+                      className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-40"
+                      title="Edit"
+                      aria-label="Edit change"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(item.id)}
+                    disabled={saving}
+                    className="p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-accent disabled:opacity-40"
+                    title="Delete"
+                    aria-label="Delete change"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </div>
             </li>
           ))}
