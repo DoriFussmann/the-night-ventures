@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { handleScanLiveArticles } from '../lib/scan-live-articles/handler.js'
+import { handlePublishToSite } from '../lib/publish-to-site/handler.js'
 
 export const config = {
   maxDuration: 120,
@@ -10,8 +11,12 @@ function requestAction(req) {
     const url = new URL(req.url || '/', 'http://localhost')
     const fromQuery = url.searchParams.get('action')
     if (fromQuery) return String(fromQuery).trim()
-    if (url.pathname.replace(/\/$/, '').endsWith('/scan-live-articles')) {
+    const path = url.pathname.replace(/\/$/, '')
+    if (path.endsWith('/scan-live-articles')) {
       return 'scan-live'
+    }
+    if (path.endsWith('/publish-to-site')) {
+      return 'publish-to-site'
     }
   } catch {
     // ignore
@@ -248,10 +253,15 @@ export {
 }
 
 export default async function handler(req, res) {
-  // Hobby is capped at 12 functions; Scan Live is mounted here instead of
-  // a 13th api/*.js file. Public URL: POST /api/scan-live-articles.
-  if (requestAction(req) === 'scan-live') {
+  // Hobby is capped at 12 functions; extra public URLs are mounted here
+  // instead of adding more api/*.js files.
+  // Public: POST /api/scan-live-articles, POST /api/publish-to-site.
+  const action = requestAction(req)
+  if (action === 'scan-live') {
     return handleScanLiveArticles(req, res)
+  }
+  if (action === 'publish-to-site') {
+    return handlePublishToSite(req, res)
   }
 
   if (req.method === 'OPTIONS') {

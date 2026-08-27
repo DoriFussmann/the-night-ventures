@@ -48,11 +48,17 @@ function localApiPlugin() {
             return
           }
 
-          // Keep public /api/scan-live-articles without a 13th Vercel function.
+          // Keep public /api/scan-live-articles and /api/publish-to-site
+          // without a 13th Vercel function.
           if (name === 'scan-live-articles') {
             name = 'check-article-update'
             const parsed = new URL(url, 'http://localhost')
             parsed.searchParams.set('action', 'scan-live')
+            req.url = `/api/check-article-update${parsed.search}`
+          } else if (name === 'publish-to-site') {
+            name = 'check-article-update'
+            const parsed = new URL(url, 'http://localhost')
+            parsed.searchParams.set('action', 'publish-to-site')
             req.url = `/api/check-article-update${parsed.search}`
           }
 
