@@ -75,8 +75,9 @@ async function pathExists(octokit, { owner, repo, path, ref }) {
 export default async function handler(req, res) {
   if (handleOptions(req, res, 'POST, OPTIONS')) return
 
+  let auth
   try {
-    await requireAuth(req)
+    auth = await requireAuth(req)
   } catch (err) {
     return json(res, err.statusCode || 401, {
       error: err.message || 'Unauthorized',
@@ -91,27 +92,56 @@ export default async function handler(req, res) {
   const body = parseBody(req)
 
   try {
-    const owner = String(body.owner || '').trim()
-    const repo = String(body.repo || '').trim()
+    const companyId = String(body.companyId || '').trim()
     const targetBranch = String(body.branch || 'main').trim() || 'main'
-    const site = String(body.site || '').trim().toUpperCase()
     const articles = Array.isArray(body.articles) ? body.articles : []
 
-    if (!OWNER_REPO_RE.test(owner) || !OWNER_REPO_RE.test(repo)) {
-      return json(res, 400, { error: 'owner and repo are required' })
-    }
-    if (!SITE_KEY_RE.test(site)) {
-      return json(res, 400, { error: 'site is required (e.g. TEMPLATE)' })
+    if (!companyId) {
+      return json(res, 400, { error: 'companyId is required' })
     }
     if (articles.length === 0) {
       return json(res, 400, { error: 'articles is required' })
     }
 
-    const token = process.env[`GITHUB_TOKEN_${site}`]
+    const { data: company, error: companyError } = await auth.supabase
+      .from('companies')
+      .select('github_owner, github_repo, github_token_key')
+      .eq('id', companyId)
+      .maybeSingle()
+
+    if (companyError) {
+      throw companyError
+    }
+    if (!company) {
+      return json(res, 404, { error: 'Company not found' })
+    }
+
+    const owner = String(company.github_owner || '').trim()
+    const repo = String(company.github_repo || '').trim()
+    const tokenKey = String(company.github_token_key || '').trim().toUpperCase()
+
+    if (!owner || !repo || !tokenKey) {
+      return json(res, 400, {
+        error: 'No destination repo set for this company.',
+      })
+    }
+    if (!OWNER_REPO_RE.test(owner) || !OWNER_REPO_RE.test(repo)) {
+      return json(res, 400, {
+        error: 'Company github_owner or github_repo is invalid',
+      })
+    }
+    if (!SITE_KEY_RE.test(tokenKey)) {
+      return json(res, 400, {
+        error:
+          'Company github_token_key is invalid (use A–Z, 0–9, underscore; e.g. HEYRUPERT)',
+      })
+    }
+
+    const token = process.env[`GITHUB_TOKEN_${tokenKey}`]
     if (!token) {
-      console.error(`Missing GITHUB_TOKEN_${site}`)
+      console.error(`Missing GITHUB_TOKEN_${tokenKey}`)
       return json(res, 500, {
-        error: `Server configuration error: GITHUB_TOKEN_${site} is not set`,
+        error: `GITHUB_TOKEN_${tokenKey} is not set`,
       })
     }
 

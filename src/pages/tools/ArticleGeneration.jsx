@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import {
@@ -52,9 +52,9 @@ import {
 } from "./articleGeneration/serializeArticleMarkdown";
 import { downloadArticlesZip } from "./articleGeneration/downloadZip";
 import {
-  SLICE1_OWNER,
-  SLICE1_REPO,
-  SLICE1_BRANCH,
+  DEFAULT_PUBLISH_BRANCH,
+  isPublishDestinationMapped,
+  loadCompanyPublishDestination,
   publishArticlesToSite,
 } from "./articleGeneration/publishToSite";
 import { updateCoverageDrafted } from "./articleGeneration/updateCoverageDrafted";
@@ -430,6 +430,7 @@ export default function ArticleGeneration() {
   const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState(null);
   const [publishError, setPublishError] = useState(null);
+  const [publishDestination, setPublishDestination] = useState(null);
   const [sourcesCopied, setSourcesCopied] = useState(false);
   const [promptOpen, setPromptOpen] = useState(false);
   const [promptLoading, setPromptLoading] = useState(false);
@@ -437,6 +438,27 @@ export default function ArticleGeneration() {
   const [promptEntries, setPromptEntries] = useState([]);
   const [promptEntryIndex, setPromptEntryIndex] = useState(0);
   const [promptCopied, setPromptCopied] = useState(false);
+
+  useEffect(() => {
+    if (!companyId) {
+      setPublishDestination(null);
+      return;
+    }
+    let cancelled = false;
+    loadCompanyPublishDestination(companyId)
+      .then((destination) => {
+        if (!cancelled) setPublishDestination(destination);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setPublishDestination({ owner: "", repo: "", tokenKey: "" });
+          console.error("Failed to load publish destination:", err);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId]);
 
   const clearSaveState = () => {
     setSavedIndexes(new Set());
@@ -937,6 +959,7 @@ export default function ArticleGeneration() {
 
   const successJobs = jobs.filter((j) => j.status === "done" && j.markdown);
   const failedJobs = jobs.filter((j) => j.status === "failed");
+  const destinationMapped = isPublishDestinationMapped(publishDestination);
   const progressPct =
     jobs.length > 0 ? Math.round((currentStep / jobs.length) * 100) : 0;
   const currentJob =
@@ -961,9 +984,9 @@ export default function ArticleGeneration() {
   };
 
   const publishToSite = async () => {
-    if (publishing || successJobs.length === 0) return;
+    if (publishing || successJobs.length === 0 || !destinationMapped) return;
     const ok = window.confirm(
-      `Publish ${successJobs.length} article(s) to ${SLICE1_OWNER}/${SLICE1_REPO} (${SLICE1_BRANCH})? This merges via the GitHub API.`
+      `Publish ${successJobs.length} article(s) to ${publishDestination.owner}/${publishDestination.repo} (${DEFAULT_PUBLISH_BRANCH})? This merges via the GitHub API.`
     );
     if (!ok) return;
 
@@ -980,7 +1003,14 @@ export default function ArticleGeneration() {
             j.image?.status === "done" && j.image?.result?.b64_json
               ? j.image.result
               : null,
-        }))
+        })),
+        {
+          companyId,
+          owner: publishDestination.owner,
+          repo: publishDestination.repo,
+          tokenKey: publishDestination.tokenKey,
+          branch: DEFAULT_PUBLISH_BRANCH,
+        }
       );
       setPublishResult(result);
     } catch (err) {
@@ -1397,7 +1427,11 @@ export default function ArticleGeneration() {
                   type="button"
                   size="sm"
                   variant="secondary"
-                  disabled={successJobs.length === 0 || publishing}
+                  disabled={
+                    successJobs.length === 0 ||
+                    publishing ||
+                    !destinationMapped
+                  }
                   onClick={publishToSite}
                 >
                   {publishing ? (
@@ -1458,6 +1492,11 @@ export default function ArticleGeneration() {
               {publishError && (
                 <p className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
                   {publishError}
+                </p>
+              )}
+              {publishDestination && !destinationMapped && (
+                <p className="text-sm text-muted-foreground">
+                  No destination repo set for this company.
                 </p>
               )}
               {publishResult && (

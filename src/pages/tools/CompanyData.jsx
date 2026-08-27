@@ -348,6 +348,9 @@ export default function CompanyData() {
   const [saving, setSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState("");
   const [error, setError] = useState("");
+  const [githubOwner, setGithubOwner] = useState("");
+  const [githubRepo, setGithubRepo] = useState("");
+  const [githubTokenKey, setGithubTokenKey] = useState("");
   /** Active panel modal: 'target' | 'pillars' | 'competitors' | ... | `custom:${id}` */
   const [openPanel, setOpenPanel] = useState(null);
   const [openPillars, setOpenPillars] = useState({});
@@ -378,7 +381,7 @@ export default function CompanyData() {
       companyIndustriesResult,
       socialAccountsResult,
     ] = await Promise.all([
-      supabase.from("companies").select("name").eq("id", companyId).maybeSingle(),
+      supabase.from("companies").select("name, github_owner, github_repo, github_token_key").eq("id", companyId).maybeSingle(),
       supabase
         .from("company_profiles")
         .select(
@@ -404,8 +407,14 @@ export default function CompanyData() {
     if (companyResult.error) {
       console.error("Failed to load company:", companyResult.error);
       setError(companyResult.error.message || "Failed to load company");
+      setGithubOwner("");
+      setGithubRepo("");
+      setGithubTokenKey("");
     } else {
       setCompanyName(companyResult.data?.name || "");
+      setGithubOwner(companyResult.data?.github_owner || "");
+      setGithubRepo(companyResult.data?.github_repo || "");
+      setGithubTokenKey(companyResult.data?.github_token_key || "");
     }
 
     if (customFieldsResult.error) {
@@ -1070,6 +1079,26 @@ export default function CompanyData() {
     }
 
     setProfileId(data?.id || profileId);
+
+    const { error: companyUpdateError } = await supabase
+      .from("companies")
+      .update({
+        github_owner: githubOwner.trim() || null,
+        github_repo: githubRepo.trim() || null,
+        github_token_key: githubTokenKey.trim().toUpperCase() || null,
+      })
+      .eq("id", companyId);
+
+    if (companyUpdateError) {
+      console.error("Failed to save GitHub destination:", companyUpdateError);
+      setError(
+        companyUpdateError.message || "Failed to save GitHub destination"
+      );
+      setSaving(false);
+      return false;
+    }
+
+    setGithubTokenKey((prev) => prev.trim().toUpperCase());
     setSaving(false);
     if (!overrides.skipSavedMessage) {
       setSavedMessage("Saved");
@@ -1702,6 +1731,43 @@ export default function CompanyData() {
             onClick={() => setOpenPanel(`custom:${def.id}`)}
           />
         ))}
+
+        <div className="space-y-3 rounded-lg border border-border p-4">
+          <p className="text-sm font-medium text-foreground">
+            Publish destination
+          </p>
+          <p className="text-xs text-muted-foreground">
+            GitHub repo this company publishes articles to. Token key is the
+            suffix of the server env var (HEYRUPERT looks up GITHUB_TOKEN_HEYRUPERT).
+          </p>
+          <div className="space-y-2">
+            <Label htmlFor="github_owner">GitHub owner</Label>
+            <Input
+              id="github_owner"
+              value={githubOwner}
+              onChange={(e) => setGithubOwner(e.target.value)}
+              placeholder="DoriFussmann"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="github_repo">GitHub repo</Label>
+            <Input
+              id="github_repo"
+              value={githubRepo}
+              onChange={(e) => setGithubRepo(e.target.value)}
+              placeholder="hey-rupert"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="github_token_key">GitHub token key</Label>
+            <Input
+              id="github_token_key"
+              value={githubTokenKey}
+              onChange={(e) => setGithubTokenKey(e.target.value)}
+              placeholder="HEYRUPERT"
+            />
+          </div>
+        </div>
 
         <div className="flex flex-wrap items-center gap-3 pt-2">
           <Button type="button" variant="outline" onClick={handleAddField}>
