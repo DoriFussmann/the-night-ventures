@@ -11,6 +11,10 @@
       "source": "/api/publish-to-site",
       "destination": "/api/check-article-update?action=publish-to-site"
     },
+    {
+      "source": "/api/wire-internal-links",
+      "destination": "/api/check-article-update?action=wire-internal-links"
+    },
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]

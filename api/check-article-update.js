@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { handleScanLiveArticles } from '../lib/scan-live-articles/handler.js'
 import { handlePublishToSite } from '../lib/publish-to-site/handler.js'
+import { handleWireInternalLinks } from '../lib/wire-internal-links/handler.js'
 
 export const config = {
   maxDuration: 120,
@@ -17,6 +18,9 @@ function requestAction(req) {
     }
     if (path.endsWith('/publish-to-site')) {
       return 'publish-to-site'
+    }
+    if (path.endsWith('/wire-internal-links')) {
+      return 'wire-internal-links'
     }
   } catch {
     // ignore
@@ -255,13 +259,17 @@ export {
 export default async function handler(req, res) {
   // Hobby is capped at 12 functions; extra public URLs are mounted here
   // instead of adding more api/*.js files.
-  // Public: POST /api/scan-live-articles, POST /api/publish-to-site.
+  // Public: POST /api/scan-live-articles, POST /api/publish-to-site,
+  // POST /api/wire-internal-links.
   const action = requestAction(req)
   if (action === 'scan-live') {
     return handleScanLiveArticles(req, res)
   }
   if (action === 'publish-to-site') {
     return handlePublishToSite(req, res)
+  }
+  if (action === 'wire-internal-links') {
+    return handleWireInternalLinks(req, res)
   }
 
   if (req.method === 'OPTIONS') {

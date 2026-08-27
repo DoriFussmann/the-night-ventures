@@ -61,6 +61,7 @@ import {
 import { updateCoverageDrafted } from "./articleGeneration/updateCoverageDrafted";
 import { saveGeneratedArticles } from "./articleGeneration/saveGeneratedArticles";
 import { finishHeroImage } from "./articleGeneration/heroImageStorage";
+import WireInternalLinksPanel from "./articleGeneration/WireInternalLinksPanel";
 import {
   downloadGeneratedImage,
   generateOneImage,
@@ -1619,6 +1620,11 @@ export default function ArticleGeneration() {
                     )}
                 </div>
               )}
+              <WireInternalLinksPanel
+                companyId={companyId}
+                destination={publishDestination}
+                visible={Boolean(publishResult)}
+              />
             </div>
           )}
 
