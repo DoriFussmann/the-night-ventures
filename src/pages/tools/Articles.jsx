@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
-import { Download, ExternalLink, Loader2, Radar, Search, Trash2 } from "lucide-react";
+import { Download, ExternalLink, Loader2, Radar, Search, Trash2, Upload } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { scanLiveArticles } from "./articles/scanLiveApi";
@@ -40,6 +40,14 @@ import {
   formatDaysSinceUpdateLabel,
 } from "./articleGeneration/daysSinceUpdate";
 import { downloadMarkdownFile } from "./articleGeneration/serializeArticleMarkdown";
+import {
+  DEFAULT_PUBLISH_BRANCH,
+  formatPublishProgress,
+  generatedArticleToPublishItem,
+  isPublishDestinationMapped,
+  loadCompanyPublishDestination,
+  publishArticlesToSite,
+} from "./articleGeneration/publishToSite";
 
 const TYPE_OPTIONS = [
   { value: "comprehensive", label: "Comprehensive" },
@@ -260,6 +268,11 @@ export default function Articles() {
   const [deleteId, setDeleteId] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [downloadingSummary, setDownloadingSummary] = useState(false);
+  const [publishDestination, setPublishDestination] = useState(null);
+  const [publishing, setPublishing] = useState(false);
+  const [publishProgress, setPublishProgress] = useState(null);
+  const [publishResult, setPublishResult] = useState(null);
+  const [publishError, setPublishError] = useState(null);
 
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -296,6 +309,27 @@ export default function Articles() {
     setLiveDebouncedSearch("");
     setLivePillarFilter("all");
     setLiveClusterFilter("all");
+  }, [companyId]);
+
+  useEffect(() => {
+    if (!companyId) {
+      setPublishDestination(null);
+      return;
+    }
+    let cancelled = false;
+    loadCompanyPublishDestination(companyId)
+      .then((destination) => {
+        if (!cancelled) setPublishDestination(destination);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setPublishDestination({ owner: "", repo: "", tokenKey: "" });
+          console.error("Failed to load publish destination:", err);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [companyId]);
 
   useEffect(() => {
@@ -480,6 +514,43 @@ export default function Articles() {
       setError(err?.message || "Failed to download articles summary");
     } finally {
       setDownloadingSummary(false);
+    }
+  };
+
+  const destinationMapped = isPublishDestinationMapped(publishDestination);
+
+  const publishFilteredToSite = async () => {
+    if (publishing || filtered.length === 0 || !destinationMapped) return;
+    const ok = window.confirm(
+      `Publish ${filtered.length} article(s) from the library to ${publishDestination.owner}/${publishDestination.repo} (${DEFAULT_PUBLISH_BRANCH})? Heroes are read from storage by slug. This merges via the GitHub API.`
+    );
+    if (!ok) return;
+
+    setPublishing(true);
+    setPublishProgress(null);
+    setPublishError(null);
+    setPublishResult(null);
+    try {
+      const result = await publishArticlesToSite(
+        filtered.map(generatedArticleToPublishItem),
+        {
+          companyId,
+          owner: publishDestination.owner,
+          repo: publishDestination.repo,
+          tokenKey: publishDestination.tokenKey,
+          branch: DEFAULT_PUBLISH_BRANCH,
+        },
+        {
+          onProgress: (progress) => setPublishProgress(progress),
+        }
+      );
+      setPublishResult(result);
+    } catch (err) {
+      setPublishError(err?.message || "Publish failed");
+      if (err?.result) setPublishResult(err.result);
+    } finally {
+      setPublishing(false);
+      setPublishProgress(null);
     }
   };
 
@@ -829,7 +900,121 @@ export default function Articles() {
           )}
           Download Summary
         </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="h-9 shrink-0"
+          disabled={
+            filtered.length === 0 ||
+            loading ||
+            publishing ||
+            !destinationMapped
+          }
+          onClick={publishFilteredToSite}
+        >
+          {publishing ? (
+            <>
+              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              {formatPublishProgress(publishProgress)}
+            </>
+          ) : (
+            <>
+              <Upload className="h-3.5 w-3.5 mr-1.5" />
+              Publish to Site
+            </>
+          )}
+        </Button>
       </div>
+      {publishDestination && !destinationMapped && hasAnyArticles && (
+        <p className="text-sm text-muted-foreground">
+          No destination repo set for this company.
+        </p>
+      )}
+      {publishing && publishProgress && (
+        <p className="text-sm text-muted-foreground">
+          {publishProgress.phase === "merge"
+            ? "Merging publish branch…"
+            : `Committing ${publishProgress.current}/${publishProgress.total}${
+                publishProgress.filename ? `: ${publishProgress.filename}` : ""
+              }`}
+        </p>
+      )}
+      {publishError && (
+        <p className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
+          {publishError}
+        </p>
+      )}
+      {publishResult && (
+        <div
+          className={`text-sm rounded-md px-3 py-2 space-y-1.5 ${
+            publishResult.ok
+              ? "text-emerald-800 bg-emerald-50 border border-emerald-200"
+              : "text-amber-800 bg-amber-50 border border-amber-200"
+          }`}
+        >
+          <p className="font-medium">
+            {publishResult.ok
+              ? "Published to site"
+              : "Publish did not complete"}
+          </p>
+          {publishResult.branch && (
+            <p>
+              Branch:{" "}
+              <span className="font-mono">{publishResult.branch}</span>
+            </p>
+          )}
+          {publishResult.mergeCommitSha && (
+            <p>
+              Merge SHA:{" "}
+              <span className="font-mono break-all">
+                {publishResult.mergeCommitSha}
+              </span>
+            </p>
+          )}
+          {Array.isArray(publishResult.committed) &&
+            publishResult.committed.length > 0 && (
+              <div>
+                <p className="font-medium">Committed files</p>
+                <ul className="list-disc pl-5 font-mono text-xs">
+                  {publishResult.committed.map((file) => (
+                    <li key={file.path || file.filename}>
+                      {file.path || file.filename}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          {Array.isArray(publishResult.skipped) &&
+            publishResult.skipped.length > 0 && (
+              <div>
+                <p className="font-medium">Skipped</p>
+                <ul className="list-disc pl-5 text-xs">
+                  {publishResult.skipped.map((item, i) => (
+                    <li key={`${item.filename || "skipped"}-${i}`}>
+                      {item.filename ? `${item.filename}: ` : ""}
+                      {item.message || item.reason}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          {Array.isArray(publishResult.errors) &&
+            publishResult.errors.length > 0 && (
+              <div>
+                <p className="font-medium">Errors</p>
+                <ul className="list-disc pl-5 text-xs">
+                  {publishResult.errors.map((item, i) => (
+                    <li key={`${item.filename || "error"}-${i}`}>
+                      {item.filename ? `${item.filename}: ` : ""}
+                      {item.message || String(item)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+        </div>
+      )}
 
       {slugFilter && (
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">

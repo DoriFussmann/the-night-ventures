@@ -44,6 +44,7 @@ export function buildGeneratedArticleRow({
   frontmatter,
   body,
   whereThingsStandSources,
+  heroStoragePath,
   status = "drafted",
 }) {
   const fm = frontmatter && typeof frontmatter === "object" ? frontmatter : {};
@@ -52,7 +53,7 @@ export function buildGeneratedArticleRow({
     throw new Error("Article slug is required to save");
   }
 
-  return {
+  const row = {
     company_id: companyId,
     pillar_keyword: String(pillarKeyword || "").trim(),
     supporting_keyword: supportingKeyword
@@ -79,6 +80,9 @@ export function buildGeneratedArticleRow({
     where_things_stand_sources: asSourceArray(whereThingsStandSources),
     updated_at: new Date().toISOString(),
   };
+  const storedHero = String(heroStoragePath || "").trim();
+  if (storedHero) row.hero_storage_path = storedHero;
+  return row;
 }
 
 /**
@@ -122,6 +126,7 @@ export async function saveGeneratedArticles({
         frontmatter: article.frontmatter,
         body: article.body,
         whereThingsStandSources: article.whereThingsStandSources,
+        heroStoragePath: article.heroStoragePath || article.image?.storagePath,
         status: "drafted",
       })
     );

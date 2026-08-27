@@ -3,6 +3,7 @@ import { orderSelectedArticles } from "../articleGeneration/orderSelectedArticle
 import { serializeArticleMarkdown } from "../articleGeneration/serializeArticleMarkdown";
 import { updateCoverageDrafted } from "../articleGeneration/updateCoverageDrafted";
 import { saveGeneratedArticles } from "../articleGeneration/saveGeneratedArticles";
+import { finishHeroImage } from "../articleGeneration/heroImageStorage";
 import { downloadArticlesZip } from "../articleGeneration/downloadZip";
 import {
   generateOneImage,
@@ -280,7 +281,11 @@ export async function generateClusterArticles({
             frontmatter: data.frontmatter,
             styleContext,
           });
-          image = { status: "done", result: cropped, error: null };
+          image = await finishHeroImage({
+            companyId,
+            slug: String(data.frontmatter?.slug || "").trim(),
+            cropped,
+          });
         } catch (imgErr) {
           image = {
             status: "failed",
@@ -362,6 +367,7 @@ export async function saveAndDownloadGenerated({
         frontmatter: job.frontmatter,
         body: job.body,
         whereThingsStandSources: job.whereThingsStandSources,
+        heroStoragePath: job.image?.storagePath || null,
       };
     }),
   });

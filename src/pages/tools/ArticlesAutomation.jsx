@@ -16,6 +16,7 @@ import {
 import { downloadArticlesZip } from "./articleGeneration/downloadZip";
 import {
   DEFAULT_PUBLISH_BRANCH,
+  formatPublishProgress,
   isPublishDestinationMapped,
   loadCompanyPublishDestination,
   publishArticlesToSite,
@@ -127,6 +128,7 @@ export default function ArticlesAutomation() {
   const [finishNote, setFinishNote] = useState("");
   const [publishDestination, setPublishDestination] = useState(null);
   const [publishing, setPublishing] = useState(false);
+  const [publishProgress, setPublishProgress] = useState(null);
   const [publishResult, setPublishResult] = useState(null);
   const [publishError, setPublishError] = useState(null);
 
@@ -172,6 +174,7 @@ export default function ArticlesAutomation() {
     setError("");
     setStatusMessage("");
     setPublishing(false);
+    setPublishProgress(null);
     setPublishResult(null);
     setPublishError(null);
     contextRef.current = null;
@@ -422,6 +425,7 @@ export default function ArticlesAutomation() {
     if (!ok) return;
 
     setPublishing(true);
+    setPublishProgress(null);
     setPublishError(null);
     setPublishResult(null);
     setStatusMessage("Publishing articles to the destination site…");
@@ -431,9 +435,13 @@ export default function ArticlesAutomation() {
           frontmatter: job.frontmatter,
           body: job.body,
           markdown: job.markdown,
+          heroStoragePath: job.image?.storagePath || null,
           image:
-            job.image?.status === "done" && job.image?.result?.b64_json
-              ? job.image.result
+            job.image?.status === "done"
+              ? {
+                  ...(job.image.result || {}),
+                  storagePath: job.image.storagePath || null,
+                }
               : null,
         })),
         {
@@ -442,6 +450,18 @@ export default function ArticlesAutomation() {
           repo: publishDestination.repo,
           tokenKey: publishDestination.tokenKey,
           branch: DEFAULT_PUBLISH_BRANCH,
+        },
+        {
+          onProgress: (progress) => {
+            setPublishProgress(progress);
+            setStatusMessage(
+              progress.phase === "merge"
+                ? "Merging publish branch…"
+                : `Committing ${progress.current}/${progress.total}${
+                    progress.filename ? `: ${progress.filename}` : ""
+                  }`
+            );
+          },
         }
       );
       setPublishResult(result);
@@ -462,6 +482,7 @@ export default function ArticlesAutomation() {
       setStatusMessage(err?.message || "Publish failed");
     } finally {
       setPublishing(false);
+      setPublishProgress(null);
     }
   };
   const progressPct =
@@ -781,7 +802,7 @@ export default function ArticlesAutomation() {
                 {publishing ? (
                   <>
                     <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                    Publishing…
+                    {formatPublishProgress(publishProgress)}
                   </>
                 ) : (
                   <>

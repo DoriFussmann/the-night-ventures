@@ -3,6 +3,7 @@ import {
   articleFilename,
   serializeArticleMarkdown,
 } from "./serializeArticleMarkdown";
+import { heroStoragePath } from "./heroImageStorage";
 
 export const DEFAULT_PUBLISH_BRANCH = "main";
 
@@ -48,63 +49,139 @@ function stripDataUrl(b64) {
   return raw;
 }
 
-/**
- * Serialize successful jobs for publish and POST to /api/publish-to-site.
- * Articles without a hero image are skipped (template schema requires image()).
- *
- * @param {Array<{ frontmatter: object, body?: string, markdown?: string, image?: { b64_json?: string } | { status?: string, result?: { b64_json?: string } } | null }>} articles
- * @param {{ companyId: string, owner: string, repo: string, tokenKey: string, branch?: string }} destination
- */
-export async function publishArticlesToSite(articles, destination) {
-  const skipped = [];
-  const payload = [];
-  const list = Array.isArray(articles) ? articles : [];
+function buildArticlePayload(item, { companyId } = {}) {
+  const filename = articleFilename(item.frontmatter);
+  const slug = filename.replace(/\.md$/i, "");
+  const b64 = stripDataUrl(
+    item?.image?.b64_json || item?.image?.result?.b64_json || ""
+  );
+  const knownPath = String(
+    item?.heroStoragePath || item?.image?.storagePath || ""
+  ).trim();
+  const storagePath = knownPath || (!b64 ? heroStoragePath(companyId, slug) : "");
 
-  for (const item of list) {
-    const filename = articleFilename(item.frontmatter);
-    const slug = filename.replace(/\.md$/i, "");
-    const b64 = stripDataUrl(
-      item?.image?.b64_json || item?.image?.result?.b64_json || ""
-    );
-
-    if (!b64) {
-      skipped.push({
-        filename,
-        reason: "missing_hero",
-        message: "No hero image — skipped (schema requires image)",
-      });
-      continue;
-    }
-
-    const body = item.body != null ? item.body : "";
-    if (!String(body).trim() && !String(item.markdown || "").trim()) {
-      skipped.push({
+  const body = item.body != null ? item.body : "";
+  if (!String(body).trim() && !String(item.markdown || "").trim()) {
+    return {
+      skipped: {
         filename,
         reason: "missing_body",
         message: "No article body — skipped",
-      });
-      continue;
-    }
-
-    const fm = {
-      ...(item.frontmatter && typeof item.frontmatter === "object"
-        ? item.frontmatter
-        : {}),
-      author: DEFAULT_AUTHOR,
-      image: heroImagePath(slug),
-    };
-
-    payload.push({
-      filename,
-      content: serializeArticleMarkdown(fm, body, { draft: false }),
-      image: {
-        filename: `${slug}.png`,
-        contentBase64: b64,
       },
-    });
+    };
   }
 
-  if (payload.length === 0) {
+  if (!b64 && !storagePath) {
+    return {
+      skipped: {
+        filename,
+        reason: "missing_hero",
+        message: "No hero image — skipped (schema requires image)",
+      },
+    };
+  }
+
+  const fm = {
+    ...(item.frontmatter && typeof item.frontmatter === "object"
+      ? item.frontmatter
+      : {}),
+    author: DEFAULT_AUTHOR,
+    image: heroImagePath(slug),
+  };
+
+  const article = {
+    filename,
+    content: serializeArticleMarkdown(fm, body, { draft: false }),
+  };
+  if (storagePath) {
+    article.storagePath = storagePath;
+  } else {
+    article.image = {
+      filename: `${slug}.png`,
+      contentBase64: b64,
+    };
+  }
+
+  return { article };
+}
+
+export function generatedArticleToPublishItem(row) {
+  return {
+    frontmatter: {
+      title: row?.title,
+      description: row?.description,
+      slug: row?.slug,
+      date: row?.date,
+      updatedDate: row?.updated_date,
+      author: row?.author,
+      category: row?.category,
+      tags: row?.tags,
+      imageAlt: row?.image_alt,
+      keywords: row?.keywords,
+      faqs: row?.faqs,
+      pillarKeyword: row?.pillar_keyword,
+      supportingKeyword: row?.supporting_keyword,
+      articleType: row?.type,
+      targetKeyword: row?.target_keyword,
+    },
+    body: row?.body,
+    heroStoragePath: row?.hero_storage_path || null,
+    image: null,
+  };
+}
+
+export function formatPublishProgress(progress) {
+  if (!progress) return "Publishing…";
+  if (progress.phase === "merge") return "Merging…";
+  const current = Number(progress.current) || 0;
+  const total = Number(progress.total) || 0;
+  return `Committing ${current}/${total}`;
+}
+
+async function postPublish(token, body) {
+  const res = await fetch("/api/publish-to-site", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const message = data.error || `Publish failed (${res.status})`;
+    const err = new Error(message);
+    err.result = data;
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
+
+function pushAll(target, items) {
+  if (!Array.isArray(items) || items.length === 0) return;
+  target.push(...items);
+}
+
+/**
+ * Serialize successful jobs and publish one article per request.
+ * First commit creates `publish/<yyyy-mm-dd-hhmm>`; later commits reuse it;
+ * a final request merges that branch into the target (main).
+ *
+ * @param {Array<{ frontmatter: object, body?: string, markdown?: string, image?: { b64_json?: string } | { status?: string, result?: { b64_json?: string } } | null }>} articles
+ * @param {{ companyId: string, owner: string, repo: string, tokenKey: string, branch?: string }} destination
+ * @param {{ onProgress?: (progress: { phase: "commit" | "merge", current: number, total: number, filename?: string | null }) => void }} [options]
+ */
+export async function publishArticlesToSite(articles, destination, options = {}) {
+  const onProgress =
+    typeof options.onProgress === "function" ? options.onProgress : () => {};
+  const skipped = [];
+  const committed = [];
+  const errors = [];
+  const list = Array.isArray(articles) ? articles : [];
+
+  if (list.length === 0) {
     return {
       ok: false,
       branch: null,
@@ -141,32 +218,111 @@ export async function publishArticlesToSite(articles, destination) {
     throw new Error("No destination repo set for this company.");
   }
 
-  const res = await fetch("/api/publish-to-site", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      companyId,
-      owner,
-      repo,
-      github_token_key: tokenKey,
-      branch,
-      articles: payload,
-    }),
-  });
+  const destBody = {
+    companyId,
+    owner,
+    repo,
+    github_token_key: tokenKey,
+    branch,
+  };
 
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const message = data.error || `Publish failed (${res.status})`;
-    const err = new Error(message);
-    err.result = data;
-    throw err;
+  const total = list.length;
+  let publishBranch = null;
+
+  for (let i = 0; i < list.length; i++) {
+    const item = list[i];
+    const prepared = buildArticlePayload(item, { companyId });
+    const filename =
+      prepared.article?.filename || prepared.skipped?.filename || "";
+    onProgress({
+      phase: "commit",
+      current: i + 1,
+      total,
+      filename,
+    });
+
+    if (prepared.skipped) {
+      skipped.push(prepared.skipped);
+      continue;
+    }
+
+    try {
+      const data = await postPublish(token, {
+        ...destBody,
+        step: "commit",
+        ...(publishBranch ? { publishBranch } : {}),
+        article: prepared.article,
+      });
+      if (data.branch) publishBranch = data.branch;
+      pushAll(committed, data.committed);
+      pushAll(skipped, data.skipped);
+      pushAll(errors, data.errors);
+    } catch (err) {
+      if (err?.status === 401) throw err;
+      errors.push({
+        filename: prepared.article.filename,
+        message: err?.message || "Publish failed",
+      });
+    }
   }
 
-  return {
-    ...data,
-    skipped: [...skipped, ...(Array.isArray(data.skipped) ? data.skipped : [])],
-  };
+  if (committed.length === 0) {
+    return {
+      ok: false,
+      branch: publishBranch,
+      mergeCommitSha: null,
+      committed,
+      skipped,
+      errors: errors.length
+        ? errors
+        : skipped.length
+          ? []
+          : [
+              {
+                message:
+                  "No articles ready to publish (all missing hero images or body).",
+              },
+            ],
+    };
+  }
+
+  onProgress({
+    phase: "merge",
+    current: total,
+    total,
+    filename: null,
+  });
+
+  try {
+    const data = await postPublish(token, {
+      ...destBody,
+      step: "merge",
+      publishBranch,
+    });
+    return {
+      ok: data.ok !== false,
+      branch: data.branch || publishBranch,
+      mergeCommitSha: data.mergeCommitSha || null,
+      mergeStrategy: data.mergeStrategy || null,
+      pullRequestUrl: data.pullRequestUrl || null,
+      committed,
+      skipped,
+      errors,
+    };
+  } catch (err) {
+    if (err?.status === 401) throw err;
+    errors.push({
+      message: `Merge failed: ${err?.message || "unknown error"}`,
+    });
+    return {
+      ok: false,
+      branch: publishBranch,
+      mergeCommitSha: err?.result?.mergeCommitSha || null,
+      mergeStrategy: err?.result?.mergeStrategy || null,
+      pullRequestUrl: err?.result?.pullRequestUrl || null,
+      committed,
+      skipped,
+      errors,
+    };
+  }
 }

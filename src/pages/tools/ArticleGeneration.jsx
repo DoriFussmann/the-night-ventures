@@ -53,12 +53,14 @@ import {
 import { downloadArticlesZip } from "./articleGeneration/downloadZip";
 import {
   DEFAULT_PUBLISH_BRANCH,
+  formatPublishProgress,
   isPublishDestinationMapped,
   loadCompanyPublishDestination,
   publishArticlesToSite,
 } from "./articleGeneration/publishToSite";
 import { updateCoverageDrafted } from "./articleGeneration/updateCoverageDrafted";
 import { saveGeneratedArticles } from "./articleGeneration/saveGeneratedArticles";
+import { finishHeroImage } from "./articleGeneration/heroImageStorage";
 import {
   downloadGeneratedImage,
   generateOneImage,
@@ -428,6 +430,7 @@ export default function ArticleGeneration() {
   const [savingAll, setSavingAll] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [publishing, setPublishing] = useState(false);
+  const [publishProgress, setPublishProgress] = useState(null);
   const [publishResult, setPublishResult] = useState(null);
   const [publishError, setPublishError] = useState(null);
   const [publishDestination, setPublishDestination] = useState(null);
@@ -469,6 +472,7 @@ export default function ArticleGeneration() {
 
   const clearPublishState = () => {
     setPublishing(false);
+    setPublishProgress(null);
     setPublishResult(null);
     setPublishError(null);
   };
@@ -788,7 +792,11 @@ export default function ArticleGeneration() {
               frontmatter: data.frontmatter,
               styleContext,
             });
-            image = { status: "done", result: cropped, error: null };
+            image = await finishHeroImage({
+              companyId,
+              slug: String(data.frontmatter?.slug || "").trim(),
+              cropped,
+            });
           } catch (imgErr) {
             image = {
               status: "failed",
@@ -887,7 +895,11 @@ export default function ArticleGeneration() {
             frontmatter: data.frontmatter,
             styleContext,
           });
-          image = { status: "done", result: cropped, error: null };
+          image = await finishHeroImage({
+            companyId,
+            slug: String(data.frontmatter?.slug || "").trim(),
+            cropped,
+          });
         } catch (imgErr) {
           image = {
             status: "failed",
@@ -942,7 +954,11 @@ export default function ArticleGeneration() {
         styleContext,
       });
       updateJob(jobIndex, {
-        image: { status: "done", result: cropped, error: null },
+        image: await finishHeroImage({
+          companyId,
+          slug: String(job.frontmatter?.slug || "").trim(),
+          cropped,
+        }),
       });
     } catch (err) {
       updateJob(jobIndex, {
@@ -991,6 +1007,7 @@ export default function ArticleGeneration() {
     if (!ok) return;
 
     setPublishing(true);
+    setPublishProgress(null);
     setPublishError(null);
     setPublishResult(null);
     try {
@@ -999,9 +1016,13 @@ export default function ArticleGeneration() {
           frontmatter: j.frontmatter,
           body: j.body,
           markdown: j.markdown,
+          heroStoragePath: j.image?.storagePath || null,
           image:
-            j.image?.status === "done" && j.image?.result?.b64_json
-              ? j.image.result
+            j.image?.status === "done"
+              ? {
+                  ...(j.image.result || {}),
+                  storagePath: j.image.storagePath || null,
+                }
               : null,
         })),
         {
@@ -1010,6 +1031,9 @@ export default function ArticleGeneration() {
           repo: publishDestination.repo,
           tokenKey: publishDestination.tokenKey,
           branch: DEFAULT_PUBLISH_BRANCH,
+        },
+        {
+          onProgress: (progress) => setPublishProgress(progress),
         }
       );
       setPublishResult(result);
@@ -1018,6 +1042,7 @@ export default function ArticleGeneration() {
       if (err?.result) setPublishResult(err.result);
     } finally {
       setPublishing(false);
+      setPublishProgress(null);
     }
   };
 
@@ -1039,6 +1064,7 @@ export default function ArticleGeneration() {
       frontmatter: job.frontmatter,
       body: job.body,
       whereThingsStandSources: job.whereThingsStandSources,
+      heroStoragePath: job.image?.storagePath || null,
     };
   };
 
@@ -1437,7 +1463,7 @@ export default function ArticleGeneration() {
                   {publishing ? (
                     <>
                       <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                      Publishing…
+                      {formatPublishProgress(publishProgress)}
                     </>
                   ) : (
                     <>
@@ -1489,6 +1515,17 @@ export default function ArticleGeneration() {
                   Clear file
                 </Button>
               </div>
+              {publishing && publishProgress && (
+                <p className="text-sm text-muted-foreground">
+                  {publishProgress.phase === "merge"
+                    ? "Merging publish branch…"
+                    : `Committing ${publishProgress.current}/${publishProgress.total}${
+                        publishProgress.filename
+                          ? `: ${publishProgress.filename}`
+                          : ""
+                      }`}
+                </p>
+              )}
               {publishError && (
                 <p className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
                   {publishError}
