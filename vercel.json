@@ -15,6 +15,10 @@
       "source": "/api/wire-internal-links",
       "destination": "/api/check-article-update?action=wire-internal-links"
     },
+    {
+      "source": "/api/propose-external-links",
+      "destination": "/api/check-article-update?action=propose-external-links"
+    },
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]

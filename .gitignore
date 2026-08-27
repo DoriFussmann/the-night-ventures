@@ -32,3 +32,6 @@ dist-ssr
 .vite
 .vercel
 .env*.local
+
+# Local SERP cache for external-link search
+.cache

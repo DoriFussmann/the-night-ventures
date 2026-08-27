@@ -1,0 +1,21 @@
+{
+  "allow": [
+    "developers.google.com",
+    "web.dev",
+    "schema.org",
+    "w3.org",
+    "searchengineland.com",
+    "moz.com"
+  ],
+  "deny": [
+    "pinterest.com",
+    "facebook.com",
+    "twitter.com",
+    "x.com",
+    "reddit.com",
+    "quora.com",
+    "youtube.com",
+    "tiktok.com",
+    "instagram.com"
+  ]
+}
