@@ -49,8 +49,8 @@ function localApiPlugin() {
           }
 
           // Keep public /api/scan-live-articles, /api/publish-to-site,
-          // /api/wire-internal-links, and /api/propose-external-links
-          // without extra Vercel functions.
+          // /api/wire-internal-links, /api/propose-external-links,
+          // and /api/check-links without extra Vercel functions.
           if (name === 'scan-live-articles') {
             name = 'check-article-update'
             const parsed = new URL(url, 'http://localhost')
@@ -70,6 +70,11 @@ function localApiPlugin() {
             name = 'check-article-update'
             const parsed = new URL(url, 'http://localhost')
             parsed.searchParams.set('action', 'propose-external-links')
+            req.url = `/api/check-article-update${parsed.search}`
+          } else if (name === 'check-links') {
+            name = 'check-article-update'
+            const parsed = new URL(url, 'http://localhost')
+            parsed.searchParams.set('action', 'check-links')
             req.url = `/api/check-article-update${parsed.search}`
           }
 

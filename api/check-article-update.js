@@ -3,6 +3,7 @@ import { handleScanLiveArticles } from '../lib/scan-live-articles/handler.js'
 import { handlePublishToSite } from '../lib/publish-to-site/handler.js'
 import { handleWireInternalLinks } from '../lib/wire-internal-links/handler.js'
 import { handleProposeExternalLinks } from '../lib/external-links/handler.js'
+import { handleCheckLinks } from '../lib/check-links/handler.js'
 
 export const config = {
   maxDuration: 120,
@@ -25,6 +26,9 @@ function requestAction(req) {
     }
     if (path.endsWith('/propose-external-links')) {
       return 'propose-external-links'
+    }
+    if (path.endsWith('/check-links')) {
+      return 'check-links'
     }
   } catch {
     // ignore
@@ -264,7 +268,8 @@ export default async function handler(req, res) {
   // Hobby is capped at 12 functions; extra public URLs are mounted here
   // instead of adding more api/*.js files.
   // Public: POST /api/scan-live-articles, POST /api/publish-to-site,
-  // POST /api/wire-internal-links, POST /api/propose-external-links.
+  // POST /api/wire-internal-links, POST /api/propose-external-links,
+  // POST /api/check-links.
   const action = requestAction(req)
   if (action === 'scan-live') {
     return handleScanLiveArticles(req, res)
@@ -277,6 +282,9 @@ export default async function handler(req, res) {
   }
   if (action === 'propose-external-links') {
     return handleProposeExternalLinks(req, res)
+  }
+  if (action === 'check-links') {
+    return handleCheckLinks(req, res)
   }
 
   if (req.method === 'OPTIONS') {

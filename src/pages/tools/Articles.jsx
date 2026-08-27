@@ -5,6 +5,7 @@ import { Download, ExternalLink, Loader2, Radar, Search, Trash2, Upload } from "
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { scanLiveArticles } from "./articles/scanLiveApi";
+import CheckLinksPanel from "./articles/CheckLinksPanel";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -648,6 +649,11 @@ export default function Articles() {
           {scanError}
         </p>
       )}
+
+      <CheckLinksPanel
+        companyId={companyId}
+        destination={publishDestination}
+      />
 
       {scanResult && (
         <section className="space-y-3">
