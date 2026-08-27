@@ -1,5 +1,5 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
-import { Check, Download, Loader2, Play, Workflow, X } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Check, Download, Loader2, Play, Upload, Workflow, X } from "lucide-react";
 import { useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -14,6 +14,12 @@ import {
   saveAndDownloadGenerated,
 } from "./articlesAutomation/runGeneration";
 import { downloadArticlesZip } from "./articleGeneration/downloadZip";
+import {
+  DEFAULT_PUBLISH_BRANCH,
+  isPublishDestinationMapped,
+  loadCompanyPublishDestination,
+  publishArticlesToSite,
+} from "./articleGeneration/publishToSite";
 import {
   listEligibleClusters,
   pickUnplannedCluster,
@@ -119,6 +125,10 @@ export default function ArticlesAutomation() {
   const [currentStep, setCurrentStep] = useState(0);
   const [coverageWarning, setCoverageWarning] = useState("");
   const [finishNote, setFinishNote] = useState("");
+  const [publishDestination, setPublishDestination] = useState(null);
+  const [publishing, setPublishing] = useState(false);
+  const [publishResult, setPublishResult] = useState(null);
+  const [publishError, setPublishError] = useState(null);
 
   const contextRef = useRef(null);
   const pickedRef = useRef(null);
@@ -130,6 +140,27 @@ export default function ArticlesAutomation() {
 
   const busy = !IDLE_PHASES.has(phase);
 
+  useEffect(() => {
+    if (!companyId) {
+      setPublishDestination(null);
+      return;
+    }
+    let cancelled = false;
+    loadCompanyPublishDestination(companyId)
+      .then((destination) => {
+        if (!cancelled) setPublishDestination(destination);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setPublishDestination({ owner: "", repo: "", tokenKey: "" });
+          console.error("Failed to load publish destination:", err);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId]);
+
   const resetRunState = () => {
     setPicked(null);
     setProposal(null);
@@ -140,6 +171,9 @@ export default function ArticlesAutomation() {
     setFinishNote("");
     setError("");
     setStatusMessage("");
+    setPublishing(false);
+    setPublishResult(null);
+    setPublishError(null);
     contextRef.current = null;
     pickedRef.current = null;
     proposalRef.current = null;
@@ -378,6 +412,58 @@ export default function ArticlesAutomation() {
     () => jobs.filter((job) => job.status === "failed"),
     [jobs]
   );
+  const destinationMapped = isPublishDestinationMapped(publishDestination);
+
+  const publishToSite = async () => {
+    if (publishing || successJobs.length === 0 || !destinationMapped) return;
+    const ok = window.confirm(
+      `Publish ${successJobs.length} article(s) to ${publishDestination.owner}/${publishDestination.repo} (${DEFAULT_PUBLISH_BRANCH})? This merges via the GitHub API.`
+    );
+    if (!ok) return;
+
+    setPublishing(true);
+    setPublishError(null);
+    setPublishResult(null);
+    setStatusMessage("Publishing articles to the destination site…");
+    try {
+      const result = await publishArticlesToSite(
+        successJobs.map((job) => ({
+          frontmatter: job.frontmatter,
+          body: job.body,
+          markdown: job.markdown,
+          image:
+            job.image?.status === "done" && job.image?.result?.b64_json
+              ? job.image.result
+              : null,
+        })),
+        {
+          companyId,
+          owner: publishDestination.owner,
+          repo: publishDestination.repo,
+          tokenKey: publishDestination.tokenKey,
+          branch: DEFAULT_PUBLISH_BRANCH,
+        }
+      );
+      setPublishResult(result);
+      const committedCount = Array.isArray(result.committed)
+        ? result.committed.length
+        : 0;
+      const skippedCount = Array.isArray(result.skipped)
+        ? result.skipped.length
+        : 0;
+      setStatusMessage(
+        result.ok
+          ? `Published to ${publishDestination.owner}/${publishDestination.repo}. ${committedCount} file${committedCount === 1 ? "" : "s"} committed${skippedCount ? `, ${skippedCount} skipped` : ""}.`
+          : "Publish did not complete. See committed, skipped, and errors below."
+      );
+    } catch (err) {
+      setPublishError(err?.message || "Publish failed");
+      if (err?.result) setPublishResult(err.result);
+      setStatusMessage(err?.message || "Publish failed");
+    } finally {
+      setPublishing(false);
+    }
+  };
   const progressPct =
     jobs.length > 0 ? Math.round((currentStep / jobs.length) * 100) : 0;
   const currentJob =
@@ -659,31 +745,134 @@ export default function ArticlesAutomation() {
             <p className="text-sm text-foreground">{finishNote}</p>
           )}
           {phase === "done" && successJobs.length > 0 && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                downloadArticlesZip(
-                  successJobs.map((job) => ({
-                    frontmatter: job.frontmatter,
-                    markdown: job.markdown,
-                    image:
-                      job.image?.status === "done" &&
-                      job.image?.result?.b64_json
-                        ? job.image.result
-                        : null,
-                  })),
-                  `${(picked?.clusterKeyword || "articles")
-                    .toLowerCase()
-                    .replace(/[^\w]+/g, "-")
-                    .replace(/^-|-$/g, "") || "articles"}-drafts.zip`
-                )
-              }
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  downloadArticlesZip(
+                    successJobs.map((job) => ({
+                      frontmatter: job.frontmatter,
+                      markdown: job.markdown,
+                      image:
+                        job.image?.status === "done" &&
+                        job.image?.result?.b64_json
+                          ? job.image.result
+                          : null,
+                    })),
+                    `${(picked?.clusterKeyword || "articles")
+                      .toLowerCase()
+                      .replace(/[^\w]+/g, "-")
+                      .replace(/^-|-$/g, "") || "articles"}-drafts.zip`
+                  )
+                }
+              >
+                <Download className="h-3.5 w-3.5 mr-1.5" />
+                Download All (.zip)
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={publishing || !destinationMapped}
+                onClick={publishToSite}
+              >
+                {publishing ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                    Publishing…
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-3.5 w-3.5 mr-1.5" />
+                    Publish to Site
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+          {viewingStage === "articles" &&
+            publishDestination &&
+            !destinationMapped && (
+              <p className="text-sm text-muted-foreground">
+                No destination repo set for this company.
+              </p>
+            )}
+          {publishError && viewingStage === "articles" && (
+            <p className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
+              {publishError}
+            </p>
+          )}
+          {publishResult && viewingStage === "articles" && (
+            <div
+              className={`text-sm rounded-md px-3 py-2 space-y-1.5 ${
+                publishResult.ok
+                  ? "text-emerald-800 bg-emerald-50 border border-emerald-200"
+                  : "text-amber-800 bg-amber-50 border border-amber-200"
+              }`}
             >
-              <Download className="h-3.5 w-3.5 mr-1.5" />
-              Download All (.zip)
-            </Button>
+              <p className="font-medium">
+                {publishResult.ok
+                  ? "Published to site"
+                  : "Publish did not complete"}
+              </p>
+              {publishResult.branch && (
+                <p>
+                  Branch:{" "}
+                  <span className="font-mono">{publishResult.branch}</span>
+                </p>
+              )}
+              {publishResult.mergeCommitSha && (
+                <p>
+                  Merge SHA:{" "}
+                  <span className="font-mono break-all">
+                    {publishResult.mergeCommitSha}
+                  </span>
+                </p>
+              )}
+              {Array.isArray(publishResult.committed) &&
+                publishResult.committed.length > 0 && (
+                  <div>
+                    <p className="font-medium">Committed files</p>
+                    <ul className="list-disc pl-5 font-mono text-xs">
+                      {publishResult.committed.map((file) => (
+                        <li key={file.path || file.filename}>
+                          {file.path || file.filename}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              {Array.isArray(publishResult.skipped) &&
+                publishResult.skipped.length > 0 && (
+                  <div>
+                    <p className="font-medium">Skipped</p>
+                    <ul className="list-disc pl-5 text-xs">
+                      {publishResult.skipped.map((item, i) => (
+                        <li key={`${item.filename || "skipped"}-${i}`}>
+                          {item.filename ? `${item.filename}: ` : ""}
+                          {item.message || item.reason}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              {Array.isArray(publishResult.errors) &&
+                publishResult.errors.length > 0 && (
+                  <div>
+                    <p className="font-medium">Errors</p>
+                    <ul className="list-disc pl-5 text-xs">
+                      {publishResult.errors.map((item, i) => (
+                        <li key={`${item.filename || "error"}-${i}`}>
+                          {item.filename ? `${item.filename}: ` : ""}
+                          {item.message || String(item)}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+            </div>
           )}
           {phase === "generate_review" && (
             <ConfirmGate
