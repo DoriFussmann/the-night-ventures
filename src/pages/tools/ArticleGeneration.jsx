@@ -51,6 +51,12 @@ import {
   serializeArticleMarkdown,
 } from "./articleGeneration/serializeArticleMarkdown";
 import { downloadArticlesZip } from "./articleGeneration/downloadZip";
+import {
+  SLICE1_OWNER,
+  SLICE1_REPO,
+  SLICE1_BRANCH,
+  publishArticlesToSite,
+} from "./articleGeneration/publishToSite";
 import { updateCoverageDrafted } from "./articleGeneration/updateCoverageDrafted";
 import { saveGeneratedArticles } from "./articleGeneration/saveGeneratedArticles";
 import {
@@ -421,6 +427,9 @@ export default function ArticleGeneration() {
   const [savingIndexes, setSavingIndexes] = useState(() => new Set());
   const [savingAll, setSavingAll] = useState(false);
   const [saveError, setSaveError] = useState(null);
+  const [publishing, setPublishing] = useState(false);
+  const [publishResult, setPublishResult] = useState(null);
+  const [publishError, setPublishError] = useState(null);
   const [sourcesCopied, setSourcesCopied] = useState(false);
   const [promptOpen, setPromptOpen] = useState(false);
   const [promptLoading, setPromptLoading] = useState(false);
@@ -434,6 +443,12 @@ export default function ArticleGeneration() {
     setSavingIndexes(new Set());
     setSavingAll(false);
     setSaveError(null);
+  };
+
+  const clearPublishState = () => {
+    setPublishing(false);
+    setPublishResult(null);
+    setPublishError(null);
   };
 
   const resetIntake = () => {
@@ -454,6 +469,7 @@ export default function ArticleGeneration() {
     setReaderIndex(null);
     setDeleteIndex(null);
     clearSaveState();
+    clearPublishState();
   };
 
   const applyParsed = (result, name) => {
@@ -480,6 +496,7 @@ export default function ArticleGeneration() {
     setReaderIndex(null);
     setDeleteIndex(null);
     clearSaveState();
+    clearPublishState();
   };
 
   const handleFile = async (file) => {
@@ -940,6 +957,38 @@ export default function ArticleGeneration() {
     setReaderIndex(null);
     setDeleteIndex(null);
     clearSaveState();
+    clearPublishState();
+  };
+
+  const publishToSite = async () => {
+    if (publishing || successJobs.length === 0) return;
+    const ok = window.confirm(
+      `Publish ${successJobs.length} article(s) to ${SLICE1_OWNER}/${SLICE1_REPO} (${SLICE1_BRANCH})? This merges via the GitHub API.`
+    );
+    if (!ok) return;
+
+    setPublishing(true);
+    setPublishError(null);
+    setPublishResult(null);
+    try {
+      const result = await publishArticlesToSite(
+        successJobs.map((j) => ({
+          frontmatter: j.frontmatter,
+          body: j.body,
+          markdown: j.markdown,
+          image:
+            j.image?.status === "done" && j.image?.result?.b64_json
+              ? j.image.result
+              : null,
+        }))
+      );
+      setPublishResult(result);
+    } catch (err) {
+      setPublishError(err?.message || "Publish failed");
+      if (err?.result) setPublishResult(err.result);
+    } finally {
+      setPublishing(false);
+    }
   };
 
   const downloadOneArticle = async (job) => {
@@ -1346,6 +1395,25 @@ export default function ArticleGeneration() {
                 </Button>
                 <Button
                   type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={successJobs.length === 0 || publishing}
+                  onClick={publishToSite}
+                >
+                  {publishing ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                      Publishing…
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-3.5 w-3.5 mr-1.5" />
+                      Publish to Site
+                    </>
+                  )}
+                </Button>
+                <Button
+                  type="button"
                   variant="outline"
                   size="sm"
                   disabled={
@@ -1387,6 +1455,94 @@ export default function ArticleGeneration() {
                   Clear file
                 </Button>
               </div>
+              {publishError && (
+                <p className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
+                  {publishError}
+                </p>
+              )}
+              {publishResult && (
+                <div
+                  className={`text-sm rounded-md px-3 py-2 space-y-1.5 ${
+                    publishResult.ok
+                      ? "text-emerald-800 bg-emerald-50 border border-emerald-200"
+                      : "text-amber-800 bg-amber-50 border border-amber-200"
+                  }`}
+                >
+                  <p className="font-medium">
+                    {publishResult.ok
+                      ? "Published to site"
+                      : "Publish did not complete"}
+                  </p>
+                  {publishResult.branch && (
+                    <p>
+                      Branch:{" "}
+                      <span className="font-mono">{publishResult.branch}</span>
+                    </p>
+                  )}
+                  {publishResult.mergeCommitSha && (
+                    <p>
+                      Merge SHA:{" "}
+                      <span className="font-mono break-all">
+                        {publishResult.mergeCommitSha}
+                      </span>
+                    </p>
+                  )}
+                  {publishResult.pullRequestUrl && (
+                    <p>
+                      Pull request:{" "}
+                      <a
+                        href={publishResult.pullRequestUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline"
+                      >
+                        {publishResult.pullRequestUrl}
+                      </a>
+                    </p>
+                  )}
+                  {Array.isArray(publishResult.committed) &&
+                    publishResult.committed.length > 0 && (
+                      <div>
+                        <p className="font-medium">Committed files</p>
+                        <ul className="list-disc pl-5 font-mono text-xs">
+                          {publishResult.committed.map((file) => (
+                            <li key={file.path || file.filename}>
+                              {file.path || file.filename}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  {Array.isArray(publishResult.skipped) &&
+                    publishResult.skipped.length > 0 && (
+                      <div>
+                        <p className="font-medium">Skipped</p>
+                        <ul className="list-disc pl-5 text-xs">
+                          {publishResult.skipped.map((item, i) => (
+                            <li key={`${item.filename || "skipped"}-${i}`}>
+                              {item.filename ? `${item.filename}: ` : ""}
+                              {item.message || item.reason}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  {Array.isArray(publishResult.errors) &&
+                    publishResult.errors.length > 0 && (
+                      <div>
+                        <p className="font-medium">Errors</p>
+                        <ul className="list-disc pl-5 text-xs">
+                          {publishResult.errors.map((item, i) => (
+                            <li key={`${item.filename || "error"}-${i}`}>
+                              {item.filename ? `${item.filename}: ` : ""}
+                              {item.message || String(item)}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                </div>
+              )}
             </div>
           )}
 
