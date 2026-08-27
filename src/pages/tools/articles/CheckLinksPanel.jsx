@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Link2, Loader2, RefreshCw } from "lucide-react";
+import { Copy, Link2, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DEFAULT_PUBLISH_BRANCH } from "../articleGeneration/publishToSite";
@@ -11,6 +11,106 @@ import {
 
 function issueKey(slug, url) {
   return `${slug}::${url}`;
+}
+
+function formatInternalLink(link) {
+  if (!link?.slug) return "";
+  return link.anchor ? `${link.slug} (“${link.anchor}”)` : link.slug;
+}
+
+function formatIssuesText(audit, issues) {
+  const lines = [
+    "Check Links — issues",
+    `Live corpus: ${audit?.publishedCount ?? 0} published / ${audit?.corpusCount ?? 0} files`,
+    "",
+  ];
+  if (!issues.length) {
+    lines.push("No link issues on live articles.");
+    return lines.join("\n");
+  }
+  for (const article of issues) {
+    lines.push(article.slug);
+    for (const link of article.internal?.added ||
+      article.internal?.missing ||
+      []) {
+      lines.push(`  Missing internal: ${formatInternalLink(link)}`);
+    }
+    if (article.external?.short) {
+      lines.push(
+        `  External sources: has ${article.external.currentCount}, needs ${article.external.needed}`
+      );
+    }
+    lines.push("");
+  }
+  return lines.join("\n").trim();
+}
+
+function formatReviewText(reviewRows, selected) {
+  const lines = ["Check Links — review before wiring", ""];
+  for (const row of reviewRows) {
+    lines.push(row.slug);
+    if (row.error) {
+      lines.push(
+        `  ERROR (excluded from Confirm & Wire All): ${row.reason || "planning failed"}`
+      );
+    }
+    const kept = row.internal?.kept || [];
+    const added = row.internal?.added || [];
+    lines.push("  Internal links (merged — existing preserved, not replaced):");
+    if (!kept.length && !added.length) {
+      lines.push("    (none existing, none being added)");
+    }
+    for (const link of kept) {
+      lines.push(`    existing (kept): ${formatInternalLink(link)}`);
+    }
+    for (const link of added) {
+      lines.push(`    new (will be added): ${formatInternalLink(link)}`);
+    }
+    if (!row.error) {
+      const candidates = row.candidates || [];
+      if (candidates.length) {
+        lines.push("  External proposals:");
+        for (const link of candidates) {
+          const mark = selected.has(issueKey(row.slug, link.url))
+            ? "[x]"
+            : "[ ]";
+          lines.push(`    ${mark} ${link.label || link.title || link.url}`);
+          lines.push(`        ${link.url}`);
+        }
+      } else if (row.externalShort) {
+        lines.push("  External proposals: none found");
+      }
+    }
+    lines.push("");
+  }
+  return lines.join("\n").trim();
+}
+
+function CopyPanelButton({ text, disabled }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    if (!text || disabled) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Copy failed:", err);
+    }
+  };
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      className="h-7 px-2"
+      disabled={disabled || !text}
+      onClick={copy}
+    >
+      <Copy className="h-3.5 w-3.5 mr-1.5" />
+      {copied ? "Copied" : "Copy"}
+    </Button>
+  );
 }
 
 export default function CheckLinksPanel({ companyId, destination }) {
@@ -36,12 +136,58 @@ export default function CheckLinksPanel({ companyId, destination }) {
 
   const issues = Array.isArray(audit?.issues) ? audit.issues : [];
   const internalIssues = issues.filter(
-    (item) => (item.internal?.missing || []).length > 0
+    (item) => (item.internal?.added || item.internal?.missing || []).length > 0
   );
   const externalIssues = issues.filter((item) => item.external?.short);
   const proposalRows = Array.isArray(proposals?.rows) ? proposals.rows : [];
 
+  const reviewRows = useMemo(() => {
+    const proposalBySlug = new Map(proposalRows.map((row) => [row.slug, row]));
+    const issueBySlug = new Map(issues.map((item) => [item.slug, item]));
+    const slugs = [
+      ...new Set([
+        ...issues.map((item) => item.slug),
+        ...proposalRows.map((row) => row.slug),
+      ]),
+    ];
+    return slugs.map((slug) => {
+      const issue = issueBySlug.get(slug);
+      const proposal = proposalBySlug.get(slug);
+      const failed =
+        Boolean(proposal?.error) || proposal?.available === false;
+      return {
+        slug,
+        title: issue?.title || proposal?.title || slug,
+        error: failed,
+        reason: proposal?.reason,
+        fromCache: proposal?.fromCache,
+        internal: issue?.internal || { kept: [], added: [] },
+        candidates: failed ? [] : proposal?.candidates || [],
+        externalShort: Boolean(issue?.external?.short),
+        currentCount:
+          proposal?.currentCount ?? issue?.external?.currentCount ?? 0,
+        needed: proposal?.needed ?? issue?.external?.needed ?? 3,
+      };
+    });
+  }, [issues, proposalRows]);
+
+  const errorSlugs = useMemo(
+    () => reviewRows.filter((row) => row.error).map((row) => row.slug),
+    [reviewRows]
+  );
+  const errorSlugSet = useMemo(() => new Set(errorSlugs), [errorSlugs]);
   const selectedCount = useMemo(() => selected.size, [selected]);
+  const canWireInternal = internalIssues.some(
+    (item) => !errorSlugSet.has(item.slug)
+  );
+  const issuesCopyText = useMemo(
+    () => formatIssuesText(audit, issues),
+    [audit, issues]
+  );
+  const reviewCopyText = useMemo(
+    () => formatReviewText(reviewRows, selected),
+    [reviewRows, selected]
+  );
 
   const refresh = async () => {
     if (busy || !mapped) return;
@@ -76,6 +222,7 @@ export default function CheckLinksPanel({ companyId, destination }) {
       setProposals(data);
       const next = new Set();
       for (const row of data.rows || []) {
+        if (row?.error || row?.available === false) continue;
         for (const link of row.candidates || []) {
           if (link?.url) next.add(issueKey(row.slug, link.url));
         }
@@ -100,7 +247,8 @@ export default function CheckLinksPanel({ companyId, destination }) {
 
   const confirm = async () => {
     if (busy || !mapped) return;
-    const confirmedExternal = proposalRows
+    const confirmedExternal = reviewRows
+      .filter((row) => !row.error)
       .map((row) => ({
         slug: row.slug,
         links: (row.candidates || [])
@@ -111,14 +259,22 @@ export default function CheckLinksPanel({ companyId, destination }) {
           })),
       }))
       .filter((item) => item.links.length);
-    if (internalIssues.length === 0 && confirmedExternal.length === 0) {
-      setError("Select at least one external source, or refresh if only internal issues remain.");
+    if (!canWireInternal && confirmedExternal.length === 0) {
+      setError(
+        errorSlugs.length
+          ? "Errored articles are excluded until planning succeeds. Resolve them with Refresh / Fix all, or select other proposals."
+          : "Select at least one external source, or refresh if only internal issues remain."
+      );
       return;
     }
     setPhase("committing");
     setError(null);
     try {
-      const data = await commitLinkFixes(dest, confirmedExternal);
+      const data = await commitLinkFixes(
+        dest,
+        confirmedExternal,
+        errorSlugs
+      );
       setResult(data);
       setPhase("done");
     } catch (err) {
@@ -193,11 +349,14 @@ export default function CheckLinksPanel({ companyId, destination }) {
 
       {audit && (phase === "issues" || phase === "review" || phase === "proposing") && (
         <div className="text-sm rounded-md px-3 py-2 space-y-2 text-amber-900 bg-amber-50 border border-amber-200">
-          <p className="font-medium">
-            {issues.length === 0
-              ? "No link issues on live articles"
-              : `${issues.length} article${issues.length === 1 ? "" : "s"} need link work`}
-          </p>
+          <div className="flex items-start justify-between gap-2">
+            <p className="font-medium">
+              {issues.length === 0
+                ? "No link issues on live articles"
+                : `${issues.length} article${issues.length === 1 ? "" : "s"} need link work`}
+            </p>
+            <CopyPanelButton text={issuesCopyText} disabled={busy} />
+          </div>
           <p className="text-xs">
             Live corpus: {audit.publishedCount ?? 0} published /{" "}
             {audit.corpusCount ?? 0} files
@@ -215,10 +374,11 @@ export default function CheckLinksPanel({ companyId, destination }) {
                 <li key={article.slug}>
                   <p className="font-medium font-mono text-xs">{article.slug}</p>
                   <ul className="list-disc pl-5 text-xs">
-                    {(article.internal?.missing || []).map((link) => (
+                    {(article.internal?.added ||
+                      article.internal?.missing ||
+                      []).map((link) => (
                       <li key={`${article.slug}-int-${link.slug}`}>
-                        Missing internal: {link.slug}
-                        {link.anchor ? ` (“${link.anchor}”)` : ""}
+                        Missing internal: {formatInternalLink(link)}
                       </li>
                     ))}
                     {article.external?.short && (
@@ -237,35 +397,72 @@ export default function CheckLinksPanel({ companyId, destination }) {
 
       {phase === "review" && (
         <div className="text-sm rounded-md px-3 py-2 space-y-2 text-amber-900 bg-amber-50 border border-amber-200">
-          <p className="font-medium">Review before wiring</p>
+          <div className="flex items-start justify-between gap-2">
+            <p className="font-medium">Review before wiring</p>
+            <CopyPanelButton text={reviewCopyText} disabled={busy} />
+          </div>
           <p className="text-xs">
-            Internal gaps above will be wired from the live corpus. External
-            sources come from live search — uncheck any you do not want.
-            Confirm writes one branch and merges to main.
+            Internal links are merged into the existing list — existing
+            targets are kept, new targets are added. External sources come
+            from live search — uncheck any you do not want. Confirm writes
+            one branch and merges to main. Articles with planning errors are
+            excluded until they succeed.
           </p>
-          {proposalRows.length === 0 ? (
-            <p className="text-xs">
-              {externalIssues.length === 0
-                ? "No external proposals needed."
-                : "No new external sources found."}
+          {errorSlugs.length > 0 && (
+            <p className="text-xs text-destructive">
+              {errorSlugs.length} article
+              {errorSlugs.length === 1 ? "" : "s"} failed planning and will
+              not be wired: {errorSlugs.join(", ")}
             </p>
+          )}
+          {reviewRows.length === 0 ? (
+            <p className="text-xs">Nothing to review.</p>
           ) : (
             <ul className="space-y-3">
-              {proposalRows.map((row) => (
+              {reviewRows.map((row) => (
                 <li key={row.slug}>
                   <p className="font-medium font-mono text-xs">
                     {row.slug}
                     {row.fromCache ? " · cached SERP" : ""}
+                    {row.error ? " · excluded" : ""}
                   </p>
-                  {!row.available && (
+                  {row.error && (
                     <p className="text-xs text-destructive">
-                      {row.reason || "Search unavailable"}
+                      Planning error: {row.reason || "unavailable"}. This
+                      article will not be wired.
                     </p>
                   )}
-                  {(row.candidates || []).length === 0 ? (
-                    <p className="text-xs">No new candidates (has {row.currentCount}, needs {row.needed}).</p>
-                  ) : (
-                    <ul className="mt-1 space-y-1.5">
+                  <div className="mt-1 text-xs space-y-1">
+                    <p className="font-medium">
+                      Internal links — existing kept, new added
+                    </p>
+                    <ul className="pl-0 space-y-0.5">
+                      {(row.internal?.kept || []).map((link) => (
+                        <li key={`${row.slug}-kept-${link.slug}`}>
+                          <span className="inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-1.5 py-0 text-[10px] font-medium text-emerald-800 mr-1.5">
+                            existing
+                          </span>
+                          {formatInternalLink(link)}
+                        </li>
+                      ))}
+                      {(row.internal?.added || []).map((link) => (
+                        <li key={`${row.slug}-new-${link.slug}`}>
+                          <span className="inline-flex items-center rounded-full border border-sky-300 bg-sky-50 px-1.5 py-0 text-[10px] font-medium text-sky-800 mr-1.5">
+                            new
+                          </span>
+                          {formatInternalLink(link)}
+                        </li>
+                      ))}
+                      {(row.internal?.kept || []).length === 0 &&
+                        (row.internal?.added || []).length === 0 && (
+                          <li className="text-amber-800/80">
+                            No internal links on this article; none being added.
+                          </li>
+                        )}
+                    </ul>
+                  </div>
+                  {!row.error && (row.candidates || []).length > 0 && (
+                    <ul className="mt-1.5 space-y-1.5">
                       {(row.candidates || []).map((link) => {
                         const key = issueKey(row.slug, link.url);
                         return (
@@ -296,6 +493,14 @@ export default function CheckLinksPanel({ companyId, destination }) {
                       })}
                     </ul>
                   )}
+                  {!row.error &&
+                    row.externalShort &&
+                    (row.candidates || []).length === 0 && (
+                      <p className="text-xs mt-1">
+                        No new external candidates (has {row.currentCount},
+                        needs {row.needed}).
+                      </p>
+                    )}
                 </li>
               ))}
             </ul>
@@ -304,10 +509,7 @@ export default function CheckLinksPanel({ companyId, destination }) {
             <Button
               type="button"
               size="sm"
-              disabled={
-                busy ||
-                (internalIssues.length === 0 && selectedCount === 0)
-              }
+              disabled={busy || (!canWireInternal && selectedCount === 0)}
               onClick={confirm}
             >
               {phase === "committing" ? (

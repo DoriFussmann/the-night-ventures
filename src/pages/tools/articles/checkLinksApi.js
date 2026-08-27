@@ -61,11 +61,16 @@ export async function proposeExternalFixes(destination) {
   });
 }
 
-export async function commitLinkFixes(destination, confirmedExternal) {
+export async function commitLinkFixes(
+  destination,
+  confirmedExternal,
+  excludeSlugs = []
+) {
   const token = await sessionToken();
   return postCheckLinks(token, {
     ...destBody(destination),
     step: "commit",
     confirmedExternal,
+    excludeSlugs,
   });
 }
