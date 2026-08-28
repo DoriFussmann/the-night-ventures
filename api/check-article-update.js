@@ -4,6 +4,7 @@ import { handlePublishToSite } from '../lib/publish-to-site/handler.js'
 import { handleWireInternalLinks } from '../lib/wire-internal-links/handler.js'
 import { handleProposeExternalLinks } from '../lib/external-links/handler.js'
 import { handleCheckLinks } from '../lib/check-links/handler.js'
+import { handleArticleUpdates } from '../lib/article-updates/handler.js'
 
 export const config = {
   maxDuration: 120,
@@ -29,6 +30,9 @@ function requestAction(req) {
     }
     if (path.endsWith('/check-links')) {
       return 'check-links'
+    }
+    if (path.endsWith('/article-updates')) {
+      return 'article-updates'
     }
   } catch {
     // ignore
@@ -269,7 +273,7 @@ export default async function handler(req, res) {
   // instead of adding more api/*.js files.
   // Public: POST /api/scan-live-articles, POST /api/publish-to-site,
   // POST /api/wire-internal-links, POST /api/propose-external-links,
-  // POST /api/check-links.
+  // POST /api/check-links, POST /api/article-updates.
   const action = requestAction(req)
   if (action === 'scan-live') {
     return handleScanLiveArticles(req, res)
@@ -285,6 +289,9 @@ export default async function handler(req, res) {
   }
   if (action === 'check-links') {
     return handleCheckLinks(req, res)
+  }
+  if (action === 'article-updates') {
+    return handleArticleUpdates(req, res)
   }
 
   if (req.method === 'OPTIONS') {

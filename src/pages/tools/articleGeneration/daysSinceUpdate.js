@@ -22,11 +22,28 @@ export function daysSinceUpdate(dateValue, now = new Date()) {
   return Math.max(0, Math.round(diffMs / 86400000));
 }
 
-/** green 0–14, orange 15–29, red 30+ */
+export const STALENESS_BUCKETS = ["0-14", "15-30", "30-60", "60-90", "90+"];
+export const STALE_CHECK_BUCKETS = ["30-60", "60-90", "90+"];
+export const UNKNOWN_BUCKET = "unknown";
+
+export function stalenessBucket(days) {
+  if (days == null || !Number.isFinite(days)) return UNKNOWN_BUCKET;
+  if (days <= 14) return "0-14";
+  if (days <= 30) return "15-30";
+  if (days <= 60) return "30-60";
+  if (days <= 90) return "60-90";
+  return "90+";
+}
+
+export function bucketNeedsUpdateCheck(bucket) {
+  return STALE_CHECK_BUCKETS.includes(bucket);
+}
+
+/** green 0–14, orange 15–30, red 31+ */
 export function daysSinceUpdateTone(days) {
   if (days == null || !Number.isFinite(days)) return "muted";
   if (days <= 14) return "green";
-  if (days < 30) return "orange";
+  if (days <= 30) return "orange";
   return "red";
 }
 
@@ -46,4 +63,17 @@ export function formatDaysSinceUpdateLabel(days) {
   if (days === 0) return "Updated today";
   if (days === 1) return "1 day since update";
   return `${days} days since update`;
+}
+
+export function formatLastCheckedLabel(dateValue, now = new Date()) {
+  const days = daysSinceUpdate(dateValue, now);
+  if (days == null) return "Last checked: never";
+  if (days === 0) return "Last checked: today";
+  if (days === 1) return "Last checked: 1 day ago";
+  return `Last checked: ${days} days ago`;
+}
+
+export function lastCheckedIsRecent(dateValue, now = new Date()) {
+  const days = daysSinceUpdate(dateValue, now);
+  return days != null && days < 7;
 }
