@@ -6,6 +6,8 @@ import {
   normalizeBatchContext,
   normalizeCompetitors,
 } from '../lib/generate-article/prompt.js'
+import { stripNoVolumeTag } from '../lib/stripNoVolumeTag.js'
+import { slugify } from '../lib/slugify.js'
 
 export const config = {
   maxDuration: 300,
@@ -621,7 +623,7 @@ function buildKeywords({ targetKeyword, supportingKeyword, pillarKeyword }) {
   const seen = new Set()
   const out = []
   for (const item of [targetKeyword, supportingKeyword, pillarKeyword]) {
-    const value = String(item || '').trim()
+    const value = stripNoVolumeTag(item)
     if (!value) continue
     const key = value.toLowerCase()
     if (seen.has(key)) continue
@@ -849,25 +851,28 @@ function coerceFrontmatter(
 ) {
   const fm = raw && typeof raw === 'object' ? raw : {}
   const today = todayIsoDate()
-  const pillar = String(pillarKeyword || '').trim()
-  const supporting = String(supportingKeyword || '').trim()
-  const target = String(targetKeyword || '').trim()
+  const pillar = stripNoVolumeTag(pillarKeyword)
+  const supporting = stripNoVolumeTag(supportingKeyword)
+  const target = stripNoVolumeTag(targetKeyword)
   const type = String(articleType || '').trim() || 'flex'
+  const isPillar = type === 'comprehensive' && !supporting
+  const effectiveTarget = isPillar ? pillar : target
+  const enforcedSlug = slugify(effectiveTarget) || String(fm.slug || '').trim()
 
   const frontmatter = {
     title: String(fm.title || '').trim(),
     description: String(fm.description || '').trim(),
-    slug: String(fm.slug || '').trim(),
+    slug: enforcedSlug,
     date: String(fm.date || '').trim() || today,
     updatedDate: String(fm.updatedDate || '').trim() || today,
     category: String(fm.category || '').trim() || pillar,
     pillarKeyword: pillar,
     articleType: type,
-    targetKeyword: target,
+    targetKeyword: effectiveTarget,
     tags: asStringArray(fm.tags),
     imageAlt: String(fm.imageAlt || '').trim(),
     keywords: buildKeywords({
-      targetKeyword: target,
+      targetKeyword: effectiveTarget,
       supportingKeyword: supporting,
       pillarKeyword: pillar,
     }),

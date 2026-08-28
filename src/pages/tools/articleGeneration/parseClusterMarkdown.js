@@ -1,3 +1,5 @@
+import { stripNoVolumeTag } from "./stripNoVolumeTag";
+
 const ARTICLE_TYPES = ["comprehensive", "howto", "comparison", "faq", "flex"];
 const ARTICLE_STATUSES = ["planned", "drafted", "published"];
 
@@ -129,7 +131,7 @@ function parseArticleBlock(lines, startIndex) {
       i = nextIndex;
       continue;
     }
-    if (field === "targetkeyword") article.targetKeyword = inlineValue;
+    if (field === "targetkeyword") article.targetKeyword = stripNoVolumeTag(inlineValue);
     else if (field === "type") article.type = normalizeType(inlineValue);
     else if (field === "status") article.status = normalizeStatus(inlineValue);
     else if (field === "searchintent") article.searchIntent = inlineValue;

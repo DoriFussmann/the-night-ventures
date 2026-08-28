@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { pullKeywordData } from '../lib/pull-keyword-data/run.js'
 import { serpResults } from '../lib/seo-advisor/providers/dataforseo.js'
+import { stripNoVolumeTag } from '../lib/stripNoVolumeTag.js'
 
 function json(res, status, body) {
   res.statusCode = status
@@ -115,7 +116,7 @@ function buildClusterTaskInstruction(articleTypeCounts) {
     '(a) TERRITORY: Never set targetKeyword to any reserved keyword, or to a close variant or same-intent phrasing of one. If provided keyword data contains rows belonging to another territory (e.g. the pillar\'s own query family), EXCLUDE those rows entirely — high volume is not a reason to poach. Every targetKeyword must plausibly belong to the current supporting keyword\'s search-intent territory.'
   )
   constraints.push(
-    "(b) COHERENCE: The targetKeyword must be a query that the article, as described by its title and keyMessages, directly and fully answers. If no provided keyword fits an article you want to write, use a realistic long-tail query in this territory and mark it '(no volume data)' — never attach a mismatched keyword just because it has volume. Prefer real rows from the provided keyword data over invented phrasings whenever a real row matches the article's intent; any invented targetKeyword must carry the literal suffix ' (no volume data)'."
+    "(b) COHERENCE: The targetKeyword must be a query that the article, as described by its title and keyMessages, directly and fully answers. If no provided keyword fits an article you want to write, use a realistic long-tail query in this territory — never attach a mismatched keyword just because it has volume. Prefer real rows from the provided keyword data over invented phrasings whenever a real row matches the article's intent."
   )
   constraints.push(
     '(c) NO INTERNAL OVERLAP: No two proposed articles may share a search intent, and none may overlap with any existing planned/published article in the content map.'
@@ -391,7 +392,7 @@ function normalizeArticleFields(item, { defaultWordCount, forceType } = {}) {
 
   return {
     title: String(item.title || '').trim(),
-    targetKeyword: String(item.targetKeyword || '').trim(),
+    targetKeyword: stripNoVolumeTag(item.targetKeyword),
     type,
     searchIntent: String(item.searchIntent || '').trim(),
     keyMessages: asStringArray(item.keyMessages),

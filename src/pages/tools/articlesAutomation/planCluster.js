@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { stripNoVolumeTag } from "../articleGeneration/stripNoVolumeTag";
 
 const ARTICLE_TYPES = [
   "comprehensive",
@@ -61,7 +62,7 @@ export function normalizeProposalArticles(articles) {
       return {
         id: newId(),
         title: String(raw?.title || "").trim(),
-        targetKeyword: String(raw?.targetKeyword || "").trim(),
+        targetKeyword: stripNoVolumeTag(raw?.targetKeyword),
         type,
         searchIntent: String(raw?.searchIntent || "").trim(),
         keyMessages: asStringArray(raw?.keyMessages),
@@ -215,7 +216,7 @@ export async function persistPlannedCluster({
     (item) => ({
       id: item.id || newId(),
       title: item.title,
-      targetKeyword: item.targetKeyword,
+      targetKeyword: stripNoVolumeTag(item.targetKeyword),
       type: item.type,
       status: "planned",
       searchIntent: item.searchIntent || undefined,

@@ -1,3 +1,5 @@
+import { stripNoVolumeTag } from "./stripNoVolumeTag";
+
 function yamlEscape(value) {
   const text = String(value ?? "");
   if (
@@ -22,9 +24,11 @@ function yamlEscape(value) {
 export function serializeArticleMarkdown(frontmatter, body, options = {}) {
   const fm = frontmatter && typeof frontmatter === "object" ? frontmatter : {};
   const tags = Array.isArray(fm.tags) ? fm.tags : [];
-  const keywords = Array.isArray(fm.keywords) ? fm.keywords : [];
+  const keywords = (Array.isArray(fm.keywords) ? fm.keywords : [])
+    .map(stripNoVolumeTag)
+    .filter(Boolean);
   const faqs = Array.isArray(fm.faqs) ? fm.faqs : [];
-  const supportingKeyword = String(fm.supportingKeyword || "").trim();
+  const supportingKeyword = stripNoVolumeTag(fm.supportingKeyword);
   const author = String(fm.author || "").trim();
   const image = String(fm.image || "").trim();
   const draft = options.draft !== false;
@@ -37,12 +41,12 @@ export function serializeArticleMarkdown(frontmatter, body, options = {}) {
   lines.push(`updatedDate: ${String(fm.updatedDate || "").trim()}`);
   lines.push(author ? `author: ${yamlEscape(author)}` : `author: null`);
   lines.push(`category: ${yamlEscape(fm.category || "")}`);
-  lines.push(`pillarKeyword: ${yamlEscape(fm.pillarKeyword || "")}`);
+  lines.push(`pillarKeyword: ${yamlEscape(stripNoVolumeTag(fm.pillarKeyword))}`);
   if (supportingKeyword) {
     lines.push(`supportingKeyword: ${yamlEscape(supportingKeyword)}`);
   }
   lines.push(`articleType: ${yamlEscape(fm.articleType || "")}`);
-  lines.push(`targetKeyword: ${yamlEscape(fm.targetKeyword || "")}`);
+  lines.push(`targetKeyword: ${yamlEscape(stripNoVolumeTag(fm.targetKeyword))}`);
 
   lines.push("tags:");
   for (const tag of tags) {

@@ -1,3 +1,5 @@
+import { stripNoVolumeTag } from "./stripNoVolumeTag";
+
 /**
  * Upsert generated article drafts into the Articles library.
  * Conflict target: (company_id, slug) — re-save updates the existing row.
@@ -55,12 +57,12 @@ export function buildGeneratedArticleRow({
 
   const row = {
     company_id: companyId,
-    pillar_keyword: String(pillarKeyword || "").trim(),
+    pillar_keyword: stripNoVolumeTag(pillarKeyword),
     supporting_keyword: supportingKeyword
-      ? String(supportingKeyword).trim()
+      ? stripNoVolumeTag(supportingKeyword)
       : null,
     type: type || "flex",
-    target_keyword: String(targetKeyword || "").trim(),
+    target_keyword: stripNoVolumeTag(targetKeyword),
     status: status === "published" ? "published" : "drafted",
     title: String(fm.title || "").trim(),
     description: String(fm.description || "").trim(),
@@ -71,7 +73,7 @@ export function buildGeneratedArticleRow({
     category: fm.category != null ? String(fm.category) : null,
     tags: asStringArray(fm.tags),
     image_alt: fm.imageAlt != null ? String(fm.imageAlt) : null,
-    keywords: asStringArray(fm.keywords),
+    keywords: asStringArray(fm.keywords).map(stripNoVolumeTag).filter(Boolean),
     draft: fm.draft !== false,
     internal_links: asStringArray(fm.internalLinks),
     external_links: asStringArray(fm.externalLinks),

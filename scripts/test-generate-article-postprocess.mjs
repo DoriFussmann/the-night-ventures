@@ -8,6 +8,7 @@ import {
   isHorizontalRuleBlock,
   isStructuralBlock,
 } from "../api/generate-article.js";
+import { stripNoVolumeTag } from "../lib/stripNoVolumeTag.js";
 
 // --- keywords always overwrite ---
 assert.deepEqual(
@@ -26,6 +27,20 @@ assert.deepEqual(
     pillarKeyword: "how to find investors",
   }),
   ["angel investors", "raising capital", "how to find investors"]
+);
+
+assert.equal(stripNoVolumeTag("best crm for startups (no volume data)"), "best crm for startups");
+assert.equal(stripNoVolumeTag("best crm for startups"), "best crm for startups");
+assert.equal(stripNoVolumeTag("  foo   (NO VOLUME DATA)  "), "foo");
+assert.equal(stripNoVolumeTag(""), "");
+
+assert.deepEqual(
+  buildKeywords({
+    targetKeyword: "long-tail query (no volume data)",
+    supportingKeyword: "raising capital",
+    pillarKeyword: "how to find investors",
+  }),
+  ["long-tail query", "raising capital", "how to find investors"]
 );
 
 // --- orphan / structural detection ---

@@ -27,6 +27,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { parseClusterMarkdown } from "./articleGeneration/parseClusterMarkdown";
+import { stripNoVolumeTag } from "./articleGeneration/stripNoVolumeTag";
 import { syncGeneratedArticlePublished } from "./articleGeneration/syncGeneratedArticlePublished";
 
 const ARTICLE_TYPES = [
@@ -172,7 +173,7 @@ function normalizeArticle(raw) {
   return {
     id: String(raw.id || newId()),
     title: String(raw.title || "").trim(),
-    targetKeyword: String(raw.targetKeyword || "").trim(),
+    targetKeyword: stripNoVolumeTag(raw.targetKeyword),
     type,
     status,
     searchIntent: raw.searchIntent ? String(raw.searchIntent).trim() : undefined,
@@ -197,7 +198,7 @@ function normalizePillarArticle(raw) {
   if (!status) return null;
 
   const title = String(raw.title || "").trim();
-  const targetKeyword = String(raw.targetKeyword || "").trim();
+  const targetKeyword = stripNoVolumeTag(raw.targetKeyword);
   const pillarRationale = String(raw.pillarRationale || "").trim();
   const type = ARTICLE_TYPES.some((t) => t.value === raw.type) ? raw.type : undefined;
   const wordCountRaw = Number(raw.wordCount);
@@ -570,7 +571,7 @@ function normalizeProposalArticles(articles) {
       return {
         id: newId(),
         title: String(raw?.title || "").trim(),
-        targetKeyword: String(raw?.targetKeyword || "").trim(),
+        targetKeyword: stripNoVolumeTag(raw?.targetKeyword),
         type,
         searchIntent: String(raw?.searchIntent || "").trim(),
         keyMessages: asStringArray(raw?.keyMessages),

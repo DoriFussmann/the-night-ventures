@@ -1,9 +1,8 @@
 import { supabase } from "@/lib/supabase";
+import { stripNoVolumeTag } from "./stripNoVolumeTag";
 
 function norm(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase();
+  return stripNoVolumeTag(value).toLowerCase();
 }
 
 function slugify(value) {

@@ -252,6 +252,23 @@ async function generateOneArticle({
   return data;
 }
 
+const TITLE_MATCH_STOPWORDS = new Set([
+  "a", "an", "the", "to", "of", "in", "on", "for", "and", "or", "with", "vs",
+  "how", "what", "why", "when", "where", "is", "are", "your", "you",
+]);
+
+// True when a significant word from the keyword is missing from the title.
+// Soft signal for the review UI — not a hard block.
+function titleMissesKeyword(title, keyword) {
+  const t = String(title || "").toLowerCase();
+  const words = String(keyword || "")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length >= 3 && !TITLE_MATCH_STOPWORDS.has(w));
+  if (words.length === 0) return false;
+  return words.some((w) => !t.includes(w));
+}
+
 function buildBatchContextEntry(frontmatter, article) {
   return {
     title: frontmatter.title || article.title || "",
@@ -1940,6 +1957,14 @@ export default function ArticleGeneration() {
                   {readerJob.lengthAdjusted && (
                     <span className="text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
                       Length adjusted
+                    </span>
+                  )}
+                  {titleMissesKeyword(
+                    readerJob.frontmatter?.title,
+                    readerJob.frontmatter?.targetKeyword
+                  ) && (
+                    <span className="text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                      Title may not match keyword
                     </span>
                   )}
                 </div>
