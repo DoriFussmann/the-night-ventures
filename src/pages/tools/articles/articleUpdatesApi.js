@@ -61,3 +61,49 @@ export async function commitArticleUpdates(destination, updates) {
     updates,
   });
 }
+
+export async function cleanupAudit(destination, opts = {}) {
+  const token = await sessionToken();
+  return postArticleUpdates(token, {
+    ...destBody(destination),
+    step: "cleanup-audit",
+    ...opts,
+  });
+}
+
+export async function cleanupCommit(destination, slugs, forceSlugs = []) {
+  const token = await sessionToken();
+  return postArticleUpdates(token, {
+    ...destBody(destination),
+    step: "cleanup-commit",
+    slugs,
+    forceSlugs,
+  });
+}
+
+export async function rewriteAudit(destination, opts = {}) {
+  const token = await sessionToken();
+  return postArticleUpdates(token, {
+    ...destBody(destination),
+    step: "rewrite-audit",
+    ...opts,
+  });
+}
+
+export async function rewritePropose(destination, items) {
+  const token = await sessionToken();
+  return postArticleUpdates(token, {
+    ...destBody(destination),
+    step: "rewrite-propose",
+    items,
+  });
+}
+
+export async function rewriteCommit(destination, approved) {
+  const token = await sessionToken();
+  return postArticleUpdates(token, {
+    ...destBody(destination),
+    step: "rewrite-commit",
+    approved,
+  });
+}

@@ -391,7 +391,7 @@ function normalizeArticleFields(item, { defaultWordCount, forceType } = {}) {
     : defaultWordCount ?? (type === 'comprehensive' ? 2000 : 1500)
 
   return {
-    title: String(item.title || '').trim(),
+    title: stripNoVolumeTag(item.title),
     targetKeyword: stripNoVolumeTag(item.targetKeyword),
     type,
     searchIntent: String(item.searchIntent || '').trim(),
@@ -618,8 +618,8 @@ export default async function handler(req, res) {
 
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {}
     const mode = body.mode === 'pillar' ? 'pillar' : 'cluster'
-    const pillarKeyword = String(body.pillarKeyword || '').trim()
-    const supportingKeyword = String(body.supportingKeyword || '').trim()
+    const pillarKeyword = stripNoVolumeTag(body.pillarKeyword)
+    const supportingKeyword = stripNoVolumeTag(body.supportingKeyword)
     const abstract = String(body.abstract || '').trim()
     const shortDescription = String(body.shortDescription || '').trim()
     const audience = String(body.audience || '').trim()

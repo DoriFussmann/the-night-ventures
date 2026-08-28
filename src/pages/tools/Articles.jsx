@@ -6,6 +6,8 @@ import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { scanLiveArticles } from "./articles/scanLiveApi";
 import CheckLinksPanel from "./articles/CheckLinksPanel";
+import CleanupPanel from "./articles/CleanupPanel";
+import RewritePanel from "./articles/RewritePanel";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -257,6 +259,15 @@ function uniqueSorted(values) {
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 }
 
+// Strip the "(no volume data)" marker so a pillar doesn't split into phantom
+// filter entries. Mirrors lib/stripNoVolumeTag so options and the filter agree.
+function cleanPillar(value) {
+  return String(value || "")
+    .replace(/\s*\(\s*no volume data\s*\)/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 export default function Articles() {
   const { companyId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -375,7 +386,7 @@ export default function Articles() {
   const pillarOptions = useMemo(() => {
     const set = new Set();
     for (const article of articles) {
-      const key = String(article.pillar_keyword || "").trim();
+      const key = cleanPillar(article.pillar_keyword);
       if (key) set.add(key);
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b));
@@ -385,7 +396,7 @@ export default function Articles() {
     const q = debouncedSearch.toLowerCase();
     return articles.filter((article) => {
       if (slugFilter && article.slug !== slugFilter) return false;
-      if (pillarFilter !== "all" && article.pillar_keyword !== pillarFilter) {
+      if (pillarFilter !== "all" && cleanPillar(article.pillar_keyword) !== pillarFilter) {
         return false;
       }
       if (
@@ -651,6 +662,16 @@ export default function Articles() {
       )}
 
       <CheckLinksPanel
+        companyId={companyId}
+        destination={publishDestination}
+      />
+
+      <CleanupPanel
+        companyId={companyId}
+        destination={publishDestination}
+      />
+
+      <RewritePanel
         companyId={companyId}
         destination={publishDestination}
       />
