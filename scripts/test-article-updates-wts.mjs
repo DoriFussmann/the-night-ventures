@@ -41,6 +41,13 @@ assert.deepEqual(STALE_CHECK_BUCKETS, ["30-60", "60-90", "90+"]);
 assert.equal(bucketNeedsUpdateCheck("15-30"), false);
 assert.equal(bucketNeedsUpdateCheck("30-60"), true);
 assert.equal(bucketNeedsUpdateCheck("90+"), true);
+assert.equal(bucketNeedsUpdateCheck("0-14", 15), false);
+assert.equal(bucketNeedsUpdateCheck("15-30", 15), true);
+assert.equal(bucketNeedsUpdateCheck("30-60", 15), true);
+assert.equal(bucketNeedsUpdateCheck("15-30", 30), false);
+assert.equal(bucketNeedsUpdateCheck("30-60", 30), true);
+assert.equal(bucketNeedsUpdateCheck("60-90", 60), true);
+assert.equal(bucketNeedsUpdateCheck("30-60", 60), false);
 
 assert.deepEqual(
   summarizeBuckets([

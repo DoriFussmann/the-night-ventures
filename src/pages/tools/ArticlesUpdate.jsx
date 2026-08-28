@@ -7,12 +7,95 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
 import {
   bucketNeedsUpdateCheck,
+  CHECK_THRESHOLD_OPTIONS,
+  DEFAULT_CHECK_THRESHOLD,
   daysSinceUpdateBadgeClass,
   formatDaysSinceUpdateLabel,
   formatLastCheckedLabel,
   lastCheckedIsRecent,
   STALENESS_BUCKETS,
 } from "./articleGeneration/daysSinceUpdate";
+
+function checkThresholdStorageKey(companyId) {
+  return `articles-update-check-threshold:${companyId}`;
+}
+
+function readStoredCheckThreshold(companyId) {
+  if (!companyId || typeof localStorage === "undefined") {
+    return DEFAULT_CHECK_THRESHOLD;
+  }
+  try {
+    const n = Number(localStorage.getItem(checkThresholdStorageKey(companyId)));
+    if (CHECK_THRESHOLD_OPTIONS.includes(n)) return n;
+  } catch {
+    // ignore
+  }
+  return DEFAULT_CHECK_THRESHOLD;
+}
+
+function writeStoredCheckThreshold(companyId, days) {
+  if (!companyId || typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(checkThresholdStorageKey(companyId), String(days));
+  } catch {
+    // ignore
+  }
+}
+
+function parseStoredAuditSnapshot(snapshot, fallbackCheckedAt) {
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+    return null;
+  }
+  const hasArticles = Array.isArray(snapshot.articles);
+  const hasBuckets =
+    snapshot.buckets &&
+    typeof snapshot.buckets === "object" &&
+    !Array.isArray(snapshot.buckets);
+  if (!hasArticles && !hasBuckets) return null;
+  return {
+    articles: hasArticles ? snapshot.articles : [],
+    buckets: hasBuckets ? snapshot.buckets : {},
+    corpusCount: snapshot.corpusCount,
+    publishedCount: snapshot.publishedCount,
+    lastCheckedAt: snapshot.lastCheckedAt || fallbackCheckedAt || null,
+  };
+}
+
+async function loadCompanyArticlesUpdateMeta(companyId) {
+  const full = await supabase
+    .from("companies")
+    .select("name, articles_update_checked_at, articles_update_snapshot")
+    .eq("id", companyId)
+    .maybeSingle();
+
+  if (!full.error) return { data: full.data, error: null };
+
+  if (
+    /articles_update_snapshot/i.test(full.error.message || "") ||
+    full.error.code === "PGRST204"
+  ) {
+    const mid = await supabase
+      .from("companies")
+      .select("name, articles_update_checked_at")
+      .eq("id", companyId)
+      .maybeSingle();
+    if (!mid.error) return { data: mid.data, error: null };
+    if (
+      /articles_update_checked_at/i.test(mid.error.message || "") ||
+      mid.error.code === "PGRST204"
+    ) {
+      const nameOnly = await supabase
+        .from("companies")
+        .select("name")
+        .eq("id", companyId)
+        .maybeSingle();
+      return { data: nameOnly.data, error: nameOnly.error };
+    }
+    return { data: null, error: mid.error };
+  }
+
+  return { data: null, error: full.error };
+}
 import {
   isPublishDestinationMapped,
   loadCompanyPublishDestination,
@@ -123,6 +206,7 @@ export default function ArticlesUpdate() {
 
   const [committing, setCommitting] = useState(false);
   const [commitResult, setCommitResult] = useState(null);
+  const [checkThreshold, setCheckThreshold] = useState(DEFAULT_CHECK_THRESHOLD);
 
   const mapped = isPublishDestinationMapped(destination);
   const dest = {
@@ -141,6 +225,9 @@ export default function ArticlesUpdate() {
         setCompanyName("");
         setDestination(null);
         setLastCheckedAt(null);
+        setArticles([]);
+        setBuckets(null);
+        setHasAudited(false);
         setLoadingMeta(false);
         return;
       }
@@ -153,13 +240,10 @@ export default function ArticlesUpdate() {
       setCheckResults({});
       setCommitResult(null);
       setExpandedSlug(null);
+      setCheckThreshold(readStoredCheckThreshold(companyId));
 
       const [companyRes, destRes] = await Promise.all([
-        supabase
-          .from("companies")
-          .select("name, articles_update_checked_at")
-          .eq("id", companyId)
-          .maybeSingle(),
+        loadCompanyArticlesUpdateMeta(companyId),
         loadCompanyPublishDestination(companyId).catch((err) => {
           console.error(err);
           return { owner: "", repo: "", tokenKey: "" };
@@ -169,30 +253,30 @@ export default function ArticlesUpdate() {
       if (cancelled) return;
 
       if (companyRes.error) {
-        if (
-          /articles_update_checked_at/i.test(companyRes.error.message || "") ||
-          companyRes.error.code === "PGRST204"
-        ) {
-          const fallback = await supabase
-            .from("companies")
-            .select("name")
-            .eq("id", companyId)
-            .maybeSingle();
-          if (cancelled) return;
-          if (fallback.error) {
-            setError(fallback.error.message || "Failed to load company");
-          }
-          setCompanyName(fallback.data?.name || "");
-          setLastCheckedAt(null);
-        } else {
-          console.error(companyRes.error);
-          setError(companyRes.error.message || "Failed to load company");
-          setCompanyName("");
-          setLastCheckedAt(null);
-        }
+        console.error(companyRes.error);
+        setError(companyRes.error.message || "Failed to load company");
+        setCompanyName("");
+        setLastCheckedAt(null);
       } else {
         setCompanyName(companyRes.data?.name || "");
-        setLastCheckedAt(companyRes.data?.articles_update_checked_at || null);
+        const checkedAt = companyRes.data?.articles_update_checked_at || null;
+        const stored = parseStoredAuditSnapshot(
+          companyRes.data?.articles_update_snapshot,
+          checkedAt
+        );
+        if (stored) {
+          const rows = sortArticlesByStaleness(stored.articles);
+          setArticles(rows);
+          setBuckets(stored.buckets);
+          setCorpusCount(Number(stored.corpusCount) || 0);
+          setPublishedCount(
+            Number(stored.publishedCount) || rows.length
+          );
+          setLastCheckedAt(stored.lastCheckedAt || checkedAt);
+          setHasAudited(true);
+        } else {
+          setLastCheckedAt(checkedAt);
+        }
       }
 
       setDestination(destRes);
@@ -333,10 +417,19 @@ export default function ArticlesUpdate() {
     const targets = articles.filter(
       (article) =>
         article.bucket === bucketId &&
-        article.needsUpdateCheck &&
+        bucketNeedsUpdateCheck(article.bucket, checkThreshold) &&
         article.canCheck
     );
     runChecks(targets);
+  };
+
+  const onCheckThresholdChange = (value) => {
+    const n = Number(value);
+    const next = CHECK_THRESHOLD_OPTIONS.includes(n)
+      ? n
+      : DEFAULT_CHECK_THRESHOLD;
+    setCheckThreshold(next);
+    writeStoredCheckThreshold(companyId, next);
   };
 
   const setIncluded = (slug, included) => {
@@ -416,6 +509,22 @@ export default function ArticlesUpdate() {
             </>
           )}
         </Button>
+        <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+          <span>Check from</span>
+          <select
+            className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground"
+            value={checkThreshold}
+            disabled={busy}
+            onChange={(e) => onCheckThresholdChange(e.target.value)}
+            aria-label="Check for Updates threshold in days"
+          >
+            {CHECK_THRESHOLD_OPTIONS.map((days) => (
+              <option key={days} value={days}>
+                {days} days
+              </option>
+            ))}
+          </select>
+        </label>
         <div className="text-sm text-muted-foreground">
           <span>{lastCheckedLabel}</span>
           {recentCheck && (
@@ -447,12 +556,10 @@ export default function ArticlesUpdate() {
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
             {STALENESS_BUCKETS.map((id) => {
               const count = Number(buckets[id] || 0);
-              const stale = bucketNeedsUpdateCheck(id);
+              const stale = bucketNeedsUpdateCheck(id, checkThreshold);
               const checkable = articles.filter(
                 (article) =>
-                  article.bucket === id &&
-                  article.needsUpdateCheck &&
-                  article.canCheck
+                  article.bucket === id && stale && article.canCheck
               ).length;
               return (
                 <div
@@ -629,7 +736,10 @@ export default function ArticlesUpdate() {
             const warranted =
               entry?.status === "done" && entry.result?.updateWarranted;
             const canInclude = warranted && entry.result?.proposedParagraph;
-            const showCheck = article.needsUpdateCheck;
+            const showCheck = bucketNeedsUpdateCheck(
+              article.bucket,
+              checkThreshold
+            );
 
             return (
               <li key={article.slug} className="px-3 py-2.5 space-y-2">

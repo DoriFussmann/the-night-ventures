@@ -23,8 +23,18 @@ export function daysSinceUpdate(dateValue, now = new Date()) {
 }
 
 export const STALENESS_BUCKETS = ["0-14", "15-30", "30-60", "60-90", "90+"];
-export const STALE_CHECK_BUCKETS = ["30-60", "60-90", "90+"];
 export const UNKNOWN_BUCKET = "unknown";
+export const DEFAULT_CHECK_THRESHOLD = 30;
+export const CHECK_THRESHOLD_OPTIONS = [15, 30, 60, 90];
+
+/** Lower bound of each labeled bucket, used only to decide which buckets get Check. */
+export const BUCKET_MIN_DAYS = {
+  "0-14": 0,
+  "15-30": 15,
+  "30-60": 30,
+  "60-90": 60,
+  "90+": 90,
+};
 
 export function stalenessBucket(days) {
   if (days == null || !Number.isFinite(days)) return UNKNOWN_BUCKET;
@@ -35,9 +45,20 @@ export function stalenessBucket(days) {
   return "90+";
 }
 
-export function bucketNeedsUpdateCheck(bucket) {
-  return STALE_CHECK_BUCKETS.includes(bucket);
+export function bucketNeedsUpdateCheck(
+  bucket,
+  thresholdDays = DEFAULT_CHECK_THRESHOLD
+) {
+  const min = BUCKET_MIN_DAYS[bucket];
+  if (min == null) return false;
+  const threshold = Number(thresholdDays);
+  if (!Number.isFinite(threshold)) return false;
+  return min >= threshold;
 }
+
+export const STALE_CHECK_BUCKETS = STALENESS_BUCKETS.filter((id) =>
+  bucketNeedsUpdateCheck(id, DEFAULT_CHECK_THRESHOLD)
+);
 
 /** green 0–14, orange 15–30, red 31+ */
 export function daysSinceUpdateTone(days) {
