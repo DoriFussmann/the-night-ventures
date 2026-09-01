@@ -42,16 +42,30 @@ export const LAYER2_TOKEN_SHAPE = {
   },
 }
 
-export function buildLayer2Tokens({ accent, band }) {
+/** Darken a #RRGGBB color by `amount` (0–1). Invalid input is returned unchanged. */
+export function darkenHex(hex, amount = 0.13) {
+  const raw = String(hex || '').trim()
+  const match = raw.match(/^#?([0-9A-Fa-f]{6})$/)
+  if (!match) return raw
+  const n = parseInt(match[1], 16)
+  const scale = 1 - amount
+  const channel = (shift) => {
+    const value = Math.round(((n >> shift) & 255) * scale)
+    return Math.max(0, Math.min(255, value)).toString(16).padStart(2, '0')
+  }
+  return `#${channel(16)}${channel(8)}${channel(0)}`
+}
+
+export function buildLayer2Tokens({ accent, positive }) {
   const accentHex = String(accent || '').trim()
-  const bandHex = String(band || '').trim()
+  const positiveHex = String(positive || '').trim()
   return {
     colors: {
       bg: '#ffffff',
       fg: '#1a1a1a',
       accent: accentHex,
-      'accent-hover': accentHex,
-      highlight: bandHex,
+      'accent-hover': darkenHex(accentHex, 0.13),
+      highlight: positiveHex,
       muted: '#8a8a8a',
       border: '#e6e6e6',
       surface: '#ffffff',
@@ -69,7 +83,7 @@ function buildTokenFence(tokens) {
   const json = JSON.stringify(
     buildLayer2Tokens({
       accent: tokens.ACCENT,
-      band: tokens.BAND,
+      positive: tokens.POSITIVE,
     }),
     null,
     2

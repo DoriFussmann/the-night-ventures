@@ -55,18 +55,6 @@ function resolveAction(req, body) {
   return ''
 }
 
-function unwrapMarkdown(text) {
-  let cleaned = String(text || '').trim()
-  cleaned = cleaned.replace(/^```(?:markdown|md)?\s*/i, '').replace(/\s*```$/i, '').trim()
-  return cleaned
-}
-
-function unwrapJson(text) {
-  let cleaned = String(text || '').trim()
-  cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
-  return cleaned
-}
-
 function textFromMessage(message) {
   const textBlock = Array.isArray(message?.content)
     ? message.content.find((block) => block?.type === 'text')
@@ -264,21 +252,43 @@ async function suggestMissingTokens(apiKey, company, tokens, missingKeys) {
     })
   }
 
-  const raw = unwrapJson(unwrapMarkdown(textFromMessage(message)))
-  if (!raw) {
+  let cleaned = String(textFromMessage(message) || '').trim()
+  if (!cleaned) {
+    console.error('design-guide generate: empty model text')
     throw Object.assign(new Error('No text content in Anthropic response'), { statusCode: 502 })
+  }
+
+  if (/^```(?:json|md)?\r?\n/i.test(cleaned)) {
+    cleaned = cleaned.replace(/^```(?:json|md)?\r?\n/i, '')
+  }
+  if (cleaned.endsWith('```')) {
+    cleaned = cleaned.slice(0, -3)
+  }
+  cleaned = cleaned.trim()
+
+  if (!cleaned.startsWith('{')) {
+    const start = cleaned.indexOf('{')
+    const end = cleaned.lastIndexOf('}')
+    if (start !== -1 && end > start) {
+      cleaned = cleaned.slice(start, end + 1)
+    }
   }
 
   let parsed
   try {
-    parsed = JSON.parse(raw)
+    parsed = JSON.parse(cleaned)
   } catch {
+    console.error(
+      'design-guide generate: JSON parse failed after cleanup',
+      cleaned.slice(0, 300)
+    )
     throw Object.assign(new Error('Model did not return valid JSON'), { statusCode: 502 })
   }
 
   const merged = applySuggested(tokens, parsed)
   const stillMissing = missingTokenKeys(merged)
   if (stillMissing.length > 0) {
+    console.error('design-guide generate: omitted tokens', stillMissing)
     throw Object.assign(
       new Error(`Model omitted required tokens: ${stillMissing.join(', ')}`),
       { statusCode: 502 }
@@ -315,6 +325,10 @@ async function handleGenerate(req, res, body, apiKey) {
 
   const badHex = invalidHexFields(tokens)
   if (badHex.length > 0) {
+    console.error(
+      'design-guide generate: invalid hex',
+      badHex.map((key) => ({ key, value: tokens[key] }))
+    )
     return json(res, 502, {
       error: `Invalid hex token (expected #RRGGBB): ${badHex.join(', ')}`,
     })

@@ -3,6 +3,14 @@ import { Link, useParams } from "react-router-dom";
 import { Copy, Download, Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -61,25 +69,49 @@ function normalizeCompetitors(value) {
   });
 }
 
-function ReadOnlyField({ label, value, multiline = false }) {
+function isFilled(value) {
+  return Boolean(String(value || "").trim());
+}
+
+function ModalText({ value, multiline = false }) {
   const text = String(value || "").trim();
+  if (!text) {
+    return <p className="text-sm text-muted-foreground italic">Not set</p>;
+  }
   return (
-    <div className="space-y-1">
-      <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      {text ? (
-        <p
-          className={
-            multiline
-              ? "text-sm text-foreground whitespace-pre-wrap"
-              : "text-sm text-foreground"
-          }
-        >
-          {text}
-        </p>
-      ) : (
-        <p className="text-sm text-muted-foreground italic">Not set</p>
-      )}
-    </div>
+    <p
+      className={
+        multiline
+          ? "text-sm text-foreground whitespace-pre-wrap"
+          : "text-sm text-foreground"
+      }
+    >
+      {text}
+    </p>
+  );
+}
+
+function CompanyDataFieldButton({ label, hint, children }) {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button type="button" variant="outline" size="sm">
+          {label}
+          {hint ? (
+            <span className="font-normal text-muted-foreground">{hint}</span>
+          ) : null}
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{label}</DialogTitle>
+          <DialogDescription>
+            Read-only value from Company Data.
+          </DialogDescription>
+        </DialogHeader>
+        {children}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -279,10 +311,7 @@ export default function DesignGuideBuilder() {
       }),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(data.error || `Generate failed (${res.status})`);
-    }
-    return data;
+    return { res, data };
   };
 
   const handleGenerate = async () => {
@@ -302,10 +331,16 @@ export default function DesignGuideBuilder() {
     setSavedMessage("");
 
     try {
-      const data = await requestGenerate({ suggestOnly: false });
+      const { res, data } = await requestGenerate({ suggestOnly: false });
+      if (!res.ok) {
+        setError(
+          `${KEPT_PREVIOUS_GUIDE} (${data.error || res.status})`
+        );
+        return;
+      }
       const next = String(data.markdown || "").trim();
       if (!next) {
-        setError(KEPT_PREVIOUS_GUIDE);
+        setError(`${KEPT_PREVIOUS_GUIDE} (empty response)`);
         return;
       }
       applyReturnedTokens(data.tokens, { emptyOnly: false });
@@ -313,7 +348,9 @@ export default function DesignGuideBuilder() {
       setLastGeneratedAt(Date.now());
     } catch (err) {
       console.error("Design Guide generate failed:", err);
-      setError(KEPT_PREVIOUS_GUIDE);
+      setError(
+        `${KEPT_PREVIOUS_GUIDE} (${err.message || "unknown error"})`
+      );
     } finally {
       setGenerating(false);
     }
@@ -327,7 +364,10 @@ export default function DesignGuideBuilder() {
     setSavedMessage("");
 
     try {
-      const data = await requestGenerate({ suggestOnly: true });
+      const { res, data } = await requestGenerate({ suggestOnly: true });
+      if (!res.ok) {
+        throw new Error(data.error || `Generate failed (${res.status})`);
+      }
       if (!data.tokens || typeof data.tokens !== "object") {
         throw new Error("No tokens returned");
       }
@@ -455,6 +495,53 @@ export default function DesignGuideBuilder() {
 
   const dirty = markdown !== savedMarkdown;
   const busy = generating || suggesting || saving;
+  const companyDataTextFields = [
+    { id: "product-name", label: "Product name", value: productName },
+    { id: "domain", label: "Domain", value: domain },
+    { id: "abstract", label: "Abstract", value: abstract, multiline: true },
+    {
+      id: "short-description",
+      label: "Short description",
+      value: shortDescription,
+      multiline: true,
+    },
+    {
+      id: "medium-description",
+      label: "Medium description",
+      value: mediumDescription,
+      multiline: true,
+    },
+    {
+      id: "long-description",
+      label: "Long description",
+      value: longDescription,
+      multiline: true,
+    },
+    {
+      id: "target-audience",
+      label: "Target audience",
+      value: targetAudience,
+      multiline: true,
+    },
+    {
+      id: "business-model",
+      label: "Business model",
+      value: businessModel,
+      multiline: true,
+    },
+    {
+      id: "core-value-proposition",
+      label: "Core value proposition",
+      value: coreValueProposition,
+      multiline: true,
+    },
+    {
+      id: "scope-boundaries",
+      label: "Scope / boundaries",
+      value: scopeBoundaries,
+      multiline: true,
+    },
+  ];
 
   return (
     <div className="space-y-10">
@@ -493,103 +580,104 @@ export default function DesignGuideBuilder() {
           </Alert>
         )}
 
-        <div className="grid gap-4 sm:grid-cols-2 rounded-lg border border-border p-4">
-          <ReadOnlyField label="Product name" value={productName} />
-          <ReadOnlyField label="Domain" value={domain} />
-          <ReadOnlyField label="Abstract" value={abstract} multiline />
-          <ReadOnlyField
-            label="Short description"
-            value={shortDescription}
-            multiline
-          />
-          <ReadOnlyField
-            label="Medium description"
-            value={mediumDescription}
-            multiline
-          />
-          <ReadOnlyField
-            label="Long description"
-            value={longDescription}
-            multiline
-          />
-          <ReadOnlyField
-            label="Target audience"
-            value={targetAudience}
-            multiline
-          />
-          <ReadOnlyField
-            label="Business model"
-            value={businessModel}
-            multiline
-          />
-          <ReadOnlyField
-            label="Core value proposition"
-            value={coreValueProposition}
-            multiline
-          />
-          <ReadOnlyField
-            label="Scope / boundaries"
-            value={scopeBoundaries}
-            multiline
-          />
-        </div>
+        <div className="flex flex-wrap gap-2">
+          {companyDataTextFields.map((field) => (
+            <CompanyDataFieldButton
+              key={field.id}
+              label={field.label}
+              hint={isFilled(field.value) ? null : "Not set"}
+            >
+              <ModalText value={field.value} multiline={field.multiline} />
+            </CompanyDataFieldButton>
+          ))}
 
-        <div className="space-y-3 rounded-lg border border-border p-4">
-          <h3 className="text-sm font-medium text-foreground">Services</h3>
-          {usableServices.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              None added yet — add them in Company Data.
-            </p>
-          ) : (
-            <ul className="space-y-2 text-sm text-foreground">
-              {usableServices.map((s, i) => (
-                <li key={`svc-${i}`}>
-                  <span className="font-medium">{s.title || "(untitled)"}</span>
-                  {s.summary ? (
-                    <span className="text-muted-foreground"> — {s.summary}</span>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+          <CompanyDataFieldButton
+            label="Services"
+            hint={usableServices.length ? String(usableServices.length) : "None"}
+          >
+            {usableServices.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                None added yet — add them in Company Data.
+              </p>
+            ) : (
+              <ul className="space-y-3 text-sm text-foreground">
+                {usableServices.map((s, i) => (
+                  <li key={`svc-${i}`}>
+                    <span className="font-medium">{s.title || "(untitled)"}</span>
+                    {s.summary ? (
+                      <p className="text-muted-foreground">{s.summary}</p>
+                    ) : null}
+                    {s.detail ? (
+                      <p className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap">
+                        {s.detail}
+                      </p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CompanyDataFieldButton>
 
-        <div className="space-y-3 rounded-lg border border-border p-4">
-          <h3 className="text-sm font-medium text-foreground">Team</h3>
-          {usableTeam.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              None added yet — add them in Company Data.
-            </p>
-          ) : (
-            <ul className="space-y-2 text-sm text-foreground">
-              {usableTeam.map((t, i) => (
-                <li key={`team-${i}`}>
-                  <span className="font-medium">{t.name || "(unnamed)"}</span>
-                  {t.role ? (
-                    <span className="text-muted-foreground"> — {t.role}</span>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+          <CompanyDataFieldButton
+            label="Team"
+            hint={usableTeam.length ? String(usableTeam.length) : "None"}
+          >
+            {usableTeam.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                None added yet — add them in Company Data.
+              </p>
+            ) : (
+              <ul className="space-y-3 text-sm text-foreground">
+                {usableTeam.map((t, i) => (
+                  <li key={`team-${i}`}>
+                    <span className="font-medium">{t.name || "(unnamed)"}</span>
+                    {t.role ? (
+                      <span className="text-muted-foreground"> — {t.role}</span>
+                    ) : null}
+                    {t.bio ? (
+                      <p className="mt-1 text-muted-foreground whitespace-pre-wrap">
+                        {t.bio}
+                      </p>
+                    ) : null}
+                    {t.credentials ? (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Credentials: {t.credentials}
+                      </p>
+                    ) : null}
+                    {(t.same_as || []).filter((u) => u.trim()).length > 0 ? (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        sameAs:{" "}
+                        {(t.same_as || [])
+                          .map((u) => u.trim())
+                          .filter(Boolean)
+                          .join(", ")}
+                      </p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CompanyDataFieldButton>
 
-        <div className="space-y-3 rounded-lg border border-border p-4">
-          <h3 className="text-sm font-medium text-foreground">Competitors</h3>
-          {usableCompetitors.length === 0 ? (
-            <p className="text-sm text-muted-foreground">None listed.</p>
-          ) : (
-            <ul className="space-y-1 text-sm text-foreground">
-              {usableCompetitors.map((c, i) => (
-                <li key={`comp-${i}`}>
-                  <span className="font-medium">{c.name || "(unnamed)"}</span>
-                  {c.url ? (
-                    <span className="text-muted-foreground"> — {c.url}</span>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          )}
+          <CompanyDataFieldButton
+            label="Competitors"
+            hint={usableCompetitors.length ? String(usableCompetitors.length) : "None"}
+          >
+            {usableCompetitors.length === 0 ? (
+              <p className="text-sm text-muted-foreground">None listed.</p>
+            ) : (
+              <ul className="space-y-1 text-sm text-foreground">
+                {usableCompetitors.map((c, i) => (
+                  <li key={`comp-${i}`}>
+                    <span className="font-medium">{c.name || "(unnamed)"}</span>
+                    {c.url ? (
+                      <span className="text-muted-foreground"> — {c.url}</span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CompanyDataFieldButton>
         </div>
       </section>
 

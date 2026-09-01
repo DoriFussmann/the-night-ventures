@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import { ArrowDown, ArrowUp, Check, ChevronDown, Copy, Trash2, Upload, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronDown, Copy, Trash2, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,15 +33,8 @@ import {
   trimTeamMembersForSave,
 } from "./templateToPrompt/customFieldKeys";
 import SocialShopsPanel from "./SocialShopsPanel";
-import {
-  formatBrandTokensMarkdown,
-  parseCompanyMarkdown,
-} from "./companyData/parseCompanyMarkdown";
-import {
-  getCompanyDataPoints,
-  mergeParsedCompanyFields,
-} from "./companyData/dataPoints";
-import { buildLlmUploadPrompt } from "./companyData/llmUploadPrompt";
+import { formatBrandTokensMarkdown } from "./companyData/parseCompanyMarkdown";
+import { getCompanyDataPoints } from "./companyData/dataPoints";
 
 const HIDDEN_CUSTOM_FIELDS = new Set([
   "founded year",
@@ -362,10 +355,7 @@ export default function CompanyData() {
   const [designGuideGenerating, setDesignGuideGenerating] = useState(false);
   const [designGuideSaving, setDesignGuideSaving] = useState(false);
   const [designGuideError, setDesignGuideError] = useState("");
-  const [markdownDragOver, setMarkdownDragOver] = useState(false);
   const [missingOpen, setMissingOpen] = useState(false);
-  const [llmPromptOpen, setLlmPromptOpen] = useState(false);
-  const markdownInputRef = useRef(null);
 
   const loadData = useCallback(async () => {
     if (!companyId) return;
@@ -793,6 +783,11 @@ export default function CompanyData() {
       case "scope_boundaries":
         updateField("scope_boundaries", "");
         break;
+      case "publish-destination":
+        setGithubOwner("");
+        setGithubRepo("");
+        setGithubTokenKey("");
+        break;
       default:
         if (typeof panelId === "string" && panelId.startsWith("custom:")) {
           const defId = panelId.slice("custom:".length);
@@ -895,6 +890,16 @@ export default function CompanyData() {
         accountsResult.data || [],
         notesResult.data || []
       );
+    }
+
+    if (panelId === "publish-destination") {
+      const lines = [];
+      if (githubOwner.trim()) lines.push(`GitHub owner: ${githubOwner.trim()}`);
+      if (githubRepo.trim()) lines.push(`GitHub repo: ${githubRepo.trim()}`);
+      if (githubTokenKey.trim()) {
+        lines.push(`GitHub token key: ${githubTokenKey.trim()}`);
+      }
+      return lines.join("\n");
     }
 
     if (panelId === "design-guide") {
@@ -1110,127 +1115,6 @@ export default function CompanyData() {
   const handleSave = async (e) => {
     e?.preventDefault?.();
     await persistProfile();
-  };
-
-  const importSocialShops = async (accounts, notes) => {
-    const accountRows = (accounts || [])
-      .map((account) => ({
-        company_id: companyId,
-        name: String(account.name || "").trim(),
-        type: account.type || "Other",
-        status: String(account.status || "").trim() || null,
-        url: String(account.url || "").trim() || null,
-        username: String(account.username || "").trim() || null,
-        access_details: String(account.access_details || "").trim() || null,
-        comments: String(account.comments || "").trim() || null,
-      }))
-      .filter((row) => row.name);
-    if (accountRows.length > 0) {
-      const { error: accountsError } = await supabase
-        .from("social_accounts")
-        .insert(accountRows);
-      if (accountsError) {
-        throw new Error(accountsError.message || "Failed to import Social & Shops");
-      }
-      setSocialShopsFilled(true);
-    }
-    const noteRows = (notes || [])
-      .map((text) => String(text || "").trim())
-      .filter(Boolean)
-      .map((text) => ({ company_id: companyId, text }));
-    if (noteRows.length > 0) {
-      const { error: notesError } = await supabase.from("social_notes").insert(noteRows);
-      if (notesError) {
-        throw new Error(notesError.message || "Failed to import Social & Shops notes");
-      }
-    }
-  };
-
-  const handleMarkdownFile = async (file) => {
-    if (!file || saving) return;
-    const name = String(file.name || "").toLowerCase();
-    if (!name.endsWith(".md") && !name.endsWith(".markdown")) {
-      setError("Please drop a .md markdown file.");
-      return;
-    }
-
-    setError("");
-    try {
-      const text = await file.text();
-      const parsed = parseCompanyMarkdown(text, {
-        extraLabels: customFieldDefs.map((def) => def.name),
-      });
-      const merged = mergeParsedCompanyFields({
-        parsed,
-        fields,
-        customValues,
-        customFieldDefs,
-        selectedIndustryIds,
-        industries,
-        socialShopsFilled,
-      });
-
-      if (merged.filled.length === 0) {
-        setSavedMessage(
-          merged.skipped.length > 0
-            ? "No empty fields to fill from that file"
-            : "No matching company fields found in that file"
-        );
-        window.setTimeout(() => setSavedMessage(""), 4000);
-        return;
-      }
-
-      const nextFields = {
-        ...merged.nextFields,
-        core_keywords: normalizePillarKeywords(merged.nextFields.core_keywords, {
-          minCount: 0,
-        }),
-        competitors: normalizeCompetitors(merged.nextFields.competitors),
-        services: normalizeServices(merged.nextFields.services),
-        team_members: normalizeTeamMembers(merged.nextFields.team_members),
-        social_links: normalizeSocialLinks(merged.nextFields.social_links),
-      };
-
-      setFields(nextFields);
-      setCustomValues(merged.nextCustom);
-      setSelectedIndustryIds(merged.nextIndustryIds);
-
-      const saved = await persistProfile({
-        fields: nextFields,
-        customValues: merged.nextCustom,
-        selectedIndustryIds: merged.nextIndustryIds,
-        skipSavedMessage: true,
-      });
-      if (!saved) return;
-
-      if (merged.socialAccounts) {
-        try {
-          await importSocialShops(merged.socialAccounts, merged.socialNotes);
-        } catch (err) {
-          console.error("Failed to import Social & Shops:", err);
-          setError(err?.message || "Failed to import Social & Shops");
-        }
-      }
-
-      const count = merged.filled.length;
-      setSavedMessage(
-        `Filled ${count} missing field${count === 1 ? "" : "s"} from ${file.name}`
-      );
-      window.setTimeout(() => setSavedMessage(""), 4000);
-    } catch (err) {
-      console.error("Failed to import company markdown:", err);
-      setError(err?.message || "Failed to import markdown");
-    }
-  };
-
-  const processMarkdownFiles = (fileList) => {
-    const files = Array.from(fileList || []);
-    if (files.length === 0) return;
-    if (files.length > 1) {
-      setError("Drop a single .md file.");
-      return;
-    }
-    handleMarkdownFile(files[0]);
   };
 
   const saveAndClosePanel = async () => {
@@ -1551,14 +1435,12 @@ export default function CompanyData() {
     socialShopsFilled,
     customFieldDefs,
     customValues,
+    githubOwner,
+    githubRepo,
+    githubTokenKey,
   });
   const completedCount = dataPoints.filter((point) => point.filled).length;
   const missingPoints = dataPoints.filter((point) => !point.filled);
-  const llmUploadPrompt = buildLlmUploadPrompt({
-    companyName,
-    customFieldNames: customFieldDefs.map((def) => def.name),
-    industryNames: industries.map((industry) => industry.name),
-  });
 
   return (
     <div>
@@ -1568,60 +1450,6 @@ export default function CompanyData() {
       <p className="text-sm text-muted-foreground mb-4">
         Edit company profile fields and export as markdown.
       </p>
-
-      <div
-        role="button"
-        tabIndex={0}
-        className={`mb-2 rounded-md border border-dashed px-3 py-4 text-center transition-colors cursor-pointer ${
-          markdownDragOver ? "border-foreground bg-muted/40" : "border-border"
-        } ${saving ? "pointer-events-none opacity-60" : ""}`}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setMarkdownDragOver(true);
-        }}
-        onDragLeave={() => setMarkdownDragOver(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setMarkdownDragOver(false);
-          processMarkdownFiles(e.dataTransfer.files);
-        }}
-        onClick={() => markdownInputRef.current?.click()}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            markdownInputRef.current?.click();
-          }
-        }}
-      >
-        <Upload className="mx-auto mb-1.5 h-5 w-5 text-muted-foreground" />
-        <p className="text-sm text-foreground">
-          Drop a .md file to fill empty fields
-        </p>
-        <p className="text-xs text-muted-foreground">
-          Only missing fields are completed — existing values stay as they are
-        </p>
-        <input
-          ref={markdownInputRef}
-          type="file"
-          className="sr-only"
-          accept=".md,.markdown,text/markdown"
-          onChange={(e) => {
-            processMarkdownFiles(e.target.files);
-            e.target.value = "";
-          }}
-          onClick={(e) => e.stopPropagation()}
-        />
-      </div>
-      <div className="mb-6">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => setLlmPromptOpen(true)}
-        >
-          LLM File Upload Prompt
-        </Button>
-      </div>
 
       {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
 
@@ -1682,7 +1510,7 @@ export default function CompanyData() {
           />
         </div>
 
-        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
           <PanelTrigger
             title="Business Model"
             filled={Boolean(fields.business_model.trim())}
@@ -1693,14 +1521,9 @@ export default function CompanyData() {
             filled={Boolean(fields.core_value_proposition.trim())}
             onClick={() => setOpenPanel("core_value_proposition")}
           />
-          <PanelTrigger
-            title="Scope / Boundaries"
-            filled={Boolean(fields.scope_boundaries.trim())}
-            onClick={() => setOpenPanel("scope_boundaries")}
-          />
         </div>
 
-        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
           <PanelTrigger
             title={`Pillar Keywords (${pillarTotal})`}
             filled={pillars.some(
@@ -1721,6 +1544,13 @@ export default function CompanyData() {
             filled={socialShopsFilled}
             onClick={() => setOpenPanel("social-shops")}
           />
+          <PanelTrigger
+            title="Publish Destination"
+            filled={Boolean(
+              githubOwner.trim() && githubRepo.trim() && githubTokenKey.trim()
+            )}
+            onClick={() => setOpenPanel("publish-destination")}
+          />
         </div>
 
         {customFieldDefs.map((def) => (
@@ -1731,43 +1561,6 @@ export default function CompanyData() {
             onClick={() => setOpenPanel(`custom:${def.id}`)}
           />
         ))}
-
-        <div className="space-y-3 rounded-lg border border-border p-4">
-          <p className="text-sm font-medium text-foreground">
-            Publish destination
-          </p>
-          <p className="text-xs text-muted-foreground">
-            GitHub repo this company publishes articles to. Token key is the
-            suffix of the server env var (HEYRUPERT looks up GITHUB_TOKEN_HEYRUPERT).
-          </p>
-          <div className="space-y-2">
-            <Label htmlFor="github_owner">GitHub owner</Label>
-            <Input
-              id="github_owner"
-              value={githubOwner}
-              onChange={(e) => setGithubOwner(e.target.value)}
-              placeholder="DoriFussmann"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="github_repo">GitHub repo</Label>
-            <Input
-              id="github_repo"
-              value={githubRepo}
-              onChange={(e) => setGithubRepo(e.target.value)}
-              placeholder="hey-rupert"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="github_token_key">GitHub token key</Label>
-            <Input
-              id="github_token_key"
-              value={githubTokenKey}
-              onChange={(e) => setGithubTokenKey(e.target.value)}
-              placeholder="HEYRUPERT"
-            />
-          </div>
-        </div>
 
         <div className="flex flex-wrap items-center gap-3 pt-2">
           <Button type="button" variant="outline" onClick={handleAddField}>
@@ -1824,38 +1617,6 @@ export default function CompanyData() {
           <p className="text-sm text-muted-foreground">All fields completed.</p>
         )}
       </div>
-
-      <Dialog open={llmPromptOpen} onOpenChange={setLlmPromptOpen}>
-        <DialogContent className={PANEL_DIALOG_CLASS}>
-          <DialogHeader className="shrink-0 space-y-1 border-b border-border px-6 py-4 pr-12 text-left">
-            <DialogTitle>LLM File Upload Prompt</DialogTitle>
-            <DialogDescription>
-              Paste this into an LLM with your company context. Save the reply as
-              a .md file and drop it above to fill empty fields.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
-            <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-foreground">
-              {llmUploadPrompt}
-            </pre>
-          </div>
-          <DialogFooter className="shrink-0 border-t border-border px-6 py-4 sm:justify-end">
-            <PanelModalActions
-              onCopy={async () => {
-                const ok = await copyTextToClipboard(llmUploadPrompt);
-                if (!ok) {
-                  setError("Copy failed");
-                  return false;
-                }
-                setError("");
-                return true;
-              }}
-              onClose={() => setLlmPromptOpen(false)}
-              showSave={false}
-            />
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Domain */}
       <Dialog
@@ -2364,6 +2125,71 @@ export default function CompanyData() {
               onCopy={() => handleCopyPanel("social-shops")}
               onClose={() => setOpenPanel(null)}
               showSave={false}
+            />
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Publish Destination */}
+      <Dialog
+        open={openPanel === "publish-destination"}
+        onOpenChange={(open) =>
+          setOpenPanel(open ? "publish-destination" : null)
+        }
+      >
+        <DialogContent className={PANEL_DIALOG_CLASS}>
+          <DialogHeader className="shrink-0 space-y-1 border-b border-border px-6 py-4 pr-12 text-left">
+            <DialogTitle>Publish Destination</DialogTitle>
+            <DialogDescription>
+              GitHub repo this company publishes articles to. Token key is the
+              suffix of the server env var (HEYRUPERT looks up
+              GITHUB_TOKEN_HEYRUPERT).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="github_owner">GitHub owner</Label>
+              <Input
+                id="github_owner"
+                value={githubOwner}
+                onChange={(e) => setGithubOwner(e.target.value)}
+                placeholder="DoriFussmann"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="github_repo">GitHub repo</Label>
+              <Input
+                id="github_repo"
+                value={githubRepo}
+                onChange={(e) => setGithubRepo(e.target.value)}
+                placeholder="hey-rupert"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="github_token_key">GitHub token key</Label>
+              <Input
+                id="github_token_key"
+                value={githubTokenKey}
+                onChange={(e) => setGithubTokenKey(e.target.value)}
+                placeholder="HEYRUPERT"
+              />
+            </div>
+          </div>
+          <DialogFooter className="shrink-0 gap-2 border-t border-border px-6 py-4 sm:justify-between">
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() =>
+                confirmClearPanel("publish-destination", "Publish Destination")
+              }
+            >
+              Delete
+            </Button>
+            <PanelModalActions
+              onCopy={() => handleCopyPanel(openPanel)}
+              onClose={() => setOpenPanel(null)}
+              onSave={saveAndClosePanel}
+              saving={saving}
             />
           </DialogFooter>
         </DialogContent>
