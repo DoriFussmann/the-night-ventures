@@ -5,6 +5,7 @@ import { handleWireInternalLinks } from '../lib/wire-internal-links/handler.js'
 import { handleProposeExternalLinks } from '../lib/external-links/handler.js'
 import { handleCheckLinks } from '../lib/check-links/handler.js'
 import { handleArticleUpdates } from '../lib/article-updates/handler.js'
+import { handleCompanyDataImport } from '../lib/company-data-import/handler.js'
 
 export const config = {
   maxDuration: 120,
@@ -33,6 +34,9 @@ function requestAction(req) {
     }
     if (path.endsWith('/article-updates')) {
       return 'article-updates'
+    }
+    if (path.endsWith('/company-data-import')) {
+      return 'company-data-import'
     }
   } catch {
     // ignore
@@ -292,6 +296,9 @@ export default async function handler(req, res) {
   }
   if (action === 'article-updates') {
     return handleArticleUpdates(req, res)
+  }
+  if (action === 'company-data-import') {
+    return handleCompanyDataImport(req, res)
   }
 
   if (req.method === 'OPTIONS') {
