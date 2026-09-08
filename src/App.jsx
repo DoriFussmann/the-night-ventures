@@ -24,6 +24,7 @@ import ArticleGeneration from '@/pages/tools/ArticleGeneration';
 import Articles from '@/pages/tools/Articles';
 import ArticlesUpdate from '@/pages/tools/ArticlesUpdate';
 import ArticlesAutomation from '@/pages/tools/ArticlesAutomation';
+import PillarAutomation from '@/pages/tools/PillarAutomation';
 import Nightwatch from '@/pages/tools/Nightwatch';
 import ClusterImageGenerator from '@/pages/tools/ClusterImageGenerator';
 import AiImageGenerator from '@/pages/tools/AiImageGenerator';
@@ -67,6 +68,7 @@ const AuthenticatedApp = () => {
           <Route path="/company/:companyId/articles" element={<Articles />} />
           <Route path="/company/:companyId/articles-update" element={<ArticlesUpdate />} />
           <Route path="/company/:companyId/articles-automation" element={<ArticlesAutomation />} />
+          <Route path="/company/:companyId/pillar-automation" element={<PillarAutomation />} />
           <Route path="/company/:companyId/nightwatch" element={<Nightwatch />} />
           <Route path="/company/:companyId/cluster-image-generator" element={<ClusterImageGenerator />} />
           <Route path="/company/:companyId/image-generator" element={<AiImageGenerator />} />

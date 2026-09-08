@@ -30,6 +30,7 @@ import {
   MessageSquareText,
   Camera,
   Workflow,
+  Layers,
   LogOut,
   ArrowLeft,
   Construction,
@@ -142,6 +143,7 @@ export default function AppSidebar({ user }) {
   const manualTools = [
     { label: "Topic Generator", path: `/company/${activeCompanyId}/article-topic-suggestion`, icon: Lightbulb },
     { label: "Article Generator", path: `/company/${activeCompanyId}/article-generation`, icon: PenLine },
+    { label: "Pillar Automation", path: `/company/${activeCompanyId}/pillar-automation`, icon: Layers },
     { label: "Articles Automation", path: `/company/${activeCompanyId}/articles-automation`, icon: Workflow },
     { label: "Articles", path: `/company/${activeCompanyId}/articles`, icon: BookOpen },
     { label: "Articles Update", path: `/company/${activeCompanyId}/articles-update`, icon: RefreshCw },
