@@ -55,6 +55,95 @@ function resolveAction(req, body) {
   return ''
 }
 
+function unwrapMarkdown(text) {
+  let cleaned = String(text || '').trim()
+  cleaned = cleaned.replace(/^```(?:markdown|md)?\s*/i, '').replace(/\s*```$/i, '').trim()
+  return cleaned
+}
+
+function unwrapJson(text) {
+  let cleaned = String(text || '').trim()
+  cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
+  cleaned = cleaned.replace(/```(?:json)?\s*/gi, '').replace(/```/g, '').trim()
+  return cleaned
+}
+
+function extractFirstJsonObject(text) {
+  const source = String(text || '')
+  const start = source.indexOf('{')
+  if (start < 0) return null
+
+  let depth = 0
+  let inString = false
+  let escaped = false
+
+  for (let i = start; i < source.length; i += 1) {
+    const ch = source[i]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (ch === '\\') escaped = true
+      else if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') {
+      inString = true
+      continue
+    }
+    if (ch === '{') depth += 1
+    if (ch === '}') {
+      depth -= 1
+      if (depth === 0) return source.slice(start, i + 1)
+    }
+  }
+  return null
+}
+
+const TOKEN_JSON_PROPERTIES = {
+  feel: { type: 'string', description: 'One sentence.' },
+  accent: { type: 'string', description: '6-digit hex starting with #, e.g. #3A7D5E' },
+  band: { type: 'string', description: 'Dark 6-digit hex starting with #, e.g. #1A1A2E' },
+  positive: { type: 'string', description: 'Muted green 6-digit hex starting with #' },
+  wordmark_primary: { type: 'string', description: 'First part of the brand name, or the full name' },
+  wordmark_accent: { type: 'string', description: 'Second part of the brand name, or empty string' },
+  voice: { type: 'string', description: 'At most 120 words of do/don\'t voice notes' },
+}
+
+function tokenFillTool(missingKeys) {
+  const keys = missingKeys.filter((key) => TOKEN_JSON_PROPERTIES[key])
+  return {
+    name: 'set_brand_tokens',
+    description: 'Set the missing brand tokens for the design system.',
+    input_schema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: Object.fromEntries(keys.map((key) => [key, TOKEN_JSON_PROPERTIES[key]])),
+      required: keys,
+    },
+  }
+}
+
+function parseSuggestedTokens(message) {
+  const toolBlock = Array.isArray(message?.content)
+    ? message.content.find(
+        (block) => block?.type === 'tool_use' && block?.name === 'set_brand_tokens'
+      )
+    : null
+  if (toolBlock && toolBlock.input && typeof toolBlock.input === 'object') {
+    return toolBlock.input
+  }
+
+  const raw = unwrapJson(unwrapMarkdown(textFromMessage(message)))
+  const extracted = extractFirstJsonObject(raw) || raw
+  if (!extracted) return null
+  try {
+    const parsed = JSON.parse(extracted)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
 function textFromMessage(message) {
   const textBlock = Array.isArray(message?.content)
     ? message.content.find((block) => block?.type === 'text')
@@ -95,6 +184,7 @@ function postedTokens(company) {
 
 function missingTokenKeys(tokens) {
   return TOKEN_DEFS.filter((def) => {
+    if (def.posted === 'brand_feel') return false
     if (def.posted === 'wordmark_accent') {
       return !tokens.wordmark_primary
     }
@@ -110,6 +200,7 @@ function applySuggested(tokens, suggested) {
   for (const def of TOKEN_DEFS) {
     const incoming = suggested[def.json]
     if (incoming == null) continue
+    if (def.posted === 'brand_feel') continue
     if (def.posted === 'wordmark_accent') {
       if (tokens.wordmark_primary) continue
       next.wordmark_accent = asText(incoming)
@@ -220,9 +311,11 @@ async function suggestMissingTokens(apiKey, company, tokens, missingKeys) {
 
   const message = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: 600,
+    max_tokens: 1500,
     temperature: 0.3,
     system: SUGGEST_SYSTEM,
+    tools: [tokenFillTool(missingKeys)],
+    tool_choice: { type: 'tool', name: 'set_brand_tokens' },
     messages: [
       {
         role: 'user',
@@ -231,7 +324,7 @@ async function suggestMissingTokens(apiKey, company, tokens, missingKeys) {
             type: 'text',
             text: [
               'Propose brand tokens for this company.',
-              `Return ONLY a JSON object with these missing keys: ${missingKeys.join(', ')}.`,
+              `Fill these missing keys: ${missingKeys.join(', ')}.`,
               '',
               'Company data:',
               JSON.stringify(companyContext(company), null, 2),
@@ -252,37 +345,12 @@ async function suggestMissingTokens(apiKey, company, tokens, missingKeys) {
     })
   }
 
-  let cleaned = String(textFromMessage(message) || '').trim()
-  if (!cleaned) {
-    console.error('design-guide generate: empty model text')
-    throw Object.assign(new Error('No text content in Anthropic response'), { statusCode: 502 })
-  }
-
-  if (/^```(?:json|md)?\r?\n/i.test(cleaned)) {
-    cleaned = cleaned.replace(/^```(?:json|md)?\r?\n/i, '')
-  }
-  if (cleaned.endsWith('```')) {
-    cleaned = cleaned.slice(0, -3)
-  }
-  cleaned = cleaned.trim()
-
-  if (!cleaned.startsWith('{')) {
-    const start = cleaned.indexOf('{')
-    const end = cleaned.lastIndexOf('}')
-    if (start !== -1 && end > start) {
-      cleaned = cleaned.slice(start, end + 1)
-    }
-  }
-
-  let parsed
-  try {
-    parsed = JSON.parse(cleaned)
-  } catch {
-    console.error(
-      'design-guide generate: JSON parse failed after cleanup',
-      cleaned.slice(0, 300)
-    )
-    throw Object.assign(new Error('Model did not return valid JSON'), { statusCode: 502 })
+  const parsed = parseSuggestedTokens(message)
+  if (!parsed) {
+    console.error('design-guide generate: unusable token payload', textFromMessage(message))
+    throw Object.assign(new Error('Model did not return valid brand tokens. Try generating again.'), {
+      statusCode: 502,
+    })
   }
 
   const merged = applySuggested(tokens, parsed)

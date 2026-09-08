@@ -1,5 +1,3 @@
-import { DESIGN_ACTIVATION_PROMPT } from "./designActivationPrompt";
-
 /** Predefined Site Build Flow stages and items (seeded per company on first load). */
 
 export const STATUSES = ["open", "wip", "done"];
@@ -90,7 +88,7 @@ export const PREDEFINED_ITEMS = {
       item_key: "clone-github-repo",
       title: "Clone the GitHub repo",
       description:
-        "Clone the new GitHub repo (the one created from `blueprint-seo-template`) into the Cursor project folder.",
+        "Clone the new GitHub repo (the one created from `blueprint-seo-template`) into the project folder. Clone into the folder itself, e.g. `git clone <repo-url> .` from inside it — do not clone into a subfolder, or you'll end up with a nested duplicate-named directory.",
       prompts: [],
     },
     {
@@ -123,53 +121,35 @@ export const PREDEFINED_ITEMS = {
       prompts: [],
     },
     {
-      item_key: "generate-design-guidelines-abstract",
-      title: "Confirm Design Guidelines abstract",
+      item_key: "push-design-abstract-to-company-data",
+      title: "Push Design Abstract to Company Data",
       description:
-        "Saving in Design Builder already writes the Design Guide and generates the abstract in Company Data. Open Company Data → Design Guidelines to confirm the abstract looks right.",
+        "In Design Builder, click 'Push Design Abstract to Company Data'. This fills the missing Design Guidelines abstract field in Company Data. Open Company Data → Design Guidelines to confirm it populated.",
       prompts: [],
-      linkTo: "/company/:companyId/company-data",
-      linkLabel: "Open Company Data →",
+      linkTo: "/company/:companyId/design-guide-builder",
+      linkLabel: "Open Design Builder →",
     },
   ],
   "infra-qa": [
     {
+      item_key: "run-npm-install",
+      title: "Run npm install",
+      description:
+        "In the cloned project, run npm install. Confirm it completes with no errors.",
+      prompts: [],
+    },
+    {
       item_key: "run-npm-run-build",
       title: "Run npm run build",
       description:
-        "Open a terminal and run npm run build. Confirm 'build complete' with no errors.",
+        "Run npm run build. Confirm 'build complete' with no errors.",
       prompts: [],
     },
     {
-      item_key: "run-dev-visit-article",
-      title: "Run npm run dev and visit an article",
+      item_key: "run-dev-sanity-check",
+      title: "Run npm run dev and sanity-check",
       description:
-        "Run npm run dev, get the local URL, visit an article page. Check: browser tab shows the article's slug/title, hero image renders, author name and image show, title and date look correct, an external link works, FAQ section exists (if the article has one).",
-      prompts: [],
-    },
-    {
-      item_key: "view-page-source-check",
-      title: "View Page Source check",
-      description:
-        "Right-click the article page, View Page Source. Confirm: <title> tag present, meta name=description reads well, canonical link starts with https://, og:title matches page title, og:description matches meta description, exactly one <h1> present and matching.",
-      prompts: [],
-    },
-    {
-      item_key: "confirm-drafts-excluded",
-      title: "Confirm draft articles are fully excluded",
-      description: "Ask Cursor to create and verify a draft test article.",
-      prompts: [
-        {
-          label: "Draft exclusion test prompt",
-          text: "Create a test article and mark it as a draft, then confirm no page exists for it after building, and that it's absent from the sitemap, RSS, and llms.txt.",
-        },
-      ],
-    },
-    {
-      item_key: "test-local-cms",
-      title: "Test the local CMS",
-      description:
-        "Run npm run cms, open the URL it gives you. Try adding an article with missing/invalid fields and confirm the checklist responds correctly (shows what's missing, blocks Generate with a visible reason).",
+        "Run npm run dev, get the local URL, and load the site. Confirm the homepage renders, there are no console errors, and the /articles/ listing page loads. An empty articles list is expected at this stage — no seed content exists yet.",
       prompts: [],
     },
   ],
@@ -208,6 +188,18 @@ export const PREDEFINED_ITEMS = {
       prompts: [],
     },
     {
+      item_key: "scaffold-env-local",
+      title: "Scaffold .env.local with Cursor",
+      description:
+        "Have Cursor scan the site's codebase and pre-create .env.local with every environment variable the project actually reads, so you only fill in values.",
+      prompts: [
+        {
+          label: "Scaffold .env.local prompt",
+          text: "Scaffold my .env.local for this site. Scan the codebase for every environment variable this project actually reads (Vite client vars, server/serverless vars, build scripts, and the CMS). For each one, add a line to .env.local with the variable name and an empty or placeholder value, grouped with a short comment saying what it's for and whether it's public (VITE_-prefixed, browser-exposed) or server-only. I know this site uses Supabase, and it may use Anthropic and/or OpenAI for API calls — include those if the code references them, but do not invent variables the code doesn't use. Also confirm .env.local is gitignored. List the variables you found and where each is used.",
+        },
+      ],
+    },
+    {
       item_key: "add-env-local-confirm-cursor",
       title: "Add .env.local and confirm with Cursor",
       description:
@@ -222,7 +214,8 @@ export const PREDEFINED_ITEMS = {
     {
       item_key: "check-run-sql-migrations",
       title: "Check for and run SQL migrations",
-      description: "Ask Cursor whether a migration needs running.",
+      description:
+        "Ask Cursor whether a migration needs running. Most template sites do: the migration creates the empty tables (e.g. team_members, articles, services) with RLS that the code already expects. It runs before any content exists because schema always precedes data. If Cursor says there's no migration, skip the next step.",
       prompts: [
         {
           label: "Migration check prompt",
@@ -234,7 +227,7 @@ export const PREDEFINED_ITEMS = {
       item_key: "run-migration-in-supabase",
       title: "Run migration in Supabase",
       description:
-        "Copy the migration file's content and paste it into Supabase's SQL Editor, run it.",
+        "Open the migration file at the repo root (e.g. supabase-migration.sql), copy the whole file, paste into Supabase → SQL Editor → New query, and Run. Success looks like 'Success. No rows returned.' Confirm the tables appear under Table Editor.",
       prompts: [],
     },
     {
@@ -266,43 +259,18 @@ export const PREDEFINED_ITEMS = {
   ],
   "site-activation": [
     {
-      item_key: "place-design-guide-on-site",
-      title: "Copy Design Guide.md to site/Design Guide.md",
+      item_key: "build-site-content-from-chatgpt",
+      title: "Generate site content and build with Cursor",
       description:
-        "If you have not already: generate Design Guide.md in Design Builder, download it, and copy it to `site/Design Guide.md` in the cloned SEO site (replace the Layer 1 placeholder). Do not put it at the repo root. Confirm the file is at that path before running the next step.",
-      prompts: [],
-      linkTo: "/company/:companyId/design-guide-builder",
-      linkLabel: "Open Design Builder →",
-    },
-    {
-      item_key: "run-design-activation-prompt",
-      title: "Run Design Activation prompt in Cursor",
-      description:
-        "Open the destination site in Cursor. Copy the Design Activation prompt below and paste it into the agent. It restyles the Layer 1 site from `site/Design Guide.md` — it does not rewrite copy or identity.",
+        "In TNV → Company Data, download the company markdown. In ChatGPT, run the Site Content prompt with company-data.md attached to produce the full site-content spec. Review depth per page, then paste the completed doc into Cursor to build all pages. The doc opens with build instructions (use Design Guide.md for design; do not degrade SEO/GEO infra; don't break the build; one H1 per page). After the build, run npm run build locally and view-source the homepage to confirm a single H1.",
       prompts: [
         {
-          label: "Design Activation prompt",
-          text: DESIGN_ACTIVATION_PROMPT,
+          label: "ChatGPT site-content prompt",
+          text: "You are writing the complete content specification for an SEO-optimized website. I've attached company-data.md — everything you need about the business is in it. Use only what's in that file; do not invent facts, services, team members, statistics, or claims that aren't supported by it.\n\nThe site is built on an existing SEO/GEO-optimized template, and the repo contains a Design Guide.md file that defines all visual design. So you are NOT designing visuals — you're specifying, for each page, its purpose, its sections in order, the actual finished copy, and the *spirit* of how each section should feel and lay out (e.g. \"hero: single strong promise, one primary CTA, calm and confident\" — not colors, fonts, or pixel specs). Cursor will handle the real design from Design Guide.md.\n\nPAGES TO WRITE:\n[List the pages you want, e.g. Home, About, Services, Contact, FAQ. If I don't specify, use: Home, About, Services, Contact, FAQ.]\n\nFOR EACH PAGE, produce:\n1. Page purpose — one line on what this page is for and who it's for.\n2. SEO intent — target keyword/topic, a meta title (~55–60 chars), a meta description (~140–160 chars), and the single H1.\n3. Sections in order — for every section: a short label, the spirit of its layout/feel (one line), and the FULL finished copy — real headlines, real body paragraphs, real CTA button text. Write publish-ready copy, not summaries or placeholders. Depth matters: each page should be substantive and complete, never thin or generic filler.\n4. Internal CTAs — where each section should link (only to pages in the list above or routes that clearly already exist).\n\nGUARDRAILS (follow exactly):\n- Do not invent services or team members. If Company Data lists them, use them; if it doesn't, omit that section rather than fabricate.\n- Testimonials/reviews: never write fabricated quotes. If a testimonials section is wanted, insert '[PLACEHOLDER: real testimonial needed]' for each quote and add a visible note that this section must be populated with real quotes or removed before launch.\n- Every factual claim must trace to company-data.md.\n\nOUTPUT FORMAT:\nReturn ONE complete markdown document I can paste directly into Cursor. Begin the document with this exact block, then the per-page content below it:\n\n---\nBUILD INSTRUCTIONS FOR CURSOR:\n- Use Design Guide.md in the repo for ALL visual design decisions (layout, color, type, spacing).\n- Do NOT modify the site's infrastructure, SEO plumbing, build config, metadata, sitemap, RSS, or structured data in any way that degrades the SEO/GEO optimization. Preserve every existing SEO optimization.\n- Do NOT break existing functionality. If any change risks breaking the build, stop and flag it before proceeding.\n- Verify exactly one H1 renders per page against the existing template. If the template already outputs its own H1 (especially on the homepage), do not add a second. Reconcile to one.\n- Implement all page content below in full — do not shorten, summarize, or skip sections.\n---",
         },
       ],
-    },
-    {
-      item_key: "run-specific-prompt",
-      title: "Run Specific Prompt",
-      description:
-        "In Additional Tools, open Specific Prompt. Run the Audit Prompt (Tab 1) in Cursor, then paste the audit response into the Personalize Prompt tab (Tab 2).",
-      prompts: [],
-      linkTo: "/company/:companyId/template-to-prompt",
-      linkLabel: "Open Specific Prompt →",
-    },
-    {
-      item_key: "run-personalized-prompt-in-cursor",
-      title: "Run Personalized Prompt in Cursor",
-      description:
-        "Copy the generated Personalized Prompt from Specific Prompt and paste it into Cursor to run it.",
-      prompts: [],
-      linkTo: "/company/:companyId/template-to-prompt?tab=personalize",
-      linkLabel: "Open Specific Prompt →",
+      linkTo: "/company/:companyId/company-data",
+      linkLabel: "Open Company Data →",
     },
     {
       item_key: "commit-and-push",

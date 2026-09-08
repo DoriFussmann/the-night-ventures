@@ -1,26 +1,26 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Copy, Download, Loader2 } from "lucide-react";
+import { Check, Copy, Download, Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   normalizeServices,
   normalizeTeamMembers,
 } from "./templateToPrompt/customFieldKeys";
 
-const HEX_RE = /^#[0-9A-Fa-f]{6}$/;
+const PANEL_DIALOG_CLASS =
+  "flex h-[min(90vh,calc(min(96vw,1400px)*9/16))] w-[min(96vw,1400px)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:rounded-lg";
 
 const TOKEN_KEYS = [
   "brand_feel",
@@ -46,6 +46,30 @@ const CURRENT_GUIDE_PREFIX = "# Design Guide\n\n```tokens";
 const KEPT_PREVIOUS_GUIDE =
   "Kept the previous guide — nothing was generated.";
 
+function draftStorageKey(companyId) {
+  return `tnv-design-guide-draft:${companyId}`;
+}
+
+function readGuideDraft(companyId) {
+  if (!companyId) return "";
+  try {
+    return String(sessionStorage.getItem(draftStorageKey(companyId)) || "");
+  } catch {
+    return "";
+  }
+}
+
+function writeGuideDraft(companyId, text) {
+  if (!companyId) return;
+  try {
+    const next = String(text || "");
+    if (!next.trim()) sessionStorage.removeItem(draftStorageKey(companyId));
+    else sessionStorage.setItem(draftStorageKey(companyId), next);
+  } catch {
+    // ignore
+  }
+}
+
 function downloadMarkdown(filename, content) {
   const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -69,62 +93,64 @@ function normalizeCompetitors(value) {
   });
 }
 
-function isFilled(value) {
+function textFilled(value) {
   return Boolean(String(value || "").trim());
 }
 
-function ModalText({ value, multiline = false }) {
-  const text = String(value || "").trim();
-  if (!text) {
-    return <p className="text-sm text-muted-foreground italic">Not set</p>;
-  }
+function FieldTrigger({ title, filled = false, onClick }) {
   return (
-    <p
-      className={
-        multiline
-          ? "text-sm text-foreground whitespace-pre-wrap"
-          : "text-sm text-foreground"
-      }
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex h-9 w-full items-center justify-between gap-3 rounded-md border border-border px-3 text-left transition-colors hover:bg-muted/50"
     >
-      {text}
-    </p>
+      <span className="text-sm font-medium leading-none">{title}</span>
+      {filled ? (
+        <Check
+          className="h-3.5 w-3.5 shrink-0 text-emerald-600"
+          strokeWidth={2.5}
+          aria-label="Has content"
+        />
+      ) : null}
+    </button>
   );
 }
 
-function CompanyDataFieldButton({ label, hint, children }) {
-  return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <Button type="button" variant="outline" size="sm">
-          {label}
-          {hint ? (
-            <span className="font-normal text-muted-foreground">{hint}</span>
-          ) : null}
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{label}</DialogTitle>
-          <DialogDescription>
-            Read-only value from Company Data.
-          </DialogDescription>
-        </DialogHeader>
-        {children}
-      </DialogContent>
-    </Dialog>
-  );
+function formatServicesDetail(items) {
+  return items
+    .map((item) => {
+      const lines = [item.title?.trim() || "(untitled)"];
+      if (item.summary?.trim()) lines.push(item.summary.trim());
+      if (item.detail?.trim()) lines.push(item.detail.trim());
+      return lines.join("\n");
+    })
+    .join("\n\n");
 }
 
-function ColorSwatch({ value }) {
-  const hex = String(value || "").trim();
-  if (!HEX_RE.test(hex)) return null;
-  return (
-    <span
-      aria-hidden="true"
-      className="h-6 w-6 shrink-0 rounded-sm border border-border"
-      style={{ backgroundColor: hex }}
-    />
-  );
+function formatTeamDetail(items) {
+  return items
+    .map((item) => {
+      const head = [item.name?.trim() || "(unnamed)", item.role?.trim(), item.credentials?.trim()]
+        .filter(Boolean)
+        .join(" · ");
+      const lines = [head];
+      if (item.bio?.trim()) lines.push(item.bio.trim());
+      for (const url of item.same_as || []) {
+        if (String(url).trim()) lines.push(String(url).trim());
+      }
+      return lines.join("\n");
+    })
+    .join("\n\n");
+}
+
+function formatCompetitorsDetail(items) {
+  return items
+    .map((item) => {
+      const name = item.name?.trim() || "(unnamed)";
+      const url = item.url?.trim();
+      return url ? `${name}\n${url}` : name;
+    })
+    .join("\n\n");
 }
 
 export default function DesignGuideBuilder() {
@@ -152,12 +178,13 @@ export default function DesignGuideBuilder() {
 
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
-  const [suggesting, setSuggesting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [pushingAbstract, setPushingAbstract] = useState(false);
   const [error, setError] = useState("");
   const [savedMessage, setSavedMessage] = useState("");
   const [copyMessage, setCopyMessage] = useState("");
   const [lastGeneratedAt, setLastGeneratedAt] = useState(null);
+  const [openPanel, setOpenPanel] = useState(null);
 
   const loadCompanyData = useCallback(async () => {
     if (!companyId) return;
@@ -218,7 +245,8 @@ export default function DesignGuideBuilder() {
     });
 
     const raw = String(profile?.design_guide_raw || "").trim();
-    setMarkdown(raw);
+    const draft = readGuideDraft(companyId);
+    setMarkdown(draft.trim() ? draft : raw);
     setSavedMarkdown(raw);
     setLastGeneratedAt(null);
 
@@ -293,6 +321,7 @@ export default function DesignGuideBuilder() {
     setTokens((prev) => {
       const next = { ...prev };
       for (const key of TOKEN_KEYS) {
+        if (key === "brand_feel") continue;
         if (!(key in returned)) continue;
         if (emptyOnly && String(prev[key] || "").trim()) continue;
         next[key] = String(returned[key] ?? "");
@@ -315,7 +344,7 @@ export default function DesignGuideBuilder() {
   };
 
   const handleGenerate = async () => {
-    if (generating || suggesting) return;
+    if (generating) return;
     if (markdown.trim()) {
       const ok = window.confirm(
         "Replace the current Design Guide with a newly generated one?"
@@ -340,43 +369,18 @@ export default function DesignGuideBuilder() {
       }
       const next = String(data.markdown || "").trim();
       if (!next) {
-        setError(`${KEPT_PREVIOUS_GUIDE} (empty response)`);
+        setError("Generate finished, but no Design Guide came back. Try again.");
         return;
       }
       applyReturnedTokens(data.tokens, { emptyOnly: false });
       setMarkdown(next);
+      writeGuideDraft(companyId, next);
       setLastGeneratedAt(Date.now());
     } catch (err) {
       console.error("Design Guide generate failed:", err);
-      setError(
-        `${KEPT_PREVIOUS_GUIDE} (${err.message || "unknown error"})`
-      );
+      setError(err.message || "Failed to generate Design Guide");
     } finally {
       setGenerating(false);
-    }
-  };
-
-  const handleSuggestTokens = async () => {
-    if (generating || suggesting) return;
-
-    setSuggesting(true);
-    setError("");
-    setSavedMessage("");
-
-    try {
-      const { res, data } = await requestGenerate({ suggestOnly: true });
-      if (!res.ok) {
-        throw new Error(data.error || `Generate failed (${res.status})`);
-      }
-      if (!data.tokens || typeof data.tokens !== "object") {
-        throw new Error("No tokens returned");
-      }
-      applyReturnedTokens(data.tokens, { emptyOnly: true });
-    } catch (err) {
-      console.error("Suggest tokens failed:", err);
-      setError(err.message || "Failed to suggest tokens");
-    } finally {
-      setSuggesting(false);
     }
   };
 
@@ -438,25 +442,10 @@ export default function DesignGuideBuilder() {
 
       setProfileId(savedProfile?.id || profileId);
       setSavedMarkdown(raw);
+      writeGuideDraft(companyId, raw);
 
-      const abstractText = await generateAbstract(raw);
-      const { error: abstractError } = await supabase
-        .from("company_profiles")
-        .update({
-          design_guide_abstract: abstractText,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("company_id", companyId);
-
-      if (abstractError) {
-        throw new Error(
-          abstractError.message ||
-            "Design Guide saved, but failed to save the abstract"
-        );
-      }
-
-      setSavedMessage("Saved — Design Guide and abstract updated in Company Data");
-      window.setTimeout(() => setSavedMessage(""), 3500);
+      setSavedMessage("Saved");
+      window.setTimeout(() => setSavedMessage(""), 2500);
     } catch (err) {
       console.error("Design Guide save failed:", err);
       setError(err.message || "Failed to save Design Guide");
@@ -480,6 +469,49 @@ export default function DesignGuideBuilder() {
     downloadMarkdown("Design Guide.md", markdown || "");
   };
 
+  const handlePushDesignAbstract = async () => {
+    if (!companyId || pushingAbstract || saving) return;
+    const raw = savedMarkdown.trim();
+    if (!raw || markdown !== savedMarkdown) return;
+
+    setPushingAbstract(true);
+    setError("");
+    setSavedMessage("");
+
+    try {
+      const abstractText = await generateAbstract(raw);
+      const payload = {
+        company_id: companyId,
+        design_guide_abstract: abstractText,
+        updated_at: new Date().toISOString(),
+      };
+      if (profileId) {
+        payload.id = profileId;
+      }
+
+      const { data, error: upsertError } = await supabase
+        .from("company_profiles")
+        .upsert(payload, { onConflict: "company_id" })
+        .select("id")
+        .single();
+
+      if (upsertError) {
+        throw new Error(
+          upsertError.message || "Failed to push Design Abstract"
+        );
+      }
+
+      setProfileId(data?.id || profileId);
+      setSavedMessage("Design Abstract pushed to Company Data");
+      window.setTimeout(() => setSavedMessage(""), 3500);
+    } catch (err) {
+      console.error("Failed to push Design Abstract:", err);
+      setError(err.message || "Failed to push Design Abstract");
+    } finally {
+      setPushingAbstract(false);
+    }
+  };
+
   if (!companyId) {
     return (
       <div>
@@ -494,54 +526,81 @@ export default function DesignGuideBuilder() {
   }
 
   const dirty = markdown !== savedMarkdown;
-  const busy = generating || suggesting || saving;
-  const companyDataTextFields = [
-    { id: "product-name", label: "Product name", value: productName },
-    { id: "domain", label: "Domain", value: domain },
-    { id: "abstract", label: "Abstract", value: abstract, multiline: true },
-    {
-      id: "short-description",
-      label: "Short description",
-      value: shortDescription,
-      multiline: true,
+  const busy = generating || saving || pushingAbstract;
+  const guideSaved = Boolean(savedMarkdown.trim()) && !dirty;
+
+  const companyPanels = {
+    product_name: {
+      title: "Product name",
+      description: "Primary product or brand name from Company Data.",
+      text: productName,
     },
-    {
-      id: "medium-description",
-      label: "Medium description",
-      value: mediumDescription,
-      multiline: true,
+    domain: {
+      title: "Domain",
+      description: "Company website domain from Company Data.",
+      text: domain,
     },
-    {
-      id: "long-description",
-      label: "Long description",
-      value: longDescription,
-      multiline: true,
+    abstract: {
+      title: "Abstract",
+      description: "Short positioning blurb from Company Data.",
+      text: abstract,
     },
-    {
-      id: "target-audience",
-      label: "Target audience",
-      value: targetAudience,
-      multiline: true,
+    short: {
+      title: "Short description",
+      description: "Homepage-style description from Company Data.",
+      text: shortDescription,
     },
-    {
-      id: "business-model",
-      label: "Business model",
-      value: businessModel,
-      multiline: true,
+    medium: {
+      title: "Medium description",
+      description: "Short paragraph from Company Data.",
+      text: mediumDescription,
     },
-    {
-      id: "core-value-proposition",
-      label: "Core value proposition",
-      value: coreValueProposition,
-      multiline: true,
+    long: {
+      title: "Long description",
+      description: "Full company description from Company Data.",
+      text: longDescription,
     },
-    {
-      id: "scope-boundaries",
-      label: "Scope / boundaries",
-      value: scopeBoundaries,
-      multiline: true,
+    target: {
+      title: "Target audience",
+      description: "Who the company serves, from Company Data.",
+      text: targetAudience,
     },
-  ];
+    business_model: {
+      title: "Business model",
+      description: "How the company makes money, from Company Data.",
+      text: businessModel,
+    },
+    core_value_proposition: {
+      title: "Core value proposition",
+      description: "Primary reason customers choose this company.",
+      text: coreValueProposition,
+    },
+    scope_boundaries: {
+      title: "Scope / boundaries",
+      description: "What the company does and does not do.",
+      text: scopeBoundaries,
+    },
+    services: {
+      title: "Services",
+      description: "Products and services from Company Data.",
+      text: formatServicesDetail(usableServices),
+      emptyHint: "None added yet — add them in Company Data.",
+    },
+    team: {
+      title: "Team",
+      description: "Team members from Company Data.",
+      text: formatTeamDetail(usableTeam),
+      emptyHint: "None added yet — add them in Company Data.",
+    },
+    competitors: {
+      title: "Competitors",
+      description: "Competitors listed in Company Data.",
+      text: formatCompetitorsDetail(usableCompetitors),
+      emptyHint: "None listed.",
+    },
+  };
+
+  const companyPanel = openPanel ? companyPanels[openPanel] : null;
 
   return (
     <div className="space-y-10">
@@ -580,208 +639,96 @@ export default function DesignGuideBuilder() {
           </Alert>
         )}
 
-        <div className="flex flex-wrap gap-2">
-          {companyDataTextFields.map((field) => (
-            <CompanyDataFieldButton
-              key={field.id}
-              label={field.label}
-              hint={isFilled(field.value) ? null : "Not set"}
-            >
-              <ModalText value={field.value} multiline={field.multiline} />
-            </CompanyDataFieldButton>
-          ))}
-
-          <CompanyDataFieldButton
-            label="Services"
-            hint={usableServices.length ? String(usableServices.length) : "None"}
-          >
-            {usableServices.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                None added yet — add them in Company Data.
-              </p>
-            ) : (
-              <ul className="space-y-3 text-sm text-foreground">
-                {usableServices.map((s, i) => (
-                  <li key={`svc-${i}`}>
-                    <span className="font-medium">{s.title || "(untitled)"}</span>
-                    {s.summary ? (
-                      <p className="text-muted-foreground">{s.summary}</p>
-                    ) : null}
-                    {s.detail ? (
-                      <p className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap">
-                        {s.detail}
-                      </p>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CompanyDataFieldButton>
-
-          <CompanyDataFieldButton
-            label="Team"
-            hint={usableTeam.length ? String(usableTeam.length) : "None"}
-          >
-            {usableTeam.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                None added yet — add them in Company Data.
-              </p>
-            ) : (
-              <ul className="space-y-3 text-sm text-foreground">
-                {usableTeam.map((t, i) => (
-                  <li key={`team-${i}`}>
-                    <span className="font-medium">{t.name || "(unnamed)"}</span>
-                    {t.role ? (
-                      <span className="text-muted-foreground"> — {t.role}</span>
-                    ) : null}
-                    {t.bio ? (
-                      <p className="mt-1 text-muted-foreground whitespace-pre-wrap">
-                        {t.bio}
-                      </p>
-                    ) : null}
-                    {t.credentials ? (
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Credentials: {t.credentials}
-                      </p>
-                    ) : null}
-                    {(t.same_as || []).filter((u) => u.trim()).length > 0 ? (
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        sameAs:{" "}
-                        {(t.same_as || [])
-                          .map((u) => u.trim())
-                          .filter(Boolean)
-                          .join(", ")}
-                      </p>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CompanyDataFieldButton>
-
-          <CompanyDataFieldButton
-            label="Competitors"
-            hint={usableCompetitors.length ? String(usableCompetitors.length) : "None"}
-          >
-            {usableCompetitors.length === 0 ? (
-              <p className="text-sm text-muted-foreground">None listed.</p>
-            ) : (
-              <ul className="space-y-1 text-sm text-foreground">
-                {usableCompetitors.map((c, i) => (
-                  <li key={`comp-${i}`}>
-                    <span className="font-medium">{c.name || "(unnamed)"}</span>
-                    {c.url ? (
-                      <span className="text-muted-foreground"> — {c.url}</span>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CompanyDataFieldButton>
+        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-5">
+          <FieldTrigger
+            title="Product name"
+            filled={textFilled(productName)}
+            onClick={() => setOpenPanel("product_name")}
+          />
+          <FieldTrigger
+            title="Domain"
+            filled={textFilled(domain)}
+            onClick={() => setOpenPanel("domain")}
+          />
+          <FieldTrigger
+            title="Abstract"
+            filled={textFilled(abstract)}
+            onClick={() => setOpenPanel("abstract")}
+          />
+          <FieldTrigger
+            title="Short description"
+            filled={textFilled(shortDescription)}
+            onClick={() => setOpenPanel("short")}
+          />
+          <FieldTrigger
+            title="Medium description"
+            filled={textFilled(mediumDescription)}
+            onClick={() => setOpenPanel("medium")}
+          />
+          <FieldTrigger
+            title="Long description"
+            filled={textFilled(longDescription)}
+            onClick={() => setOpenPanel("long")}
+          />
+          <FieldTrigger
+            title="Target audience"
+            filled={textFilled(targetAudience)}
+            onClick={() => setOpenPanel("target")}
+          />
+          <FieldTrigger
+            title="Business model"
+            filled={textFilled(businessModel)}
+            onClick={() => setOpenPanel("business_model")}
+          />
+          <FieldTrigger
+            title="Core value proposition"
+            filled={textFilled(coreValueProposition)}
+            onClick={() => setOpenPanel("core_value_proposition")}
+          />
+          <FieldTrigger
+            title="Scope / boundaries"
+            filled={textFilled(scopeBoundaries)}
+            onClick={() => setOpenPanel("scope_boundaries")}
+          />
+          <FieldTrigger
+            title="Services"
+            filled={usableServices.length > 0}
+            onClick={() => setOpenPanel("services")}
+          />
+          <FieldTrigger
+            title="Team"
+            filled={usableTeam.length > 0}
+            onClick={() => setOpenPanel("team")}
+          />
+          <FieldTrigger
+            title="Competitors"
+            filled={usableCompetitors.length > 0}
+            onClick={() => setOpenPanel("competitors")}
+          />
         </div>
       </section>
 
       <section className="space-y-4">
         <div>
-          <h2 className="text-xs text-foreground">Brand tokens</h2>
+          <h2 className="text-xs text-foreground">Feel</h2>
           <p className="text-sm text-muted-foreground">
-            Persisted on the company profile. Leave a field blank and use Suggest
-            tokens to fill it from Company Data.
+            One sentence for how the brand should feel. Used when generating the
+            Design Guide.
           </p>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="brand-feel">Feel</Label>
-            <Input
-              id="brand-feel"
-              value={tokens.brand_feel}
-              onChange={(e) => updateToken("brand_feel", e.target.value)}
-              placeholder="One sentence."
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="brand-accent">Accent</Label>
-            <div className="flex items-center gap-2">
-              <Input
-                id="brand-accent"
-                value={tokens.brand_accent}
-                onChange={(e) => updateToken("brand_accent", e.target.value)}
-                placeholder="#3A7D5E"
-              />
-              <ColorSwatch value={tokens.brand_accent} />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="brand-band">Band</Label>
-            <div className="flex items-center gap-2">
-              <Input
-                id="brand-band"
-                value={tokens.brand_band}
-                onChange={(e) => updateToken("brand_band", e.target.value)}
-                placeholder="#1A1A2E"
-              />
-              <ColorSwatch value={tokens.brand_band} />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="brand-positive">Positive</Label>
-            <div className="flex items-center gap-2">
-              <Input
-                id="brand-positive"
-                value={tokens.brand_positive}
-                onChange={(e) => updateToken("brand_positive", e.target.value)}
-                placeholder="#6a9a78"
-              />
-              <ColorSwatch value={tokens.brand_positive} />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="wordmark-primary">Wordmark (ink)</Label>
-            <Input
-              id="wordmark-primary"
-              value={tokens.wordmark_primary}
-              onChange={(e) => updateToken("wordmark_primary", e.target.value)}
-              placeholder="First part"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="wordmark-accent">Wordmark (accent)</Label>
-            <Input
-              id="wordmark-accent"
-              value={tokens.wordmark_accent}
-              onChange={(e) => updateToken("wordmark_accent", e.target.value)}
-              placeholder="Second part — blank if the name does not split"
-            />
-          </div>
-        </div>
         <div className="space-y-2">
-          <Label htmlFor="brand-voice">Voice</Label>
+          <Label htmlFor="brand-feel">Feel</Label>
           <Textarea
-            id="brand-voice"
-            value={tokens.brand_voice}
-            onChange={(e) => updateToken("brand_voice", e.target.value)}
-            className="min-h-[100px]"
-            placeholder="Short do/don't, ≤120 words."
+            id="brand-feel"
+            value={tokens.brand_feel}
+            onChange={(e) => updateToken("brand_feel", e.target.value)}
+            className="min-h-[80px]"
+            placeholder="Quiet, precise, operator-grade — not loud or promotional."
           />
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleSuggestTokens}
-            disabled={busy}
-          >
-            {suggesting ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Suggesting…
-              </>
-            ) : (
-              "Suggest tokens"
-            )}
-          </Button>
           <Button type="button" onClick={handleGenerate} disabled={busy}>
             {generating ? (
               <>
@@ -811,7 +758,11 @@ export default function DesignGuideBuilder() {
           )}
         <Textarea
           value={markdown}
-          onChange={(e) => setMarkdown(e.target.value)}
+          onChange={(e) => {
+            const next = e.target.value;
+            setMarkdown(next);
+            writeGuideDraft(companyId, next);
+          }}
           className="min-h-[320px] font-mono text-sm"
           placeholder="Generated Design Guide will appear here. You can edit before saving."
         />
@@ -836,6 +787,23 @@ export default function DesignGuideBuilder() {
             <Download className="w-4 h-4" />
             Download
           </Button>
+          {guideSaved ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handlePushDesignAbstract}
+              disabled={pushingAbstract || saving}
+            >
+              {pushingAbstract ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Pushing…
+                </>
+              ) : (
+                "Push Design Abstract to Company Data"
+              )}
+            </Button>
+          ) : null}
           {lastGeneratedAt ? (
             <span className="text-sm text-muted-foreground">Generated just now</span>
           ) : null}
@@ -850,6 +818,47 @@ export default function DesignGuideBuilder() {
           )}
         </div>
       </section>
+
+      <Dialog
+        open={Boolean(openPanel)}
+        onOpenChange={(open) => setOpenPanel(open ? openPanel : null)}
+      >
+        <DialogContent className={PANEL_DIALOG_CLASS}>
+          <DialogHeader className="shrink-0 space-y-1 border-b border-border px-6 py-4 pr-12 text-left">
+            <DialogTitle>{companyPanel?.title}</DialogTitle>
+            {companyPanel?.description ? (
+              <DialogDescription>{companyPanel.description}</DialogDescription>
+            ) : null}
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+            {companyPanel ? (
+              textFilled(companyPanel.text) ? (
+                <p className="whitespace-pre-wrap text-sm text-foreground">
+                  {companyPanel.text}
+                </p>
+              ) : (
+                <p className="text-sm italic text-muted-foreground">
+                  {companyPanel.emptyHint || "Not set"}
+                </p>
+              )
+            ) : null}
+          </div>
+          <DialogFooter className="shrink-0 border-t border-border px-6 py-4 sm:justify-between">
+            {companyPanel ? (
+              <Button asChild variant="outline">
+                <Link to={`/company/${companyId}/company-data`}>
+                  Edit in Company Data
+                </Link>
+              </Button>
+            ) : (
+              <span />
+            )}
+            <Button type="button" variant="outline" onClick={() => setOpenPanel(null)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

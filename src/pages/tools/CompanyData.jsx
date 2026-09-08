@@ -1,6 +1,16 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import { ArrowDown, ArrowUp, Check, ChevronDown, Copy, Trash2, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Check,
+  ChevronDown,
+  Copy,
+  Loader2,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,8 +43,14 @@ import {
   trimTeamMembersForSave,
 } from "./templateToPrompt/customFieldKeys";
 import SocialShopsPanel from "./SocialShopsPanel";
-import { formatBrandTokensMarkdown } from "./companyData/parseCompanyMarkdown";
-import { getCompanyDataPoints } from "./companyData/dataPoints";
+import {
+  formatBrandTokensMarkdown,
+  parseCompanyMarkdown,
+} from "./companyData/parseCompanyMarkdown";
+import {
+  getCompanyDataPoints,
+  mergeParsedCompanyFields,
+} from "./companyData/dataPoints";
 
 const HIDDEN_CUSTOM_FIELDS = new Set([
   "founded year",
@@ -344,7 +360,7 @@ export default function CompanyData() {
   const [githubOwner, setGithubOwner] = useState("");
   const [githubRepo, setGithubRepo] = useState("");
   const [githubTokenKey, setGithubTokenKey] = useState("");
-  /** Active panel modal: 'target' | 'pillars' | 'competitors' | ... | `custom:${id}` */
+  /** Active panel modal: 'target' | 'pillars' | 'competitors' | 'publish-destination' | ... | `custom:${id}` */
   const [openPanel, setOpenPanel] = useState(null);
   const [openPillars, setOpenPillars] = useState({});
   const [socialShopsFilled, setSocialShopsFilled] = useState(false);
@@ -356,6 +372,10 @@ export default function CompanyData() {
   const [designGuideSaving, setDesignGuideSaving] = useState(false);
   const [designGuideError, setDesignGuideError] = useState("");
   const [missingOpen, setMissingOpen] = useState(false);
+  const [importDragOver, setImportDragOver] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const importFileRef = useRef(null);
 
   const loadData = useCallback(async () => {
     if (!companyId) return;
@@ -818,6 +838,15 @@ export default function CompanyData() {
       return fields.core_value_proposition.trim();
     }
     if (panelId === "scope_boundaries") return fields.scope_boundaries.trim();
+    if (panelId === "publish-destination") {
+      return [
+        githubOwner.trim() && `GitHub owner: ${githubOwner.trim()}`,
+        githubRepo.trim() && `GitHub repo: ${githubRepo.trim()}`,
+        githubTokenKey.trim() && `GitHub token key: ${githubTokenKey.trim()}`,
+      ]
+        .filter(Boolean)
+        .join("\n");
+    }
 
     if (panelId === "category") {
       return industries
@@ -1117,6 +1146,187 @@ export default function CompanyData() {
     await persistProfile();
   };
 
+  const importSocialShops = async (accounts, notes) => {
+    const accountRows = (accounts || [])
+      .map((account) => ({
+        company_id: companyId,
+        name: String(account.name || "").trim(),
+        type: account.type || "Other",
+        status: String(account.status || "").trim() || null,
+        url: String(account.url || "").trim() || null,
+        username: String(account.username || "").trim() || null,
+        access_details: String(account.access_details || "").trim() || null,
+        comments: String(account.comments || "").trim() || null,
+      }))
+      .filter((row) => row.name);
+    if (accountRows.length > 0) {
+      const { error: accountsError } = await supabase
+        .from("social_accounts")
+        .insert(accountRows);
+      if (accountsError) {
+        throw new Error(accountsError.message || "Failed to import Social & Shops");
+      }
+      setSocialShopsFilled(true);
+    }
+    const noteRows = (notes || [])
+      .map((text) => String(text || "").trim())
+      .filter(Boolean)
+      .map((text) => ({ company_id: companyId, text }));
+    if (noteRows.length > 0) {
+      const { error: notesError } = await supabase.from("social_notes").insert(noteRows);
+      if (notesError) {
+        throw new Error(notesError.message || "Failed to import Social & Shops notes");
+      }
+    }
+  };
+
+  const applyAllocatedMarkdown = async (text, fileName) => {
+    const parsed = parseCompanyMarkdown(text, {
+      extraLabels: customFieldDefs.map((def) => def.name),
+    });
+    const merged = mergeParsedCompanyFields({
+      parsed,
+      fields,
+      customValues,
+      customFieldDefs,
+      selectedIndustryIds,
+      industries,
+      socialShopsFilled,
+    });
+
+    const nextFields = {
+      ...merged.nextFields,
+      core_keywords: normalizePillarKeywords(merged.nextFields.core_keywords, {
+        minCount: 0,
+      }),
+      competitors: normalizeCompetitors(merged.nextFields.competitors),
+      services: normalizeServices(merged.nextFields.services),
+      team_members: normalizeTeamMembers(merged.nextFields.team_members),
+      social_links: normalizeSocialLinks(merged.nextFields.social_links),
+    };
+
+    if (merged.filled.length > 0) {
+      setFields(nextFields);
+      setCustomValues(merged.nextCustom);
+      setSelectedIndustryIds(merged.nextIndustryIds);
+
+      const saved = await persistProfile({
+        fields: nextFields,
+        customValues: merged.nextCustom,
+        selectedIndustryIds: merged.nextIndustryIds,
+        skipSavedMessage: true,
+      });
+      if (!saved) return false;
+
+      if (merged.socialAccounts) {
+        try {
+          await importSocialShops(merged.socialAccounts, merged.socialNotes);
+        } catch (err) {
+          console.error("Failed to import Social & Shops:", err);
+          setError(err?.message || "Failed to import Social & Shops");
+        }
+      }
+    }
+
+    const afterPoints = getCompanyDataPoints({
+      fields: nextFields,
+      selectedIndustryIds: merged.nextIndustryIds,
+      socialShopsFilled: merged.socialAccounts ? true : socialShopsFilled,
+      customFieldDefs,
+      customValues: merged.nextCustom,
+      githubOwner,
+      githubRepo,
+      githubTokenKey,
+    });
+
+    setImportResult({
+      fileName,
+      filled: merged.filled,
+      skipped: merged.skipped,
+      notInFile: merged.notInFile,
+      stillMissing: afterPoints.filter((point) => !point.filled).map((point) => point.label),
+    });
+    return true;
+  };
+
+  const handleImportMarkdownFile = async (file) => {
+    if (!file || importBusy || saving) return;
+
+    const name = String(file.name || "").toLowerCase();
+    const isMarkdown =
+      name.endsWith(".md") ||
+      name.endsWith(".markdown") ||
+      file.type === "text/markdown";
+    if (!isMarkdown) {
+      setError("Please drop a markdown .md file");
+      return;
+    }
+
+    setError("");
+    setImportResult(null);
+    setImportBusy(true);
+
+    try {
+      const source = await file.text();
+      if (!String(source || "").trim()) {
+        setError("That markdown file is empty");
+        return;
+      }
+
+      const emptyFieldLabels = getCompanyDataPoints({
+        fields,
+        selectedIndustryIds,
+        socialShopsFilled,
+        customFieldDefs,
+        customValues,
+        githubOwner,
+        githubRepo,
+        githubTokenKey,
+      })
+        .filter(
+          (point) =>
+            !point.filled &&
+            point.id !== "publish-destination" &&
+            point.id !== "design-guide"
+        )
+        .map((point) => point.label);
+
+      const res = await fetch("/api/company-data-import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          markdown: source,
+          companyName,
+          customFieldNames: customFieldDefs.map((def) => def.name),
+          industryNames: industries.map((industry) => industry.name),
+          emptyFieldLabels,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || `Import failed (${res.status})`);
+      }
+
+      const allocated = String(data.markdown || "").trim();
+      if (!allocated) {
+        throw new Error("No allocated fields returned");
+      }
+
+      await applyAllocatedMarkdown(allocated, file.name || "markdown file");
+    } catch (err) {
+      console.error("Failed to import company markdown:", err);
+      setError(err?.message || "Failed to import markdown");
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
+  const processImportFiles = (fileList) => {
+    const file = fileList?.[0];
+    if (!file) return;
+    handleImportMarkdownFile(file);
+  };
+
   const saveAndClosePanel = async () => {
     const ok = await persistProfile();
     if (ok) setOpenPanel(null);
@@ -1221,7 +1431,16 @@ export default function CompanyData() {
       ["Long Description", fields.long_description],
       ["Business Model", fields.business_model],
       ["Core Value Proposition", fields.core_value_proposition],
-      ["Scope / Boundaries", fields.scope_boundaries],
+      [
+        "Publish Destination",
+        [
+          githubOwner.trim() && `- GitHub owner: ${githubOwner.trim()}`,
+          githubRepo.trim() && `- GitHub repo: ${githubRepo.trim()}`,
+          githubTokenKey.trim() && `- GitHub token key: ${githubTokenKey.trim()}`,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      ],
       ["Brand Tokens", formatBrandTokensMarkdown(fields)],
       ["Design Guide", fields.design_guide_raw],
       ["Design Abstract", fields.design_guide_abstract],
@@ -1244,15 +1463,15 @@ export default function CompanyData() {
       "Social Links",
       "Brand Tokens",
       "Design Guide",
+      "Publish Destination",
     ]);
 
     for (const [label, value] of [...fixedEntries, ...customEntries]) {
       const trimmed = (value || "").trim();
-      if (!trimmed) continue;
-      if (blockLabels.has(label)) {
+      if (blockLabels.has(label) && trimmed) {
         lines.push(`**${label}:**`, trimmed, "");
       } else {
-        lines.push(`**${label}:** ${trimmed}`, "");
+        lines.push(trimmed ? `**${label}:** ${trimmed}` : `**${label}:**`, "");
       }
     }
 
@@ -1429,6 +1648,9 @@ export default function CompanyData() {
   const selectedIndustries = industries.filter((industry) =>
     selectedIndustryIds.includes(industry.id)
   );
+  const publishDestinationFilled = Boolean(
+    githubOwner.trim() && githubRepo.trim() && githubTokenKey.trim()
+  );
   const dataPoints = getCompanyDataPoints({
     fields,
     selectedIndustryIds,
@@ -1444,12 +1666,9 @@ export default function CompanyData() {
 
   return (
     <div>
-      <h1 className="text-xs text-foreground mb-1">
+      <h1 className="text-xs text-foreground mb-4">
         {companyName || "Company Data"}
       </h1>
-      <p className="text-sm text-muted-foreground mb-4">
-        Edit company profile fields and export as markdown.
-      </p>
 
       {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
 
@@ -1546,9 +1765,7 @@ export default function CompanyData() {
           />
           <PanelTrigger
             title="Publish Destination"
-            filled={Boolean(
-              githubOwner.trim() && githubRepo.trim() && githubTokenKey.trim()
-            )}
+            filled={publishDestinationFilled}
             onClick={() => setOpenPanel("publish-destination")}
           />
         </div>
@@ -1615,6 +1832,102 @@ export default function CompanyData() {
           </Collapsible>
         ) : (
           <p className="text-sm text-muted-foreground">All fields completed.</p>
+        )}
+      </div>
+
+      <div className="mt-6 space-y-3">
+        <div
+          role="button"
+          tabIndex={0}
+          className={`rounded-lg border border-dashed px-4 py-5 text-center transition-colors ${
+            importBusy || saving
+              ? "cursor-default opacity-80"
+              : "cursor-pointer"
+          } ${
+            importDragOver ? "border-foreground bg-muted/40" : "border-border"
+          }`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            if (!importBusy && !saving) setImportDragOver(true);
+          }}
+          onDragLeave={() => setImportDragOver(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setImportDragOver(false);
+            if (importBusy || saving) return;
+            processImportFiles(e.dataTransfer.files);
+          }}
+          onClick={() => {
+            if (importBusy || saving) return;
+            importFileRef.current?.click();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              if (importBusy || saving) return;
+              importFileRef.current?.click();
+            }
+          }}
+        >
+          {importBusy ? (
+            <div className="flex flex-col items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              <p>Reading markdown and allocating fields…</p>
+            </div>
+          ) : (
+            <>
+              <Upload className="mx-auto mb-2 h-5 w-5 text-muted-foreground" />
+              <p className="text-sm text-foreground">Drag & drop</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Drop a .md file to fill empty company fields
+              </p>
+            </>
+          )}
+          <input
+            ref={importFileRef}
+            type="file"
+            className="sr-only"
+            accept=".md,.markdown,text/markdown"
+            disabled={importBusy || saving}
+            onChange={(e) => {
+              processImportFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
+        </div>
+
+        {importResult && !importBusy && (
+          <div className="rounded-lg border border-border bg-muted/20 px-4 py-3 text-sm">
+            <p className="font-medium text-foreground">
+              {importResult.filled.length > 0
+                ? `Filled ${importResult.filled.length} field${
+                    importResult.filled.length === 1 ? "" : "s"
+                  } from ${importResult.fileName}`
+                : `No empty fields filled from ${importResult.fileName}`}
+            </p>
+            {importResult.filled.length > 0 && (
+              <p className="mt-1 text-muted-foreground">
+                {importResult.filled.join(", ")}
+              </p>
+            )}
+            {importResult.skipped.length > 0 && (
+              <p className="mt-2 text-muted-foreground">
+                Already filled, left as-is: {importResult.skipped.join(", ")}
+              </p>
+            )}
+            {importResult.notInFile.length > 0 && (
+              <p className="mt-2 text-muted-foreground">
+                Not found in file: {importResult.notInFile.join(", ")}
+              </p>
+            )}
+            {importResult.stillMissing.length > 0 ? (
+              <p className="mt-2 text-muted-foreground">
+                Still missing: {importResult.stillMissing.join(", ")}
+              </p>
+            ) : (
+              <p className="mt-2 text-muted-foreground">All fields completed.</p>
+            )}
+          </div>
         )}
       </div>
 
@@ -2412,47 +2725,6 @@ export default function CompanyData() {
                   "core_value_proposition",
                   "Core Value Proposition"
                 )
-              }
-            >
-              Delete
-            </Button>
-            <PanelModalActions
-              onCopy={() => handleCopyPanel(openPanel)}
-              onClose={() => setOpenPanel(null)}
-              onSave={saveAndClosePanel}
-              saving={saving}
-            />
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Scope / Boundaries */}
-      <Dialog
-        open={openPanel === "scope_boundaries"}
-        onOpenChange={(open) => setOpenPanel(open ? "scope_boundaries" : null)}
-      >
-        <DialogContent className={PANEL_DIALOG_CLASS}>
-          <DialogHeader className="shrink-0 space-y-1 border-b border-border px-6 py-4 pr-12 text-left">
-            <DialogTitle>Scope / Boundaries</DialogTitle>
-            <DialogDescription>
-              What is in scope — and what this company explicitly does not do.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
-            <Textarea
-              id="scope_boundaries"
-              value={fields.scope_boundaries}
-              onChange={(e) => updateField("scope_boundaries", e.target.value)}
-              placeholder="In scope vs. out of scope. Name adjacent work you turn down."
-              className="min-h-full h-full"
-            />
-          </div>
-          <DialogFooter className="shrink-0 gap-2 border-t border-border px-6 py-4 sm:justify-between">
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() =>
-                confirmClearPanel("scope_boundaries", "Scope / Boundaries")
               }
             >
               Delete

@@ -1,7 +1,18 @@
 import React, { useEffect, useState } from "react";
-import { Link, useLocation, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
 import { supabase } from "@/lib/supabase";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Database,
   BarChart3,
@@ -24,6 +35,8 @@ import {
   Construction,
   ChevronUp,
   Moon,
+  Loader2,
+  Trash2,
 } from "lucide-react";
 
 function NavItem({ item }) {
@@ -56,6 +69,25 @@ function SectionHeader({ label }) {
 
 const LAST_COMPANY_ID_KEY = "lastCompanyId";
 
+function namesMatch(left, right) {
+  return String(left || "").trim().toLowerCase() === String(right || "").trim().toLowerCase();
+}
+
+function clearCompanyLocalState(companyId) {
+  try {
+    sessionStorage.removeItem(LAST_COMPANY_ID_KEY);
+  } catch {
+    // ignore
+  }
+  if (!companyId) return;
+  try {
+    localStorage.removeItem(`tnv-ai-image-prompts:${companyId}`);
+    localStorage.removeItem(`cluster-image-spec:${companyId}`);
+  } catch {
+    // ignore
+  }
+}
+
 function readLastCompanyId() {
   try {
     return sessionStorage.getItem(LAST_COMPANY_ID_KEY) || "";
@@ -67,8 +99,13 @@ function readLastCompanyId() {
 export default function AppSidebar({ user }) {
   const { logout } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const { companyId: routeCompanyId } = useParams();
   const [companyName, setCompanyName] = useState("");
+  const [dangerOpen, setDangerOpen] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   useEffect(() => {
     if (routeCompanyId) {
@@ -158,6 +195,42 @@ export default function AppSidebar({ user }) {
 
   const handleLogout = () => {
     logout("/login");
+  };
+
+  const canConfirmDelete = namesMatch(confirmText, companyName) && Boolean(companyName.trim());
+
+  const handleDangerOpenChange = (open) => {
+    if (deleting) return;
+    setDangerOpen(open);
+    if (!open) {
+      setConfirmText("");
+      setDeleteError("");
+    }
+  };
+
+  const handleDeleteCompany = async () => {
+    if (!activeCompanyId || !canConfirmDelete || deleting) return;
+
+    setDeleting(true);
+    setDeleteError("");
+
+    const { error } = await supabase
+      .from("companies")
+      .delete()
+      .eq("id", activeCompanyId);
+
+    if (error) {
+      console.error("Failed to delete company:", error);
+      setDeleteError(error.message || "Failed to delete company");
+      setDeleting(false);
+      return;
+    }
+
+    clearCompanyLocalState(activeCompanyId);
+    setDeleting(false);
+    setDangerOpen(false);
+    setConfirmText("");
+    navigate("/");
   };
 
   return (
@@ -332,6 +405,23 @@ export default function AppSidebar({ user }) {
         </div>
       )}
 
+      {activeCompanyId && (
+        <div className="border-t border-border px-2.5 py-2">
+          <p className="px-2.5 pb-1.5 text-[9px] font-semibold uppercase tracking-widest text-destructive/70">
+            Danger Zone
+          </p>
+          <button
+            type="button"
+            onClick={() => handleDangerOpenChange(true)}
+            disabled={!companyName.trim()}
+            className="w-full flex items-center gap-2 rounded-md border border-destructive/30 px-2.5 py-1.5 text-left text-xs text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
+          >
+            <Trash2 className="w-3.5 h-3.5 shrink-0" />
+            <span className="leading-tight">Remove company</span>
+          </button>
+        </div>
+      )}
+
       {/* Footer */}
       <div className="border-t border-border px-3 py-2.5">
         <p className="text-xs text-foreground truncate">{user?.full_name || "User"}</p>
@@ -343,6 +433,60 @@ export default function AppSidebar({ user }) {
           Log Out
         </button>
       </div>
+
+      <Dialog open={dangerOpen} onOpenChange={handleDangerOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove this company?</DialogTitle>
+            <DialogDescription>
+              This permanently deletes {companyName || "this company"} and all of
+              its data. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="confirm-company-delete">
+              Type <span className="font-medium text-foreground">{companyName}</span>{" "}
+              to confirm
+            </Label>
+            <Input
+              id="confirm-company-delete"
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              placeholder={companyName}
+              autoComplete="off"
+              disabled={deleting}
+            />
+          </div>
+          {deleteError && (
+            <p className="text-sm text-destructive">{deleteError}</p>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => handleDangerOpenChange(false)}
+              disabled={deleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDeleteCompany}
+              disabled={!canConfirmDelete || deleting}
+            >
+              {deleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Removing…
+                </>
+              ) : (
+                "Remove company"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </aside>
   );
 }
