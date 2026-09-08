@@ -273,6 +273,61 @@ export const PREDEFINED_ITEMS = {
       linkLabel: "Open Company Data →",
     },
     {
+      item_key: "set-publish-destination",
+      title: "Set Publish Destination in Company Data",
+      description:
+        "In TNV → Company Data → Publish Destination, fill three fields. GitHub owner = your GitHub username or org. GitHub repo = the destination site repo name (e.g. perfect-ai-websites). GitHub token key = a SHORT UPPERCASE LABEL only (e.g. PERFECTAI) — NOT the token itself. This label maps to an environment variable named GITHUB_TOKEN_<LABEL> that you set in the next step. Save.",
+      prompts: [],
+      linkTo: "/company/:companyId/company-data",
+      linkLabel: "Open Company Data →",
+    },
+    {
+      item_key: "create-publish-pat",
+      title: "Create the GitHub publish token",
+      description:
+        "Create a fine-grained personal access token. On GitHub: avatar (top-right) → Settings → Developer settings (bottom of left sidebar) → Personal access tokens → Fine-grained tokens → Generate new token. Set: Token name (e.g. perfect-ai-websites-publish); Expiration = longest allowed (RECORD the expiry date — when it lapses, publish 401s silently); Resource owner = your personal account; Repository access = Only select repositories → pick the one destination repo; Permissions → Repository permissions → Contents = Read and write, Pull requests = Read and write, everything else No access. Generate, then COPY the github_pat_ value immediately — GitHub shows it only once.",
+      prompts: [],
+    },
+    {
+      item_key: "add-publish-pat-to-tnv-env",
+      title: "Add the token to TNV's environment",
+      description:
+        "In TNV's Vercel project → Settings → Environment Variables, add a variable named GITHUB_TOKEN_<LABEL> — the same uppercase label you put in Company Data's token key field (e.g. GITHUB_TOKEN_PERFECTAI) — with the github_pat_ value as its content. Redeploy TNV so it loads. The token goes ONLY here, never in Company Data and never committed.",
+      prompts: [],
+    },
+    {
+      item_key: "confirm-default-author-on-site",
+      title: "Confirm the default author exists on the site",
+      description:
+        "Publishing stamps every article with author id 'dori-fussmann' (the current universal default). The Astro template FAILS the build if that author id does not exist in the site's team/author data. Confirm the destination site has a team member resolving to 'dori-fussmann' before publishing. If it doesn't, add it (via the site's team data) and rebuild.",
+      prompts: [],
+    },
+    {
+      item_key: "plan-topics-in-topic-generator",
+      title: "Plan topics in Topic Generator",
+      description:
+        "In TNV → Topic Generator, the pillar and supporting keywords from Company Data are already present. Click Plan for each keyword you want to seed. When the cluster is planned, download the cluster markdown (.md) — this is the input for Article Generation.",
+      prompts: [],
+      linkTo: "/company/:companyId/topic-generator",
+      linkLabel: "Open Topic Generator →",
+    },
+    {
+      item_key: "generate-and-publish-articles",
+      title: "Generate articles (with images) and publish",
+      description:
+        "In TNV → Article Generation, import/drag the cluster markdown. IMPORTANT: enable image generation before running — image generation is OFF by default and is per-article; use select-all or tick each article, because publish REQUIRES a hero image and silently skips any article without one. Generate the articles (one API call at a time). When generation completes, publish to the site — this commits each article to a publish/<timestamp> branch and merges to main, triggering a site rebuild.",
+      prompts: [],
+      linkTo: "/company/:companyId/article-generation",
+      linkLabel: "Open Article Generation →",
+    },
+    {
+      item_key: "verify-articles-live",
+      title: "Verify articles are live",
+      description:
+        "After the merge and rebuild, confirm: the articles appear on the live site, each has its hero image, the author resolves (no broken author link), and the articles are present in the sitemap and RSS. Check the publish result for any 'skipped' entries (missing hero or body) and re-run those if needed.",
+      prompts: [],
+    },
+    {
       item_key: "commit-and-push",
       title: "Commit and push",
       description: "Commit and push the changes.",
@@ -283,13 +338,6 @@ export const PREDEFINED_ITEMS = {
       title: "Review the live site",
       description:
         "Visit your live custom domain and do a quick visual review.",
-      prompts: [],
-    },
-    {
-      item_key: "add-pillar-keywords",
-      title: "Add pillar keywords to Company Data",
-      description:
-        "Choose 2 pillar keywords for your initial content seed and add them under Pillar Keywords in Company Data.",
       prompts: [],
     },
     {
