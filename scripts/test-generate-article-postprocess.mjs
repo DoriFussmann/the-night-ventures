@@ -7,6 +7,7 @@ import {
   isOrphanBlock,
   isHorizontalRuleBlock,
   isStructuralBlock,
+  countKeyTakeawayBullets,
 } from "../api/generate-article.js";
 import { stripNoVolumeTag } from "../lib/stripNoVolumeTag.js";
 
@@ -191,6 +192,18 @@ const innerBlocks = wtsMatch[1].split(/\n[ \t]*\n+/).filter(Boolean);
 assert.ok(
   innerBlocks.length <= 2,
   `WTS inner <= 2 blocks, got ${innerBlocks.length}:\n${wtsMatch[1]}`
+);
+
+assert.equal(countKeyTakeawayBullets(""), 0);
+assert.equal(
+  countKeyTakeawayBullets("## Key Takeaways\n- One\n- Two\n- Three\n"),
+  3
+);
+assert.equal(
+  countKeyTakeawayBullets(
+    "## Where Things Stand\n<!-- WHERE-THINGS-STAND:START -->\nx\n<!-- WHERE-THINGS-STAND:END -->\n\n## Key Takeaways\n- A\n- B\n- C\n- D\n\n<!-- CMS-INTERNAL:START -->\n"
+  ),
+  4
 );
 
 console.log("All post-process checks passed.");

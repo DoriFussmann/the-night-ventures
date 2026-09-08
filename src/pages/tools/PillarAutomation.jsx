@@ -20,7 +20,6 @@ import {
   loadCompanyPublishDestination,
   publishArticlesToSite,
 } from "./articleGeneration/publishToSite";
-import WireInternalLinksPanel from "./articleGeneration/WireInternalLinksPanel";
 
 const STAGES = [
   { id: "pillar", label: "Pillar Selection" },
@@ -1121,13 +1120,6 @@ export default function PillarAutomation() {
                   </div>
                 )}
             </div>
-          )}
-          {viewingStage === "articles" && (
-            <WireInternalLinksPanel
-              companyId={companyId}
-              destination={publishDestination}
-              visible={Boolean(publishResult)}
-            />
           )}
           {phase === "generate_review" && (
             <ConfirmGate

@@ -276,7 +276,7 @@ export const PREDEFINED_ITEMS = {
       item_key: "set-publish-destination",
       title: "Set Publish Destination in Company Data",
       description:
-        "In TNV → Company Data → Publish Destination, fill three fields. GitHub owner = your GitHub username or org. GitHub repo = the destination site repo name (e.g. perfect-ai-websites). GitHub token key = a SHORT UPPERCASE LABEL only (e.g. PERFECTAI) — NOT the token itself. This label maps to an environment variable named GITHUB_TOKEN_<LABEL> that you set in the next step. Save.",
+        "In TNV → Company Data → Publish Destination, fill three fields. (1) GitHub owner = your GitHub username. (2) GitHub repo = the destination site repo name (e.g. perfect-ai-websites). (3) Token key = a SHORT UPPERCASE LABEL you invent, e.g. PERFECTAI. This is NOT the token — it is only a name. TNV will look for an environment variable named GITHUB_TOKEN_<label> (e.g. GITHUB_TOKEN_PERFECTAI). Do NOT paste the actual github_pat_... token into this field — that is the most common mistake and produces a 'GITHUB_TOKEN_github_pat_... is not set' error. Save.",
       prompts: [],
       linkTo: "/company/:companyId/company-data",
       linkLabel: "Open Company Data →",
@@ -285,21 +285,21 @@ export const PREDEFINED_ITEMS = {
       item_key: "create-publish-pat",
       title: "Create the GitHub publish token",
       description:
-        "Create a fine-grained personal access token. On GitHub: avatar (top-right) → Settings → Developer settings (bottom of left sidebar) → Personal access tokens → Fine-grained tokens → Generate new token. Set: Token name (e.g. perfect-ai-websites-publish); Expiration = longest allowed (RECORD the expiry date — when it lapses, publish 401s silently); Resource owner = your personal account; Repository access = Only select repositories → pick the one destination repo; Permissions → Repository permissions → Contents = Read and write, Pull requests = Read and write, everything else No access. Generate, then COPY the github_pat_ value immediately — GitHub shows it only once.",
+        "Create the token on GitHub: avatar (top-right) → Settings → Developer settings (bottom of left sidebar) → Personal access tokens → Fine-grained tokens → Generate new token. Set: name (e.g. perfect-ai-publish); expiration = longest allowed (record the date — publish silently 401s when it lapses); resource owner = your personal account; Repository access = Only select repositories → the single destination repo; Permissions → Repository permissions → Contents = Read and write, AND Pull requests = Read and write, everything else No access. Generate, then COPY the github_pat_ value immediately — GitHub shows it only once. Treat it as a secret: never paste it into a screenshot, chat, or the Company Data field.",
       prompts: [],
     },
     {
       item_key: "add-publish-pat-to-tnv-env",
       title: "Add the token to TNV's environment",
       description:
-        "In TNV's Vercel project → Settings → Environment Variables, add a variable named GITHUB_TOKEN_<LABEL> — the same uppercase label you put in Company Data's token key field (e.g. GITHUB_TOKEN_PERFECTAI) — with the github_pat_ value as its content. Redeploy TNV so it loads. The token goes ONLY here, never in Company Data and never committed.",
+        "Put the token where the publish function actually reads it. IMPORTANT: publishing must be done from the DEPLOYED/LIVE TNV (the Vercel URL), not from a local `npm run dev` — plain local dev does NOT run the /api publish function, so publish only works on the deployed site. The token therefore lives in TNV's Vercel environment, NOT in a local .env file. In TNV's Vercel project → Settings → Environment Variables, add a variable named GITHUB_TOKEN_<LABEL> (matching the Company Data label exactly, e.g. GITHUB_TOKEN_PERFECTAI) with the github_pat_ value as its content. Enable it for the Production environment. Then REDEPLOY TNV — Vercel only loads env vars at deploy time, so a newly added variable is invisible until you redeploy. After redeploy, run the pillar/cluster publish from the live TNV URL.",
       prompts: [],
     },
     {
       item_key: "confirm-default-author-on-site",
       title: "Confirm the default author exists on the site",
       description:
-        "Publishing stamps every article with author id 'dori-fussmann' (the current universal default). The Astro template FAILS the build if that author id does not exist in the site's team/author data. Confirm the destination site has a team member resolving to 'dori-fussmann' before publishing. If it doesn't, add it (via the site's team data) and rebuild.",
+        "Publishing stamps every article with author id 'dori-fussmann' (the current universal default). The Astro template FAILS the build if that author id doesn't exist in the site's team/author data. Confirm the destination site has a team member resolving to 'dori-fussmann' before publishing; if not, add it and rebuild.",
       prompts: [],
     },
     {

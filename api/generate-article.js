@@ -292,6 +292,16 @@ function countOccurrences(haystack, needle) {
   return count
 }
 
+function countKeyTakeawayBullets(body) {
+  const match = String(body || '').match(
+    /(?:^|\n)##\s+Key Takeaways\s*\n([\s\S]*?)(?=\n##\s+|\n<!--|$)/
+  )
+  if (!match) return 0
+  return match[1]
+    .split('\n')
+    .filter((line) => /^\s*[-*+]\s+\S/.test(line)).length
+}
+
 function looksLikeCapitalizedBrandPhrases(body) {
   // Soft heuristic only: 2+ consecutive Capitalized words in prose
   // (ignore markdown headings / HTML comments — Title Case is common there).
@@ -364,6 +374,20 @@ function validateGeneratedArticle(
     errors.push(
       `body must contain WHERE-THINGS-STAND:END marker exactly once (found ${endCount})`
     )
+  }
+
+  const takeawayHeadings = bodyText.match(/(?:^|\n)##\s+Key Takeaways\s*(?:\n|$)/g) || []
+  if (takeawayHeadings.length !== 1) {
+    errors.push(
+      `body must contain a "## Key Takeaways" heading exactly once (found ${takeawayHeadings.length}). Place it after Where Things Stand, with 3–5 concise bullet points.`
+    )
+  } else {
+    const bullets = countKeyTakeawayBullets(bodyText)
+    if (bullets < 3 || bullets > 5) {
+      errors.push(
+        `## Key Takeaways must contain 3–5 bullet points (found ${bullets}).`
+      )
+    }
   }
 
   if (faqs.length < 2 || faqs.length > 4) {
@@ -899,7 +923,7 @@ function buildCorrectiveMessage(validationErrors) {
     'Your previous response failed validation. Resend the full article using the delimiter format only (no markdown fences, no preamble), fixing exactly these issues:',
     ...validationErrors.map((err) => `- ${err}`),
     '',
-    'Keep the same article intent and Where Things Stand section requirements. Count title and description characters carefully before sending.',
+    'Keep the same article intent, Where Things Stand, and Key Takeaways section requirements. Count title and description characters carefully before sending.',
     'Output exactly:',
     `${FM_START}`,
     '{ ...frontmatter fields... }',
@@ -916,7 +940,7 @@ function buildParseRecoveryMessage() {
     `${FM_START}`,
     '{ "title": "...", "description": "...", "slug": "...", "date": "YYYY-MM-DD", "updatedDate": "YYYY-MM-DD", "category": "...", "tags": [], "imageAlt": "...", "keywords": [], "faqs": [{"question":"...","answer":"..."}], "draft": true, "author": null, "internalLinks": [], "externalLinks": [], "image": null, "image2": null, "image3": null, "whereThingsStandSources": [{"url":"...","note":"..."}], "competitorsMentioned": [] }',
     `${BODY_START}`,
-    '<full markdown body including Where Things Stand markers>',
+    '<full markdown body including Where Things Stand markers and ## Key Takeaways with 3–5 bullets>',
     `${BODY_END}`,
   ].join('\n')
 }
@@ -949,6 +973,7 @@ export {
   isHorizontalRuleBlock,
   isStructuralBlock,
   normalizeWhereThingsStandSources,
+  countKeyTakeawayBullets,
 }
 
 export default async function handler(req, res) {

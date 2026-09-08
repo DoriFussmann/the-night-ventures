@@ -8,7 +8,8 @@ function yamlEscape(value) {
     /^\s|\s$/.test(text) ||
     text.includes("\n") ||
     text.includes('"') ||
-    /^(true|false|null|yes|no|on|off)$/i.test(text)
+    /^(true|false|null|yes|no|on|off)$/i.test(text) ||
+    /^\d{4}-\d{2}-\d{2}/.test(text)
   ) {
     return `"${text.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n")}"`;
   }
@@ -37,8 +38,8 @@ export function serializeArticleMarkdown(frontmatter, body, options = {}) {
   lines.push(`title: ${yamlEscape(fm.title || "")}`);
   lines.push(`description: ${yamlEscape(fm.description || "")}`);
   lines.push(`slug: ${String(fm.slug || "").trim()}`);
-  lines.push(`date: ${String(fm.date || "").trim()}`);
-  lines.push(`updatedDate: ${String(fm.updatedDate || "").trim()}`);
+  lines.push(`date: ${yamlEscape(String(fm.date || "").trim())}`);
+  lines.push(`updatedDate: ${yamlEscape(String(fm.updatedDate || "").trim())}`);
   lines.push(author ? `author: ${yamlEscape(author)}` : `author: null`);
   lines.push(`category: ${yamlEscape(fm.category || "")}`);
   lines.push(`pillarKeyword: ${yamlEscape(stripNoVolumeTag(fm.pillarKeyword))}`);
