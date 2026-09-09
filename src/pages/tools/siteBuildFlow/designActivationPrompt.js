@@ -16,13 +16,13 @@ Schemas, CMS (localhost:3737 and its files), site.ts, url.ts, endpoints, JSON-LD
 
 2. GLOBALS
 - Remove every box-shadow, gradient, rounded-full pill, and uppercase/tracking-wide utility.
-- Headings: leading-tight tracking-tight, Ink, weight 400. H1 text-4xl, H2 text-3xl, H3 text-2xl. Eyebrows and labels 13px Muted, sentence case.
-- Body text Muted 13px leading-relaxed. Measure max-w-xl / max-w-2xl; never full-bleed grey paragraphs.
+- Headings: leading-tight tracking-tight, Ink, weight 400. H1 text-4xl, H2 text-3xl, H3 text-2xl. Eyebrows and labels 15px Muted, sentence case.
+- Body text Muted 15px leading-relaxed. Measure max-w-xl / max-w-2xl; never full-bleed grey paragraphs.
 - Links: Accent, no underline, hover darkens. Focus ring: 1px Accent border, no glow.
 - Sections py-20 on inner pages, py-24 on the homepage. Alternate white → Wash (#fafafa, border-y Border) → white.
 
 3. PRIMITIVES (one definition each, reused everywhere)
-- Button: ghost only. rounded-lg border Border px-3 py-2 text-[13px] Muted, hover bg Wash text Ink, transition-colors duration-200. Delete any filled/primary variant. On Band surfaces use border-white/30 text-white/70.
+- Button: ghost only. rounded-lg border Border px-3 py-2 text-[15px] Muted, hover bg Wash text Ink, transition-colors duration-200. Delete any filled/primary variant. On Band surfaces use border-white/30 text-white/70.
 - Card: rounded-xl border Border bg-white p-6 h-full, hover bg Wash transition-colors duration-300. Only article cards get hover:-translate-y-1 transition-all duration-300.
 - Input / select (article search + pillar filter): same geometry as Button, placeholder Faint, focus border Accent, no ring.
 - Hairline: 1px Border. Use it instead of any heavier rule.
@@ -36,17 +36,17 @@ Schemas, CMS (localhost:3737 and its files), site.ts, url.ts, endpoints, JSON-LD
 - @media (prefers-reduced-motion: reduce): all transitions and transforms off, .reveal visible.
 
 5. LAYOUT WALK — apply the above to each; note what you changed
-- Header: sticky h-16 bg-white/80 backdrop-blur-xl border-b Border. Wordmark 15px tracking-tight, two-part: wordmark_primary in Ink, wordmark_accent in Accent (from the guide's token block). Nav links 13px Muted → Ink; active = Ink + 1px Accent underline growing from the left (w-0 → w-full, duration-300). Hamburger unchanged in behaviour, restyled.
-- Footer: border-t Border, py-12, wordmark + one Muted sentence max-w-xs, links Muted, legal row Faint 13px under a hairline.
-- Breadcrumbs, Back to Top: 13px Muted, Accent on hover, ghost geometry.
-- Homepage hero: Band background, white text, relative overflow-hidden, the 48px grid backdrop at opacity 0.07 plus the two radial gradients from the guide. Eyebrow 13px white/50, H1 text-4xl md:text-5xl white max-w-3xl, tagline 15px white/70 max-w-xl. This is the only Band surface and the only place the grid texture appears. Keep existing copy.
+- Header: sticky h-16 bg-white/80 backdrop-blur-xl border-b Border. Wordmark 17px tracking-tight, two-part: wordmark_primary in Ink, wordmark_accent in Accent (from the guide's token block). Nav links 15px Muted → Ink; active = Ink + 1px Accent underline growing from the left (w-0 → w-full, duration-300). Hamburger unchanged in behaviour, restyled.
+- Footer: border-t Border, py-12, wordmark + one Muted sentence max-w-xs, links Muted, legal row Faint 15px under a hairline.
+- Breadcrumbs, Back to Top: 15px Muted, Accent on hover, ghost geometry.
+- Homepage hero: Band background, white text, relative overflow-hidden, the 48px grid backdrop at opacity 0.07 plus the two radial gradients from the guide. Eyebrow 15px white/50, H1 text-4xl md:text-5xl white max-w-3xl, tagline 17px leading-relaxed white/70 max-w-xl. This is the only Band surface and the only place the grid texture appears. Keep existing copy.
 - Homepage article / service / team sections: Card primitive, md:grid-cols-3, gap-4, reveal with stagger. Team teaser photos: square, rounded-lg, warm matte look via a CSS filter (saturate(.85) contrast(.95) sepia(.08)), no circles.
-- Homepage FAQ and article FAQ (<details>): hairline-separated rows, summary 15px Ink, body 13px Muted, chevron is a 16px Lucide-style inline SVG stroke 1.5, no background.
-- Article listing: Card primitive; title 15px Ink, excerpt 13px Muted, meta 13px Faint. Filters use Input primitive. Pagination: ghost buttons, active = Ink text + Accent underline.
-- Article page (keep block order): 16:9 hero rounded-xl border Border with matte filter; title text-4xl; byline 13px Faint; TOC as 13px Muted list with Accent active item and a hairline left rule; related links and sources as Card primitive lists; author bio as a single wide Card.
-- .prose-article EXCEPTION: body 15px leading-relaxed Charcoal (#2d2d2d) max-w-2xl; H2 text-2xl, H3 15px Ink; links Accent; lists with 4px Faint dots mt-[7px]; blockquote = hairline left rule in Accent, no background. Captions 13px Muted. Code 13px mono Wash background, border Border.
-- Team listing / detail: Card primitive; credentials and sameAs as 13px Muted lines with Positive "+" prefix, not checkmarks. Articles-by-author = article card grid.
-- Service detail: eyebrow 13 Muted → H1 text-4xl → lede 15 Muted max-w-xl, all in one reveal; body in .prose-article; closing ghost button back to home.
+- Homepage FAQ and article FAQ (<details>): hairline-separated rows, summary 17px Ink, body 15px leading-relaxed Muted, chevron is a 16px Lucide-style inline SVG stroke 1.5, no background.
+- Article listing: Card primitive; title 17px Ink, excerpt 15px leading-relaxed Muted, meta 15px Faint. Filters use Input primitive. Pagination: ghost buttons, active = Ink text + Accent underline.
+- Article page (keep block order): 16:9 hero rounded-xl border Border with matte filter; title text-4xl; byline 15px Faint; TOC as 15px Muted list with Accent active item and a hairline left rule; related links and sources as Card primitive lists; author bio as a single wide Card.
+- .prose-article EXCEPTION: body 17px leading-relaxed Charcoal (#2d2d2d) max-w-2xl; H2 text-2xl, H3 17px Ink; links Accent; lists with 4px Faint dots mt-[7px]; blockquote = hairline left rule in Accent, no background. Captions 15px leading-relaxed Muted. Code 15px mono Wash background, border Border.
+- Team listing / detail: Card primitive; credentials and sameAs as 15px Muted lines with Positive "+" prefix, not checkmarks. Articles-by-author = article card grid.
+- Service detail: eyebrow 15 Muted → H1 text-4xl → lede 17 Muted leading-relaxed max-w-xl, all in one reveal; body in .prose-article; closing ghost button back to home.
 - 404: single reveal, H1 text-4xl, one Muted sentence, one ghost button.
 
 6. FORBIDDEN — grep and remove
