@@ -43,6 +43,11 @@ import {
   trimTeamMembersForSave,
 } from "./templateToPrompt/customFieldKeys";
 import SocialShopsPanel from "./SocialShopsPanel";
+import ConnectionsPanel, {
+  ANALYTICS_TOOLS_FIELD,
+  connectionsHaveContent,
+  formatConnectionsMarkdown,
+} from "./ConnectionsPanel";
 import {
   formatBrandTokensMarkdown,
   parseCompanyMarkdown,
@@ -364,6 +369,7 @@ export default function CompanyData() {
   const [openPanel, setOpenPanel] = useState(null);
   const [openPillars, setOpenPillars] = useState({});
   const [socialShopsFilled, setSocialShopsFilled] = useState(false);
+  const [connectionsFilled, setConnectionsFilled] = useState(false);
   const [designGuideOpen, setDesignGuideOpen] = useState(false);
   const [designGuideDraftRaw, setDesignGuideDraftRaw] = useState("");
   const [designGuideDraftAbstract, setDesignGuideDraftAbstract] = useState("");
@@ -467,6 +473,7 @@ export default function CompanyData() {
       setProfileId(null);
       setFields(EMPTY_PROFILE);
       setCustomValues({});
+      setConnectionsFilled(false);
     } else if (profileResult.data) {
       const profile = profileResult.data;
       setProfileId(profile.id);
@@ -506,10 +513,18 @@ export default function CompanyData() {
           ? { ...profile.custom_fields }
           : {}
       );
+      setConnectionsFilled(
+        connectionsHaveContent(
+          profile.custom_fields && typeof profile.custom_fields === "object"
+            ? profile.custom_fields[ANALYTICS_TOOLS_FIELD]
+            : null
+        )
+      );
     } else {
       setProfileId(null);
       setFields(EMPTY_PROFILE);
       setCustomValues({});
+      setConnectionsFilled(false);
     }
 
     if (socialAccountsResult.error) {
@@ -527,8 +542,9 @@ export default function CompanyData() {
   }, [loadData]);
 
   useEffect(() => {
-    if (searchParams.get("panel") === "social-shops") {
-      setOpenPanel("social-shops");
+    const panel = searchParams.get("panel");
+    if (panel === "social-shops" || panel === "connections") {
+      setOpenPanel(panel);
       const next = new URLSearchParams(searchParams);
       next.delete("panel");
       setSearchParams(next, { replace: true });
@@ -919,6 +935,10 @@ export default function CompanyData() {
         accountsResult.data || [],
         notesResult.data || []
       );
+    }
+
+    if (panelId === "connections") {
+      return formatConnectionsMarkdown(customValues[ANALYTICS_TOOLS_FIELD]);
     }
 
     if (panelId === "publish-destination") {
@@ -1396,6 +1416,10 @@ export default function CompanyData() {
       );
     }
 
+    const connectionsLines = formatConnectionsMarkdown(
+      customValues[ANALYTICS_TOOLS_FIELD]
+    );
+
     const teamLines = trimTeamMembersForSave(fields.team_members)
       .map((member) => {
         const meta = [member.role, member.credentials].filter(Boolean).join(" · ");
@@ -1421,6 +1445,7 @@ export default function CompanyData() {
       ["Pillar Keywords", pillarLines],
       ["Competitors", competitorLines],
       ["Social & Shops", socialShopsLines],
+      ["Connections", connectionsLines],
       ["Products & Services", serviceLines],
       ["Team Members", teamLines],
       ["Contact Email", fields.contact_email],
@@ -1458,6 +1483,7 @@ export default function CompanyData() {
       "Pillar Keywords",
       "Competitors",
       "Social & Shops",
+      "Connections",
       "Products & Services",
       "Team Members",
       "Social Links",
@@ -1742,7 +1768,7 @@ export default function CompanyData() {
           />
         </div>
 
-        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-5">
           <PanelTrigger
             title={`Pillar Keywords (${pillarTotal})`}
             filled={pillars.some(
@@ -1762,6 +1788,11 @@ export default function CompanyData() {
             title="Social & Shops"
             filled={socialShopsFilled}
             onClick={() => setOpenPanel("social-shops")}
+          />
+          <PanelTrigger
+            title="Connections"
+            filled={connectionsFilled}
+            onClick={() => setOpenPanel("connections")}
           />
           <PanelTrigger
             title="Publish Destination"
@@ -2436,6 +2467,43 @@ export default function CompanyData() {
           <DialogFooter className="shrink-0 gap-2 border-t border-border px-6 py-4 sm:justify-end">
             <PanelModalActions
               onCopy={() => handleCopyPanel("social-shops")}
+              onClose={() => setOpenPanel(null)}
+              showSave={false}
+            />
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Connections */}
+      <Dialog
+        open={openPanel === "connections"}
+        onOpenChange={(open) => setOpenPanel(open ? "connections" : null)}
+      >
+        <DialogContent className={PANEL_DIALOG_CLASS}>
+          <DialogHeader className="shrink-0 space-y-1 border-b border-border px-6 py-4 pr-12 text-left">
+            <DialogTitle>Connections</DialogTitle>
+            <DialogDescription>
+              Analytics, SEO, and tracking tools, credentials, and notes.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+            {openPanel === "connections" && companyId ? (
+              <ConnectionsPanel
+                companyId={companyId}
+                onConnectionsChange={(tools, { persistIntoProfile = true } = {}) => {
+                  setConnectionsFilled(connectionsHaveContent(tools));
+                  if (!persistIntoProfile) return;
+                  setCustomValues((prev) => ({
+                    ...prev,
+                    [ANALYTICS_TOOLS_FIELD]: tools,
+                  }));
+                }}
+              />
+            ) : null}
+          </div>
+          <DialogFooter className="shrink-0 gap-2 border-t border-border px-6 py-4 sm:justify-end">
+            <PanelModalActions
+              onCopy={() => handleCopyPanel("connections")}
               onClose={() => setOpenPanel(null)}
               showSave={false}
             />

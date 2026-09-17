@@ -1,7 +1,7 @@
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { BrowserRouter as Router, Route, Routes, Navigate, useParams } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider } from '@/lib/AuthContext';
 import ScrollToTop from './components/ScrollToTop';
@@ -14,15 +14,12 @@ import AppShell from '@/components/AppShell';
 import Companies from '@/pages/Companies';
 import CompanyData from '@/pages/tools/CompanyData';
 import SocialMediaTracker from '@/pages/tools/SocialMediaTracker';
-import Analytics from '@/pages/tools/Analytics';
-import Tasks from '@/pages/tools/Tasks';
 import DesignGuideBuilder from '@/pages/tools/DesignGuideBuilder';
 import TemplateToPrompt from '@/pages/tools/TemplateToPrompt';
 import SiteContentBuild from '@/pages/tools/SiteContentBuild';
 import ArticleTopicSuggestion from '@/pages/tools/ArticleTopicSuggestion';
 import ArticleGeneration from '@/pages/tools/ArticleGeneration';
 import Articles from '@/pages/tools/Articles';
-import ArticlesUpdate from '@/pages/tools/ArticlesUpdate';
 import ArticlesAutomation from '@/pages/tools/ArticlesAutomation';
 import PillarAutomation from '@/pages/tools/PillarAutomation';
 import Nightwatch from '@/pages/tools/Nightwatch';
@@ -32,11 +29,6 @@ import SiteBuildFlow from '@/pages/tools/SiteBuildFlow';
 import SiteBuildPrompt from '@/pages/general/SiteBuildPrompt';
 import SeoAiAdvisor from '@/pages/tools/SeoAiAdvisor';
 import ExternalAuditSnapshot from '@/pages/tools/ExternalAuditSnapshot';
-
-function RedirectToCompanyTasks() {
-  const { companyId } = useParams();
-  return <Navigate to={`/company/${companyId}/tasks`} replace />;
-}
 
 const AuthenticatedApp = () => {
   // Keep public auth routes mounted while session/profile settles.
@@ -54,10 +46,6 @@ const AuthenticatedApp = () => {
           <Route path="/company/:companyId/initial-site-build-prompt" element={<SiteBuildPrompt />} />
           <Route path="/company/:companyId/company-data" element={<CompanyData />} />
           <Route path="/company/:companyId/social-media-tracker" element={<SocialMediaTracker />} />
-          <Route path="/company/:companyId/analytics" element={<Analytics />} />
-          <Route path="/company/:companyId/tasks" element={<Tasks />} />
-          <Route path="/company/:companyId/website-build-tracker" element={<RedirectToCompanyTasks />} />
-          <Route path="/company/:companyId/business-dev-tracker" element={<RedirectToCompanyTasks />} />
           <Route path="/company/:companyId/design-guide-builder" element={<DesignGuideBuilder />} />
           <Route path="/company/:companyId/template-to-prompt" element={<TemplateToPrompt />} />
           <Route path="/company/:companyId/site-content-build" element={<SiteContentBuild />} />
@@ -66,7 +54,6 @@ const AuthenticatedApp = () => {
           <Route path="/company/:companyId/external-audit-snapshot" element={<ExternalAuditSnapshot />} />
           <Route path="/company/:companyId/article-generation" element={<ArticleGeneration />} />
           <Route path="/company/:companyId/articles" element={<Articles />} />
-          <Route path="/company/:companyId/articles-update" element={<ArticlesUpdate />} />
           <Route path="/company/:companyId/articles-automation" element={<ArticlesAutomation />} />
           <Route path="/company/:companyId/pillar-automation" element={<PillarAutomation />} />
           <Route path="/company/:companyId/nightwatch" element={<Nightwatch />} />

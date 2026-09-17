@@ -15,8 +15,6 @@ import {
 } from "@/components/ui/dialog";
 import {
   Database,
-  BarChart3,
-  ListTodo,
   FileText,
   Palette,
   Wand2,
@@ -24,7 +22,6 @@ import {
   Lightbulb,
   PenLine,
   BookOpen,
-  RefreshCw,
   Image,
   Sparkles,
   MessageSquareText,
@@ -129,8 +126,6 @@ export default function AppSidebar({ user }) {
 
   const companyNav = [
     { label: "Company Data", path: `/company/${activeCompanyId}/company-data`, icon: Database },
-    { label: "Analytics", path: `/company/${activeCompanyId}/analytics`, icon: BarChart3 },
-    { label: "Tasks", path: `/company/${activeCompanyId}/tasks`, icon: ListTodo },
   ];
 
   const seoNav = [
@@ -146,7 +141,6 @@ export default function AppSidebar({ user }) {
     { label: "Pillar Automation", path: `/company/${activeCompanyId}/pillar-automation`, icon: Layers },
     { label: "Articles Automation", path: `/company/${activeCompanyId}/articles-automation`, icon: Workflow },
     { label: "Articles", path: `/company/${activeCompanyId}/articles`, icon: BookOpen },
-    { label: "Articles Update", path: `/company/${activeCompanyId}/articles-update`, icon: RefreshCw },
   ];
   const isManualToolActive = manualTools.some((item) => location.pathname === item.path);
 

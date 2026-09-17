@@ -5,9 +5,7 @@ import { Download, ExternalLink, Loader2, Radar, Search, Trash2, Upload } from "
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { scanLiveArticles } from "./articles/scanLiveApi";
-import CheckLinksPanel from "./articles/CheckLinksPanel";
-import CleanupPanel from "./articles/CleanupPanel";
-import RewritePanel from "./articles/RewritePanel";
+import FaceliftPanel from "./articles/FaceliftPanel";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -166,6 +164,47 @@ function DaysSinceUpdateBadge({ dateValue }) {
   );
 }
 
+function LinkHealthCell({ kind, row, health }) {
+  const entry = health?.[row.slug];
+  const raw = kind === "internal" ? row.internalLinks : row.externalLinks;
+  if (!entry?.audited) {
+    return (
+      <span className="tabular-nums text-muted-foreground">
+        {raw == null ? "—" : raw}
+      </span>
+    );
+  }
+  if (kind === "internal") {
+    if (entry.internalOk) {
+      return (
+        <span className="tabular-nums font-medium text-emerald-700">
+          {raw == null ? "ok" : raw}
+        </span>
+      );
+    }
+    return (
+      <span className="tabular-nums font-medium text-red-700">
+        {entry.internalMissing} missing
+      </span>
+    );
+  }
+  const needed = entry.externalNeeded || 3;
+  const current = entry.externalCurrent;
+  if (entry.externalOk) {
+    return (
+      <span className="tabular-nums font-medium text-emerald-700">
+        {current == null ? (raw == null ? "ok" : `${raw}/${needed}`) : `${current}/${needed}`}
+      </span>
+    );
+  }
+  const shown = current == null ? raw ?? 0 : current;
+  return (
+    <span className="tabular-nums font-medium text-red-700">
+      {shown}/{needed}
+    </span>
+  );
+}
+
 function bodyForReader(body) {
   return String(body || "")
     .replace(/<!--\s*WHERE-THINGS-STAND:START\s*-->\s*/gi, "")
@@ -295,6 +334,8 @@ export default function Articles() {
   const [scanLoading, setScanLoading] = useState(false);
   const [scanError, setScanError] = useState("");
   const [scanResult, setScanResult] = useState(null);
+  const [linkHealth, setLinkHealth] = useState(null);
+  const [faceliftLiveRows, setFaceliftLiveRows] = useState([]);
   const [liveSearchInput, setLiveSearchInput] = useState("");
   const [liveDebouncedSearch, setLiveDebouncedSearch] = useState("");
   const [livePillarFilter, setLivePillarFilter] = useState("all");
@@ -317,6 +358,8 @@ export default function Articles() {
   useEffect(() => {
     setScanResult(null);
     setScanError("");
+    setLinkHealth(null);
+    setFaceliftLiveRows([]);
     setLiveSearchInput("");
     setLiveDebouncedSearch("");
     setLivePillarFilter("all");
@@ -576,7 +619,8 @@ export default function Articles() {
 
   const liveArticles = Array.isArray(scanResult?.articles)
     ? scanResult.articles
-    : [];
+    : faceliftLiveRows;
+  const showLiveSection = Boolean(scanResult) || faceliftLiveRows.length > 0;
 
   const livePillarOptions = useMemo(
     () => uniqueSorted(liveArticles.map((row) => row.pillarKeyword)),
@@ -661,22 +705,16 @@ export default function Articles() {
         </p>
       )}
 
-      <CheckLinksPanel
+      <FaceliftPanel
         companyId={companyId}
         destination={publishDestination}
+        onHealthChange={({ liveRows, linkHealth: nextHealth }) => {
+          if (Array.isArray(liveRows)) setFaceliftLiveRows(liveRows);
+          if (nextHealth) setLinkHealth(nextHealth);
+        }}
       />
 
-      <CleanupPanel
-        companyId={companyId}
-        destination={publishDestination}
-      />
-
-      <RewritePanel
-        companyId={companyId}
-        destination={publishDestination}
-      />
-
-      {scanResult && (
+      {showLiveSection && (
         <section className="space-y-3">
           <div>
             <h2 className="text-sm font-medium text-foreground">Live on site</h2>
@@ -686,19 +724,25 @@ export default function Articles() {
                 : `${liveArticles.length} ${
                     liveArticles.length === 1 ? "article" : "articles"
                   }`}{" "}
-              from{" "}
-              <a
-                href={scanResult.articlesIndexUrl || scanResult.siteUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="underline underline-offset-2 hover:text-foreground"
-              >
-                {displayLiveUrl(scanResult.siteUrl)}
-              </a>
-              {scanResult.scannedAt
-                ? ` · scanned ${formatScannedAt(scanResult.scannedAt)}`
-                : ""}
-              . Read-only — this does not save into the library below.
+              {scanResult ? (
+                <>
+                  from{" "}
+                  <a
+                    href={scanResult.articlesIndexUrl || scanResult.siteUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline underline-offset-2 hover:text-foreground"
+                  >
+                    {displayLiveUrl(scanResult.siteUrl)}
+                  </a>
+                  {scanResult.scannedAt
+                    ? ` · scanned ${formatScannedAt(scanResult.scannedAt)}`
+                    : ""}
+                  . Read-only — this does not save into the library below.
+                </>
+              ) : (
+                <>from the destination repo (Facelift scan).</>
+              )}
             </p>
           </div>
 
@@ -777,10 +821,8 @@ export default function Articles() {
                   <tr className="border-b border-border bg-muted/30 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
                     <th className="px-3 py-2 font-medium">Title</th>
                     <th className="px-3 py-2 font-medium">Keyword</th>
-                    <th className="px-3 py-2 font-medium whitespace-nowrap">
-                      Keyword type
-                    </th>
                     <th className="px-3 py-2 font-medium">Type</th>
+                    <th className="px-3 py-2 font-medium">Status</th>
                     <th className="px-3 py-2 font-medium whitespace-nowrap">
                       Last Date
                     </th>
@@ -804,17 +846,33 @@ export default function Articles() {
                           </p>
                         ) : null}
                       </td>
-                      <td className="px-3 py-2.5 text-muted-foreground">
-                        {row.keyword || "—"}
-                      </td>
                       <td className="px-3 py-2.5">
-                        <KeywordTypeBadge role={row.keywordRole} />
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-muted-foreground">
+                            {row.keyword || "—"}
+                          </span>
+                          {row.keywordRole ? (
+                            <KeywordTypeBadge role={row.keywordRole} />
+                          ) : null}
+                        </div>
                       </td>
                       <td className="px-3 py-2.5">
                         <TypeBadge type={row.articleType} />
                       </td>
-                      <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">
-                        {row.lastDate || "—"}
+                      <td className="px-3 py-2.5">
+                        <StatusBadge
+                          status={
+                            row.status || (row.draft ? "drafted" : "published")
+                          }
+                        />
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <span className="tabular-nums text-muted-foreground">
+                            {row.lastDate || "—"}
+                          </span>
+                          <DaysSinceUpdateBadge dateValue={row.lastDate} />
+                        </div>
                       </td>
                       <td className="px-3 py-2.5 text-center">
                         {row.url ? (
@@ -832,11 +890,19 @@ export default function Articles() {
                           <span className="text-muted-foreground">—</span>
                         )}
                       </td>
-                      <td className="px-3 py-2.5 tabular-nums text-right text-foreground">
-                        {row.internalLinks == null ? "—" : row.internalLinks}
+                      <td className="px-3 py-2.5 text-right">
+                        <LinkHealthCell
+                          kind="internal"
+                          row={row}
+                          health={linkHealth}
+                        />
                       </td>
-                      <td className="px-3 py-2.5 tabular-nums text-right text-foreground">
-                        {row.externalLinks == null ? "—" : row.externalLinks}
+                      <td className="px-3 py-2.5 text-right">
+                        <LinkHealthCell
+                          kind="external"
+                          row={row}
+                          health={linkHealth}
+                        />
                       </td>
                     </tr>
                   ))}

@@ -71,13 +71,14 @@ export async function cleanupAudit(destination, opts = {}) {
   });
 }
 
-export async function cleanupCommit(destination, slugs, forceSlugs = []) {
+export async function cleanupCommit(destination, slugs, forceSlugs = [], opts = {}) {
   const token = await sessionToken();
   return postArticleUpdates(token, {
     ...destBody(destination),
     step: "cleanup-commit",
     slugs,
     forceSlugs,
+    ...opts,
   });
 }
 
@@ -99,11 +100,12 @@ export async function rewritePropose(destination, items) {
   });
 }
 
-export async function rewriteCommit(destination, approved) {
+export async function rewriteCommit(destination, approved, opts = {}) {
   const token = await sessionToken();
   return postArticleUpdates(token, {
     ...destBody(destination),
     step: "rewrite-commit",
     approved,
+    ...opts,
   });
 }
