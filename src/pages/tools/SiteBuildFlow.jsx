@@ -383,7 +383,7 @@ export default function SiteBuildFlow() {
             }
             const seedPrompts = entry.prompts || [];
             const existingPrompts = existing.prompts || [];
-            if (seedPrompts.length > 0 && existingPrompts.length === 0) {
+            if (JSON.stringify(seedPrompts) !== JSON.stringify(existingPrompts)) {
               promptUpdates.push({ id: existing.id, prompts: seedPrompts });
             }
           }

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Download, Loader2, Play, Upload, Workflow, X } from "lucide-react";
+import { Check, Download, Loader2, Upload, X } from "lucide-react";
 import { useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -22,10 +22,7 @@ import {
   publishArticlesToSite,
 } from "./articleGeneration/publishToSite";
 import WireInternalLinksPanel from "./articleGeneration/WireInternalLinksPanel";
-import {
-  listEligibleClusters,
-  pickUnplannedCluster,
-} from "./articlesAutomation/selectCluster";
+import { buildClusterTree } from "./articlesAutomation/selectCluster";
 
 const STAGES = [
   { id: "cluster", label: "Cluster Selection" },
@@ -110,7 +107,68 @@ function stageStatus(stageId, currentStage, phase) {
   return "pending";
 }
 
-export default function ArticlesAutomation() {
+function ClusterTile({ cluster, selected, busy, onGenerate }) {
+  const base =
+    "min-w-[11rem] max-w-xs flex-1 rounded-lg border px-3 py-2.5 text-left text-sm";
+
+  if (cluster.status === "completed") {
+    return (
+      <div
+        className={`${base} pointer-events-none border-emerald-200 bg-emerald-50/80 text-emerald-900/70`}
+      >
+        <p className="font-medium leading-snug">{cluster.clusterKeyword}</p>
+        <p className="mt-1 text-[11px]">Completed</p>
+      </div>
+    );
+  }
+
+  if (cluster.status === "blocked") {
+    return (
+      <div
+        className={`${base} pointer-events-none border-border bg-muted/40 text-muted-foreground`}
+      >
+        <p className="font-medium leading-snug text-foreground/70">
+          {cluster.clusterKeyword}
+        </p>
+        <p className="mt-1 text-[11px]">Publish pillar first</p>
+      </div>
+    );
+  }
+
+  if (cluster.status === "planned") {
+    return (
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => onGenerate(cluster)}
+        className={`${base} border-amber-200 bg-amber-50 text-amber-950 transition-colors hover:bg-amber-100 disabled:opacity-50 ${
+          selected ? "ring-1 ring-amber-400/60" : ""
+        }`}
+      >
+        <p className="font-medium leading-snug">{cluster.clusterKeyword}</p>
+        <p className="mt-1 text-[11px] text-amber-800/80">Generate (planned)</p>
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={() => onGenerate(cluster)}
+      className={`${base} border-border bg-card transition-colors hover:bg-accent/50 disabled:opacity-50 ${
+        selected ? "ring-1 ring-foreground/20" : ""
+      }`}
+    >
+      <p className="font-medium leading-snug text-foreground">
+        {cluster.clusterKeyword}
+      </p>
+      <p className="mt-1 text-[11px] text-muted-foreground">Generate</p>
+    </button>
+  );
+}
+
+export default function ClusterGeneration() {
   const { companyId } = useParams();
   const runTokenRef = useRef(0);
 
@@ -120,6 +178,8 @@ export default function ArticlesAutomation() {
   const [statusMessage, setStatusMessage] = useState("");
   const [error, setError] = useState("");
   const [companyName, setCompanyName] = useState("");
+  const [pillars, setPillars] = useState([]);
+  const [contextLoading, setContextLoading] = useState(true);
   const [picked, setPicked] = useState(null);
   const [proposal, setProposal] = useState(null);
   const [plannedArticles, setPlannedArticles] = useState([]);
@@ -142,6 +202,16 @@ export default function ArticlesAutomation() {
   stageRef.current = currentStage;
 
   const busy = !IDLE_PHASES.has(phase);
+  const tree = useMemo(() => buildClusterTree(pillars), [pillars]);
+
+  const refreshContext = useCallback(async () => {
+    if (!companyId) return null;
+    const ctx = await loadAutomationContext(companyId);
+    contextRef.current = ctx;
+    setCompanyName(ctx.companyName);
+    setPillars(Array.isArray(ctx.pillars) ? ctx.pillars : []);
+    return ctx;
+  }, [companyId]);
 
   useEffect(() => {
     if (!companyId) {
@@ -164,6 +234,30 @@ export default function ArticlesAutomation() {
     };
   }, [companyId]);
 
+  useEffect(() => {
+    if (!companyId) {
+      setPillars([]);
+      setCompanyName("");
+      setContextLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setContextLoading(true);
+    setError("");
+    refreshContext()
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err?.message || "Failed to load cluster tree");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setContextLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId, refreshContext]);
+
   const resetRunState = () => {
     setPicked(null);
     setProposal(null);
@@ -178,7 +272,6 @@ export default function ArticlesAutomation() {
     setPublishProgress(null);
     setPublishResult(null);
     setPublishError(null);
-    contextRef.current = null;
     pickedRef.current = null;
     proposalRef.current = null;
     plannedRef.current = [];
@@ -202,96 +295,96 @@ export default function ArticlesAutomation() {
     }
   }, []);
 
-  const runTopicGeneration = useCallback(
-    async (token) => {
-      const ctx = contextRef.current;
-      const cluster = pickedRef.current;
-      if (!ctx || !cluster) throw new Error("Missing cluster context");
-
-      setCurrentStage("topic");
-      setViewingStage("topic");
-      setPhase("planning");
-      setStatusMessage(`Planning “${cluster.clusterKeyword}” cluster…`);
-
-      const result = await requestClusterPlan({
-        pillarKeyword: cluster.pillarKeyword,
-        supportingKeyword: cluster.clusterKeyword,
-        abstract: ctx.abstract,
-        shortDescription: ctx.shortDescription,
-        audience: ctx.audience,
-        competitors: ctx.competitors,
-        pillars: ctx.pillars,
-      });
-      if (!stillCurrent(token)) return;
-      proposalRef.current = result;
-      setProposal(result);
-      setPhase("plan_review");
-      setStatusMessage(
-        `Plan ready for “${cluster.clusterKeyword}”. Confirm to save as planned.`
-      );
-    },
-    []
-  );
-
-  const runArticleGeneration = useCallback(async (token) => {
+  const runTopicGeneration = useCallback(async (token) => {
+    const ctx = contextRef.current;
     const cluster = pickedRef.current;
-    const articles = plannedRef.current;
-    if (!companyId || !cluster || !articles.length) {
-      throw new Error("Missing planned articles");
-    }
+    if (!ctx || !cluster) throw new Error("Missing cluster context");
 
-    setCurrentStage("articles");
-    setViewingStage("articles");
-    setPhase("generating");
-    setJobs([]);
-    setCurrentStep(0);
-    setStatusMessage(
-      `Generating ${articles.length} article${articles.length === 1 ? "" : "s"} with images…`
-    );
+    setCurrentStage("topic");
+    setViewingStage("topic");
+    setPhase("planning");
+    setStatusMessage(`Planning “${cluster.clusterKeyword}” cluster…`);
 
-    const result = await generateClusterArticles({
-      companyId,
+    const result = await requestClusterPlan({
       pillarKeyword: cluster.pillarKeyword,
       supportingKeyword: cluster.clusterKeyword,
-      articles,
-      withImages: true,
-      onJobsChange: (next) => {
-        if (!stillCurrent(token)) return;
-        jobsRef.current = next;
-        setJobs(next);
-      },
-      onStep: (step) => {
-        if (!stillCurrent(token)) return;
-        setCurrentStep(step);
-      },
-      onStatus: (message) => {
-        if (!stillCurrent(token)) return;
-        setStatusMessage(message);
-      },
+      abstract: ctx.abstract,
+      shortDescription: ctx.shortDescription,
+      audience: ctx.audience,
+      competitors: ctx.competitors,
+      pillars: ctx.pillars,
     });
     if (!stillCurrent(token)) return;
-
-    jobsRef.current = result.jobs;
-    setJobs(result.jobs);
-    setCoverageWarning(result.coverageWarning || "");
-    const succeeded = result.jobs.filter((job) => job.status === "done").length;
-    const failed = result.jobs.filter((job) => job.status === "failed").length;
-    if (succeeded === 0) {
-      setPhase("error");
-      setError(
-        failed
-          ? "Every article in this cluster failed to generate."
-          : "No articles were generated."
-      );
-      return;
-    }
-    setPhase("generate_review");
+    proposalRef.current = result;
+    setProposal(result);
+    setPhase("plan_review");
     setStatusMessage(
-      `${succeeded} article${succeeded === 1 ? "" : "s"} generated${
-        failed ? `, ${failed} failed` : ""
-      }. Confirm to save and download.`
+      `Plan ready for “${cluster.clusterKeyword}”. Confirm to save as planned.`
     );
-  }, [companyId]);
+  }, []);
+
+  const runArticleGeneration = useCallback(
+    async (token) => {
+      const cluster = pickedRef.current;
+      const articles = plannedRef.current;
+      if (!companyId || !cluster || !articles.length) {
+        throw new Error("Missing planned articles");
+      }
+
+      setCurrentStage("articles");
+      setViewingStage("articles");
+      setPhase("generating");
+      setJobs([]);
+      setCurrentStep(0);
+      setStatusMessage(
+        `Generating ${articles.length} article${articles.length === 1 ? "" : "s"} with images…`
+      );
+
+      const result = await generateClusterArticles({
+        companyId,
+        pillarKeyword: cluster.pillarKeyword,
+        supportingKeyword: cluster.clusterKeyword,
+        articles,
+        withImages: true,
+        onJobsChange: (next) => {
+          if (!stillCurrent(token)) return;
+          jobsRef.current = next;
+          setJobs(next);
+        },
+        onStep: (step) => {
+          if (!stillCurrent(token)) return;
+          setCurrentStep(step);
+        },
+        onStatus: (message) => {
+          if (!stillCurrent(token)) return;
+          setStatusMessage(message);
+        },
+      });
+      if (!stillCurrent(token)) return;
+
+      jobsRef.current = result.jobs;
+      setJobs(result.jobs);
+      setCoverageWarning(result.coverageWarning || "");
+      const succeeded = result.jobs.filter((job) => job.status === "done").length;
+      const failed = result.jobs.filter((job) => job.status === "failed").length;
+      if (succeeded === 0) {
+        setPhase("error");
+        setError(
+          failed
+            ? "Every article in this cluster failed to generate."
+            : "No articles were generated."
+        );
+        return;
+      }
+      setPhase("generate_review");
+      setStatusMessage(
+        `${succeeded} article${succeeded === 1 ? "" : "s"} generated${
+          failed ? `, ${failed} failed` : ""
+        }. Confirm to save and download.`
+      );
+    },
+    [companyId]
+  );
 
   const confirmCluster = useCallback(async () => {
     const token = runTokenRef.current;
@@ -325,6 +418,7 @@ export default function ArticlesAutomation() {
       if (!stillCurrent(token)) return;
       plannedRef.current = saved.plannedArticles;
       setPlannedArticles(saved.plannedArticles);
+      setPillars(saved.pillars);
       if (contextRef.current) {
         contextRef.current = {
           ...contextRef.current,
@@ -359,52 +453,88 @@ export default function ArticlesAutomation() {
       );
       setPhase("done");
       setStatusMessage("Flow complete.");
+      await refreshContext();
     } catch (err) {
       if (!stillCurrent(token)) return;
       setPhase("error");
       setError(err?.message || "Failed to save or download articles");
     }
-  }, [companyId]);
+  }, [companyId, refreshContext]);
 
-  const startFlow = async () => {
-    if (!companyId || busy) return;
+  const startFlow = async (cluster) => {
+    if (!companyId || busy || !cluster) return;
+    if (cluster.status !== "available" && cluster.status !== "planned") return;
+
     const token = ++runTokenRef.current;
     resetRunState();
     setCurrentStage("cluster");
     setViewingStage("cluster");
     setPhase("selecting");
-    setStatusMessage("Choosing a supporting keyword cluster…");
+    setStatusMessage(`Selected “${cluster.clusterKeyword}”…`);
 
     try {
-      const ctx = await loadAutomationContext(companyId);
+      const ctx = await refreshContext();
       if (!stillCurrent(token)) return;
-      contextRef.current = ctx;
-      setCompanyName(ctx.companyName);
-
-      const published = listEligibleClusters(ctx.pillars);
-      const next = pickUnplannedCluster(ctx.pillars);
-      if (!next) {
+      const freshTree = buildClusterTree(ctx?.pillars || []);
+      const fresh = freshTree
+        .flatMap((pillar) => pillar.clusters)
+        .find(
+          (item) =>
+            item.clusterSlug === cluster.clusterSlug ||
+            item.clusterKeyword.toLowerCase() ===
+              cluster.clusterKeyword.toLowerCase()
+        );
+      if (!fresh) {
+        setPhase("error");
+        setError(`Could not find cluster “${cluster.clusterKeyword}”.`);
+        return;
+      }
+      if (fresh.status === "blocked") {
         setPhase("error");
         setError(
-          published.length === 0
-            ? "No supporting cluster has a published pillar article yet. Publish a pillar article in Topic Generator first."
-            : `All ${published.length} supporting cluster${
-                published.length === 1 ? "" : "s"
-              } under published pillars already have a plan.`
+          `Publish the pillar article for “${fresh.pillarKeyword}” before generating this cluster.`
+        );
+        return;
+      }
+      if (fresh.status === "completed") {
+        setPhase("error");
+        setError(
+          `“${fresh.clusterKeyword}” already has generated articles.`
         );
         return;
       }
 
-      pickedRef.current = next;
-      setPicked(next);
+      pickedRef.current = fresh;
+      setPicked(fresh);
+
+      if (fresh.status === "planned") {
+        const articles = Array.isArray(fresh.plannedArticles)
+          ? fresh.plannedArticles
+          : [];
+        if (articles.length === 0) {
+          setPhase("error");
+          setError(
+            `“${fresh.clusterKeyword}” is marked planned but has no saved articles to generate.`
+          );
+          return;
+        }
+        plannedRef.current = articles;
+        setPlannedArticles(articles);
+        setStatusMessage(
+          `Resuming saved plan for “${fresh.clusterKeyword}” — skipping planning.`
+        );
+        await runArticleGeneration(token);
+        return;
+      }
+
       setPhase("cluster_review");
       setStatusMessage(
-        `Selected “${next.clusterKeyword}” under published pillar “${next.pillarKeyword}”.`
+        `Selected “${fresh.clusterKeyword}” under published pillar “${fresh.pillarKeyword}”.`
       );
     } catch (err) {
       if (!stillCurrent(token)) return;
       setPhase("error");
-      setError(err?.message || "Failed to start Articles Automation");
+      setError(err?.message || "Failed to start Cluster Generation");
     }
   };
 
@@ -477,6 +607,7 @@ export default function ArticlesAutomation() {
           ? `Published to ${publishDestination.owner}/${publishDestination.repo}. ${committedCount} file${committedCount === 1 ? "" : "s"} committed${skippedCount ? `, ${skippedCount} skipped` : ""}.`
           : "Publish did not complete. See committed, skipped, and errors below."
       );
+      await refreshContext();
     } catch (err) {
       setPublishError(err?.message || "Publish failed");
       if (err?.result) setPublishResult(err.result);
@@ -495,7 +626,7 @@ export default function ArticlesAutomation() {
       : null;
 
   const reached = {
-    cluster: Boolean(picked) || phase === "selecting",
+    cluster: true,
     topic:
       Boolean(proposal) ||
       phase === "planning" ||
@@ -514,30 +645,16 @@ export default function ArticlesAutomation() {
   return (
     <div className="space-y-6 pb-24">
       <div>
-        <h1 className="text-xs text-foreground mb-1">Articles Automation</h1>
+        <h1 className="text-xs text-foreground mb-1">Cluster Generation</h1>
         <p className="text-sm text-muted-foreground">
-          One supporting cluster per run: pick a cluster under a published
-          pillar, plan it the same way as Topic Generator, then generate
-          articles with images the same way as Article Generator. Confirm or
-          Decline at each step; the countdown auto-confirms after 10 seconds.
+          One supporting cluster per run. Generate opens the existing staged
+          flow for that cluster: plan topics, generate articles with images,
+          then save and publish. Confirm or Decline at each step; the countdown
+          auto-confirms after 10 seconds.
         </p>
       </div>
 
       <div className="rounded-lg border border-border bg-card px-4 py-4 space-y-4">
-        <Button type="button" onClick={startFlow} disabled={!companyId || busy}>
-          {busy ? (
-            <>
-              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-              Running…
-            </>
-          ) : (
-            <>
-              <Play className="h-3.5 w-3.5 mr-1.5" />
-              Flow Activation
-            </>
-          )}
-        </Button>
-
         <div className="flex flex-wrap gap-2">
           {STAGES.map((stage) => {
             const status = stageStatus(stage.id, currentStage, phase);
@@ -582,21 +699,67 @@ export default function ArticlesAutomation() {
       )}
 
       {viewingStage === "cluster" && (
-        <section className="space-y-3">
+        <section className="space-y-4">
           <h2 className="text-sm font-medium text-foreground">
             Cluster Selection
           </h2>
-          {phase === "selecting" && (
+          {companyName ? (
+            <p className="text-sm text-muted-foreground">{companyName}</p>
+          ) : null}
+          {contextLoading && (
             <div className="rounded-lg border border-border bg-card px-4 py-4 flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Looking for a supporting cluster with a published pillar article…
+              Loading clusters from coverage…
             </div>
           )}
+          {!contextLoading && tree.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              No pillars found. Add pillar keywords in Company Data, then open
+              Topic Generator once so coverage is initialized.
+            </p>
+          )}
+          {!contextLoading &&
+            tree.map((pillar) => (
+              <div key={pillar.slug || pillar.keyword} className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-sm font-medium text-foreground">
+                    {pillar.keyword}
+                  </h3>
+                  {pillar.pillarPublished ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                      <Check className="h-3 w-3" />
+                      Published
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                      Pillar not published
+                    </span>
+                  )}
+                </div>
+                {pillar.clusters.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    No supporting clusters. Add them in Company Data.
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {pillar.clusters.map((cluster) => (
+                      <ClusterTile
+                        key={cluster.clusterSlug || cluster.clusterKeyword}
+                        cluster={cluster}
+                        selected={
+                          picked?.clusterSlug === cluster.clusterSlug ||
+                          picked?.clusterKeyword === cluster.clusterKeyword
+                        }
+                        busy={busy}
+                        onGenerate={startFlow}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
           {picked && (
             <div className="rounded-lg border border-border bg-card px-4 py-4 space-y-2 text-sm">
-              {companyName ? (
-                <p className="text-muted-foreground">{companyName}</p>
-              ) : null}
               <p>
                 <span className="text-muted-foreground">Pillar </span>
                 <span className="font-medium">{picked.pillarKeyword}</span>
@@ -609,8 +772,9 @@ export default function ArticlesAutomation() {
                 <span className="font-medium">{picked.clusterKeyword}</span>
               </p>
               <p className="text-xs text-muted-foreground">
-                This cluster has no plan yet. Confirm to run Topic Generator
-                Plan Cluster for it.
+                {picked.status === "planned"
+                  ? "This cluster already has a saved plan. Generation will use it and will not re-plan."
+                  : "This cluster has no plan yet. Confirm to run Topic Generator Plan Cluster for it."}
               </p>
             </div>
           )}
@@ -650,9 +814,7 @@ export default function ArticlesAutomation() {
             <div className="rounded-lg border border-border bg-card px-4 py-4 space-y-3">
               <p className="text-sm">
                 <span className="text-muted-foreground">Cluster </span>
-                <span className="font-medium">
-                  {picked?.clusterKeyword}
-                </span>
+                <span className="font-medium">{picked?.clusterKeyword}</span>
                 <span className="text-muted-foreground"> under </span>
                 <span className="font-medium">{picked?.pillarKeyword}</span>
               </p>
@@ -708,7 +870,7 @@ export default function ArticlesAutomation() {
               <Progress value={progressPct} className="h-1.5" />
               <p className="text-xs text-muted-foreground">
                 Articles run one at a time, with hero images generated after
-                each successful draft — the same defaults as Article Generator.
+                each successful draft.
               </p>
             </div>
           )}
@@ -911,14 +1073,6 @@ export default function ArticlesAutomation() {
             />
           )}
         </section>
-      )}
-
-      {phase === "idle" && (
-        <p className="text-sm text-muted-foreground flex items-start gap-2">
-          <Workflow className="h-4 w-4 mt-0.5 shrink-0" />
-          Press Flow Activation to start. Decline stops the run; it does not
-          pick another cluster.
-        </p>
       )}
     </div>
   );

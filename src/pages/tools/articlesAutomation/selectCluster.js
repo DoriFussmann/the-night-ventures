@@ -50,3 +50,71 @@ export function pickUnplannedCluster(pillars) {
   );
   return eligible[0] || null;
 }
+
+function hasGeneratedArticles(supporting) {
+  return (Array.isArray(supporting?.plannedArticles)
+    ? supporting.plannedArticles
+    : []
+  ).some((article) => {
+    const status =
+      typeof article === "string" ? article : article?.status || "";
+    return status === "drafted" || status === "published";
+  });
+}
+
+/**
+ * Tile state for Cluster Generation.
+ * AVAILABLE = pillar published, no plan yet.
+ * PLANNED = pillar published, has a plan, zero drafted/published articles.
+ * COMPLETED = drafted or published articles.
+ * BLOCKED = pillar article is not published (same gate as listEligibleClusters).
+ */
+export function classifySupportingCluster(pillar, supporting) {
+  const clusterKeyword = String(supporting?.keyword || "").trim();
+  if (!clusterKeyword) return null;
+
+  const pillarPublished =
+    pillarArticleStatus(pillar?.pillarArticle) === "published";
+  const count = plannedCount(supporting);
+  const plannedArticles = Array.isArray(supporting?.plannedArticles)
+    ? supporting.plannedArticles
+    : [];
+  let status = "available";
+  if (!pillarPublished) status = "blocked";
+  else if (hasGeneratedArticles(supporting)) status = "completed";
+  else if (count > 0) status = "planned";
+
+  return {
+    pillarKeyword: String(pillar.keyword || "").trim(),
+    pillarSlug: pillar.slug,
+    clusterKeyword,
+    clusterSlug: supporting.slug,
+    plannedCount: count,
+    plannedArticles,
+    status,
+    pillarPublished,
+    pillar,
+    supporting,
+  };
+}
+
+export function buildClusterTree(pillars) {
+  return (Array.isArray(pillars) ? pillars : [])
+    .map((pillar) => {
+      const keyword = String(pillar?.keyword || "").trim();
+      if (!keyword) return null;
+      const clusters = (
+        Array.isArray(pillar?.supporting) ? pillar.supporting : []
+      )
+        .map((supporting) => classifySupportingCluster(pillar, supporting))
+        .filter(Boolean);
+      return {
+        keyword,
+        slug: pillar.slug,
+        pillarPublished: pillarArticleStatus(pillar?.pillarArticle) === "published",
+        pillar,
+        clusters,
+      };
+    })
+    .filter(Boolean);
+}

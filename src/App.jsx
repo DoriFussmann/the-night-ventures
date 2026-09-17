@@ -1,7 +1,7 @@
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, Navigate, useParams } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider } from '@/lib/AuthContext';
 import ScrollToTop from './components/ScrollToTop';
@@ -17,10 +17,10 @@ import SocialMediaTracker from '@/pages/tools/SocialMediaTracker';
 import DesignGuideBuilder from '@/pages/tools/DesignGuideBuilder';
 import TemplateToPrompt from '@/pages/tools/TemplateToPrompt';
 import SiteContentBuild from '@/pages/tools/SiteContentBuild';
+import SiteContentBuilder from '@/pages/tools/SiteContentBuilder';
 import ArticleTopicSuggestion from '@/pages/tools/ArticleTopicSuggestion';
-import ArticleGeneration from '@/pages/tools/ArticleGeneration';
+import ClusterGeneration from '@/pages/tools/ClusterGeneration';
 import Articles from '@/pages/tools/Articles';
-import ArticlesAutomation from '@/pages/tools/ArticlesAutomation';
 import PillarAutomation from '@/pages/tools/PillarAutomation';
 import Nightwatch from '@/pages/tools/Nightwatch';
 import ClusterImageGenerator from '@/pages/tools/ClusterImageGenerator';
@@ -29,6 +29,11 @@ import SiteBuildFlow from '@/pages/tools/SiteBuildFlow';
 import SiteBuildPrompt from '@/pages/general/SiteBuildPrompt';
 import SeoAiAdvisor from '@/pages/tools/SeoAiAdvisor';
 import ExternalAuditSnapshot from '@/pages/tools/ExternalAuditSnapshot';
+
+function RedirectToClusterGeneration() {
+  const { companyId } = useParams();
+  return <Navigate to={`/company/${companyId}/article-generation`} replace />;
+}
 
 const AuthenticatedApp = () => {
   // Keep public auth routes mounted while session/profile settles.
@@ -49,12 +54,16 @@ const AuthenticatedApp = () => {
           <Route path="/company/:companyId/design-guide-builder" element={<DesignGuideBuilder />} />
           <Route path="/company/:companyId/template-to-prompt" element={<TemplateToPrompt />} />
           <Route path="/company/:companyId/site-content-build" element={<SiteContentBuild />} />
+          <Route path="/company/:companyId/site-content-builder" element={<SiteContentBuilder />} />
           <Route path="/company/:companyId/article-topic-suggestion" element={<ArticleTopicSuggestion />} />
           <Route path="/company/:companyId/seo-ai-advisor" element={<SeoAiAdvisor />} />
           <Route path="/company/:companyId/external-audit-snapshot" element={<ExternalAuditSnapshot />} />
-          <Route path="/company/:companyId/article-generation" element={<ArticleGeneration />} />
+          <Route path="/company/:companyId/article-generation" element={<ClusterGeneration />} />
+          <Route
+            path="/company/:companyId/articles-automation"
+            element={<RedirectToClusterGeneration />}
+          />
           <Route path="/company/:companyId/articles" element={<Articles />} />
-          <Route path="/company/:companyId/articles-automation" element={<ArticlesAutomation />} />
           <Route path="/company/:companyId/pillar-automation" element={<PillarAutomation />} />
           <Route path="/company/:companyId/nightwatch" element={<Nightwatch />} />
           <Route path="/company/:companyId/cluster-image-generator" element={<ClusterImageGenerator />} />

@@ -670,7 +670,7 @@ export default function Articles() {
         <div>
           <h1 className="text-xs text-foreground mb-1">Articles</h1>
           <p className="text-sm text-muted-foreground">
-            Saved drafts from Article Generator — full frontmatter and body.
+            Saved drafts from Cluster Generation — full frontmatter and body.
             Status is read-only here; mark articles published in Topic Generator
             after shipping through the site CMS. Scan Live reads the published
             site independently of this library.
@@ -1135,7 +1135,7 @@ export default function Articles() {
               to={`/company/${companyId}/article-generation`}
               className="underline underline-offset-2 hover:text-foreground"
             >
-              Article Generator
+              Cluster Generation
             </Link>
             . Use Scan Live to list articles already on the published site.
           </p>
