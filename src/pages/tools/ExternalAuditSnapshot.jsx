@@ -68,6 +68,88 @@ function formatNumber(value) {
   return n.toLocaleString()
 }
 
+function formatLcp(lcpMs) {
+  if (lcpMs == null || !Number.isFinite(Number(lcpMs))) return '—'
+  return `${(Number(lcpMs) / 1000).toFixed(1)} s`
+}
+
+function formatCls(cls) {
+  if (cls == null || !Number.isFinite(Number(cls))) return '—'
+  return Number(cls).toFixed(2)
+}
+
+function formatInp(inpMs) {
+  if (inpMs == null || !Number.isFinite(Number(inpMs))) return '—'
+  return `${Math.round(Number(inpMs))} ms`
+}
+
+function vitalCategoryClass(category) {
+  const key = String(category || '')
+    .toLowerCase()
+    .replace(/_/g, '-')
+  if (key === 'fast' || key === 'good') {
+    return 'text-emerald-600 dark:text-emerald-400'
+  }
+  if (key === 'average' || key === 'needs-improvement') {
+    return 'text-amber-600 dark:text-amber-400'
+  }
+  if (key === 'slow' || key === 'poor') {
+    return 'text-red-600 dark:text-red-400'
+  }
+  return ''
+}
+
+function finiteOrNull(value) {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+function fieldHasVitals(block) {
+  const metrics = block?.metrics
+  if (!metrics) return false
+  return (
+    finiteOrNull(metrics.lcp?.percentile) != null ||
+    finiteOrNull(metrics.cls?.percentile) != null ||
+    finiteOrNull(metrics.inp?.percentile) != null
+  )
+}
+
+function vitalsFromField(block, source) {
+  const metrics = block?.metrics || {}
+  const clsRaw = finiteOrNull(metrics.cls?.percentile)
+  return {
+    lcpMs: finiteOrNull(metrics.lcp?.percentile),
+    cls: clsRaw != null ? clsRaw / 100 : null,
+    inpMs: finiteOrNull(metrics.inp?.percentile),
+    source,
+    categories: {
+      lcp: metrics.lcp?.category || null,
+      cls: metrics.cls?.category || null,
+      inp: metrics.inp?.category || null,
+    },
+  }
+}
+
+function resolveCoreWebVitals(coreWebVitals) {
+  if (fieldHasVitals(coreWebVitals?.url)) {
+    return vitalsFromField(coreWebVitals.url, 'field (page)')
+  }
+  if (fieldHasVitals(coreWebVitals?.origin)) {
+    return vitalsFromField(coreWebVitals.origin, 'field (origin)')
+  }
+  const lab = coreWebVitals?.lab
+  if (lab && (lab.lcpMs != null || lab.cls != null)) {
+    return {
+      lcpMs: finiteOrNull(lab.lcpMs),
+      cls: finiteOrNull(lab.cls),
+      inpMs: null,
+      source: 'lab',
+      categories: {},
+    }
+  }
+  return { lcpMs: null, cls: null, inpMs: null, source: null, categories: {} }
+}
+
 function scoreCellClass(score) {
   const tone = scoreTone(score)
   if (tone === 'green') return 'text-emerald-600 dark:text-emerald-400'
@@ -141,13 +223,20 @@ function SourceList({ panelState, activePanel }) {
   )
 }
 
-function MetricTile({ label, value }) {
+function MetricTile({ label, value, category }) {
   return (
     <div className="space-y-1">
       <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
         {label}
       </p>
-      <p className="text-lg font-semibold tabular-nums">{value}</p>
+      <p
+        className={cn(
+          'text-lg font-semibold tabular-nums',
+          vitalCategoryClass(category)
+        )}
+      >
+        {value}
+      </p>
     </div>
   )
 }
@@ -283,6 +372,44 @@ function TechnicalSection({ technical }) {
   )
 }
 
+function PerformanceScores({ result }) {
+  const vitals = resolveCoreWebVitals(result.coreWebVitals)
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {CATEGORY_LABELS.map(({ key, label }) => (
+          <ScoreGauge
+            key={key}
+            label={label}
+            score={result.scores?.[key]}
+            size={96}
+          />
+        ))}
+      </div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <MetricTile
+          label="LCP"
+          value={formatLcp(vitals.lcpMs)}
+          category={vitals.categories.lcp}
+        />
+        <MetricTile
+          label="CLS"
+          value={formatCls(vitals.cls)}
+          category={vitals.categories.cls}
+        />
+        <MetricTile
+          label="INP"
+          value={formatInp(vitals.inpMs)}
+          category={vitals.categories.inp}
+        />
+      </div>
+      {vitals.source ? (
+        <p className="text-[11px] text-muted-foreground">{vitals.source}</p>
+      ) : null}
+    </div>
+  )
+}
+
 function PerformanceSection({ pagespeed }) {
   if (!pagespeed) {
     return (
@@ -326,16 +453,7 @@ function PerformanceSection({ pagespeed }) {
               {result?.error || `${title} check failed`}
             </p>
           ) : (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {CATEGORY_LABELS.map(({ key, label }) => (
-                <ScoreGauge
-                  key={key}
-                  label={label}
-                  score={result.scores?.[key]}
-                  size={96}
-                />
-              ))}
-            </div>
+            <PerformanceScores result={result} />
           )}
         </div>
       ))}
@@ -391,6 +509,10 @@ function AuthoritySection({ moz }) {
         <MetricTile
           label="Linking root domains"
           value={formatNumber(m.linkingRootDomains)}
+        />
+        <MetricTile
+          label="External pages to domain"
+          value={formatNumber(m.externalPagesToRootDomain)}
         />
       </div>
       <div className="space-y-1 text-[11px] text-muted-foreground">
@@ -491,7 +613,7 @@ function AiSearchSection({ semrush }) {
   )
 }
 
-function DashboardSection({ title, children, ready }) {
+function DashboardSection({ title, hint, children, ready }) {
   return (
     <section
       className={cn(
@@ -499,9 +621,12 @@ function DashboardSection({ title, children, ready }) {
         !ready && 'opacity-60'
       )}
     >
-      <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-foreground/90">
+      <h3 className={`${hint ? 'mb-1' : 'mb-3'} text-xs font-semibold uppercase tracking-wide text-foreground/90`}>
         {title}
       </h3>
+      {hint ? (
+        <p className="mb-3 text-[11px] text-muted-foreground">{hint}</p>
+      ) : null}
       {children}
     </section>
   )
@@ -965,7 +1090,8 @@ export default function ExternalAuditSnapshot() {
             ) : (
               <>
                 <DashboardSection
-                  title="Visibility"
+                  title="Rankings & Visibility"
+                  hint="Where your keywords rank; your link footprint"
                   ready={Boolean(displayResults.dataforseo)}
                 >
                   <VisibilitySection dataforseo={displayResults.dataforseo} />
@@ -973,27 +1099,31 @@ export default function ExternalAuditSnapshot() {
 
                 <DashboardSection
                   title="Technical Health"
+                  hint="Crawlability, indexing signals, schema"
                   ready={Boolean(displayResults.technical)}
                 >
                   <TechnicalSection technical={displayResults.technical} />
                 </DashboardSection>
 
                 <DashboardSection
-                  title="Performance"
+                  title="Speed & Core Web Vitals"
+                  hint="Load speed and the vitals Google ranks on"
                   ready={Boolean(displayResults.pagespeed)}
                 >
                   <PerformanceSection pagespeed={displayResults.pagespeed} />
                 </DashboardSection>
 
                 <DashboardSection
-                  title="Authority"
+                  title="Authority & Backlinks"
+                  hint="Domain strength and who links to you"
                   ready={Boolean(displayResults.moz)}
                 >
                   <AuthoritySection moz={displayResults.moz} />
                 </DashboardSection>
 
                 <DashboardSection
-                  title="AI Search Access"
+                  title="AI Crawlability"
+                  hint="Whether AI search bots can access the site"
                   ready={Boolean(displayResults.semrush)}
                 >
                   <AiSearchSection semrush={displayResults.semrush} />
