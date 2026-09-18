@@ -299,12 +299,12 @@ export const PREDEFINED_ITEMS = {
     },
     {
       item_key: "plan-topics-in-topic-generator",
-      title: "Plan topics in Topic Generator",
+      title: "Plan clusters in Cluster Generation",
       description:
-        "In TNV → Topic Generator, the pillar and supporting keywords from Company Data are already present. Click Plan for each keyword you want to seed. Coverage is the input for Cluster Generation.",
+        "In TNV → Cluster Generation, pillar and supporting keywords from Company Data appear as the pillar→cluster tree. Plan the clusters you want to seed; coverage is the input for generation.",
       prompts: [],
-      linkTo: "/company/:companyId/topic-generator",
-      linkLabel: "Open Topic Generator →",
+      linkTo: "/company/:companyId/article-generation",
+      linkLabel: "Open Cluster Generation →",
     },
     {
       item_key: "generate-and-publish-articles",
@@ -346,7 +346,7 @@ export const PREDEFINED_ITEMS = {
       item_key: "plan-both-clusters",
       title: "Plan both clusters",
       description:
-        "In Topic Generator, choose one supporting-keyword cluster per pillar and click Plan for both, pasting the matching Keyword Slip results into 'Keyword data (optional)' for each.",
+        "In Cluster Generation, choose one supporting-keyword cluster per pillar and click Plan for both, pasting the matching Keyword Slip results into 'Keyword data (optional)' for each.",
       prompts: [],
     },
     {

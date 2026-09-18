@@ -847,7 +847,7 @@ export default function PillarAutomation() {
           {!contextLoading && pillars.length === 0 && (
             <p className="text-sm text-muted-foreground">
               No pillars found. Add pillar keywords in Company Data, then open
-              Topic Generator once so coverage is initialized.
+              Cluster Generation once so coverage is initialized.
             </p>
           )}
           {!contextLoading && pillars.length > 0 && (
@@ -916,7 +916,7 @@ export default function PillarAutomation() {
               </div>
               <Progress value={phase === "persisting" ? 90 : 40} className="h-1.5" />
               <p className="text-xs text-muted-foreground">
-                Same Plan Cluster call as Topic Generator, seeded on the pillar
+                Same Plan Cluster call, seeded on the pillar
                 keyword for the comprehensive article only.
               </p>
             </div>

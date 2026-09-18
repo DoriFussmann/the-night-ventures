@@ -106,7 +106,7 @@ export default function FaceliftPanel({ companyId, destination, onHealthChange }
     setApplyResult(null);
   };
 
-  const startScan = async () => {
+  const startScan = async (ops) => {
     if (!mapped || busy) return;
     setOpen(true);
     setPhase("scanning");
@@ -118,6 +118,7 @@ export default function FaceliftPanel({ companyId, destination, onHealthChange }
     try {
       const result = await runFaceliftScan(dest, {
         onProgress: (info) => setProgress(info.message || "Scanning…"),
+        ops: Array.isArray(ops) ? ops : undefined,
       });
       setScan(result);
       setSelections(defaultSelections(result.rows));
@@ -195,6 +196,23 @@ export default function FaceliftPanel({ companyId, destination, onHealthChange }
             ? "Scanning…"
             : "Review Articles & Suggest Facelift"}
         </Button>
+        {[
+          { label: "Links", ops: ["links"] },
+          { label: "Cleanup", ops: ["cleanup"] },
+          { label: "WTS", ops: ["wts"] },
+          { label: "Section", ops: ["rewrite"] },
+        ].map((item) => (
+          <Button
+            key={item.label}
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={!mapped || busy}
+            onClick={() => startScan(item.ops)}
+          >
+            {item.label}
+          </Button>
+        ))}
         {!mapped && (
           <p className="text-sm text-muted-foreground">
             Set a destination repo in Company Data to enable Facelift.

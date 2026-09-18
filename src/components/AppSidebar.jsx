@@ -17,7 +17,6 @@ import {
   Database,
   Palette,
   LayoutTemplate,
-  Lightbulb,
   PenLine,
   BookOpen,
   Image,
@@ -28,7 +27,6 @@ import {
   LogOut,
   ArrowLeft,
   Construction,
-  Moon,
   Loader2,
   Trash2,
 } from "lucide-react";
@@ -38,7 +36,6 @@ const STATUS_STYLES = {
   Partial: "text-amber-700/80 bg-amber-500/10",
   Verify: "text-slate-500 bg-slate-500/10",
   "To Build": "text-violet-700/70 bg-violet-500/10",
-  "To Review": "text-violet-700/70 bg-violet-500/10",
 };
 
 function StatusTag({ status }) {
@@ -152,18 +149,13 @@ export default function AppSidebar({ user }) {
   ];
 
   const analyticsNav = [
-    { label: "Technical Audit", path: `/company/${activeCompanyId}/external-audit-snapshot`, icon: Camera, status: "Partial" },
+    { label: "Analytics", path: `/company/${activeCompanyId}/external-audit-snapshot`, icon: Camera, status: "Partial" },
   ];
 
   const manualToolsNav = [
     { label: "SEO AI Advisor", path: `/company/${activeCompanyId}/seo-ai-advisor`, icon: MessageSquareText, status: "Verify" },
     { label: "Image Generator", path: `/company/${activeCompanyId}/image-generator`, icon: Sparkles, status: "Verify" },
     { label: "Cluster Images", path: `/company/${activeCompanyId}/cluster-image-generator`, icon: Image, status: "Verify" },
-  ];
-
-  const toReviewNav = [
-    { label: "The Nightwatch", path: `/company/${activeCompanyId}/nightwatch`, icon: Moon, status: "To Review" },
-    { label: "Topic Generator", path: `/company/${activeCompanyId}/article-topic-suggestion`, icon: Lightbulb, status: "To Review" },
   ];
 
   useEffect(() => {
@@ -295,13 +287,6 @@ export default function AppSidebar({ user }) {
             <SectionHeader label="Manual Tools" />
             <div className="space-y-1.5">
               {manualToolsNav.map((item) => (
-                <NavItem key={item.path} item={item} />
-              ))}
-            </div>
-
-            <SectionHeader label="To Review" />
-            <div className="space-y-1.5">
-              {toReviewNav.map((item) => (
                 <NavItem key={item.path} item={item} />
               ))}
             </div>

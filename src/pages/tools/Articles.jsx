@@ -671,7 +671,7 @@ export default function Articles() {
           <h1 className="text-xs text-foreground mb-1">Articles</h1>
           <p className="text-sm text-muted-foreground">
             Saved drafts from Cluster Generation — full frontmatter and body.
-            Status is read-only here; mark articles published in Topic Generator
+            Status is read-only here; mark articles published in Cluster Generation
             after shipping through the site CMS. Scan Live reads the published
             site independently of this library.
           </p>
@@ -1150,31 +1150,69 @@ export default function Articles() {
           </p>
         </div>
       ) : (
-        <ul className="rounded-lg border border-border divide-y divide-border overflow-hidden">
-          {filtered.map((article) => (
-            <li key={article.id}>
-              <button
-                type="button"
-                onClick={() => setSelectedId(article.id)}
-                className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted/40 transition-colors"
-              >
-                <span className="min-w-0 flex-1 truncate font-medium text-foreground">
-                  {article.title || "(untitled)"}
-                </span>
-                <PillarBadge keyword={article.pillar_keyword} />
-                <KeywordTypeBadge role={articleKeywordRole(article)} />
-                <TypeBadge type={articleTypeKey(article)} />
-                <StatusBadge status={article.status} />
-                <DaysSinceUpdateBadge
-                  dateValue={article.updated_date || article.date}
-                />
-                <span className="shrink-0 text-xs text-muted-foreground tabular-nums w-[5.5rem] text-right">
-                  {formatDisplayDate(article.updated_date || article.date)}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
+        <div className="overflow-x-auto rounded-lg border border-border">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/30 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                <th className="px-3 py-2 font-medium">Title</th>
+                <th className="px-3 py-2 font-medium">Type</th>
+                <th className="px-3 py-2 font-medium whitespace-nowrap">
+                  Related Pillar
+                </th>
+                <th className="px-3 py-2 font-medium">Status</th>
+                <th className="px-3 py-2 font-medium whitespace-nowrap">
+                  Refresh Days
+                </th>
+                <th className="px-3 py-2 font-medium">Date</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {filtered.map((article) => {
+                const days = daysSinceUpdate(
+                  article.updated_date || article.date
+                );
+                return (
+                  <tr
+                    key={article.id}
+                    onClick={() => setSelectedId(article.id)}
+                    className="cursor-pointer hover:bg-muted/40"
+                  >
+                    <td className="max-w-[24rem] px-3 py-2.5 font-medium text-foreground">
+                      <span className="block truncate">
+                        {article.title || "(untitled)"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <TypeBadge type={articleTypeKey(article)} />
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <PillarBadge keyword={article.pillar_keyword} />
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <StatusBadge status={article.status} />
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {days == null ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : (
+                        <span
+                          className={`tabular-nums ${daysSinceUpdateBadgeClass(days)}`}
+                        >
+                          {days}
+                        </span>
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 tabular-nums text-muted-foreground">
+                      {formatDisplayDate(
+                        article.updated_date || article.date
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
 
       <Dialog

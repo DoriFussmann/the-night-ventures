@@ -603,6 +603,9 @@ export default function ExternalAuditSnapshot() {
   const [panelState, setPanelState] = useState(emptyPanelState)
   const [activePanel, setActivePanel] = useState(null)
   const [meta, setMeta] = useState(null)
+  const [summary, setSummary] = useState('')
+  const [summarizing, setSummarizing] = useState(false)
+  const [summaryError, setSummaryError] = useState('')
 
   const displayResults = useMemo(() => {
     if (running && liveResults) return liveResults
@@ -672,6 +675,8 @@ export default function ExternalAuditSnapshot() {
     setActive(null)
     setMeta(null)
     setLiveResults({})
+    setSummary('')
+    setSummaryError('')
     setPanelState(emptyPanelState())
     setActivePanel(null)
 
@@ -757,9 +762,35 @@ export default function ExternalAuditSnapshot() {
     }
   }
 
+  const handleSummarize = async () => {
+    if (!companyId || summarizing || !displayResults) return
+    setSummarizing(true)
+    setSummaryError('')
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData?.session?.access_token
+      if (!token) throw new Error('Not signed in')
+      const res = await fetch('/api/audit-summary', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ companyId, results: displayResults }),
+      })
+      const payload = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(payload.error || 'Summary failed')
+      setSummary(String(payload.summary || '').trim())
+    } catch (err) {
+      setSummaryError(err?.message || 'Summary failed')
+    } finally {
+      setSummarizing(false)
+    }
+  }
+
   const title = companyName
-    ? `${companyName} — External Audit Snapshot`
-    : 'External Audit Snapshot'
+    ? `${companyName} — Analytics`
+    : 'Analytics'
 
   const historyPanelState = useMemo(() => {
     if (running || liveResults) return panelState
@@ -893,12 +924,39 @@ export default function ExternalAuditSnapshot() {
               <h2 className="text-sm font-semibold tracking-wide text-foreground/90">
                 Summary dashboard
               </h2>
-              {(active?.run_at || running) && (
-                <span className="text-xs text-muted-foreground">
-                  {running ? 'Live run' : formatRunAt(active.run_at)}
-                </span>
-              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={!displayResults || summarizing}
+                  onClick={handleSummarize}
+                >
+                  {summarizing ? (
+                    <>
+                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                      Summarizing…
+                    </>
+                  ) : (
+                    'Summarize'
+                  )}
+                </Button>
+                {(active?.run_at || running) && (
+                  <span className="text-xs text-muted-foreground">
+                    {running ? 'Live run' : formatRunAt(active.run_at)}
+                  </span>
+                )}
+              </div>
             </div>
+
+            {summaryError ? (
+              <p className="text-sm text-destructive">{summaryError}</p>
+            ) : null}
+            {summary ? (
+              <div className="rounded-lg border border-border bg-muted/40 px-3 py-3 text-sm text-foreground whitespace-pre-wrap">
+                {summary}
+              </div>
+            ) : null}
 
             {!displayResults ? (
               <p className="text-sm text-muted-foreground">
@@ -958,6 +1016,8 @@ export default function ExternalAuditSnapshot() {
             setActive(s)
             setLiveResults(null)
             setPanelState(emptyPanelState())
+            setSummary('')
+            setSummaryError('')
           }}
         />
       </section>

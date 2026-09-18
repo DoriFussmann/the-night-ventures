@@ -184,6 +184,10 @@ function toLiveRow(article) {
   };
 }
 
+function runOp(runOps, key) {
+  return !runOps || runOps.has(key);
+}
+
 function buildBatches({
   corpus,
   publishedCount,
@@ -193,6 +197,7 @@ function buildBatches({
   rewriteAuditData,
   rewriteProposed,
   rewriteCommitCount,
+  runOps,
 }) {
   const cleanupEligible = publishedCount;
   const cleanupScanned = Number(cleanup?.scanned) || 0;
@@ -205,26 +210,32 @@ function buildBatches({
 
   return {
     corpus,
-    published: publishedCount,
-    cleanup: {
-      eligible: cleanupEligible,
-      scanned: cleanupScanned || Math.min(CLEANUP_BATCH_CAP, cleanupEligible),
-      cap: CLEANUP_BATCH_CAP,
-      proposed: cleanupChanged,
-    },
-    wts: {
-      eligible: staleCount,
-      scanned: staleChecked,
-      cap: null,
-    },
-    rewrite: {
-      eligible: rewriteEligible,
-      scanned: rewriteScanned,
-      auditCap: REWRITE_AUDIT_CAP,
-      commitCap: REWRITE_COMMIT_CAP,
-      proposed: rewriteProposed,
-      committing: Math.min(REWRITE_COMMIT_CAP, rewriteProposed),
-    },
+    published: runOp(runOps, "links") ? publishedCount : null,
+    cleanup: runOp(runOps, "cleanup")
+      ? {
+          eligible: cleanupEligible,
+          scanned: cleanupScanned || Math.min(CLEANUP_BATCH_CAP, cleanupEligible),
+          cap: CLEANUP_BATCH_CAP,
+          proposed: cleanupChanged,
+        }
+      : null,
+    wts: runOp(runOps, "wts")
+      ? {
+          eligible: staleCount,
+          scanned: staleChecked,
+          cap: null,
+        }
+      : null,
+    rewrite: runOp(runOps, "rewrite")
+      ? {
+          eligible: rewriteEligible,
+          scanned: rewriteScanned,
+          auditCap: REWRITE_AUDIT_CAP,
+          commitCap: REWRITE_COMMIT_CAP,
+          proposed: rewriteProposed,
+          committing: Math.min(REWRITE_COMMIT_CAP, rewriteProposed),
+        }
+      : null,
   };
 }
 
@@ -267,8 +278,10 @@ export function batchBoundaryLines(batches) {
 function buildReviewRows({
   articles,
   linkRows,
+  linksAudit,
   cleanup,
   wtsChecks,
+  wtsAudit,
   rewriteAuditData,
   rewriteProposals,
 }) {
@@ -307,6 +320,8 @@ function buildReviewRows({
     const linkRow = linkBySlug.get(slug);
     if (draft) {
       links = gatedOp("draft — skipped");
+    } else if (!linksAudit) {
+      links = gatedOp("not scanned");
     } else if (linkRow?.error) {
       links = gatedOp(linkRow.reason || "planning failed", {
         state: "error",
@@ -358,6 +373,8 @@ function buildReviewRows({
     const check = wtsChecks[slug];
     if (draft) {
       wts = gatedOp("draft — skipped");
+    } else if (!wtsAudit) {
+      wts = gatedOp("not scanned");
     } else if (!stale) {
       wts = gatedOp("skipped — recently updated");
     } else if (!article.canCheck) {
@@ -384,6 +401,8 @@ function buildReviewRows({
     const dropped = droppedBySlug.get(slug);
     if (draft) {
       rewrite = gatedOp("draft — skipped");
+    } else if (!rewriteAuditData) {
+      rewrite = gatedOp("not scanned");
     } else if (!stale) {
       rewrite = gatedOp("skipped — recently updated");
     } else if (rewriteRankExcluded.has(slug)) {
@@ -406,8 +425,6 @@ function buildReviewRows({
         option: rewriteProposal.option,
         proposedSectionText: rewriteProposal.proposedSectionText,
       });
-    } else if (!rewriteAuditData) {
-      rewrite = gatedOp("not scanned");
     } else if (rewriteItem && (rewriteItem.recommended === "skip" || !rewriteItem.recommended)) {
       rewrite = gatedOp("no change needed");
     } else if (!rewriteTouched.has(slug)) {
@@ -453,44 +470,55 @@ export function countApproved(rows, selections) {
   return n;
 }
 
-export async function runFaceliftScan(dest, { onProgress } = {}) {
+export async function runFaceliftScan(dest, { onProgress, ops } = {}) {
+  const requested = (Array.isArray(ops) ? ops : OP_KEYS).filter((key) =>
+    OP_KEYS.includes(key)
+  );
+  const runOps = new Set(requested.length ? requested : OP_KEYS);
   const phaseErrors = {};
 
-  onProgress?.({ phase: "links", message: "Scanning links…" });
   let linksAudit = null;
   let linksProposals = { rows: [] };
-  try {
-    linksAudit = await auditLiveLinks(dest);
-  } catch (err) {
-    phaseErrors.links = err?.message || "Links audit failed";
-  }
-  if (linksAudit) {
+  if (runOps.has("links")) {
+    onProgress?.({ phase: "links", message: "Scanning links…" });
     try {
-      linksProposals = await proposeExternalFixes(dest);
+      linksAudit = await auditLiveLinks(dest);
     } catch (err) {
-      phaseErrors.linksPropose = err?.message || "External link planning failed";
-      linksProposals = { rows: [] };
+      phaseErrors.links = err?.message || "Links audit failed";
+    }
+    if (linksAudit) {
+      try {
+        linksProposals = await proposeExternalFixes(dest);
+      } catch (err) {
+        phaseErrors.linksPropose = err?.message || "External link planning failed";
+        linksProposals = { rows: [] };
+      }
     }
   }
 
-  onProgress?.({ phase: "cleanup", message: "Scanning cleanup…" });
   let cleanup = null;
-  try {
-    cleanup = await cleanupAudit(dest, {
-      batchSize: CLEANUP_BATCH_CAP,
-      excludeBuckets: [],
-      maxCommit: CLEANUP_BATCH_CAP,
-    });
-  } catch (err) {
-    phaseErrors.cleanup = err?.message || "Cleanup audit failed";
+  if (runOps.has("cleanup")) {
+    onProgress?.({ phase: "cleanup", message: "Scanning cleanup…" });
+    try {
+      cleanup = await cleanupAudit(dest, {
+        batchSize: CLEANUP_BATCH_CAP,
+        excludeBuckets: [],
+        maxCommit: CLEANUP_BATCH_CAP,
+      });
+    } catch (err) {
+      phaseErrors.cleanup = err?.message || "Cleanup audit failed";
+    }
   }
 
-  onProgress?.({ phase: "wts", message: "Checking freshness…" });
   let wtsAudit = null;
-  try {
-    wtsAudit = await auditLiveArticleUpdates(dest);
-  } catch (err) {
-    phaseErrors.wts = err?.message || "Freshness audit failed";
+  const wtsChecks = {};
+  if (runOps.has("wts")) {
+    onProgress?.({ phase: "wts", message: "Checking freshness…" });
+    try {
+      wtsAudit = await auditLiveArticleUpdates(dest);
+    } catch (err) {
+      phaseErrors.wts = err?.message || "Freshness audit failed";
+    }
   }
 
   const articles = asArray(wtsAudit?.articles);
@@ -498,45 +526,48 @@ export async function runFaceliftScan(dest, { onProgress } = {}) {
   const stale = published.filter(
     (article) => article.needsUpdateCheck && article.canCheck
   );
-  const wtsChecks = {};
-  for (let i = 0; i < stale.length; i++) {
-    const article = stale[i];
-    onProgress?.({
-      phase: "wts",
-      message: `Checking freshness… ${i + 1}/${stale.length}`,
-      current: article.title || article.slug,
-    });
-    try {
-      const result = await checkArticleUpdate(article);
-      wtsChecks[article.slug] = { status: "done", result };
-    } catch (err) {
-      wtsChecks[article.slug] = {
-        status: "error",
-        error: err?.message || "Check failed",
-      };
+  if (runOps.has("wts")) {
+    for (let i = 0; i < stale.length; i++) {
+      const article = stale[i];
+      onProgress?.({
+        phase: "wts",
+        message: `Checking freshness… ${i + 1}/${stale.length}`,
+        current: article.title || article.slug,
+      });
+      try {
+        const result = await checkArticleUpdate(article);
+        wtsChecks[article.slug] = { status: "done", result };
+      } catch (err) {
+        wtsChecks[article.slug] = {
+          status: "error",
+          error: err?.message || "Check failed",
+        };
+      }
     }
   }
 
-  onProgress?.({ phase: "rewrite", message: "Reviewing sections…" });
   let rewriteAuditData = null;
   let rewriteProposals = { proposals: [], dropped: [] };
-  try {
-    rewriteAuditData = await rewriteAudit(dest, {
-      batchSize: REWRITE_AUDIT_CAP,
-      excludeBuckets: STALE_EXCLUDE_BUCKETS,
-    });
-    const items = asArray(rewriteAuditData?.items)
-      .map((item) => ({
-        slug: item.slug,
-        heading: item.heading,
-        option: item.recommended,
-      }))
-      .filter((item) => item.option && item.option !== "skip");
-    if (items.length > 0) {
-      rewriteProposals = await rewritePropose(dest, items);
+  if (runOps.has("rewrite")) {
+    onProgress?.({ phase: "rewrite", message: "Reviewing sections…" });
+    try {
+      rewriteAuditData = await rewriteAudit(dest, {
+        batchSize: REWRITE_AUDIT_CAP,
+        excludeBuckets: STALE_EXCLUDE_BUCKETS,
+      });
+      const items = asArray(rewriteAuditData?.items)
+        .map((item) => ({
+          slug: item.slug,
+          heading: item.heading,
+          option: item.recommended,
+        }))
+        .filter((item) => item.option && item.option !== "skip");
+      if (items.length > 0) {
+        rewriteProposals = await rewritePropose(dest, items);
+      }
+    } catch (err) {
+      phaseErrors.rewrite = err?.message || "Section review failed";
     }
-  } catch (err) {
-    phaseErrors.rewrite = err?.message || "Section review failed";
   }
 
   const corpusArticles =
@@ -558,13 +589,52 @@ export async function runFaceliftScan(dest, { onProgress } = {}) {
             canCheck: false,
           })),
         ];
+  if (corpusArticles.length === 0) {
+    const seen = new Set();
+    const add = (item, extra = {}) => {
+      const slug = String(
+        item?.slug || (typeof item === "string" ? item : "")
+      ).trim();
+      if (!slug || seen.has(slug)) return;
+      seen.add(slug);
+      corpusArticles.push({
+        slug,
+        title: item?.title || slug,
+        draft: false,
+        needsUpdateCheck: false,
+        canCheck: false,
+        daysSince: item?.daysSince,
+        bucket: item?.bucket,
+        ...extra,
+      });
+    };
+    for (const item of [
+      ...asArray(cleanup?.previews),
+      ...asArray(cleanup?.skipped),
+    ]) {
+      add(item);
+    }
+    if (corpusArticles.length === 0) {
+      for (const item of asArray(rewriteAuditData?.items)) {
+        add(item, { needsUpdateCheck: true });
+      }
+      for (const item of asArray(rewriteAuditData?.rankExcluded)) {
+        add(item, { needsUpdateCheck: true });
+      }
+      for (const item of asArray(rewriteAuditData?.noSection)) {
+        add(item, { needsUpdateCheck: true });
+      }
+    }
+  }
 
   const linkRows = buildLinkRows(linksAudit, linksProposals);
   const rows = buildReviewRows({
     articles: corpusArticles,
     linkRows,
+    linksAudit,
     cleanup,
     wtsChecks,
+    wtsAudit,
     rewriteAuditData,
     rewriteProposals,
   });
@@ -583,6 +653,7 @@ export async function runFaceliftScan(dest, { onProgress } = {}) {
       REWRITE_COMMIT_CAP,
       asArray(rewriteProposals?.proposals).length
     ),
+    runOps,
   });
 
   return {

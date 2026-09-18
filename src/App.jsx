@@ -15,18 +15,14 @@ import Companies from '@/pages/Companies';
 import CompanyData from '@/pages/tools/CompanyData';
 import SocialMediaTracker from '@/pages/tools/SocialMediaTracker';
 import DesignGuideBuilder from '@/pages/tools/DesignGuideBuilder';
-import TemplateToPrompt from '@/pages/tools/TemplateToPrompt';
 import SiteContentBuild from '@/pages/tools/SiteContentBuild';
 import SiteContentBuilder from '@/pages/tools/SiteContentBuilder';
-import ArticleTopicSuggestion from '@/pages/tools/ArticleTopicSuggestion';
 import ClusterGeneration from '@/pages/tools/ClusterGeneration';
 import Articles from '@/pages/tools/Articles';
 import PillarAutomation from '@/pages/tools/PillarAutomation';
-import Nightwatch from '@/pages/tools/Nightwatch';
 import ClusterImageGenerator from '@/pages/tools/ClusterImageGenerator';
 import AiImageGenerator from '@/pages/tools/AiImageGenerator';
 import SiteBuildFlow from '@/pages/tools/SiteBuildFlow';
-import SiteBuildPrompt from '@/pages/general/SiteBuildPrompt';
 import SeoAiAdvisor from '@/pages/tools/SeoAiAdvisor';
 import ExternalAuditSnapshot from '@/pages/tools/ExternalAuditSnapshot';
 
@@ -47,15 +43,11 @@ const AuthenticatedApp = () => {
       <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
         <Route element={<AppShell />}>
           <Route path="/" element={<Companies />} />
-          <Route path="/general/site-build-prompt" element={<SiteBuildPrompt />} />
-          <Route path="/company/:companyId/initial-site-build-prompt" element={<SiteBuildPrompt />} />
           <Route path="/company/:companyId/company-data" element={<CompanyData />} />
           <Route path="/company/:companyId/social-media-tracker" element={<SocialMediaTracker />} />
           <Route path="/company/:companyId/design-guide-builder" element={<DesignGuideBuilder />} />
-          <Route path="/company/:companyId/template-to-prompt" element={<TemplateToPrompt />} />
           <Route path="/company/:companyId/site-content-build" element={<SiteContentBuild />} />
           <Route path="/company/:companyId/site-content-builder" element={<SiteContentBuilder />} />
-          <Route path="/company/:companyId/article-topic-suggestion" element={<ArticleTopicSuggestion />} />
           <Route path="/company/:companyId/seo-ai-advisor" element={<SeoAiAdvisor />} />
           <Route path="/company/:companyId/external-audit-snapshot" element={<ExternalAuditSnapshot />} />
           <Route path="/company/:companyId/article-generation" element={<ClusterGeneration />} />
@@ -65,7 +57,6 @@ const AuthenticatedApp = () => {
           />
           <Route path="/company/:companyId/articles" element={<Articles />} />
           <Route path="/company/:companyId/pillar-automation" element={<PillarAutomation />} />
-          <Route path="/company/:companyId/nightwatch" element={<Nightwatch />} />
           <Route path="/company/:companyId/cluster-image-generator" element={<ClusterImageGenerator />} />
           <Route path="/company/:companyId/image-generator" element={<AiImageGenerator />} />
           <Route path="/company/:companyId/site-build-flow" element={<SiteBuildFlow />} />

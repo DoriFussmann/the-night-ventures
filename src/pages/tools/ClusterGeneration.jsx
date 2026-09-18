@@ -715,7 +715,7 @@ export default function ClusterGeneration() {
           {!contextLoading && tree.length === 0 && (
             <p className="text-sm text-muted-foreground">
               No pillars found. Add pillar keywords in Company Data, then open
-              Topic Generator once so coverage is initialized.
+              Cluster Generation once so coverage is initialized.
             </p>
           )}
           {!contextLoading &&
@@ -774,7 +774,7 @@ export default function ClusterGeneration() {
               <p className="text-xs text-muted-foreground">
                 {picked.status === "planned"
                   ? "This cluster already has a saved plan. Generation will use it and will not re-plan."
-                  : "This cluster has no plan yet. Confirm to run Topic Generator Plan Cluster for it."}
+                  : "This cluster has no plan yet. Confirm to run Plan Cluster for it."}
               </p>
             </div>
           )}
@@ -805,8 +805,7 @@ export default function ClusterGeneration() {
               </div>
               <Progress value={phase === "persisting" ? 90 : 40} className="h-1.5" />
               <p className="text-xs text-muted-foreground">
-                Same Plan Cluster call as Topic Generator (one of each article
-                type by default).
+                Same Plan Cluster call (one of each article type by default).
               </p>
             </div>
           )}
