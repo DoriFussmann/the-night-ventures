@@ -31,7 +31,6 @@ import {
 import {
   daysSinceUpdate,
   daysSinceUpdateBadgeClass,
-  formatDaysSinceUpdateLabel,
 } from "./articleGeneration/daysSinceUpdate";
 import { downloadMarkdownFile } from "./articleGeneration/serializeArticleMarkdown";
 import {
@@ -144,19 +143,6 @@ function PillarBadge({ keyword }) {
   );
 }
 
-function DaysSinceUpdateBadge({ dateValue }) {
-  const days = daysSinceUpdate(dateValue);
-  if (days == null) return null;
-  return (
-    <span
-      className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[11px] font-medium tabular-nums ${daysSinceUpdateBadgeClass(days)}`}
-      title={`updatedDate: ${dateValue}`}
-    >
-      {formatDaysSinceUpdateLabel(days)}
-    </span>
-  );
-}
-
 function LinkHealthCell({ kind, row, health }) {
   const entry = health?.[row.slug];
   const raw = kind === "internal" ? row.internalLinks : row.externalLinks;
@@ -204,13 +190,52 @@ function formatDisplayDate(value) {
   return raw;
 }
 
-function uniqueSorted(values) {
-  const set = new Set();
-  for (const value of values) {
-    const key = String(value || "").trim();
-    if (key) set.add(key);
+function indexLiveRows(rows) {
+  const map = new Map();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const slug = String(row?.slug || "").trim();
+    if (slug) map.set(slug, row);
   }
-  return Array.from(set).sort((a, b) => a.localeCompare(b));
+  return map;
+}
+
+function overlayLibraryArticle(article, live) {
+  if (!live) return article;
+  const found = !live.error;
+  return {
+    ...article,
+    status: found
+      ? live.status || (live.draft ? "drafted" : "published")
+      : article.status,
+    updated_date: live.lastDate || article.updated_date,
+    date: live.lastDate || article.date,
+    published_url: live.url || article.published_url,
+    internalLinks: live.internalLinks,
+    externalLinks: live.externalLinks,
+    liveError: live.error || null,
+  };
+}
+
+function liveOnlyArticle(live) {
+  return {
+    id: null,
+    slug: live.slug,
+    title: live.title || live.slug,
+    type: live.articleType,
+    articleType: live.articleType,
+    pillar_keyword: live.pillarKeyword,
+    target_keyword: live.keyword,
+    supporting_keyword: live.keywordRole === "supporting" ? live.keyword : "",
+    keywordRole: live.keywordRole,
+    status: live.status || (live.draft ? "drafted" : "published"),
+    updated_date: live.lastDate,
+    date: live.lastDate,
+    published_url: live.url,
+    internalLinks: live.internalLinks,
+    externalLinks: live.externalLinks,
+    liveError: live.error || null,
+    liveOnly: true,
+  };
 }
 
 // Strip the "(no volume data)" marker so a pillar doesn't split into phantom
@@ -251,10 +276,6 @@ export default function Articles() {
   const [scanResult, setScanResult] = useState(null);
   const [linkHealth, setLinkHealth] = useState(null);
   const [faceliftLiveRows, setFaceliftLiveRows] = useState([]);
-  const [liveSearchInput, setLiveSearchInput] = useState("");
-  const [liveDebouncedSearch, setLiveDebouncedSearch] = useState("");
-  const [livePillarFilter, setLivePillarFilter] = useState("all");
-  const [liveClusterFilter, setLiveClusterFilter] = useState("all");
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -264,21 +285,10 @@ export default function Articles() {
   }, [searchInput]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setLiveDebouncedSearch(liveSearchInput.trim());
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [liveSearchInput]);
-
-  useEffect(() => {
     setScanResult(null);
     setScanError("");
     setLinkHealth(null);
     setFaceliftLiveRows([]);
-    setLiveSearchInput("");
-    setLiveDebouncedSearch("");
-    setLivePillarFilter("all");
-    setLiveClusterFilter("all");
   }, [companyId]);
 
   useEffect(() => {
@@ -341,18 +351,41 @@ export default function Articles() {
     };
   }, [companyId]);
 
+  const liveBySlug = useMemo(() => {
+    const map = indexLiveRows(faceliftLiveRows);
+    for (const [slug, row] of indexLiveRows(scanResult?.articles)) {
+      map.set(slug, row);
+    }
+    return map;
+  }, [faceliftLiveRows, scanResult]);
+
+  const displayArticles = useMemo(() => {
+    const used = new Set();
+    const merged = articles.map((article) => {
+      const slug = String(article.slug || "").trim();
+      const live = slug ? liveBySlug.get(slug) : null;
+      if (slug && live) used.add(slug);
+      return overlayLibraryArticle(article, live);
+    });
+    for (const [slug, live] of liveBySlug) {
+      if (used.has(slug)) continue;
+      merged.push(liveOnlyArticle(live));
+    }
+    return merged;
+  }, [articles, liveBySlug]);
+
   const pillarOptions = useMemo(() => {
     const set = new Set();
-    for (const article of articles) {
+    for (const article of displayArticles) {
       const key = cleanPillar(article.pillar_keyword);
       if (key) set.add(key);
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [articles]);
+  }, [displayArticles]);
 
   const filtered = useMemo(() => {
     const q = debouncedSearch.toLowerCase();
-    return articles.filter((article) => {
+    return displayArticles.filter((article) => {
       if (slugFilter && article.slug !== slugFilter) return false;
       if (pillarFilter !== "all" && cleanPillar(article.pillar_keyword) !== pillarFilter) {
         return false;
@@ -371,7 +404,7 @@ export default function Articles() {
       const target = String(article.target_keyword || "").toLowerCase();
       return title.includes(q) || target.includes(q);
     });
-  }, [articles, debouncedSearch, pillarFilter, keywordRoleFilter, typeFilter, slugFilter]);
+  }, [displayArticles, debouncedSearch, pillarFilter, keywordRoleFilter, typeFilter, slugFilter]);
 
   const selected = useMemo(
     () => articles.find((article) => article.id === selectedId) || null,
@@ -524,60 +557,15 @@ export default function Articles() {
     }
   };
 
-  const hasAnyArticles = articles.length > 0;
+  const hasLibraryArticles = articles.length > 0;
+  const hasAnyArticles = displayArticles.length > 0;
+  const showLiveFields = liveBySlug.size > 0 || Boolean(linkHealth);
   const hasActiveFilters =
     Boolean(debouncedSearch) ||
     pillarFilter !== "all" ||
     keywordRoleFilter !== "all" ||
     typeFilter !== "all" ||
     Boolean(slugFilter);
-
-  const liveArticles = Array.isArray(scanResult?.articles)
-    ? scanResult.articles
-    : faceliftLiveRows;
-  const showLiveSection = Boolean(scanResult) || faceliftLiveRows.length > 0;
-
-  const livePillarOptions = useMemo(
-    () => uniqueSorted(liveArticles.map((row) => row.pillarKeyword)),
-    [liveArticles]
-  );
-
-  const liveClusterOptions = useMemo(() => {
-    const rows =
-      livePillarFilter === "all"
-        ? liveArticles
-        : liveArticles.filter((row) => row.pillarKeyword === livePillarFilter);
-    return uniqueSorted(rows.map((row) => row.cluster));
-  }, [liveArticles, livePillarFilter]);
-
-  const filteredLiveArticles = useMemo(() => {
-    const q = liveDebouncedSearch.toLowerCase();
-    return liveArticles.filter((row) => {
-      if (
-        livePillarFilter !== "all" &&
-        row.pillarKeyword !== livePillarFilter
-      ) {
-        return false;
-      }
-      if (liveClusterFilter !== "all" && row.cluster !== liveClusterFilter) {
-        return false;
-      }
-      if (!q) return true;
-      return String(row.title || "")
-        .toLowerCase()
-        .includes(q);
-    });
-  }, [
-    liveArticles,
-    liveDebouncedSearch,
-    livePillarFilter,
-    liveClusterFilter,
-  ]);
-
-  const liveFiltersActive =
-    Boolean(liveDebouncedSearch) ||
-    livePillarFilter !== "all" ||
-    liveClusterFilter !== "all";
 
   return (
     <div className="space-y-6">
@@ -587,8 +575,7 @@ export default function Articles() {
           <p className="text-sm text-muted-foreground">
             CMS for this company’s destination site. Open an article to edit,
             replace its image, save, or publish — each action commits to the
-            live repo. Scan Live reads the published site independently of this
-            library.
+            live repo. Scan Live updates this table from the published site.
           </p>
         </div>
         <Button
@@ -629,209 +616,27 @@ export default function Articles() {
         }}
       />
 
-      {showLiveSection && (
-        <section className="space-y-3">
-          <div>
-            <h2 className="text-sm font-medium text-foreground">Live on site</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {liveFiltersActive
-                ? `${filteredLiveArticles.length} of ${liveArticles.length} articles`
-                : `${liveArticles.length} ${
-                    liveArticles.length === 1 ? "article" : "articles"
-                  }`}{" "}
-              {scanResult ? (
-                <>
-                  from{" "}
-                  <a
-                    href={scanResult.articlesIndexUrl || scanResult.siteUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="underline underline-offset-2 hover:text-foreground"
-                  >
-                    {displayLiveUrl(scanResult.siteUrl)}
-                  </a>
-                  {scanResult.scannedAt
-                    ? ` · scanned ${formatScannedAt(scanResult.scannedAt)}`
-                    : ""}
-                  . Read-only — this does not save into the library below.
-                </>
-              ) : (
-                <>from the destination repo (Facelift scan).</>
-              )}
-            </p>
-          </div>
-
-          {liveArticles.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
-              <p className="text-sm text-foreground font-medium">
-                No live articles found
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Sitemap, RSS, and the /articles/ listing returned no article
-                URLs for this domain.
-              </p>
-            </div>
-          ) : (
-            <>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <div className="relative flex-1">
-                  <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    value={liveSearchInput}
-                    onChange={(e) => setLiveSearchInput(e.target.value)}
-                    placeholder="Search by title…"
-                    className="pl-8 h-9"
-                  />
-                </div>
-                <Select
-                  value={livePillarFilter}
-                  onValueChange={(value) => {
-                    setLivePillarFilter(value);
-                    setLiveClusterFilter("all");
-                  }}
-                >
-                  <SelectTrigger className="w-full sm:w-[200px] h-9">
-                    <SelectValue placeholder="Keyword (pillar)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All pillars</SelectItem>
-                    {livePillarOptions.map((pillar) => (
-                      <SelectItem key={pillar} value={pillar}>
-                        {pillar}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select
-                  value={liveClusterFilter}
-                  onValueChange={setLiveClusterFilter}
-                >
-                  <SelectTrigger className="w-full sm:w-[200px] h-9">
-                    <SelectValue placeholder="Cluster" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All clusters</SelectItem>
-                    {liveClusterOptions.map((cluster) => (
-                      <SelectItem key={cluster} value={cluster}>
-                        {cluster}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {filteredLiveArticles.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
-                  <p className="text-sm text-foreground font-medium">
-                    No matching live articles
-                  </p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Try clearing search or filters.
-                  </p>
-                </div>
-              ) : (
-            <div className="overflow-x-auto rounded-lg border border-border">
-              <table className="w-full min-w-[56rem] text-sm">
-                <thead>
-                  <tr className="border-b border-border bg-muted/30 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                    <th className="px-3 py-2 font-medium">Title</th>
-                    <th className="px-3 py-2 font-medium">Keyword</th>
-                    <th className="px-3 py-2 font-medium">Type</th>
-                    <th className="px-3 py-2 font-medium">Status</th>
-                    <th className="px-3 py-2 font-medium whitespace-nowrap">
-                      Last Date
-                    </th>
-                    <th className="px-3 py-2 font-medium text-center">URL</th>
-                    <th className="px-3 py-2 font-medium text-right whitespace-nowrap">
-                      Internal
-                    </th>
-                    <th className="px-3 py-2 font-medium text-right whitespace-nowrap">
-                      External
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {filteredLiveArticles.map((row) => (
-                    <tr key={row.slug || row.url} className="align-top">
-                      <td className="px-3 py-2.5 font-medium text-foreground">
-                        {row.title || row.slug || "(untitled)"}
-                        {row.error ? (
-                          <p className="mt-0.5 text-xs font-normal text-destructive">
-                            {row.error}
-                          </p>
-                        ) : null}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="text-muted-foreground">
-                            {row.keyword || "—"}
-                          </span>
-                          {row.keywordRole ? (
-                            <KeywordTypeBadge role={row.keywordRole} />
-                          ) : null}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <TypeBadge type={row.articleType} />
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <StatusBadge
-                          status={
-                            row.status || (row.draft ? "drafted" : "published")
-                          }
-                        />
-                      </td>
-                      <td className="px-3 py-2.5 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
-                          <span className="tabular-nums text-muted-foreground">
-                            {row.lastDate || "—"}
-                          </span>
-                          <DaysSinceUpdateBadge dateValue={row.lastDate} />
-                        </div>
-                      </td>
-                      <td className="px-3 py-2.5 text-center">
-                        {row.url ? (
-                          <a
-                            href={row.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            title={`Open ${row.url}`}
-                            aria-label={`Open ${row.title || row.slug || "article"}`}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                          >
-                            <ExternalLink className="h-3.5 w-3.5" />
-                          </a>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 text-right">
-                        <LinkHealthCell
-                          kind="internal"
-                          row={row}
-                          health={linkHealth}
-                        />
-                      </td>
-                      <td className="px-3 py-2.5 text-right">
-                        <LinkHealthCell
-                          kind="external"
-                          row={row}
-                          health={linkHealth}
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-              )}
-            </>
-          )}
-        </section>
-      )}
-
       {scanResult ? (
-        <h2 className="text-sm font-medium text-foreground">Saved drafts</h2>
+        <p className="text-sm text-muted-foreground">
+          Table updated from{" "}
+          <a
+            href={scanResult.articlesIndexUrl || scanResult.siteUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-2 hover:text-foreground"
+          >
+            {displayLiveUrl(scanResult.siteUrl)}
+          </a>
+          {scanResult.scannedAt
+            ? ` · scanned ${formatScannedAt(scanResult.scannedAt)}`
+            : ""}
+          {typeof scanResult.articleCount === "number"
+            ? ` · ${scanResult.articleCount} live ${
+                scanResult.articleCount === 1 ? "article" : "articles"
+              }`
+            : ""}
+          . Live fields stay in this view and are not saved to the library.
+        </p>
       ) : null}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -898,7 +703,7 @@ export default function Articles() {
           variant="outline"
           size="sm"
           className="h-9 shrink-0"
-          disabled={!hasAnyArticles || loading || downloadingSummary}
+          disabled={!hasLibraryArticles || loading || downloadingSummary}
           onClick={downloadSummary}
         >
           {downloadingSummary ? (
@@ -934,7 +739,7 @@ export default function Articles() {
           )}
         </Button>
       </div>
-      {publishDestination && !destinationMapped && hasAnyArticles && (
+      {publishDestination && !destinationMapped && hasLibraryArticles && (
         <p className="text-sm text-muted-foreground">
           No destination repo set for this company.
         </p>
@@ -1043,23 +848,31 @@ export default function Articles() {
         </div>
       ) : !hasAnyArticles ? (
         <div className="rounded-lg border border-dashed border-border px-4 py-10 text-center">
-          <p className="text-sm text-foreground font-medium">No articles saved yet</p>
+          <p className="text-sm text-foreground font-medium">
+            {scanResult ? "No live articles found" : "No articles saved yet"}
+          </p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Nothing in the library yet. Generate articles in{" "}
-            <Link
-              to={`/company/${companyId}/article-generation`}
-              className="underline underline-offset-2 hover:text-foreground"
-            >
-              Cluster Generation
-            </Link>{" "}
-            or{" "}
-            <Link
-              to={`/company/${companyId}/pillar-automation`}
-              className="underline underline-offset-2 hover:text-foreground"
-            >
-              Pillar Generation
-            </Link>
-            , then edit and publish them here.
+            {scanResult ? (
+              "Sitemap, RSS, and the /articles/ listing returned no article URLs for this domain."
+            ) : (
+              <>
+                Nothing in the library yet. Generate articles in{" "}
+                <Link
+                  to={`/company/${companyId}/article-generation`}
+                  className="underline underline-offset-2 hover:text-foreground"
+                >
+                  Cluster Generation
+                </Link>{" "}
+                or{" "}
+                <Link
+                  to={`/company/${companyId}/pillar-automation`}
+                  className="underline underline-offset-2 hover:text-foreground"
+                >
+                  Pillar Generation
+                </Link>
+                , then edit and publish them here.
+              </>
+            )}
           </p>
         </div>
       ) : filtered.length === 0 ? (
@@ -1073,7 +886,7 @@ export default function Articles() {
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full text-sm">
+          <table className={`w-full text-sm${showLiveFields ? " min-w-[56rem]" : ""}`}>
             <thead>
               <tr className="border-b border-border bg-muted/30 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
                 <th className="px-3 py-2 font-medium">Title</th>
@@ -1086,6 +899,17 @@ export default function Articles() {
                   Refresh Days
                 </th>
                 <th className="px-3 py-2 font-medium">Date</th>
+                {showLiveFields ? (
+                  <>
+                    <th className="px-3 py-2 font-medium text-center">URL</th>
+                    <th className="px-3 py-2 font-medium text-right whitespace-nowrap">
+                      Internal
+                    </th>
+                    <th className="px-3 py-2 font-medium text-right whitespace-nowrap">
+                      External
+                    </th>
+                  </>
+                ) : null}
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -1093,16 +917,27 @@ export default function Articles() {
                 const days = daysSinceUpdate(
                   article.updated_date || article.date
                 );
+                const canOpen = Boolean(article.id) && !article.liveOnly;
+                const liveUrl = article.published_url;
                 return (
                   <tr
-                    key={article.id}
-                    onClick={() => setSelectedId(article.id)}
-                    className="cursor-pointer hover:bg-muted/40"
+                    key={article.id || article.slug}
+                    onClick={() => {
+                      if (canOpen) setSelectedId(article.id);
+                    }}
+                    className={
+                      canOpen ? "cursor-pointer hover:bg-muted/40" : "align-top"
+                    }
                   >
                     <td className="max-w-[24rem] px-3 py-2.5 font-medium text-foreground">
                       <span className="block truncate">
                         {article.title || "(untitled)"}
                       </span>
+                      {article.liveError ? (
+                        <p className="mt-0.5 text-xs font-normal text-destructive">
+                          {article.liveError}
+                        </p>
+                      ) : null}
                     </td>
                     <td className="px-3 py-2.5">
                       <TypeBadge type={articleTypeKey(article)} />
@@ -1129,6 +964,41 @@ export default function Articles() {
                         article.updated_date || article.date
                       )}
                     </td>
+                    {showLiveFields ? (
+                      <>
+                        <td className="px-3 py-2.5 text-center">
+                          {liveUrl ? (
+                            <a
+                              href={liveUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              title={`Open ${liveUrl}`}
+                              aria-label={`Open ${article.title || article.slug || "article"}`}
+                              onClick={(event) => event.stopPropagation()}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          <LinkHealthCell
+                            kind="internal"
+                            row={article}
+                            health={linkHealth}
+                          />
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          <LinkHealthCell
+                            kind="external"
+                            row={article}
+                            health={linkHealth}
+                          />
+                        </td>
+                      </>
+                    ) : null}
                   </tr>
                 );
               })}
