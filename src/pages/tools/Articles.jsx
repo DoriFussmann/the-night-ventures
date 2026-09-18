@@ -1,19 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import ReactMarkdown from "react-markdown";
-import { Download, ExternalLink, Loader2, Radar, Search, Trash2, Upload } from "lucide-react";
+import { Download, ExternalLink, Loader2, Radar, Search, Upload } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { scanLiveArticles } from "./articles/scanLiveApi";
 import FaceliftPanel from "./articles/FaceliftPanel";
+import ArticleCmsDialog from "./articles/ArticleCmsDialog";
 import { Input } from "@/components/ui/input";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -203,84 +196,6 @@ function LinkHealthCell({ kind, row, health }) {
       {shown}/{needed}
     </span>
   );
-}
-
-function bodyForReader(body) {
-  return String(body || "")
-    .replace(/<!--\s*WHERE-THINGS-STAND:START\s*-->\s*/gi, "")
-    .replace(/<!--\s*WHERE-THINGS-STAND:END\s*-->\s*/gi, "")
-    .trim();
-}
-
-const markdownComponents = {
-  h1: ({ children }) => (
-    <h1 className="text-2xl font-semibold tracking-tight text-foreground mt-2 mb-4">
-      {children}
-    </h1>
-  ),
-  h2: ({ children }) => (
-    <h2 className="text-xl font-semibold tracking-tight text-foreground mt-9 mb-3 pb-2 border-b border-border/60">
-      {children}
-    </h2>
-  ),
-  h3: ({ children }) => (
-    <h3 className="text-lg font-medium text-foreground mt-6 mb-2">{children}</h3>
-  ),
-  p: ({ children }) => (
-    <p className="mb-4 text-xs leading-[1.75] text-foreground/90">{children}</p>
-  ),
-  ul: ({ children }) => (
-    <ul className="mb-4 ml-5 list-disc space-y-1.5 text-xs leading-[1.7] text-foreground/90">
-      {children}
-    </ul>
-  ),
-  ol: ({ children }) => (
-    <ol className="mb-4 ml-5 list-decimal space-y-1.5 text-xs leading-[1.7] text-foreground/90">
-      {children}
-    </ol>
-  ),
-  li: ({ children }) => <li className="pl-0.5">{children}</li>,
-  strong: ({ children }) => (
-    <strong className="font-semibold text-foreground">{children}</strong>
-  ),
-  em: ({ children }) => <em className="italic">{children}</em>,
-  blockquote: ({ children }) => (
-    <blockquote className="my-4 border-l-2 border-border pl-4 text-muted-foreground italic">
-      {children}
-    </blockquote>
-  ),
-  a: ({ href, children }) => (
-    <a
-      href={href}
-      className="underline underline-offset-2 text-foreground hover:text-foreground/80"
-      target="_blank"
-      rel="noreferrer"
-    >
-      {children}
-    </a>
-  ),
-  hr: () => <hr className="my-8 border-border" />,
-};
-
-function asStringList(value) {
-  if (!Array.isArray(value)) return [];
-  return value.map((item) => String(item ?? "")).filter(Boolean);
-}
-
-function asFaqList(value) {
-  if (!Array.isArray(value)) return [];
-  return value.filter((item) => item && typeof item === "object");
-}
-
-function asSourceList(value) {
-  if (!Array.isArray(value)) return [];
-  return value
-    .filter((item) => item && typeof item === "object")
-    .map((item) => ({
-      url: String(item.url || "").trim(),
-      note: String(item.note || "").trim(),
-    }))
-    .filter((item) => item.url || item.note);
 }
 
 function formatDisplayDate(value) {
@@ -670,10 +585,10 @@ export default function Articles() {
         <div>
           <h1 className="text-xs text-foreground mb-1">Articles</h1>
           <p className="text-sm text-muted-foreground">
-            Saved drafts from Cluster Generation — full frontmatter and body.
-            Status is read-only here; mark articles published in Cluster Generation
-            after shipping through the site CMS. Scan Live reads the published
-            site independently of this library.
+            CMS for this company’s destination site. Open an article to edit,
+            replace its image, save, or publish — each action commits to the
+            live repo. Scan Live reads the published site independently of this
+            library.
           </p>
         </div>
         <Button
@@ -1130,14 +1045,21 @@ export default function Articles() {
         <div className="rounded-lg border border-dashed border-border px-4 py-10 text-center">
           <p className="text-sm text-foreground font-medium">No articles saved yet</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            This library only shows drafts saved from{" "}
+            Nothing in the library yet. Generate articles in{" "}
             <Link
               to={`/company/${companyId}/article-generation`}
               className="underline underline-offset-2 hover:text-foreground"
             >
               Cluster Generation
+            </Link>{" "}
+            or{" "}
+            <Link
+              to={`/company/${companyId}/pillar-automation`}
+              className="underline underline-offset-2 hover:text-foreground"
+            >
+              Pillar Generation
             </Link>
-            . Use Scan Live to list articles already on the published site.
+            , then edit and publish them here.
           </p>
         </div>
       ) : filtered.length === 0 ? (
@@ -1215,175 +1137,40 @@ export default function Articles() {
         </div>
       )}
 
-      <Dialog
+      <ArticleCmsDialog
+        article={selected}
+        companyId={companyId}
+        destination={publishDestination}
         open={selected != null}
-        onOpenChange={(open) => {
-          if (!open) setSelectedId(null);
+        deleting={deleting}
+        onOpenChange={(next) => {
+          if (!next) setSelectedId(null);
         }}
-      >
-        <DialogContent className="max-w-3xl max-h-[90vh] h-[90vh] overflow-hidden flex flex-col gap-0 p-0 min-h-0">
-          {selected && (
+        onDelete={() => selected && setDeleteId(selected.id)}
+        onUpdated={(row) => {
+          if (!row?.id) return;
+          setArticles((prev) =>
+            prev.map((item) => (item.id === row.id ? { ...item, ...row } : item))
+          );
+        }}
+        badges={
+          selected ? (
             <>
-              <div className="shrink-0 border-b border-border px-6 pt-6 pb-4 pr-14">
-                <DialogHeader className="space-y-2 text-left">
-                  <DialogTitle className="text-xl leading-snug font-semibold tracking-tight">
-                    {selected.title || "(untitled)"}
-                  </DialogTitle>
-                  {selected.description && (
-                    <DialogDescription className="text-sm leading-relaxed text-muted-foreground">
-                      {selected.description}
-                    </DialogDescription>
+              <PillarBadge keyword={selected.pillar_keyword} />
+              <KeywordTypeBadge role={articleKeywordRole(selected)} />
+              <TypeBadge type={articleTypeKey(selected)} />
+              <StatusBadge status={selected.status} />
+              {selected.status === "published" && selected.published_at ? (
+                <span className="text-xs text-muted-foreground">
+                  {formatDisplayDate(
+                    String(selected.published_at).slice(0, 10)
                   )}
-                </DialogHeader>
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <PillarBadge keyword={selected.pillar_keyword} />
-                  <KeywordTypeBadge role={articleKeywordRole(selected)} />
-                  <TypeBadge type={articleTypeKey(selected)} />
-                  <StatusBadge status={selected.status} />
-                  {selected.status === "published" && selected.published_at ? (
-                    <span className="text-xs text-muted-foreground">
-                      {formatDisplayDate(
-                        String(selected.published_at).slice(0, 10)
-                      )}
-                    </span>
-                  ) : null}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="ml-auto text-destructive hover:text-destructive"
-                    disabled={deleting}
-                    onClick={() => setDeleteId(selected.id)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-                    Delete
-                  </Button>
-                </div>
-              </div>
-
-              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-                <div className="border-b border-border px-6 py-4 space-y-3">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                    <DetailRow label="slug" value={selected.slug} mono />
-                    <DetailRow label="category" value={selected.category} />
-                    <DetailRow label="date" value={selected.date} />
-                    <DetailRow
-                      label="updatedDate"
-                      value={selected.updated_date}
-                    />
-                    <DetailRow label="author" value={selected.author} />
-                    <DetailRow label="imageAlt" value={selected.image_alt} />
-                    <DetailRow
-                      label="pillarKeyword"
-                      value={selected.pillar_keyword}
-                    />
-                    <DetailRow
-                      label="supportingKeyword"
-                      value={selected.supporting_keyword}
-                    />
-                    <DetailRow
-                      label="articleType"
-                      value={selected.type}
-                    />
-                    <DetailRow
-                      label="targetKeyword"
-                      value={selected.target_keyword}
-                    />
-                    <DetailRow
-                      label="draft"
-                      value={selected.draft ? "true" : "false"}
-                    />
-                    <DetailRow
-                      label="publishedAt"
-                      value={
-                        selected.published_at
-                          ? String(selected.published_at).slice(0, 10)
-                          : null
-                      }
-                    />
-                    <DetailRow
-                      label="publishedUrl"
-                      value={selected.published_url}
-                    />
-                  </div>
-                  <div className="space-y-2 text-sm">
-                    <DetailList label="tags" items={asStringList(selected.tags)} />
-                    <DetailList
-                      label="keywords"
-                      items={asStringList(selected.keywords)}
-                    />
-                    <DetailList
-                      label="internalLinks"
-                      items={asStringList(selected.internal_links)}
-                    />
-                    <DetailList
-                      label="externalLinks"
-                      items={asStringList(selected.external_links)}
-                    />
-                  </div>
-                  {asFaqList(selected.faqs).length > 0 && (
-                    <div className="text-sm">
-                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">
-                        faqs
-                      </p>
-                      <div className="space-y-2">
-                        {asFaqList(selected.faqs).map((faq, i) => (
-                          <div key={`faq-${i}`}>
-                            <p className="font-medium text-foreground">
-                              {faq.question || "—"}
-                            </p>
-                            <p className="mt-0.5 text-muted-foreground">
-                              {faq.answer || "—"}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="px-6 py-6 bg-[linear-gradient(180deg,hsl(var(--muted)/0.35)_0%,transparent_120px)]">
-                  <article className="mx-auto max-w-2xl">
-                    <ReactMarkdown components={markdownComponents}>
-                      {bodyForReader(selected.body)}
-                    </ReactMarkdown>
-
-                    {asSourceList(selected.where_things_stand_sources).length >
-                      0 && (
-                      <section className="mt-10 pt-6 border-t border-border">
-                        <h2 className="text-xl font-semibold tracking-tight text-foreground mb-4">
-                          Sources
-                        </h2>
-                        <ul className="space-y-2 text-sm">
-                          {asSourceList(
-                            selected.where_things_stand_sources
-                          ).map((source, i) => (
-                            <li key={`article-source-${i}`}>
-                              <p className="font-medium text-foreground">
-                                {source.note || "Source"}
-                              </p>
-                              {source.url ? (
-                                <a
-                                  href={source.url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="mt-0.5 block break-all text-xs underline underline-offset-2 text-muted-foreground hover:text-foreground"
-                                >
-                                  {source.url}
-                                </a>
-                              ) : null}
-                            </li>
-                          ))}
-                        </ul>
-                      </section>
-                    )}
-                  </article>
-                </div>
-              </div>
+                </span>
+              ) : null}
             </>
-          )}
-        </DialogContent>
-      </Dialog>
+          ) : null
+        }
+      />
 
       <AlertDialog
         open={deleteTarget != null}
@@ -1439,33 +1226,3 @@ function formatScannedAt(value) {
   return date.toLocaleString();
 }
 
-function DetailRow({ label, value, mono }) {
-  const display = value != null && String(value).trim() !== "" ? String(value) : null;
-  return (
-    <div>
-      <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-0.5">
-        {label}
-      </p>
-      <div
-        className={`text-foreground break-words ${mono ? "font-mono text-xs" : ""}`}
-      >
-        {display || <span className="text-muted-foreground">—</span>}
-      </div>
-    </div>
-  );
-}
-
-function DetailList({ label, items }) {
-  return (
-    <div>
-      <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-0.5">
-        {label}
-      </p>
-      {items.length === 0 ? (
-        <p className="text-muted-foreground">—</p>
-      ) : (
-        <p className="text-foreground break-words">{items.join(", ")}</p>
-      )}
-    </div>
-  );
-}

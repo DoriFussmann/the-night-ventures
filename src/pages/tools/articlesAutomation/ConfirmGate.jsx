@@ -6,6 +6,8 @@ export default function ConfirmGate({
   seconds = 10,
   onConfirm,
   onDecline,
+  title = "Countdown to Confirm",
+  hint,
   confirmLabel = "Confirm",
   declineLabel = "Decline",
   disabled = false,
@@ -49,13 +51,14 @@ export default function ConfirmGate({
   return (
     <div className="rounded-lg border border-border bg-card px-4 py-4 space-y-3">
       <div className="flex items-baseline justify-between gap-3">
-        <p className="text-sm font-medium text-foreground">
-          Countdown to Confirm
-        </p>
+        <p className="text-sm font-medium text-foreground">{title}</p>
         <p className="text-sm tabular-nums text-muted-foreground">
           {remaining}s
         </p>
       </div>
+      {hint ? (
+        <p className="text-xs text-muted-foreground">{hint}</p>
+      ) : null}
       <Progress value={pct} className="h-1.5" />
       <div className="flex flex-wrap gap-2">
         <Button

@@ -313,7 +313,7 @@ export const PREDEFINED_ITEMS = {
       item_key: "generate-and-publish-articles",
       title: "Generate articles (with images) and publish",
       description:
-        "In TNV → Cluster Generation, generate each available supporting cluster (pillar article must already be published). Images are on by default. When generation completes, publish to the site — this commits each article to a publish/<timestamp> branch and merges to main, triggering a site rebuild.",
+        "In TNV → Cluster Generation, select a supporting cluster and click Generate (pillar article must already be published). Images are on by default. When generation completes, the run commits to the site automatically, then offers to wire internal links.",
       prompts: [],
       linkTo: "/company/:companyId/article-generation",
       linkLabel: "Open Cluster Generation →",
@@ -370,7 +370,7 @@ export const PREDEFINED_ITEMS = {
       item_key: "generate-all-articles",
       title: "Generate all articles",
       description:
-        "In Cluster Generation, generate each supporting cluster and both pillar articles via Pillar Automation — expect roughly 10 total files (2 pillar articles + supporting cluster articles).",
+        "In Cluster Generation, generate each supporting cluster and both pillar articles via Pillar Generation — expect roughly 10 total files (2 pillar articles + supporting cluster articles).",
       prompts: [],
     },
     {

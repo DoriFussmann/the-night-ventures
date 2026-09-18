@@ -141,12 +141,14 @@ export default function AppSidebar({ user }) {
     { label: "Site Build Flow", path: `/company/${activeCompanyId}/site-build-flow`, icon: Construction, status: "Done" },
     { label: "Design Builder", path: `/company/${activeCompanyId}/design-guide-builder`, icon: Palette, status: "Done" },
     { label: "Site Content Builder", path: `/company/${activeCompanyId}/site-content-builder`, icon: LayoutTemplate, status: "Done" },
-    { label: "Pillar Automation", path: `/company/${activeCompanyId}/pillar-automation`, icon: Layers, status: "Done" },
+    { label: "Pillar Generation", path: `/company/${activeCompanyId}/pillar-automation`, icon: Layers, status: "Done" },
     { label: "Cluster Generation", path: `/company/${activeCompanyId}/article-generation`, icon: PenLine, status: "Done" },
   ];
 
   const ongoingNav = [
     { label: "Articles", path: `/company/${activeCompanyId}/articles`, icon: BookOpen, status: "Done" },
+    { label: "Pillar Generation", path: `/company/${activeCompanyId}/pillar-automation`, icon: Layers, status: "Done" },
+    { label: "Cluster Generation", path: `/company/${activeCompanyId}/article-generation`, icon: PenLine, status: "Done" },
   ];
 
   const analyticsNav = [
@@ -301,19 +303,16 @@ export default function AppSidebar({ user }) {
               {adminNav.map((item) => (
                 <NavItem key={item.path} item={item} />
               ))}
+              <button
+                type="button"
+                onClick={() => handleDangerOpenChange(true)}
+                disabled={!companyName.trim()}
+                className="w-full flex items-center gap-2 rounded-md border border-destructive/30 px-2.5 py-1.5 text-left text-xs text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                <span className="leading-tight">Danger Zone</span>
+              </button>
             </div>
-            <p className="px-2.5 pt-3 pb-1.5 text-[9px] font-semibold uppercase tracking-widest text-destructive/70">
-              Danger Zone
-            </p>
-            <button
-              type="button"
-              onClick={() => handleDangerOpenChange(true)}
-              disabled={!companyName.trim()}
-              className="w-full flex items-center gap-2 rounded-md border border-destructive/30 px-2.5 py-1.5 text-left text-xs text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
-            >
-              <Trash2 className="w-3.5 h-3.5 shrink-0" />
-              <span className="leading-tight">Remove company</span>
-            </button>
           </>
         )}
       </nav>

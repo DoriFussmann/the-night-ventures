@@ -1,19 +1,21 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, Download, Loader2, Upload, X } from "lucide-react";
 import { useParams } from "react-router-dom";
+import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import ConfirmGate from "./articlesAutomation/ConfirmGate";
+import GenerationReport from "./articlesAutomation/GenerationReport";
 import {
   loadAutomationContext,
   persistPlannedCluster,
   requestClusterPlan,
 } from "./articlesAutomation/planCluster";
-import {
-  generateClusterArticles,
-  saveAndDownloadGenerated,
-} from "./articlesAutomation/runGeneration";
+import { generateClusterArticles } from "./articlesAutomation/runGeneration";
 import { downloadArticlesZip } from "./articleGeneration/downloadZip";
+import { saveGeneratedArticles } from "./articleGeneration/saveGeneratedArticles";
+import { syncGeneratedArticlePublished } from "./articleGeneration/syncGeneratedArticlePublished";
+import { updateCoveragePublished } from "./articleGeneration/updateCoverageDrafted";
 import {
   DEFAULT_PUBLISH_BRANCH,
   formatPublishProgress,
@@ -46,7 +48,7 @@ const TYPE_COLORS = {
   flex: "bg-slate-100 text-slate-600 border-slate-200",
 };
 
-const IDLE_PHASES = new Set(["idle", "done", "declined", "error"]);
+const IDLE_PHASES = new Set(["idle", "selected", "done", "declined", "error"]);
 
 function TypeBadge({ type }) {
   const key = TYPE_COLORS[type] ? type : "flex";
@@ -107,7 +109,7 @@ function stageStatus(stageId, currentStage, phase) {
   return "pending";
 }
 
-function ClusterTile({ cluster, selected, busy, onGenerate }) {
+function ClusterTile({ cluster, selected, busy, onSelect }) {
   const base =
     "min-w-[11rem] max-w-xs flex-1 rounded-lg border px-3 py-2.5 text-left text-sm";
 
@@ -140,13 +142,21 @@ function ClusterTile({ cluster, selected, busy, onGenerate }) {
       <button
         type="button"
         disabled={busy}
-        onClick={() => onGenerate(cluster)}
-        className={`${base} border-amber-200 bg-amber-50 text-amber-950 transition-colors hover:bg-amber-100 disabled:opacity-50 ${
-          selected ? "ring-1 ring-amber-400/60" : ""
+        onClick={() => onSelect(cluster)}
+        className={`${base} transition-colors hover:bg-amber-100 disabled:opacity-50 ${
+          selected
+            ? "border-foreground bg-accent text-foreground ring-1 ring-foreground/20"
+            : "border-amber-200 bg-amber-50 text-amber-950"
         }`}
       >
         <p className="font-medium leading-snug">{cluster.clusterKeyword}</p>
-        <p className="mt-1 text-[11px] text-amber-800/80">Generate (planned)</p>
+        <p
+          className={`mt-1 text-[11px] ${
+            selected ? "text-foreground/70" : "text-amber-800/80"
+          }`}
+        >
+          {selected ? "Selected" : "Planned"}
+        </p>
       </button>
     );
   }
@@ -155,15 +165,19 @@ function ClusterTile({ cluster, selected, busy, onGenerate }) {
     <button
       type="button"
       disabled={busy}
-      onClick={() => onGenerate(cluster)}
-      className={`${base} border-border bg-card transition-colors hover:bg-accent/50 disabled:opacity-50 ${
-        selected ? "ring-1 ring-foreground/20" : ""
+      onClick={() => onSelect(cluster)}
+      className={`${base} transition-colors hover:bg-accent/50 disabled:opacity-50 ${
+        selected
+          ? "border-foreground bg-accent text-foreground ring-1 ring-foreground/20"
+          : "border-border bg-card"
       }`}
     >
       <p className="font-medium leading-snug text-foreground">
         {cluster.clusterKeyword}
       </p>
-      <p className="mt-1 text-[11px] text-muted-foreground">Generate</p>
+      <p className="mt-1 text-[11px] text-muted-foreground">
+        {selected ? "Selected" : "Available"}
+      </p>
     </button>
   );
 }
@@ -192,6 +206,7 @@ export default function ClusterGeneration() {
   const [publishProgress, setPublishProgress] = useState(null);
   const [publishResult, setPublishResult] = useState(null);
   const [publishError, setPublishError] = useState(null);
+  const [wireActive, setWireActive] = useState(false);
 
   const contextRef = useRef(null);
   const pickedRef = useRef(null);
@@ -201,7 +216,7 @@ export default function ClusterGeneration() {
   const stageRef = useRef(currentStage);
   stageRef.current = currentStage;
 
-  const busy = !IDLE_PHASES.has(phase);
+  const busy = !IDLE_PHASES.has(phase) || wireActive;
   const tree = useMemo(() => buildClusterTree(pillars), [pillars]);
 
   const refreshContext = useCallback(async () => {
@@ -258,8 +273,7 @@ export default function ClusterGeneration() {
     };
   }, [companyId, refreshContext]);
 
-  const resetRunState = () => {
-    setPicked(null);
+  const resetRunOutputs = () => {
     setProposal(null);
     setPlannedArticles([]);
     setJobs([]);
@@ -267,15 +281,21 @@ export default function ClusterGeneration() {
     setCoverageWarning("");
     setFinishNote("");
     setError("");
-    setStatusMessage("");
     setPublishing(false);
     setPublishProgress(null);
     setPublishResult(null);
     setPublishError(null);
-    pickedRef.current = null;
+    setWireActive(false);
     proposalRef.current = null;
     plannedRef.current = [];
     jobsRef.current = [];
+  };
+
+  const resetRunState = () => {
+    resetRunOutputs();
+    setPicked(null);
+    setStatusMessage("");
+    pickedRef.current = null;
   };
 
   const stillCurrent = (token) => runTokenRef.current === token;
@@ -286,7 +306,7 @@ export default function ClusterGeneration() {
     setPhase("declined");
     if (stage === "articles") {
       setStatusMessage(
-        "Flow declined. Drafts were not saved or downloaded. Coverage may already be marked drafted from generation."
+        "Flow declined. Drafts were not published. Coverage may already be marked drafted from generation."
       );
     } else if (stage === "topic") {
       setStatusMessage("Flow declined. The plan was not saved.");
@@ -380,22 +400,11 @@ export default function ClusterGeneration() {
       setStatusMessage(
         `${succeeded} article${succeeded === 1 ? "" : "s"} generated${
           failed ? `, ${failed} failed` : ""
-        }. Confirm to save and download.`
+        }. Confirm to publish to the site.`
       );
     },
     [companyId]
   );
-
-  const confirmCluster = useCallback(async () => {
-    const token = runTokenRef.current;
-    try {
-      await runTopicGeneration(token);
-    } catch (err) {
-      if (!stillCurrent(token)) return;
-      setPhase("error");
-      setError(err?.message || "Topic generation failed");
-    }
-  }, [runTopicGeneration]);
 
   const confirmPlan = useCallback(async () => {
     const token = runTokenRef.current;
@@ -433,44 +442,206 @@ export default function ClusterGeneration() {
     }
   }, [companyId, runArticleGeneration]);
 
-  const confirmArticles = useCallback(async () => {
+  const confirmPublish = useCallback(async () => {
     const token = runTokenRef.current;
     const cluster = pickedRef.current;
+    const destination = publishDestination;
+
+    if (!isPublishDestinationMapped(destination)) {
+      setPhase("error");
+      setPublishError("Set Publish Destination in Company Data first");
+      setError("Set Publish Destination in Company Data first");
+      setStatusMessage("Set Publish Destination in Company Data first");
+      return;
+    }
+
+    const readyJobs = jobsRef.current.filter(
+      (job) => job.status === "done" && job.markdown
+    );
+    if (readyJobs.length === 0) {
+      setPhase("error");
+      setError("No successful articles to publish.");
+      return;
+    }
+
     try {
-      setPhase("finishing");
+      setPhase("publishing");
       setViewingStage("articles");
-      setStatusMessage("Saving articles and downloading markdown…");
-      const result = await saveAndDownloadGenerated({
+      setPublishing(true);
+      setPublishProgress(null);
+      setPublishError(null);
+      setPublishResult(null);
+      setStatusMessage("Saving articles, then publishing to the destination site…");
+
+      const saved = await saveGeneratedArticles({
+        supabase,
         companyId,
         pillarKeyword: cluster?.pillarKeyword || "",
         supportingKeyword: cluster?.clusterKeyword || "",
-        articles: plannedRef.current,
-        jobs: jobsRef.current,
+        articles: readyJobs.map((job) => {
+          const article = plannedRef.current[job.index] || {};
+          return {
+            type: job.type || article.type,
+            targetKeyword: article.targetKeyword || "",
+            frontmatter: job.frontmatter,
+            body: job.body,
+            whereThingsStandSources: job.whereThingsStandSources,
+            heroStoragePath: job.image?.storagePath || null,
+          };
+        }),
+      });
+      if (saved.error) throw saved.error;
+      if (!stillCurrent(token)) return;
+
+      const result = await publishArticlesToSite(
+        readyJobs.map((job) => ({
+          frontmatter: job.frontmatter,
+          body: job.body,
+          markdown: job.markdown,
+          heroStoragePath: job.image?.storagePath || null,
+          image:
+            job.image?.status === "done"
+              ? {
+                  ...(job.image.result || {}),
+                  storagePath: job.image.storagePath || null,
+                }
+              : null,
+        })),
+        {
+          companyId,
+          owner: destination.owner,
+          repo: destination.repo,
+          tokenKey: destination.tokenKey,
+          branch: DEFAULT_PUBLISH_BRANCH,
+        },
+        {
+          onProgress: (progress) => {
+            if (!stillCurrent(token)) return;
+            setPublishProgress(progress);
+            setStatusMessage(
+              progress.phase === "merge"
+                ? "Merging publish branch…"
+                : `Committing ${progress.current}/${progress.total}${
+                    progress.filename ? `: ${progress.filename}` : ""
+                  }`
+            );
+          },
+        }
+      );
+      if (!stillCurrent(token)) return;
+
+      setPublishResult(result);
+      const committedCount = Array.isArray(result.committed)
+        ? result.committed.length
+        : 0;
+      const skippedCount = Array.isArray(result.skipped)
+        ? result.skipped.length
+        : 0;
+
+      if (!result.ok || committedCount === 0) {
+        setPhase("error");
+        setPublishError(
+          "Publish did not complete. See the report below."
+        );
+        setStatusMessage("Publish did not complete. See the report below.");
+        return;
+      }
+
+      const now = new Date().toISOString();
+      const publishedUrl = result.pullRequestUrl || "";
+      const coverage = await updateCoveragePublished({
+        companyId,
+        pillarKeyword: cluster?.pillarKeyword || "",
+        supportingKeyword: cluster?.clusterKeyword || "",
+        successes: readyJobs.map((job) => {
+          const article = plannedRef.current[job.index] || {};
+          return {
+            targetKeyword: article.targetKeyword,
+            title: job.frontmatter?.title || job.title || article.title,
+            frontmatter: job.frontmatter,
+          };
+        }),
+        publishedUrl,
       });
       if (!stillCurrent(token)) return;
+      if (coverage.pillars?.length) {
+        setPillars(coverage.pillars);
+        if (contextRef.current) {
+          contextRef.current = {
+            ...contextRef.current,
+            pillars: coverage.pillars,
+          };
+        }
+      }
+      if (coverage.warning) setCoverageWarning(coverage.warning);
+
+      for (const job of readyJobs) {
+        const article = plannedRef.current[job.index] || {};
+        await syncGeneratedArticlePublished({
+          companyId,
+          pillarKeyword: cluster?.pillarKeyword || "",
+          supportingKeyword: cluster?.clusterKeyword || "",
+          article: {
+            slug: job.frontmatter?.slug,
+            title: job.frontmatter?.title || job.title,
+            targetKeyword: article.targetKeyword || job.frontmatter?.targetKeyword,
+          },
+          publishedUrl,
+          publishedAt: now,
+        });
+        if (!stillCurrent(token)) return;
+      }
+
       setFinishNote(
-        `Saved ${result.saved} article${result.saved === 1 ? "" : "s"} to the library and downloaded the zip.`
+        `Published ${committedCount} file${committedCount === 1 ? "" : "s"} to ${destination.owner}/${destination.repo}${skippedCount ? `, ${skippedCount} skipped` : ""}.`
       );
       setPhase("done");
-      setStatusMessage("Flow complete.");
+      setStatusMessage(
+        `Published to ${destination.owner}/${destination.repo}. ${committedCount} file${committedCount === 1 ? "" : "s"} committed${skippedCount ? `, ${skippedCount} skipped` : ""}.`
+      );
       await refreshContext();
     } catch (err) {
       if (!stillCurrent(token)) return;
       setPhase("error");
-      setError(err?.message || "Failed to save or download articles");
+      setPublishError(err?.message || "Publish failed");
+      if (err?.result) setPublishResult(err.result);
+      setError(err?.message || "Publish failed");
+      setStatusMessage(err?.message || "Publish failed");
+    } finally {
+      if (stillCurrent(token)) {
+        setPublishing(false);
+        setPublishProgress(null);
+      }
     }
-  }, [companyId, refreshContext]);
+  }, [companyId, publishDestination, refreshContext]);
 
-  const startFlow = async (cluster) => {
+  const selectCluster = (cluster) => {
+    if (!companyId || busy || !cluster) return;
+    if (cluster.status !== "available" && cluster.status !== "planned") return;
+
+    runTokenRef.current += 1;
+    resetRunOutputs();
+    pickedRef.current = cluster;
+    setPicked(cluster);
+    setCurrentStage("cluster");
+    setViewingStage("cluster");
+    setPhase("selected");
+    setStatusMessage(
+      `Selected “${cluster.clusterKeyword}”. Click Generate to start.`
+    );
+  };
+
+  const startFlow = async () => {
+    const cluster = pickedRef.current;
     if (!companyId || busy || !cluster) return;
     if (cluster.status !== "available" && cluster.status !== "planned") return;
 
     const token = ++runTokenRef.current;
-    resetRunState();
+    resetRunOutputs();
     setCurrentStage("cluster");
     setViewingStage("cluster");
     setPhase("selecting");
-    setStatusMessage(`Selected “${cluster.clusterKeyword}”…`);
+    setStatusMessage(`Starting “${cluster.clusterKeyword}”…`);
 
     try {
       const ctx = await refreshContext();
@@ -527,10 +698,7 @@ export default function ClusterGeneration() {
         return;
       }
 
-      setPhase("cluster_review");
-      setStatusMessage(
-        `Selected “${fresh.clusterKeyword}” under published pillar “${fresh.pillarKeyword}”.`
-      );
+      await runTopicGeneration(token);
     } catch (err) {
       if (!stillCurrent(token)) return;
       setPhase("error");
@@ -547,76 +715,9 @@ export default function ClusterGeneration() {
     [jobs]
   );
   const destinationMapped = isPublishDestinationMapped(publishDestination);
-
-  const publishToSite = async () => {
-    if (publishing || successJobs.length === 0 || !destinationMapped) return;
-    const ok = window.confirm(
-      `Publish ${successJobs.length} article(s) to ${publishDestination.owner}/${publishDestination.repo} (${DEFAULT_PUBLISH_BRANCH})? This merges via the GitHub API.`
-    );
-    if (!ok) return;
-
-    setPublishing(true);
-    setPublishProgress(null);
-    setPublishError(null);
-    setPublishResult(null);
-    setStatusMessage("Publishing articles to the destination site…");
-    try {
-      const result = await publishArticlesToSite(
-        successJobs.map((job) => ({
-          frontmatter: job.frontmatter,
-          body: job.body,
-          markdown: job.markdown,
-          heroStoragePath: job.image?.storagePath || null,
-          image:
-            job.image?.status === "done"
-              ? {
-                  ...(job.image.result || {}),
-                  storagePath: job.image.storagePath || null,
-                }
-              : null,
-        })),
-        {
-          companyId,
-          owner: publishDestination.owner,
-          repo: publishDestination.repo,
-          tokenKey: publishDestination.tokenKey,
-          branch: DEFAULT_PUBLISH_BRANCH,
-        },
-        {
-          onProgress: (progress) => {
-            setPublishProgress(progress);
-            setStatusMessage(
-              progress.phase === "merge"
-                ? "Merging publish branch…"
-                : `Committing ${progress.current}/${progress.total}${
-                    progress.filename ? `: ${progress.filename}` : ""
-                  }`
-            );
-          },
-        }
-      );
-      setPublishResult(result);
-      const committedCount = Array.isArray(result.committed)
-        ? result.committed.length
-        : 0;
-      const skippedCount = Array.isArray(result.skipped)
-        ? result.skipped.length
-        : 0;
-      setStatusMessage(
-        result.ok
-          ? `Published to ${publishDestination.owner}/${publishDestination.repo}. ${committedCount} file${committedCount === 1 ? "" : "s"} committed${skippedCount ? `, ${skippedCount} skipped` : ""}.`
-          : "Publish did not complete. See committed, skipped, and errors below."
-      );
-      await refreshContext();
-    } catch (err) {
-      setPublishError(err?.message || "Publish failed");
-      if (err?.result) setPublishResult(err.result);
-      setStatusMessage(err?.message || "Publish failed");
-    } finally {
-      setPublishing(false);
-      setPublishProgress(null);
-    }
-  };
+  const handleWireActiveChange = useCallback((active) => {
+    setWireActive(Boolean(active));
+  }, []);
   const progressPct =
     jobs.length > 0 ? Math.round((currentStep / jobs.length) * 100) : 0;
   const currentJob =
@@ -638,7 +739,7 @@ export default function ClusterGeneration() {
       jobs.length > 0 ||
       phase === "generating" ||
       phase === "generate_review" ||
-      phase === "finishing" ||
+      phase === "publishing" ||
       phase === "done",
   };
 
@@ -647,9 +748,9 @@ export default function ClusterGeneration() {
       <div>
         <h1 className="text-xs text-foreground mb-1">Cluster Generation</h1>
         <p className="text-sm text-muted-foreground">
-          One supporting cluster per run. Generate opens the existing staged
-          flow for that cluster: plan topics, generate articles with images,
-          then save and publish. Confirm or Decline at each step; the countdown
+          Select a supporting cluster, then Generate. The run plans topics,
+          writes articles with images, publishes them, then offers to wire
+          internal links. Confirm or Decline at each step; the countdown
           auto-confirms after 10 seconds.
         </p>
       </div>
@@ -751,7 +852,7 @@ export default function ClusterGeneration() {
                           picked?.clusterKeyword === cluster.clusterKeyword
                         }
                         busy={busy}
-                        onGenerate={startFlow}
+                        onSelect={selectCluster}
                       />
                     ))}
                   </div>
@@ -773,17 +874,17 @@ export default function ClusterGeneration() {
               </p>
               <p className="text-xs text-muted-foreground">
                 {picked.status === "planned"
-                  ? "This cluster already has a saved plan. Generation will use it and will not re-plan."
-                  : "This cluster has no plan yet. Confirm to run Plan Cluster for it."}
+                  ? "This cluster already has a saved plan. Generate will use it and will not re-plan."
+                  : "This cluster has no plan yet. Generate will plan topics, then write the articles."}
               </p>
+              {phase === "selected" && (
+                <div className="pt-1">
+                  <Button type="button" size="sm" onClick={startFlow}>
+                    Generate
+                  </Button>
+                </div>
+              )}
             </div>
-          )}
-          {phase === "cluster_review" && (
-            <ConfirmGate
-              key="cluster-gate"
-              onConfirm={confirmCluster}
-              onDecline={declineFlow}
-            />
           )}
         </section>
       )}
@@ -873,10 +974,10 @@ export default function ClusterGeneration() {
               </p>
             </div>
           )}
-          {phase === "finishing" && (
+          {(phase === "publishing" || publishing) && (
             <div className="rounded-lg border border-border bg-card px-4 py-4 flex items-center gap-2 text-sm">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Saving to the Articles library and downloading markdown…
+              {formatPublishProgress(publishProgress)}
             </div>
           )}
           {jobs.length > 0 && (
@@ -917,63 +1018,41 @@ export default function ClusterGeneration() {
               ))}
             </ul>
           )}
-          {(phase === "generate_review" || phase === "done") && (
+          {(phase === "generate_review" ||
+            phase === "publishing" ||
+            phase === "done") && (
             <p className="text-sm text-foreground">
               <span className="font-medium">{successJobs.length}</span> succeeded
               <span className="text-muted-foreground"> / </span>
               <span className="font-medium">{failedJobs.length}</span> failed
             </p>
           )}
-          {finishNote && (
-            <p className="text-sm text-foreground">{finishNote}</p>
-          )}
           {phase === "done" && successJobs.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() =>
-                  downloadArticlesZip(
-                    successJobs.map((job) => ({
-                      frontmatter: job.frontmatter,
-                      markdown: job.markdown,
-                      image:
-                        job.image?.status === "done" &&
-                        job.image?.result?.b64_json
-                          ? job.image.result
-                          : null,
-                    })),
-                    `${(picked?.clusterKeyword || "articles")
-                      .toLowerCase()
-                      .replace(/[^\w]+/g, "-")
-                      .replace(/^-|-$/g, "") || "articles"}-drafts.zip`
-                  )
-                }
-              >
-                <Download className="h-3.5 w-3.5 mr-1.5" />
-                Download All (.zip)
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                disabled={publishing || !destinationMapped}
-                onClick={publishToSite}
-              >
-                {publishing ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                    {formatPublishProgress(publishProgress)}
-                  </>
-                ) : (
-                  <>
-                    <Upload className="h-3.5 w-3.5 mr-1.5" />
-                    Publish to Site
-                  </>
-                )}
-              </Button>
-            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                downloadArticlesZip(
+                  successJobs.map((job) => ({
+                    frontmatter: job.frontmatter,
+                    markdown: job.markdown,
+                    image:
+                      job.image?.status === "done" &&
+                      job.image?.result?.b64_json
+                        ? job.image.result
+                        : null,
+                  })),
+                  `${(picked?.clusterKeyword || "articles")
+                    .toLowerCase()
+                    .replace(/[^\w]+/g, "-")
+                    .replace(/^-|-$/g, "") || "articles"}-drafts.zip`
+                )
+              }
+            >
+              <Download className="h-3.5 w-3.5 mr-1.5" />
+              Download All (.zip)
+            </Button>
           )}
           {viewingStage === "articles" &&
             publishDestination &&
@@ -988,86 +1067,58 @@ export default function ClusterGeneration() {
             </p>
           )}
           {publishResult && viewingStage === "articles" && (
-            <div
-              className={`text-sm rounded-md px-3 py-2 space-y-1.5 ${
+            <GenerationReport
+              title={
                 publishResult.ok
-                  ? "text-emerald-800 bg-emerald-50 border border-emerald-200"
-                  : "text-amber-800 bg-amber-50 border border-amber-200"
-              }`}
-            >
-              <p className="font-medium">
-                {publishResult.ok
-                  ? "Published to site"
-                  : "Publish did not complete"}
-              </p>
-              {publishResult.branch && (
-                <p>
-                  Branch:{" "}
-                  <span className="font-mono">{publishResult.branch}</span>
-                </p>
-              )}
-              {publishResult.mergeCommitSha && (
-                <p>
-                  Merge SHA:{" "}
-                  <span className="font-mono break-all">
-                    {publishResult.mergeCommitSha}
-                  </span>
-                </p>
-              )}
-              {Array.isArray(publishResult.committed) &&
-                publishResult.committed.length > 0 && (
-                  <div>
-                    <p className="font-medium">Committed files</p>
-                    <ul className="list-disc pl-5 font-mono text-xs">
-                      {publishResult.committed.map((file) => (
-                        <li key={file.path || file.filename}>
-                          {file.path || file.filename}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              {Array.isArray(publishResult.skipped) &&
-                publishResult.skipped.length > 0 && (
-                  <div>
-                    <p className="font-medium">Skipped</p>
-                    <ul className="list-disc pl-5 text-xs">
-                      {publishResult.skipped.map((item, i) => (
-                        <li key={`${item.filename || "skipped"}-${i}`}>
-                          {item.filename ? `${item.filename}: ` : ""}
-                          {item.message || item.reason}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              {Array.isArray(publishResult.errors) &&
-                publishResult.errors.length > 0 && (
-                  <div>
-                    <p className="font-medium">Errors</p>
-                    <ul className="list-disc pl-5 text-xs">
-                      {publishResult.errors.map((item, i) => (
-                        <li key={`${item.filename || "error"}-${i}`}>
-                          {item.filename ? `${item.filename}: ` : ""}
-                          {item.message || String(item)}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-            </div>
+                  ? "Cluster published"
+                  : "Publish did not complete"
+              }
+              summary={
+                publishResult.ok
+                  ? `Generated ${successJobs.length} article${
+                      successJobs.length === 1 ? "" : "s"
+                    } for “${picked?.clusterKeyword || "this cluster"}” under “${
+                      picked?.pillarKeyword || "its pillar"
+                    }”, then committed them to the site.`
+                  : "Articles were generated, but the site commit did not finish. Review the problems below."
+              }
+              destinationLabel={
+                destinationMapped
+                  ? `Published to ${publishDestination.owner}/${publishDestination.repo}. A rebuild should start from this commit.`
+                  : null
+              }
+              jobs={jobs}
+              publishResult={publishResult}
+            />
           )}
+          {phase === "error" &&
+            successJobs.length > 0 &&
+            !publishResult?.ok && (
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={publishing || !destinationMapped}
+                onClick={confirmPublish}
+              >
+                <Upload className="h-3.5 w-3.5 mr-1.5" />
+                Retry Publish
+              </Button>
+            )}
           {viewingStage === "articles" && (
             <WireInternalLinksPanel
               companyId={companyId}
               destination={publishDestination}
-              visible={Boolean(publishResult)}
+              visible={Boolean(publishResult?.ok)}
+              autoStart
+              onActiveChange={handleWireActiveChange}
             />
           )}
           {phase === "generate_review" && (
             <ConfirmGate
               key="articles-gate"
-              onConfirm={confirmArticles}
+              confirmLabel="Publish"
+              onConfirm={confirmPublish}
               onDecline={declineFlow}
             />
           )}

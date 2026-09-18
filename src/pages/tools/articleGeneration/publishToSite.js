@@ -91,7 +91,9 @@ function buildArticlePayload(item, { companyId } = {}) {
 
   const article = {
     filename,
-    content: serializeArticleMarkdown(fm, body, { draft: false }),
+    content: serializeArticleMarkdown(fm, body, {
+      draft: item.publishAsDraft === true,
+    }),
   };
   if (storagePath) {
     article.storagePath = storagePath;
@@ -105,7 +107,7 @@ function buildArticlePayload(item, { companyId } = {}) {
   return { article };
 }
 
-export function generatedArticleToPublishItem(row) {
+export function generatedArticleToPublishItem(row, options = {}) {
   return {
     frontmatter: {
       title: row?.title,
@@ -127,6 +129,7 @@ export function generatedArticleToPublishItem(row) {
     body: row?.body,
     heroStoragePath: row?.hero_storage_path || null,
     image: null,
+    publishAsDraft: options.asDraft === true,
   };
 }
 
