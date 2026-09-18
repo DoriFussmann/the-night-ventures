@@ -12,7 +12,13 @@ async function postCheckLinks(token, body) {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const message = data.error || `Check Links failed (${res.status})`;
+    const raw = data?.error;
+    const fromBody = typeof raw === "string" ? raw : raw?.message;
+    const message =
+      fromBody ||
+      (res.status === 504
+        ? "Check Links timed out (504)"
+        : `Check Links failed (${res.status})`);
     const err = new Error(message);
     err.result = data;
     err.status = res.status;
@@ -53,11 +59,15 @@ export async function auditLiveLinks(destination) {
   return postCheckLinks(token, { ...destBody(destination), step: "audit" });
 }
 
-export async function proposeExternalFixes(destination) {
+export async function proposeExternalFixes(destination, { slugs } = {}) {
   const token = await sessionToken();
+  const list = Array.isArray(slugs)
+    ? slugs.map((slug) => String(slug || "").trim()).filter(Boolean)
+    : [];
   return postCheckLinks(token, {
     ...destBody(destination),
     step: "propose-external",
+    ...(list.length ? { slugs: list } : {}),
   });
 }
 

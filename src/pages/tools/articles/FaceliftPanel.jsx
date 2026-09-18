@@ -16,6 +16,8 @@ import {
   batchBoundaryLines,
   countApproved,
   defaultSelections,
+  formatFaceliftPhaseError,
+  isPartialCorpus,
   runFaceliftApply,
   runFaceliftScan,
 } from "./faceliftScan";
@@ -90,6 +92,7 @@ export default function FaceliftPanel({ companyId, destination, onHealthChange }
     () => batchBoundaryLines(scan?.batches),
     [scan?.batches]
   );
+  const partialCorpus = isPartialCorpus(scan?.batches);
   const approvedCount = useMemo(
     () => countApproved(rows, selections),
     [rows, selections]
@@ -126,7 +129,16 @@ export default function FaceliftPanel({ companyId, destination, onHealthChange }
         liveRows: result.liveRows,
         linkHealth: result.linkHealth,
       });
-      const phaseError = Object.values(result.phaseErrors || {}).filter(Boolean);
+      const nextRows = result.rows || [];
+      const nextApproved = countApproved(
+        nextRows,
+        defaultSelections(nextRows)
+      );
+      const phaseError = Object.values(result.phaseErrors || {})
+        .filter(Boolean)
+        .map((message) =>
+          formatFaceliftPhaseError(message, { approvedCount: nextApproved })
+        );
       if (phaseError.length) {
         setError(phaseError.join(" · "));
       }
@@ -245,8 +257,18 @@ export default function FaceliftPanel({ companyId, destination, onHealthChange }
 
           <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4 space-y-4">
             {batchLines.length > 0 && (
-              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950 space-y-1">
-                <p className="font-medium">This batch is not necessarily the whole corpus</p>
+              <div
+                className={
+                  partialCorpus
+                    ? "rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950 space-y-1"
+                    : "rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground space-y-1"
+                }
+              >
+                {partialCorpus && (
+                  <p className="font-medium">
+                    This batch is not necessarily the whole corpus
+                  </p>
+                )}
                 {batchLines.map((line) => (
                   <p key={line}>{line}</p>
                 ))}
@@ -277,7 +299,11 @@ export default function FaceliftPanel({ companyId, destination, onHealthChange }
                     {approvedCount ? ` (${approvedCount})` : ""}
                   </Button>
                   <span className="text-xs text-muted-foreground">
-                    Uncheck anything you do not want in this run.
+                    {error && approvedCount === 0
+                      ? "Nothing to apply until planning succeeds."
+                      : error
+                        ? "Uncheck anything you do not want. Timed-out external sources are skipped."
+                        : "Uncheck anything you do not want in this run."}
                   </span>
                 </div>
 

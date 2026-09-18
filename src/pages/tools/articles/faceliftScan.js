@@ -20,6 +20,7 @@ export { MIN_EXTERNAL_LINKS };
 export const CLEANUP_BATCH_CAP = 25;
 export const REWRITE_AUDIT_CAP = 25;
 export const REWRITE_COMMIT_CAP = 10;
+export const EXTERNAL_PROPOSE_BATCH = 1;
 
 const STALE_EXCLUDE_BUCKETS = ["0-14", "15-30"];
 
@@ -239,6 +240,14 @@ function buildBatches({
   };
 }
 
+export function isPartialCorpus(batches) {
+  if (!batches) return false;
+  const { cleanup, rewrite } = batches;
+  if (cleanup && cleanup.eligible > cleanup.cap) return true;
+  if (rewrite && rewrite.proposed > rewrite.commitCap) return true;
+  return false;
+}
+
 export function batchBoundaryLines(batches) {
   if (!batches) return [];
   const lines = [];
@@ -275,6 +284,84 @@ export function batchBoundaryLines(batches) {
   return lines;
 }
 
+function shortExternalSlugs(audit) {
+  return asArray(audit?.issues)
+    .filter((row) => row?.external?.short)
+    .map((row) => String(row?.slug || "").trim())
+    .filter(Boolean);
+}
+
+function isTimeoutMessage(message) {
+  return /504|timed out|timeout/i.test(String(message || ""));
+}
+
+async function proposeExternalBatched(dest, slugs, { onProgress, messagePrefix } = {}) {
+  const unique = [
+    ...new Set(
+      (Array.isArray(slugs) ? slugs : [])
+        .map((slug) => String(slug || "").trim())
+        .filter(Boolean)
+    ),
+  ];
+  const rows = [];
+  const failed = [];
+
+  for (let i = 0; i < unique.length; i += EXTERNAL_PROPOSE_BATCH) {
+    const batch = unique.slice(i, i + EXTERNAL_PROPOSE_BATCH);
+    onProgress?.({
+      phase: "links",
+      message: `${messagePrefix || "Planning external links…"} ${Math.min(
+        i + batch.length,
+        unique.length
+      )}/${unique.length}`,
+    });
+    try {
+      const data = await proposeExternalFixes(dest, { slugs: batch });
+      rows.push(...asArray(data?.rows));
+    } catch (err) {
+      const reason = err?.message || "planning failed";
+      if (batch.length === 1) {
+        failed.push({ slug: batch[0], reason });
+        continue;
+      }
+      for (const slug of batch) {
+        try {
+          const data = await proposeExternalFixes(dest, { slugs: [slug] });
+          rows.push(...asArray(data?.rows));
+        } catch (inner) {
+          failed.push({
+            slug,
+            reason: inner?.message || reason,
+          });
+        }
+      }
+    }
+  }
+
+  const failedRows = failed.map((item) => ({
+    slug: item.slug,
+    error: true,
+    available: false,
+    reason: item.reason,
+    candidates: [],
+  }));
+  const timedOut = failed.some((item) => isTimeoutMessage(item.reason));
+  return {
+    rows: [...rows, ...failedRows],
+    timedOut,
+    failedCount: failed.length,
+    error: failed.length
+      ? timedOut
+        ? `External link planning timed out for ${failed.length} article${
+            failed.length === 1 ? "" : "s"
+          }.`
+        : `External link planning failed for ${failed.length} article${
+            failed.length === 1 ? "" : "s"
+          }.`
+      : "",
+  };
+}
+
 function buildReviewRows({
   articles,
   linkRows,
@@ -284,6 +371,7 @@ function buildReviewRows({
   wtsAudit,
   rewriteAuditData,
   rewriteProposals,
+  proposeFailed = false,
 }) {
   const linkBySlug = indexBySlug(linkRows);
   const cleanupPreviewBySlug = indexBySlug(cleanup?.previews);
@@ -328,9 +416,7 @@ function buildReviewRows({
       });
     } else if (
       linkRow &&
-      (linkRow.internalAdded.length > 0 ||
-        linkRow.externalShort ||
-        linkRow.candidates.length > 0)
+      (linkRow.internalAdded.length > 0 || linkRow.candidates.length > 0)
     ) {
       links = proposedOp({
         internalAdded: linkRow.internalAdded,
@@ -339,6 +425,13 @@ function buildReviewRows({
         currentCount: linkRow.currentCount,
         needed: linkRow.needed,
       });
+    } else if (linkRow?.externalShort) {
+      links = gatedOp(
+        linkRow.reason ||
+          (proposeFailed
+            ? "external planning timed out"
+            : "no external sources found")
+      );
     } else {
       links = gatedOp("no change needed");
     }
@@ -459,6 +552,18 @@ export function defaultSelections(rows) {
   return next;
 }
 
+export function formatFaceliftPhaseError(message, { approvedCount = 0 } = {}) {
+  const text = String(message || "").trim();
+  if (!text) return "";
+  if (isTimeoutMessage(text)) {
+    if (approvedCount > 0) {
+      return `${text} Internal link fixes are still available.`;
+    }
+    return `${text} Re-run Links to finish external source planning.`;
+  }
+  return text;
+}
+
 export function countApproved(rows, selections) {
   let n = 0;
   for (const row of rows) {
@@ -487,11 +592,15 @@ export async function runFaceliftScan(dest, { onProgress, ops } = {}) {
       phaseErrors.links = err?.message || "Links audit failed";
     }
     if (linksAudit) {
-      try {
-        linksProposals = await proposeExternalFixes(dest);
-      } catch (err) {
-        phaseErrors.linksPropose = err?.message || "External link planning failed";
-        linksProposals = { rows: [] };
+      const shortSlugs = shortExternalSlugs(linksAudit);
+      if (shortSlugs.length) {
+        const proposed = await proposeExternalBatched(dest, shortSlugs, {
+          onProgress,
+        });
+        linksProposals = { rows: proposed.rows };
+        if (proposed.error) {
+          phaseErrors.linksPropose = proposed.error;
+        }
       }
     }
   }
@@ -637,6 +746,7 @@ export async function runFaceliftScan(dest, { onProgress, ops } = {}) {
     wtsAudit,
     rewriteAuditData,
     rewriteProposals,
+    proposeFailed: Boolean(phaseErrors.linksPropose),
   });
   const batches = buildBatches({
     corpus: corpusArticles.length,
@@ -852,11 +962,46 @@ export async function runFaceliftApply(
   try {
     const linksAudit = await auditLiveLinks(dest);
     linkHealth = buildLinkHealth(linksAudit);
-    let linksProposals = { rows: [] };
-    try {
-      linksProposals = await proposeExternalFixes(dest);
-    } catch (err) {
-      linksError = err?.message || "External link planning failed";
+    const seedProposalRows = rows.map((row) => ({
+      slug: row.slug,
+      title: row.title,
+      candidates: asArray(row.ops.links.candidates),
+      currentCount: row.ops.links.currentCount,
+      needed: row.ops.links.needed,
+      error: row.ops.links.state === "error",
+      reason: row.ops.links.reason,
+      available: row.ops.links.state !== "error",
+    }));
+    const haveExternalPlan = new Set(
+      seedProposalRows
+        .filter((row) => asArray(row.candidates).length > 0)
+        .map((row) => row.slug)
+    );
+    const needPropose = asArray(linksAudit?.issues)
+      .filter(
+        (item) =>
+          approvedLinkSlugs.has(item.slug) &&
+          item.external?.short &&
+          !haveExternalPlan.has(item.slug)
+      )
+      .map((item) => item.slug);
+    let linksProposals = { rows: seedProposalRows };
+    if (needPropose.length) {
+      const proposed = await proposeExternalBatched(dest, needPropose, {
+        onProgress,
+      });
+      if (proposed.error) {
+        linksError = proposed.error;
+      }
+      const extraBySlug = indexBySlug(proposed.rows);
+      linksProposals = {
+        rows: [
+          ...seedProposalRows.map((row) => extraBySlug.get(row.slug) || row),
+          ...asArray(proposed.rows).filter(
+            (row) => !seedProposalRows.some((item) => item.slug === row.slug)
+          ),
+        ],
+      };
     }
     const reviewRows = buildLinkRows(linksAudit, linksProposals);
     const errorSlugs = reviewRows
