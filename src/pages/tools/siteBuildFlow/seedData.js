@@ -5,15 +5,18 @@ export const STATUSES = ["open", "wip", "done"];
 export const STATUS_META = {
   open: {
     label: "Open",
-    className: "bg-slate-100 text-slate-600 border-slate-200",
+    className:
+      "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900",
   },
   wip: {
     label: "WIP",
-    className: "bg-orange-50 text-orange-700 border-orange-200",
+    className:
+      "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950/40 dark:text-orange-300 dark:border-orange-900",
   },
   done: {
     label: "Done",
-    className: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    className:
+      "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900",
   },
 };
 

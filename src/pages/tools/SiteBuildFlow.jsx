@@ -798,6 +798,9 @@ export default function SiteBuildFlow() {
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 pt-4 lg:grid-cols-[minmax(220px,280px)_1fr]">
         <div className="space-y-2 overflow-y-auto">
+          <p className="text-[11px] uppercase tracking-[0.08em] font-medium text-muted-foreground">
+            Stages
+          </p>
           {STAGES.map((stage) => {
             const stageRow = draftStagesByKey[stage.stage_key];
             const status = stageRow?.status || "open";
@@ -811,10 +814,10 @@ export default function SiteBuildFlow() {
               <div
                 key={stage.stage_key}
                 className={cn(
-                  "w-full rounded-lg border px-3 py-2.5 text-left transition-colors",
+                  "w-full rounded-[14px] border border-border bg-card px-4 py-3 text-left transition-colors",
                   selected
-                    ? "border-border bg-accent"
-                    : "border-border hover:bg-accent/50"
+                    ? "bg-accent"
+                    : "hover:bg-accent/40"
                 )}
               >
                 <div className="flex items-start justify-between gap-2">
@@ -860,6 +863,9 @@ export default function SiteBuildFlow() {
         </div>
 
         <div className="min-h-0 space-y-2 overflow-y-auto">
+          <h2 className="text-lg font-normal tracking-tight text-foreground">
+            {activeStage.name}
+          </h2>
           {activeItems.length === 0 ? (
             <p className="text-xs text-muted-foreground">No items in this stage.</p>
           ) : (
@@ -876,7 +882,7 @@ export default function SiteBuildFlow() {
                 <div
                   key={item.item_key}
                   className={cn(
-                    "rounded-lg border border-border transition-colors",
+                    "rounded-[14px] border border-border bg-card transition-colors",
                     expanded ? "bg-accent/30" : "hover:bg-accent/40"
                   )}
                 >
@@ -892,7 +898,7 @@ export default function SiteBuildFlow() {
                         setExpandedItemKey(expanded ? null : item.item_key);
                       }
                     }}
-                    className="flex w-full cursor-pointer items-center justify-between gap-3 px-3 py-2 text-left"
+                    className="flex w-full cursor-pointer items-center justify-between gap-3 px-4 py-3 text-left"
                     aria-expanded={expanded}
                   >
                     <div className="flex min-w-0 items-center gap-2">
@@ -915,7 +921,7 @@ export default function SiteBuildFlow() {
                   </div>
 
                   {expanded && (
-                    <div className="space-y-4 border-t border-border px-3 py-3">
+                    <div className="space-y-4 border-t border-border px-4 py-3">
                       <div className="prose prose-sm max-w-none text-foreground prose-p:my-2">
                         <ReactMarkdown>{item.description || ""}</ReactMarkdown>
                       </div>

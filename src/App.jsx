@@ -25,6 +25,7 @@ import AiImageGenerator from '@/pages/tools/AiImageGenerator';
 import SiteBuildFlow from '@/pages/tools/SiteBuildFlow';
 import SeoAiAdvisor from '@/pages/tools/SeoAiAdvisor';
 import ExternalAuditSnapshot from '@/pages/tools/ExternalAuditSnapshot';
+import SystemMap from '@/pages/tools/SystemMap';
 
 function RedirectToClusterGeneration() {
   const { companyId } = useParams();
@@ -60,6 +61,7 @@ const AuthenticatedApp = () => {
           <Route path="/company/:companyId/cluster-image-generator" element={<ClusterImageGenerator />} />
           <Route path="/company/:companyId/image-generator" element={<AiImageGenerator />} />
           <Route path="/company/:companyId/site-build-flow" element={<SiteBuildFlow />} />
+          <Route path="/company/:companyId/system-map" element={<SystemMap />} />
         </Route>
       </Route>
       <Route path="*" element={<PageNotFound />} />

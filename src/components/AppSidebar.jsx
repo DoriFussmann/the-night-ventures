@@ -29,6 +29,7 @@ import {
   Construction,
   Loader2,
   Trash2,
+  Map,
 } from "lucide-react";
 
 const STATUS_STYLES = {
@@ -156,6 +157,10 @@ export default function AppSidebar({ user }) {
     { label: "SEO AI Advisor", path: `/company/${activeCompanyId}/seo-ai-advisor`, icon: MessageSquareText, status: "Verify" },
     { label: "Image Generator", path: `/company/${activeCompanyId}/image-generator`, icon: Sparkles, status: "Verify" },
     { label: "Cluster Images", path: `/company/${activeCompanyId}/cluster-image-generator`, icon: Image, status: "Verify" },
+  ];
+
+  const adminNav = [
+    { label: "System Map", path: `/company/${activeCompanyId}/system-map`, icon: Map },
   ];
 
   useEffect(() => {
@@ -290,26 +295,28 @@ export default function AppSidebar({ user }) {
                 <NavItem key={item.path} item={item} />
               ))}
             </div>
+
+            <SectionHeader label="Admin" />
+            <div className="space-y-1.5">
+              {adminNav.map((item) => (
+                <NavItem key={item.path} item={item} />
+              ))}
+            </div>
+            <p className="px-2.5 pt-3 pb-1.5 text-[9px] font-semibold uppercase tracking-widest text-destructive/70">
+              Danger Zone
+            </p>
+            <button
+              type="button"
+              onClick={() => handleDangerOpenChange(true)}
+              disabled={!companyName.trim()}
+              className="w-full flex items-center gap-2 rounded-md border border-destructive/30 px-2.5 py-1.5 text-left text-xs text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
+            >
+              <Trash2 className="w-3.5 h-3.5 shrink-0" />
+              <span className="leading-tight">Remove company</span>
+            </button>
           </>
         )}
       </nav>
-
-      {activeCompanyId && (
-        <div className="border-t border-border px-2.5 py-2">
-          <p className="px-2.5 pb-1.5 text-[9px] font-semibold uppercase tracking-widest text-destructive/70">
-            Danger Zone
-          </p>
-          <button
-            type="button"
-            onClick={() => handleDangerOpenChange(true)}
-            disabled={!companyName.trim()}
-            className="w-full flex items-center gap-2 rounded-md border border-destructive/30 px-2.5 py-1.5 text-left text-xs text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
-          >
-            <Trash2 className="w-3.5 h-3.5 shrink-0" />
-            <span className="leading-tight">Remove company</span>
-          </button>
-        </div>
-      )}
 
       {/* Footer */}
       <div className="border-t border-border px-3 py-2.5">
