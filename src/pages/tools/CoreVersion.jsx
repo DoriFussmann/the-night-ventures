@@ -20,42 +20,36 @@ import {
 
 const RUNBOOK_STEPS = [
   {
-    num: "0", tag: "Decide", title: "Classify the change",
+    num: "0", tag: "Decide", title: "Pick the change type",
     points: [
-      "Additive = you ADD something new/optional; existing sites keep working untouched. This is a minor update — one-click rollout.",
-      "Breaking = you change or remove something sites rely on (renamed export, optional field made required, changed component inputs, stricter audit rule). This is a major update — hands-on rollout.",
-      "Golden rule: extend core, never weaken it. If a rule doesn't fit one site, add an opt-in flag instead of loosening the shared rule.",
-      "When in doubt, make it additive.",
+      "Adding something new/optional → it's a MINOR update.",
+      "Changing or removing something that exists → it's a MAJOR update.",
+      "Prefer minor. To handle a special case, add an opt-in flag — don't change a shared rule.",
     ],
   },
   {
-    num: "1", tag: "Edit", title: "Make the change in seo-core",
+    num: "1", tag: "Edit", title: "Edit seo-core in Cursor",
     points: [
-      "Open the seo-core repo in Cursor (not a project repo).",
-      "Schema (article / team / service) → src/schemas.ts",
-      "Reading components (TOC, Sources, FAQ, etc.) → src/components/",
-      "llms.txt / rss / robots → src/generators/",
-      "Audit rules → src/audit.ts     •     Helper logic → src/lib/",
-      "Ask Cursor to keep it additive, and confirm the build/typecheck is green before stopping.",
+      "Open the seo-core repo (not a project repo).",
+      "Tell Cursor what to add and to keep it minor/additive.",
+      "Confirm Cursor says the build is green.",
     ],
   },
   {
-    num: "2", tag: "Publish", title: "Bump the version + tag it",
+    num: "2", tag: "Publish", title: "Bump + tag",
     points: [
-      "This is the step that makes the change real — nothing rolls out until you tag.",
-      "Additive change → bump the MIDDLE number (0.4.0 → 0.5.0).",
-      "Breaking change → bump the FIRST number (0.4.0 → 1.0.0).",
-      "Commit, create a matching git tag (e.g. v0.5.0), and push BOTH the commit and the tag.",
-      "The tag is what this panel reads as \"Latest\".",
+      "Minor update → bump the middle number (0.4.0 → 0.5.0).",
+      "Major update → bump the first number (0.4.0 → 1.0.0).",
+      "Commit, create the matching tag (e.g. v0.5.0), push commit AND tag.",
     ],
   },
   {
     num: "3", tag: "Roll out", title: "Update each site here",
     points: [
-      "For each project: open it in TNV → Core Version → Refresh.",
-      "Green \"Update to vX\" (additive) → click it. That project bumps and rebuilds itself. Do one, confirm it's healthy, then the next.",
-      "Amber \"Migration required\" (breaking) → no button. Migrate that project in Cursor first, then deploy it there.",
-      "Nothing auto-updates — you choose the order and timing.",
+      "Open each project → Core Version → Refresh.",
+      "Green button → click to update that site.",
+      "Amber (no button) → migrate that project in Cursor first.",
+      "Do one site at a time.",
     ],
   },
 ]
