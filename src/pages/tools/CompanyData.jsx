@@ -1725,9 +1725,6 @@ export default function CompanyData() {
             filled={hasDesignGuide}
             onClick={openDesignGuideModal}
           />
-        </div>
-
-        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-5">
           <PanelTrigger
             title="Products & Services"
             filled={services.some(serviceHasContent)}
@@ -1753,9 +1750,6 @@ export default function CompanyData() {
             filled={Boolean(fields.long_description.trim())}
             onClick={() => setOpenPanel("long")}
           />
-        </div>
-
-        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
           <PanelTrigger
             title="Business Model"
             filled={Boolean(fields.business_model.trim())}
@@ -1766,9 +1760,6 @@ export default function CompanyData() {
             filled={Boolean(fields.core_value_proposition.trim())}
             onClick={() => setOpenPanel("core_value_proposition")}
           />
-        </div>
-
-        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-5">
           <PanelTrigger
             title={`Pillar Keywords (${pillarTotal})`}
             filled={pillars.some(
@@ -1799,16 +1790,15 @@ export default function CompanyData() {
             filled={publishDestinationFilled}
             onClick={() => setOpenPanel("publish-destination")}
           />
+          {customFieldDefs.map((def) => (
+            <PanelTrigger
+              key={def.id}
+              title={def.name}
+              filled={Boolean((customValues[def.name] || "").trim())}
+              onClick={() => setOpenPanel(`custom:${def.id}`)}
+            />
+          ))}
         </div>
-
-        {customFieldDefs.map((def) => (
-          <PanelTrigger
-            key={def.id}
-            title={def.name}
-            filled={Boolean((customValues[def.name] || "").trim())}
-            onClick={() => setOpenPanel(`custom:${def.id}`)}
-          />
-        ))}
 
         <div className="flex flex-wrap items-center gap-3 pt-2">
           <Button type="button" variant="outline" onClick={handleAddField}>
