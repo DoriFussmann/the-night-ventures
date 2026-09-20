@@ -30,6 +30,7 @@ import {
   Loader2,
   Trash2,
   Map,
+  GitBranch,
 } from "lucide-react";
 
 const STATUS_STYLES = {
@@ -163,6 +164,7 @@ export default function AppSidebar({ user }) {
 
   const adminNav = [
     { label: "System Map", path: `/company/${activeCompanyId}/system-map`, icon: Map },
+    { label: "Core Version", path: `/company/${activeCompanyId}/core-version`, icon: GitBranch },
   ];
 
   useEffect(() => {

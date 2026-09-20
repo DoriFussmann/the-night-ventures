@@ -26,6 +26,7 @@ import SiteBuildFlow from '@/pages/tools/SiteBuildFlow';
 import SeoAiAdvisor from '@/pages/tools/SeoAiAdvisor';
 import ExternalAuditSnapshot from '@/pages/tools/ExternalAuditSnapshot';
 import SystemMap from '@/pages/tools/SystemMap';
+import CoreVersion from '@/pages/tools/CoreVersion';
 
 function RedirectToClusterGeneration() {
   const { companyId } = useParams();
@@ -62,6 +63,7 @@ const AuthenticatedApp = () => {
           <Route path="/company/:companyId/image-generator" element={<AiImageGenerator />} />
           <Route path="/company/:companyId/site-build-flow" element={<SiteBuildFlow />} />
           <Route path="/company/:companyId/system-map" element={<SystemMap />} />
+          <Route path="/company/:companyId/core-version" element={<CoreVersion />} />
         </Route>
       </Route>
       <Route path="*" element={<PageNotFound />} />
