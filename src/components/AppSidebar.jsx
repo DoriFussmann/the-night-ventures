@@ -1,18 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
 import { supabase } from "@/lib/supabase";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   Database,
   Palette,
@@ -27,10 +16,9 @@ import {
   LogOut,
   ArrowLeft,
   Construction,
-  Loader2,
-  Trash2,
   Map,
   GitBranch,
+  ChevronDown,
 } from "lucide-react";
 
 const STATUS_STYLES = {
@@ -73,32 +61,59 @@ function NavItem({ item }) {
 
 function SectionHeader({ label }) {
   return (
-    <p className="px-2.5 pt-3 pb-0.5 text-[9px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+    <p className="px-2.5 pt-2 pb-0.5 text-[9px] font-semibold uppercase tracking-widest text-muted-foreground/60">
       {label}
     </p>
   );
 }
 
+function SectionRule() {
+  return <div className="mx-1 mt-3 border-t border-border" role="separator" />;
+}
+
+function NavDropdown({ label, icon: Icon, items }) {
+  const location = useLocation();
+  const childActive = items.some((item) => location.pathname === item.path);
+  const [open, setOpen] = useState(childActive);
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        className={`w-full flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors ${
+          childActive
+            ? "border-border bg-accent text-foreground"
+            : "border-border text-foreground/80 hover:bg-accent hover:text-foreground"
+        }`}
+      >
+        <Icon className="w-3.5 h-3.5 shrink-0" />
+        <span className="min-w-0 flex-1 truncate leading-tight">{label}</span>
+        <ChevronDown
+          className={`w-3 h-3 shrink-0 text-muted-foreground transition-transform duration-200 ease-out ${
+            open ? "rotate-180" : ""
+          }`}
+        />
+      </button>
+      <div
+        className={`grid transition-[grid-template-rows] duration-200 ease-out ${
+          open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+        }`}
+      >
+        <div className="overflow-hidden">
+          <div className="mt-1.5 ml-2 space-y-1.5 border-l border-border pl-2">
+            {items.map((item) => (
+              <NavItem key={item.path} item={item} />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const LAST_COMPANY_ID_KEY = "lastCompanyId";
-
-function namesMatch(left, right) {
-  return String(left || "").trim().toLowerCase() === String(right || "").trim().toLowerCase();
-}
-
-function clearCompanyLocalState(companyId) {
-  try {
-    sessionStorage.removeItem(LAST_COMPANY_ID_KEY);
-  } catch {
-    // ignore
-  }
-  if (!companyId) return;
-  try {
-    localStorage.removeItem(`tnv-ai-image-prompts:${companyId}`);
-    localStorage.removeItem(`cluster-image-spec:${companyId}`);
-  } catch {
-    // ignore
-  }
-}
 
 function readLastCompanyId() {
   try {
@@ -111,13 +126,8 @@ function readLastCompanyId() {
 export default function AppSidebar({ user }) {
   const { logout } = useAuth();
   const location = useLocation();
-  const navigate = useNavigate();
   const { companyId: routeCompanyId } = useParams();
   const [companyName, setCompanyName] = useState("");
-  const [dangerOpen, setDangerOpen] = useState(false);
-  const [confirmText, setConfirmText] = useState("");
-  const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState("");
 
   useEffect(() => {
     if (routeCompanyId) {
@@ -134,35 +144,31 @@ export default function AppSidebar({ user }) {
   const isCompanyPicker = location.pathname === "/";
   const activeCompanyId = routeCompanyId || (isCompanyPicker ? "" : readLastCompanyId());
 
-  const topNav = [
-    { label: "Company Data", path: `/company/${activeCompanyId}/company-data`, icon: Database, status: "Done" },
+  const companyDataItem = {
+    label: "Company Data",
+    path: `/company/${activeCompanyId}/company-data`,
+    icon: Database,
+    status: "Done",
+  };
+
+  const generationItems = [
+    { label: "Pillar", path: `/company/${activeCompanyId}/pillar-automation`, icon: Layers, status: "Done" },
+    { label: "Cluster", path: `/company/${activeCompanyId}/article-generation`, icon: PenLine, status: "Done" },
   ];
 
   const buildNav = [
-    { label: "Site Build Flow", path: `/company/${activeCompanyId}/site-build-flow`, icon: Construction, status: "Done" },
-    { label: "Design Builder", path: `/company/${activeCompanyId}/design-guide-builder`, icon: Palette, status: "Done" },
-    { label: "Site Content Builder", path: `/company/${activeCompanyId}/site-content-builder`, icon: LayoutTemplate, status: "Done" },
-    { label: "Pillar Generation", path: `/company/${activeCompanyId}/pillar-automation`, icon: Layers, status: "Done" },
-    { label: "Cluster Generation", path: `/company/${activeCompanyId}/article-generation`, icon: PenLine, status: "Done" },
+    { label: "Build Blueprint", path: `/company/${activeCompanyId}/site-build-flow`, icon: Construction, status: "Done" },
+    { label: "Design Engine", path: `/company/${activeCompanyId}/design-guide-builder`, icon: Palette, status: "Done" },
+    { label: "Narrative Composer", path: `/company/${activeCompanyId}/site-content-builder`, icon: LayoutTemplate, status: "Done" },
   ];
 
-  const ongoingNav = [
-    { label: "Articles", path: `/company/${activeCompanyId}/articles`, icon: BookOpen, status: "Done" },
-    { label: "Pillar Generation", path: `/company/${activeCompanyId}/pillar-automation`, icon: Layers, status: "Done" },
-    { label: "Cluster Generation", path: `/company/${activeCompanyId}/article-generation`, icon: PenLine, status: "Done" },
+  const tbcNav = [
+    { label: "Advisor", path: `/company/${activeCompanyId}/seo-ai-advisor`, icon: MessageSquareText, status: "Verify" },
+    { label: "Image Generation", path: `/company/${activeCompanyId}/image-generator`, icon: Sparkles, status: "Verify" },
+    { label: "Cluster Image..", path: `/company/${activeCompanyId}/cluster-image-generator`, icon: Image, status: "Verify" },
   ];
 
-  const analyticsNav = [
-    { label: "Analytics", path: `/company/${activeCompanyId}/external-audit-snapshot`, icon: Camera, status: "Partial" },
-  ];
-
-  const manualToolsNav = [
-    { label: "SEO AI Advisor", path: `/company/${activeCompanyId}/seo-ai-advisor`, icon: MessageSquareText, status: "Verify" },
-    { label: "Image Generator", path: `/company/${activeCompanyId}/image-generator`, icon: Sparkles, status: "Verify" },
-    { label: "Cluster Images", path: `/company/${activeCompanyId}/cluster-image-generator`, icon: Image, status: "Verify" },
-  ];
-
-  const adminNav = [
+  const adminItems = [
     { label: "System Map", path: `/company/${activeCompanyId}/system-map`, icon: Map },
     { label: "Core Version", path: `/company/${activeCompanyId}/core-version`, icon: GitBranch },
   ];
@@ -203,42 +209,6 @@ export default function AppSidebar({ user }) {
     logout("/login");
   };
 
-  const canConfirmDelete = namesMatch(confirmText, companyName) && Boolean(companyName.trim());
-
-  const handleDangerOpenChange = (open) => {
-    if (deleting) return;
-    setDangerOpen(open);
-    if (!open) {
-      setConfirmText("");
-      setDeleteError("");
-    }
-  };
-
-  const handleDeleteCompany = async () => {
-    if (!activeCompanyId || !canConfirmDelete || deleting) return;
-
-    setDeleting(true);
-    setDeleteError("");
-
-    const { error } = await supabase
-      .from("companies")
-      .delete()
-      .eq("id", activeCompanyId);
-
-    if (error) {
-      console.error("Failed to delete company:", error);
-      setDeleteError(error.message || "Failed to delete company");
-      setDeleting(false);
-      return;
-    }
-
-    clearCompanyLocalState(activeCompanyId);
-    setDeleting(false);
-    setDangerOpen(false);
-    setConfirmText("");
-    navigate("/");
-  };
-
   return (
     <aside className="fixed left-0 top-0 h-screen w-52 bg-card border-r border-border flex flex-col z-40">
       {/* Logo + company return */}
@@ -267,53 +237,52 @@ export default function AppSidebar({ user }) {
         {activeCompanyId && (
           <>
             <div className="space-y-1.5 pt-1">
-              {topNav.map((item) => (
-                <NavItem key={item.path} item={item} />
-              ))}
+              <NavItem item={companyDataItem} />
             </div>
 
+            <SectionRule />
             <SectionHeader label="Build" />
             <div className="space-y-1.5">
               {buildNav.map((item) => (
                 <NavItem key={item.path} item={item} />
               ))}
+              <NavDropdown label="Generation" icon={Layers} items={generationItems} />
             </div>
 
+            <SectionRule />
             <SectionHeader label="Ongoing" />
             <div className="space-y-1.5">
-              {ongoingNav.map((item) => (
-                <NavItem key={item.path} item={item} />
-              ))}
+              <NavItem
+                item={{
+                  label: "Articles",
+                  path: `/company/${activeCompanyId}/articles`,
+                  icon: BookOpen,
+                  status: "Done",
+                }}
+              />
+              <NavDropdown label="Generation" icon={Layers} items={generationItems} />
+              <NavItem
+                item={{
+                  label: "Analytics",
+                  path: `/company/${activeCompanyId}/external-audit-snapshot`,
+                  icon: Camera,
+                  status: "Partial",
+                }}
+              />
             </div>
 
-            <SectionHeader label="Analytics" />
+            <SectionRule />
+            <SectionHeader label="TBC" />
             <div className="space-y-1.5">
-              {analyticsNav.map((item) => (
+              {tbcNav.map((item) => (
                 <NavItem key={item.path} item={item} />
               ))}
             </div>
 
-            <SectionHeader label="Manual Tools" />
-            <div className="space-y-1.5">
-              {manualToolsNav.map((item) => (
-                <NavItem key={item.path} item={item} />
-              ))}
-            </div>
-
+            <SectionRule />
             <SectionHeader label="Admin" />
             <div className="space-y-1.5">
-              {adminNav.map((item) => (
-                <NavItem key={item.path} item={item} />
-              ))}
-              <button
-                type="button"
-                onClick={() => handleDangerOpenChange(true)}
-                disabled={!companyName.trim()}
-                className="w-full flex items-center gap-2 rounded-md border border-destructive/30 px-2.5 py-1.5 text-left text-xs text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
-              >
-                <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                <span className="leading-tight">Danger Zone</span>
-              </button>
+              <NavDropdown label="Admin" icon={Map} items={adminItems} />
             </div>
           </>
         )}
@@ -330,60 +299,6 @@ export default function AppSidebar({ user }) {
           Log Out
         </button>
       </div>
-
-      <Dialog open={dangerOpen} onOpenChange={handleDangerOpenChange}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Remove this company?</DialogTitle>
-            <DialogDescription>
-              This permanently deletes {companyName || "this company"} and all of
-              its data. This cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="confirm-company-delete">
-              Type <span className="font-medium text-foreground">{companyName}</span>{" "}
-              to confirm
-            </Label>
-            <Input
-              id="confirm-company-delete"
-              value={confirmText}
-              onChange={(e) => setConfirmText(e.target.value)}
-              placeholder={companyName}
-              autoComplete="off"
-              disabled={deleting}
-            />
-          </div>
-          {deleteError && (
-            <p className="text-sm text-destructive">{deleteError}</p>
-          )}
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => handleDangerOpenChange(false)}
-              disabled={deleting}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={handleDeleteCompany}
-              disabled={!canConfirmDelete || deleting}
-            >
-              {deleting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Removing…
-                </>
-              ) : (
-                "Remove company"
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </aside>
   );
 }
