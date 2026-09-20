@@ -324,254 +324,6 @@ export default function PillarAutomation() {
 
   const busy = !IDLE_PHASES.has(phase);
 
-  // Tick the elapsed clock once per second while a batch is running.
-  useEffect(() => {
-    if (!batch?.running) return undefined;
-    const id = setInterval(() => setNowTick(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [batch?.running]);
-
-  // Run the FULL manual chain for one pillar, unattended (no confirm gates,
-  // no wizard refs). Mirrors runTopicGeneration -> confirmPlan ->
-  // runArticleGeneration -> confirmPublish exactly, with local variables.
-  const generateOnePillar = useCallback(
-    async (pillar, destination, onStatus) => {
-      const ctx = contextRef.current;
-      if (!ctx) throw new Error("Missing company context");
-      const say = (m) => onStatus && onStatus(m);
-
-      // 1) Plan
-      say(`Planning pillar article for “${pillar.pillarKeyword}”…`);
-      const proposal = await requestClusterPlan({
-        pillarKeyword: pillar.pillarKeyword,
-        supportingKeyword: pillar.pillarKeyword,
-        abstract: ctx.abstract,
-        shortDescription: ctx.shortDescription,
-        audience: ctx.audience,
-        competitors: ctx.competitors,
-        pillars: ctx.pillars,
-        articleTypeCounts: PILLAR_ARTICLE_TYPE_COUNTS,
-      });
-      const article = proposal?.articles?.[0];
-      if (!article) throw new Error("No pillar article in the plan");
-
-      // 2) Persist planned (cluster if matching + pillar article)
-      const matchingSupporting = (pillar.pillar?.supporting || []).find((sup) =>
-        matchesPillar(sup, pillar.pillarSlug, pillar.pillarKeyword)
-      );
-      if (matchingSupporting) {
-        await persistPlannedCluster({
-          companyId,
-          pillarSlug: pillar.pillarSlug,
-          pillarKeyword: pillar.pillarKeyword,
-          supportingSlug: matchingSupporting.slug,
-          supportingKeyword: matchingSupporting.keyword,
-          articles: proposal.articles,
-          clusterRationale: proposal.clusterRationale,
-        });
-      }
-      const savedPlan = await persistPlannedPillarArticle({
-        companyId,
-        pillarSlug: pillar.pillarSlug,
-        pillarKeyword: pillar.pillarKeyword,
-        article,
-        pillarRationale: proposal.clusterRationale,
-      });
-      const planned = savedPlan.plannedArticles;
-      if (contextRef.current) {
-        contextRef.current = { ...contextRef.current, pillars: savedPlan.pillars };
-      }
-
-      // 3) Generate (+ hero image)
-      say(`Generating pillar article for “${pillar.pillarKeyword}”…`);
-      const gen = await generateClusterArticles({
-        companyId,
-        pillarKeyword: pillar.pillarKeyword,
-        supportingKeyword: "",
-        articles: planned,
-        withImages: true,
-        onStatus: (m) => say(m),
-      });
-      const successJobs = (gen.jobs || []).filter(
-        (job) => job.status === "done" && job.markdown
-      );
-      if (successJobs.length === 0) {
-        throw new Error("The pillar article failed to generate.");
-      }
-
-      // 4) Save to library
-      say(`Saving “${pillar.pillarKeyword}”…`);
-      const saved = await saveGeneratedArticles({
-        supabase,
-        companyId,
-        pillarKeyword: pillar.pillarKeyword,
-        supportingKeyword: "",
-        articles: successJobs.map((job) => {
-          const a = planned[job.index] || {};
-          return {
-            type: job.type || a.type,
-            targetKeyword: a.targetKeyword || "",
-            frontmatter: job.frontmatter,
-            body: job.body,
-            whereThingsStandSources: job.whereThingsStandSources,
-            heroStoragePath: job.image?.storagePath || null,
-          };
-        }),
-      });
-      if (saved.error) throw saved.error;
-
-      // 5) Publish to the destination site
-      say(`Publishing “${pillar.pillarKeyword}” to ${destination.owner}/${destination.repo}…`);
-      const result = await publishArticlesToSite(
-        successJobs.map((job) => ({
-          frontmatter: job.frontmatter,
-          body: job.body,
-          markdown: job.markdown,
-          heroStoragePath: job.image?.storagePath || null,
-          image:
-            job.image?.status === "done"
-              ? {
-                  ...(job.image.result || {}),
-                  storagePath: job.image.storagePath || null,
-                }
-              : null,
-        })),
-        {
-          companyId,
-          owner: destination.owner,
-          repo: destination.repo,
-          tokenKey: destination.tokenKey,
-          branch: DEFAULT_PUBLISH_BRANCH,
-        },
-        {}
-      );
-      const committedCount = Array.isArray(result.committed)
-        ? result.committed.length
-        : 0;
-      if (!result.ok || committedCount === 0) {
-        throw new Error(`Publish did not complete for “${pillar.pillarKeyword}”`);
-      }
-
-      // 6) Mark published + refresh context so the next iteration sees it done
-      const primaryJob = successJobs[0];
-      const nextPillars = await markPillarArticlePublished({
-        companyId,
-        pillarSlug: pillar.pillarSlug,
-        pillarKeyword: pillar.pillarKeyword,
-        article: {
-          title: primaryJob?.frontmatter?.title || primaryJob?.title,
-          targetKeyword:
-            planned[primaryJob?.index]?.targetKeyword ||
-            primaryJob?.frontmatter?.targetKeyword,
-          slug: primaryJob?.frontmatter?.slug,
-        },
-        publishedUrl: result.pullRequestUrl || "",
-      });
-      setPillars(nextPillars);
-      if (contextRef.current) {
-        contextRef.current = { ...contextRef.current, pillars: nextPillars };
-      }
-      return { committedCount };
-    },
-    [companyId]
-  );
-
-  const stopAllPillars = useCallback(() => {
-    stopRef.current = true;
-  }, []);
-
-  const runAllPillars = useCallback(async () => {
-    const destination = publishDestination;
-    if (!isPublishDestinationMapped(destination)) {
-      setError("Set Publish Destination in Company Data first");
-      return;
-    }
-
-    let ctx = contextRef.current;
-    try {
-      ctx = await refreshContext();
-    } catch {
-      /* use whatever context we have */
-    }
-    const todo = (ctx?.pillars || pillars)
-      .filter(
-        (p) =>
-          String(p?.keyword || "").trim() &&
-          pillarArticleStatus(p.pillarArticle) !== "published"
-      )
-      .map((p) => ({
-        pillarKeyword: String(p.keyword || "").trim(),
-        pillarSlug: p.slug,
-        pillar: p,
-      }));
-
-    if (todo.length === 0) {
-      setBatch({
-        running: false,
-        done: true,
-        total: 0,
-        index: 0,
-        results: [],
-        startedAt: Date.now(),
-        finishedAt: Date.now(),
-        statusMessage: "",
-      });
-      return;
-    }
-
-    stopRef.current = false;
-    setError("");
-    const results = [];
-    setBatch({
-      running: true,
-      done: false,
-      total: todo.length,
-      index: 0,
-      results,
-      startedAt: Date.now(),
-      statusMessage: "",
-    });
-
-    for (let i = 0; i < todo.length; i += 1) {
-      if (stopRef.current) break;
-      const item = todo[i];
-      setBatch((b) => (b ? { ...b, index: i, statusMessage: "" } : b));
-      try {
-        const r = await generateOnePillar(item, destination, (m) =>
-          setBatch((b) => (b ? { ...b, statusMessage: m } : b))
-        );
-        results.push({ keyword: item.pillarKeyword, ok: true, committed: r.committedCount });
-      } catch (err) {
-        results.push({
-          keyword: item.pillarKeyword,
-          ok: false,
-          error: err?.message || "Failed",
-        });
-      }
-      setBatch((b) => (b ? { ...b, results: [...results] } : b));
-    }
-
-    setBatch((b) =>
-      b
-        ? {
-            ...b,
-            running: false,
-            done: true,
-            index: todo.length,
-            finishedAt: Date.now(),
-            statusMessage: "",
-            stopped: stopRef.current,
-          }
-        : b
-    );
-  }, [publishDestination, pillars, refreshContext, generateOnePillar]);
-
-  const batchElapsed = batch
-    ? Math.floor(
-        (((batch.running ? nowTick : batch.finishedAt || nowTick) - batch.startedAt) || 0) / 1000
-      )
-    : 0;
-  const batchSucceeded = batch ? batch.results.filter((r) => r.ok).length : 0;
 
   const refreshContext = useCallback(async () => {
     if (!companyId) {
@@ -1029,6 +781,255 @@ export default function PillarAutomation() {
       phase === "publishing" ||
       phase === "done",
   };
+
+  // Tick the elapsed clock once per second while a batch is running.
+  useEffect(() => {
+    if (!batch?.running) return undefined;
+    const id = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [batch?.running]);
+
+  // Run the FULL manual chain for one pillar, unattended (no confirm gates,
+  // no wizard refs). Mirrors runTopicGeneration -> confirmPlan ->
+  // runArticleGeneration -> confirmPublish exactly, with local variables.
+  const generateOnePillar = useCallback(
+    async (pillar, destination, onStatus) => {
+      const ctx = contextRef.current;
+      if (!ctx) throw new Error("Missing company context");
+      const say = (m) => onStatus && onStatus(m);
+
+      // 1) Plan
+      say(`Planning pillar article for “${pillar.pillarKeyword}”…`);
+      const proposal = await requestClusterPlan({
+        pillarKeyword: pillar.pillarKeyword,
+        supportingKeyword: pillar.pillarKeyword,
+        abstract: ctx.abstract,
+        shortDescription: ctx.shortDescription,
+        audience: ctx.audience,
+        competitors: ctx.competitors,
+        pillars: ctx.pillars,
+        articleTypeCounts: PILLAR_ARTICLE_TYPE_COUNTS,
+      });
+      const article = proposal?.articles?.[0];
+      if (!article) throw new Error("No pillar article in the plan");
+
+      // 2) Persist planned (cluster if matching + pillar article)
+      const matchingSupporting = (pillar.pillar?.supporting || []).find((sup) =>
+        matchesPillar(sup, pillar.pillarSlug, pillar.pillarKeyword)
+      );
+      if (matchingSupporting) {
+        await persistPlannedCluster({
+          companyId,
+          pillarSlug: pillar.pillarSlug,
+          pillarKeyword: pillar.pillarKeyword,
+          supportingSlug: matchingSupporting.slug,
+          supportingKeyword: matchingSupporting.keyword,
+          articles: proposal.articles,
+          clusterRationale: proposal.clusterRationale,
+        });
+      }
+      const savedPlan = await persistPlannedPillarArticle({
+        companyId,
+        pillarSlug: pillar.pillarSlug,
+        pillarKeyword: pillar.pillarKeyword,
+        article,
+        pillarRationale: proposal.clusterRationale,
+      });
+      const planned = savedPlan.plannedArticles;
+      if (contextRef.current) {
+        contextRef.current = { ...contextRef.current, pillars: savedPlan.pillars };
+      }
+
+      // 3) Generate (+ hero image)
+      say(`Generating pillar article for “${pillar.pillarKeyword}”…`);
+      const gen = await generateClusterArticles({
+        companyId,
+        pillarKeyword: pillar.pillarKeyword,
+        supportingKeyword: "",
+        articles: planned,
+        withImages: true,
+        onStatus: (m) => say(m),
+      });
+      const successJobs = (gen.jobs || []).filter(
+        (job) => job.status === "done" && job.markdown
+      );
+      if (successJobs.length === 0) {
+        throw new Error("The pillar article failed to generate.");
+      }
+
+      // 4) Save to library
+      say(`Saving “${pillar.pillarKeyword}”…`);
+      const saved = await saveGeneratedArticles({
+        supabase,
+        companyId,
+        pillarKeyword: pillar.pillarKeyword,
+        supportingKeyword: "",
+        articles: successJobs.map((job) => {
+          const a = planned[job.index] || {};
+          return {
+            type: job.type || a.type,
+            targetKeyword: a.targetKeyword || "",
+            frontmatter: job.frontmatter,
+            body: job.body,
+            whereThingsStandSources: job.whereThingsStandSources,
+            heroStoragePath: job.image?.storagePath || null,
+          };
+        }),
+      });
+      if (saved.error) throw saved.error;
+
+      // 5) Publish to the destination site
+      say(`Publishing “${pillar.pillarKeyword}” to ${destination.owner}/${destination.repo}…`);
+      const result = await publishArticlesToSite(
+        successJobs.map((job) => ({
+          frontmatter: job.frontmatter,
+          body: job.body,
+          markdown: job.markdown,
+          heroStoragePath: job.image?.storagePath || null,
+          image:
+            job.image?.status === "done"
+              ? {
+                  ...(job.image.result || {}),
+                  storagePath: job.image.storagePath || null,
+                }
+              : null,
+        })),
+        {
+          companyId,
+          owner: destination.owner,
+          repo: destination.repo,
+          tokenKey: destination.tokenKey,
+          branch: DEFAULT_PUBLISH_BRANCH,
+        },
+        {}
+      );
+      const committedCount = Array.isArray(result.committed)
+        ? result.committed.length
+        : 0;
+      if (!result.ok || committedCount === 0) {
+        throw new Error(`Publish did not complete for “${pillar.pillarKeyword}”`);
+      }
+
+      // 6) Mark published + refresh context so the next iteration sees it done
+      const primaryJob = successJobs[0];
+      const nextPillars = await markPillarArticlePublished({
+        companyId,
+        pillarSlug: pillar.pillarSlug,
+        pillarKeyword: pillar.pillarKeyword,
+        article: {
+          title: primaryJob?.frontmatter?.title || primaryJob?.title,
+          targetKeyword:
+            planned[primaryJob?.index]?.targetKeyword ||
+            primaryJob?.frontmatter?.targetKeyword,
+          slug: primaryJob?.frontmatter?.slug,
+        },
+        publishedUrl: result.pullRequestUrl || "",
+      });
+      setPillars(nextPillars);
+      if (contextRef.current) {
+        contextRef.current = { ...contextRef.current, pillars: nextPillars };
+      }
+      return { committedCount };
+    },
+    [companyId]
+  );
+
+  const stopAllPillars = useCallback(() => {
+    stopRef.current = true;
+  }, []);
+
+  const runAllPillars = useCallback(async () => {
+    const destination = publishDestination;
+    if (!isPublishDestinationMapped(destination)) {
+      setError("Set Publish Destination in Company Data first");
+      return;
+    }
+
+    let ctx = contextRef.current;
+    try {
+      ctx = await refreshContext();
+    } catch {
+      /* use whatever context we have */
+    }
+    const todo = (ctx?.pillars || pillars)
+      .filter(
+        (p) =>
+          String(p?.keyword || "").trim() &&
+          pillarArticleStatus(p.pillarArticle) !== "published"
+      )
+      .map((p) => ({
+        pillarKeyword: String(p.keyword || "").trim(),
+        pillarSlug: p.slug,
+        pillar: p,
+      }));
+
+    if (todo.length === 0) {
+      setBatch({
+        running: false,
+        done: true,
+        total: 0,
+        index: 0,
+        results: [],
+        startedAt: Date.now(),
+        finishedAt: Date.now(),
+        statusMessage: "",
+      });
+      return;
+    }
+
+    stopRef.current = false;
+    setError("");
+    const results = [];
+    setBatch({
+      running: true,
+      done: false,
+      total: todo.length,
+      index: 0,
+      results,
+      startedAt: Date.now(),
+      statusMessage: "",
+    });
+
+    for (let i = 0; i < todo.length; i += 1) {
+      if (stopRef.current) break;
+      const item = todo[i];
+      setBatch((b) => (b ? { ...b, index: i, statusMessage: "" } : b));
+      try {
+        const r = await generateOnePillar(item, destination, (m) =>
+          setBatch((b) => (b ? { ...b, statusMessage: m } : b))
+        );
+        results.push({ keyword: item.pillarKeyword, ok: true, committed: r.committedCount });
+      } catch (err) {
+        results.push({
+          keyword: item.pillarKeyword,
+          ok: false,
+          error: err?.message || "Failed",
+        });
+      }
+      setBatch((b) => (b ? { ...b, results: [...results] } : b));
+    }
+
+    setBatch((b) =>
+      b
+        ? {
+            ...b,
+            running: false,
+            done: true,
+            index: todo.length,
+            finishedAt: Date.now(),
+            statusMessage: "",
+            stopped: stopRef.current,
+          }
+        : b
+    );
+  }, [publishDestination, pillars, refreshContext, generateOnePillar]);
+
+  const batchElapsed = batch
+    ? Math.floor(
+        (((batch.running ? nowTick : batch.finishedAt || nowTick) - batch.startedAt) || 0) / 1000
+      )
+    : 0;
+  const batchSucceeded = batch ? batch.results.filter((r) => r.ok).length : 0;
 
   const runnablePillars = pillars.filter(
     (pillar) =>
