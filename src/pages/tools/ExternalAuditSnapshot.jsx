@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   Circle,
   ExternalLink,
+  RefreshCw,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
@@ -26,6 +27,113 @@ import {
 import { cn } from '@/lib/utils'
 import ScoreGauge, { scoreTone } from './auditSnapshot/ScoreGauge'
 import { listSnapshots, runPanel, persistSnapshot } from './auditSnapshot/api'
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@/components/ui/tabs'
+import { filterSemrushBots, TAB_SOURCES, SOURCE_IDS } from './auditSnapshot/botCategories'
+
+// The tabs shown across the top of the Analytics page, in order.
+const ANALYTICS_TABS = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'speed', label: 'Speed' },
+  { id: 'authority', label: 'Authority' },
+  { id: 'ai', label: 'AI Discoverability' },
+  { id: 'crawlability', label: 'Crawlability' },
+  { id: 'technical', label: 'Technical' },
+  { id: 'traffic', label: 'Traffic' },
+]
+
+// Small presentational Scan button used in each tab header. No hooks.
+function ScanButton({ label = 'Scan', sources, onScan, running, activePanel }) {
+  const isActive = running && activePanel && sources.includes(activePanel)
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      disabled={running}
+      onClick={() => onScan(sources)}
+    >
+      {isActive ? (
+        <>
+          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+          Scanning…
+        </>
+      ) : (
+        <>
+          <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+          {label}
+        </>
+      )}
+    </Button>
+  )
+}
+
+// Header row inside a category tab: title + last-run + its own Scan button.
+function TabHeader({ title, hint, sources, onScan, running, activePanel, runAt }) {
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="space-y-0.5">
+        <h2 className="text-sm font-semibold tracking-wide text-foreground/90">
+          {title}
+        </h2>
+        {hint ? <p className="text-[11px] text-muted-foreground">{hint}</p> : null}
+      </div>
+      <div className="flex items-center gap-2">
+        {runAt ? (
+          <span className="text-[11px] text-muted-foreground">{runAt}</span>
+        ) : null}
+        <ScanButton
+          sources={sources}
+          onScan={onScan}
+          running={running}
+          activePanel={activePanel}
+        />
+      </div>
+    </div>
+  )
+}
+
+// Compact clickable score card for the Overview grid. No hooks.
+function OverviewCard({ title, value, subtitle, tone = 'muted', onClick }) {
+  const toneText =
+    tone === 'green'
+      ? 'text-emerald-600 dark:text-emerald-400'
+      : tone === 'yellow'
+        ? 'text-amber-600 dark:text-amber-400'
+        : tone === 'red'
+          ? 'text-red-600 dark:text-red-400'
+          : 'text-foreground'
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded-lg border border-border bg-card/40 p-4 text-left transition-colors hover:bg-accent/40"
+    >
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {title}
+      </p>
+      <p className={cn('mt-1 text-2xl font-semibold tabular-nums', toneText)}>
+        {value}
+      </p>
+      {subtitle ? (
+        <p className="mt-0.5 text-[11px] text-muted-foreground">{subtitle}</p>
+      ) : null}
+    </button>
+  )
+}
+
+// Count allowed / total from a filtered bot-access view.
+function botAllowedStats(semrush, kind) {
+  const view = filterSemrushBots(semrush, kind)
+  const bots = view?.botAccess?.bots || {}
+  const names = Object.keys(bots)
+  const allowed = names.filter((n) => bots[n]?.status === 'allowed').length
+  return { allowed, total: names.length }
+}
 
 const PANELS = [
   {
@@ -731,6 +839,7 @@ export default function ExternalAuditSnapshot() {
   const [summary, setSummary] = useState('')
   const [summarizing, setSummarizing] = useState(false)
   const [summaryError, setSummaryError] = useState('')
+  const [activeTab, setActiveTab] = useState('overview')
 
   const displayResults = useMemo(() => {
     if (running && liveResults) return liveResults
@@ -792,24 +901,41 @@ export default function ExternalAuditSnapshot() {
     load()
   }, [load])
 
-  const handleRun = async () => {
+  // Run one or more sources, then persist.
+  // fresh=true  -> full snapshot, starts empty (the Overview "Run all" button).
+  // fresh=false -> single-tab scan: keep the other sources' latest values
+  //                visible, overwrite only what we re-fetch, and save the
+  //                merged result so history stays complete.
+  const runSources = async (sourceIds, { fresh } = {}) => {
     if (!companyId || running) return
+    const ids = (sourceIds || []).filter((id) => SOURCE_IDS.includes(id))
+    if (ids.length === 0) return
+
     setRunning(true)
     setError('')
     setNotice('')
-    setActive(null)
     setMeta(null)
-    setLiveResults({})
     setSummary('')
     setSummaryError('')
-    setPanelState(emptyPanelState())
     setActivePanel(null)
 
-    const collected = {}
+    const base = fresh ? {} : { ...(displayResults || {}) }
+    const collected = { ...base }
+    if (fresh) setActive(null)
+    setLiveResults({ ...collected })
+
+    // Reset only the panels we're about to run; leave the rest as-is.
+    setPanelState((prev) => {
+      const next = { ...prev }
+      for (const id of ids) next[id] = { status: 'pending', error: null }
+      return next
+    })
+
     let runMeta = null
+    const orderedPanels = PANELS.filter((p) => ids.includes(p.id))
 
     try {
-      for (const panel of PANELS) {
+      for (const panel of orderedPanels) {
         setActivePanel(panel.id)
         setPanelState((prev) => ({
           ...prev,
@@ -887,6 +1013,9 @@ export default function ExternalAuditSnapshot() {
     }
   }
 
+  const handleRun = () => runSources(TAB_SOURCES.overview, { fresh: true })
+  const handleScan = (sourceIds) => runSources(sourceIds, { fresh: false })
+
   const handleSummarize = async () => {
     if (!companyId || summarizing || !displayResults) return
     setSummarizing(true)
@@ -950,8 +1079,9 @@ export default function ExternalAuditSnapshot() {
       <header className="space-y-1">
         <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
         <p className="text-sm text-muted-foreground">
-          Run bot-access, PageSpeed, Moz, DataForSEO, and first-party technical
-          checks sequentially — dashboard fills in as each source completes.
+          Health across Speed, Authority, AI Discoverability, Crawlability,
+          Technical, and Traffic. Run everything at once, or open a tab and
+          scan just that area.
         </p>
       </header>
 
@@ -1008,7 +1138,7 @@ export default function ExternalAuditSnapshot() {
             ) : (
               <>
                 <Camera className="mr-2 h-4 w-4" />
-                Run Snapshot
+                Run all sources
               </>
             )}
           </Button>
@@ -1033,21 +1163,33 @@ export default function ExternalAuditSnapshot() {
           Loading…
         </div>
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
-          <aside className="rounded-lg border border-border bg-card/40 p-3 h-fit lg:sticky lg:top-4">
-            <h2 className="mb-2 px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Sources
-            </h2>
-            <SourceList
-              panelState={historyPanelState}
-              activePanel={activePanel}
-            />
-          </aside>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+          <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 bg-transparent p-0">
+            {ANALYTICS_TABS.map((t) => (
+              <TabsTrigger
+                key={t.id}
+                value={t.id}
+                className="rounded-full border border-border bg-card/40 px-3 py-1.5 text-xs data-[state=active]:bg-accent data-[state=active]:text-foreground"
+              >
+                {t.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
 
-          <div className="space-y-4">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
+          {summaryError ? (
+            <p className="text-sm text-destructive">{summaryError}</p>
+          ) : null}
+          {summary ? (
+            <div className="rounded-lg border border-border bg-muted/40 px-3 py-3 text-sm text-foreground whitespace-pre-wrap">
+              {summary}
+            </div>
+          ) : null}
+
+          {/* Overview */}
+          <TabsContent value="overview" className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-semibold tracking-wide text-foreground/90">
-                Summary dashboard
+                Overview
               </h2>
               <div className="flex flex-wrap items-center gap-2">
                 <Button
@@ -1074,64 +1216,257 @@ export default function ExternalAuditSnapshot() {
               </div>
             </div>
 
-            {summaryError ? (
-              <p className="text-sm text-destructive">{summaryError}</p>
-            ) : null}
-            {summary ? (
-              <div className="rounded-lg border border-border bg-muted/40 px-3 py-3 text-sm text-foreground whitespace-pre-wrap">
-                {summary}
-              </div>
-            ) : null}
-
             {!displayResults ? (
               <p className="text-sm text-muted-foreground">
-                No snapshots yet. Run a snapshot to populate the dashboard.
+                No data yet. Run all sources above, or open a tab and scan it.
               </p>
             ) : (
-              <>
-                <DashboardSection
-                  title="Rankings & Visibility"
-                  hint="Where your keywords rank; your link footprint"
-                  ready={Boolean(displayResults.dataforseo)}
-                >
-                  <VisibilitySection dataforseo={displayResults.dataforseo} />
-                </DashboardSection>
-
-                <DashboardSection
-                  title="Technical Health"
-                  hint="Crawlability, indexing signals, schema"
-                  ready={Boolean(displayResults.technical)}
-                >
-                  <TechnicalSection technical={displayResults.technical} />
-                </DashboardSection>
-
-                <DashboardSection
-                  title="Speed & Core Web Vitals"
-                  hint="Load speed and the vitals Google ranks on"
-                  ready={Boolean(displayResults.pagespeed)}
-                >
-                  <PerformanceSection pagespeed={displayResults.pagespeed} />
-                </DashboardSection>
-
-                <DashboardSection
-                  title="Authority & Backlinks"
-                  hint="Domain strength and who links to you"
-                  ready={Boolean(displayResults.moz)}
-                >
-                  <AuthoritySection moz={displayResults.moz} />
-                </DashboardSection>
-
-                <DashboardSection
-                  title="AI Crawlability"
-                  hint="Whether AI search bots can access the site"
-                  ready={Boolean(displayResults.semrush)}
-                >
-                  <AiSearchSection semrush={displayResults.semrush} />
-                </DashboardSection>
-              </>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {(() => {
+                  const perf =
+                    displayResults.pagespeed?.mobile?.scores?.performance
+                  const da = displayResults.moz?.metrics?.domainAuthority
+                  const ai = botAllowedStats(displayResults.semrush, 'ai')
+                  const search = botAllowedStats(displayResults.semrush, 'search')
+                  const refDomains =
+                    displayResults.dataforseo?.domainSummary?.referringDomains
+                  const techOk = displayResults.technical?.ok
+                  const allowTone = (s) =>
+                    !s.total
+                      ? 'muted'
+                      : s.allowed === s.total
+                        ? 'green'
+                        : s.allowed === 0
+                          ? 'red'
+                          : 'yellow'
+                  return (
+                    <>
+                      <OverviewCard
+                        title="Speed"
+                        value={perf != null ? perf : '—'}
+                        subtitle="PageSpeed performance (mobile)"
+                        tone={perf != null ? scoreTone(perf) : 'muted'}
+                        onClick={() => setActiveTab('speed')}
+                      />
+                      <OverviewCard
+                        title="Authority"
+                        value={da != null ? da : '—'}
+                        subtitle="Moz Domain Authority"
+                        tone={da != null ? scoreTone(da) : 'muted'}
+                        onClick={() => setActiveTab('authority')}
+                      />
+                      <OverviewCard
+                        title="AI Discoverability"
+                        value={ai.total ? `${ai.allowed}/${ai.total}` : '—'}
+                        subtitle="AI crawlers allowed"
+                        tone={allowTone(ai)}
+                        onClick={() => setActiveTab('ai')}
+                      />
+                      <OverviewCard
+                        title="Crawlability"
+                        value={search.total ? `${search.allowed}/${search.total}` : '—'}
+                        subtitle="Search crawlers allowed"
+                        tone={allowTone(search)}
+                        onClick={() => setActiveTab('crawlability')}
+                      />
+                      <OverviewCard
+                        title="Technical"
+                        value={
+                          displayResults.technical ? (techOk ? 'OK' : 'Issues') : '—'
+                        }
+                        subtitle="Meta, sitemap, robots, JSON-LD"
+                        tone={
+                          displayResults.technical
+                            ? techOk
+                              ? 'green'
+                              : 'yellow'
+                            : 'muted'
+                        }
+                        onClick={() => setActiveTab('technical')}
+                      />
+                      <OverviewCard
+                        title="Traffic"
+                        value={refDomains != null ? formatNumber(refDomains) : '—'}
+                        subtitle="Referring domains · GSC soon"
+                        tone="muted"
+                        onClick={() => setActiveTab('traffic')}
+                      />
+                    </>
+                  )
+                })()}
+              </div>
             )}
-          </div>
-        </div>
+          </TabsContent>
+
+          {/* Speed */}
+          <TabsContent value="speed" className="space-y-4">
+            <TabHeader
+              title="Speed & Core Web Vitals"
+              hint="Load speed and the vitals Google ranks on"
+              sources={TAB_SOURCES.speed}
+              onScan={handleScan}
+              running={running}
+              activePanel={activePanel}
+              runAt={active?.run_at && !running ? formatRunAt(active.run_at) : null}
+            />
+            {displayResults?.pagespeed ? (
+              <PerformanceSection pagespeed={displayResults.pagespeed} />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No data yet. Click Scan to run PageSpeed.
+              </p>
+            )}
+          </TabsContent>
+
+          {/* Authority */}
+          <TabsContent value="authority" className="space-y-4">
+            <TabHeader
+              title="Authority & Backlinks"
+              hint="Domain strength and who links to you"
+              sources={TAB_SOURCES.authority}
+              onScan={handleScan}
+              running={running}
+              activePanel={activePanel}
+              runAt={active?.run_at && !running ? formatRunAt(active.run_at) : null}
+            />
+            {displayResults?.moz ? (
+              <AuthoritySection moz={displayResults.moz} />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No data yet. Click Scan to run Moz.
+              </p>
+            )}
+          </TabsContent>
+
+          {/* AI Discoverability */}
+          <TabsContent value="ai" className="space-y-4">
+            <TabHeader
+              title="AI Discoverability"
+              hint="Whether AI crawlers (GPTBot, ClaudeBot, Perplexity…) can access the site"
+              sources={TAB_SOURCES.ai}
+              onScan={handleScan}
+              running={running}
+              activePanel={activePanel}
+              runAt={active?.run_at && !running ? formatRunAt(active.run_at) : null}
+            />
+            {displayResults?.semrush ? (
+              <AiSearchSection
+                semrush={filterSemrushBots(displayResults.semrush, 'ai')}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No data yet. Click Scan to check robots.txt.
+              </p>
+            )}
+          </TabsContent>
+
+          {/* Crawlability */}
+          <TabsContent value="crawlability" className="space-y-4">
+            <TabHeader
+              title="Google Crawlability"
+              hint="Whether search crawlers (Googlebot, Bingbot…) can access the site"
+              sources={TAB_SOURCES.crawlability}
+              onScan={handleScan}
+              running={running}
+              activePanel={activePanel}
+              runAt={active?.run_at && !running ? formatRunAt(active.run_at) : null}
+            />
+            {displayResults?.semrush ? (
+              <AiSearchSection
+                semrush={filterSemrushBots(displayResults.semrush, 'search')}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No data yet. Click Scan to check robots.txt.
+              </p>
+            )}
+          </TabsContent>
+
+          {/* Technical */}
+          <TabsContent value="technical" className="space-y-4">
+            <TabHeader
+              title="Technical Health"
+              hint="Meta, sitemap, robots, JSON-LD schema"
+              sources={TAB_SOURCES.technical}
+              onScan={handleScan}
+              running={running}
+              activePanel={activePanel}
+              runAt={active?.run_at && !running ? formatRunAt(active.run_at) : null}
+            />
+            {displayResults?.technical ? (
+              <TechnicalSection technical={displayResults.technical} />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No data yet. Click Scan to run technical checks.
+              </p>
+            )}
+          </TabsContent>
+
+          {/* Traffic */}
+          <TabsContent value="traffic" className="space-y-4">
+            <TabHeader
+              title="Rankings & Traffic"
+              hint="Search visibility and link footprint"
+              sources={TAB_SOURCES.traffic}
+              onScan={handleScan}
+              running={running}
+              activePanel={activePanel}
+              runAt={active?.run_at && !running ? formatRunAt(active.run_at) : null}
+            />
+            {displayResults?.dataforseo ? (
+              <VisibilitySection dataforseo={displayResults.dataforseo} />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No data yet. Click Scan to run DataForSEO.
+              </p>
+            )}
+
+            {/* Google Search Console — skeleton, not wired yet */}
+            <section className="rounded-lg border border-dashed border-border bg-card/20 p-4 sm:p-5">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground/70">
+                  Google Search Console
+                </h3>
+                <Badge
+                  variant="outline"
+                  className="text-[10px] text-muted-foreground"
+                >
+                  Coming soon
+                </Badge>
+              </div>
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                Clicks, impressions, CTR, average position, and top queries —
+                pulled straight from Google. Not connected yet.
+              </p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {['Clicks', 'Impressions', 'Avg. CTR', 'Avg. position'].map(
+                  (label) => (
+                    <div
+                      key={label}
+                      className="rounded-lg border border-border bg-card/40 p-3 opacity-60"
+                    >
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                        {label}
+                      </p>
+                      <p className="mt-1 text-lg font-semibold tabular-nums text-muted-foreground">
+                        —
+                      </p>
+                    </div>
+                  )
+                )}
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled
+                className="mt-3"
+              >
+                Connect Google Search Console
+              </Button>
+            </section>
+          </TabsContent>
+        </Tabs>
       )}
 
       <section className="rounded-lg border border-border bg-card/40 p-4 sm:p-5">
