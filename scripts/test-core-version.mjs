@@ -70,14 +70,19 @@ await check('planCoreUpdate: already latest -> none', () => {
 // --- mock GitHub for handler service functions ------------------------------
 const dest = { owner: 'DoriFussmann', repo: 'album-amicorum', targetBranch: 'main' }
 
-function makeOcto({ pkg, tags }) {
-  const calls = { commits: 0, merges: 0, committedContent: null }
+// files: { "<repo path>": "<file contents>" }. Missing path => 404 (like GitHub).
+function makeOcto({ files, tags }) {
+  const calls = { commits: 0, merges: 0, committedContent: null, committedPaths: [] }
   return {
     calls,
     repos: {
       getContent: async ({ path }) => {
-        if (path === 'package.json') return { data: { content: Buffer.from(pkg).toString('base64'), sha: 'PKGSHA' } }
-        throw new Error('unexpected path ' + path)
+        if (Object.prototype.hasOwnProperty.call(files, path)) {
+          return { data: { content: Buffer.from(files[path]).toString('base64'), sha: path + '-SHA' } }
+        }
+        const err = new Error('Not Found')
+        err.status = 404
+        throw err
       },
       listTags: async () => ({ data: tags }),
       merge: async () => {
@@ -93,7 +98,10 @@ function makeOcto({ pkg, tags }) {
         calls.committedContent = content
         return { data: { sha: 'BLOBSHA' } }
       },
-      createTree: async () => ({ data: { sha: 'NEWTREE' } }),
+      createTree: async ({ tree }) => {
+        for (const t of tree || []) calls.committedPaths.push(t.path)
+        return { data: { sha: 'NEWTREE' } }
+      },
       createCommit: async () => {
         calls.commits++
         return { data: { sha: 'NEWCOMMIT' } }
@@ -105,9 +113,14 @@ function makeOcto({ pkg, tags }) {
 }
 
 const pkgAt = (v) => `{\n  "dependencies": {\n    "seo-core": "github:DoriFussmann/seo-core#v${v}"\n  }\n}`
+// Root manifest of a workspaces monorepo: no deps, seo-core lives in site/.
+const rootWorkspacePkg = `{\n  "name": "proj",\n  "private": true,\n  "workspaces": ["site"]\n}`
+// Convenience builders for the two repo shapes.
+const rootRepo = (v) => ({ 'package.json': pkgAt(v) })
+const workspaceRepo = (v) => ({ 'package.json': rootWorkspacePkg, 'site/package.json': pkgAt(v) })
 
 await check('status: reports current, latest, and a green update', async () => {
-  const octo = makeOcto({ pkg: pkgAt('0.3.0'), tags: [{ name: 'v0.3.0' }, { name: 'v0.4.0' }] })
+  const octo = makeOcto({ files: rootRepo('0.3.0'), tags: [{ name: 'v0.3.0' }, { name: 'v0.4.0' }] })
   const s = await buildStatus(octo, dest)
   assert.equal(s.current, '0.3.0')
   assert.equal(s.latest, '0.4.0')
@@ -117,7 +130,7 @@ await check('status: reports current, latest, and a green update', async () => {
 })
 
 await check('apply: green update commits + merges the pin bump', async () => {
-  const octo = makeOcto({ pkg: pkgAt('0.3.0'), tags: [{ name: 'v0.3.0' }, { name: 'v0.4.0' }] })
+  const octo = makeOcto({ files: rootRepo('0.3.0'), tags: [{ name: 'v0.3.0' }, { name: 'v0.4.0' }] })
   const r = await applyUpdate(octo, dest)
   assert.equal(r.status, 200)
   assert.equal(r.body.ok, true)
@@ -128,7 +141,7 @@ await check('apply: green update commits + merges the pin bump', async () => {
 })
 
 await check('apply: major update is refused (409 migration_required), no commit', async () => {
-  const octo = makeOcto({ pkg: pkgAt('0.4.0'), tags: [{ name: 'v0.4.0' }, { name: 'v1.0.0' }] })
+  const octo = makeOcto({ files: rootRepo('0.4.0'), tags: [{ name: 'v0.4.0' }, { name: 'v1.0.0' }] })
   const r = await applyUpdate(octo, dest)
   assert.equal(r.status, 409)
   assert.equal(r.body.code, 'migration_required')
@@ -137,12 +150,30 @@ await check('apply: major update is refused (409 migration_required), no commit'
 })
 
 await check('apply: already up-to-date does nothing', async () => {
-  const octo = makeOcto({ pkg: pkgAt('0.4.0'), tags: [{ name: 'v0.4.0' }] })
+  const octo = makeOcto({ files: rootRepo('0.4.0'), tags: [{ name: 'v0.4.0' }] })
   const r = await applyUpdate(octo, dest)
   assert.equal(r.status, 200)
   assert.equal(r.body.ok, false)
   assert.equal(r.body.reason, 'up-to-date')
   assert.equal(octo.calls.commits, 0)
+})
+
+await check('status: workspace monorepo — reads seo-core from site/package.json', async () => {
+  const octo = makeOcto({ files: workspaceRepo('0.2.0'), tags: [{ name: 'v0.4.0' }] })
+  const s = await buildStatus(octo, dest)
+  assert.equal(s.current, '0.2.0')
+  assert.equal(s.latest, '0.4.0')
+  assert.equal(s.severity, 'green')
+})
+
+await check('apply: workspace monorepo — commits the bump to site/package.json', async () => {
+  const octo = makeOcto({ files: workspaceRepo('0.2.0'), tags: [{ name: 'v0.4.0' }] })
+  const r = await applyUpdate(octo, dest)
+  assert.equal(r.status, 200)
+  assert.equal(r.body.ok, true)
+  assert.equal(r.body.updatedTo, '0.4.0')
+  assert.deepEqual(octo.calls.committedPaths, ['site/package.json'])
+  assert.ok(octo.calls.committedContent.includes('#v0.4.0'))
 })
 
 console.log(`\nAll ${passed} core-version assertions passed.`)
