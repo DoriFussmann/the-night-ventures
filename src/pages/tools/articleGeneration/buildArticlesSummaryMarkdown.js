@@ -78,7 +78,7 @@ function sortKey(value) {
 }
 
 /**
- * Group library articles by pillar → supporting (same hierarchy as Topic Generator).
+ * Group library articles by pillar → supporting (same hierarchy as Cluster Generation).
  * Pillar articles (no supporting keyword) appear under a dedicated "Pillar article" section.
  */
 function groupArticles(articles) {

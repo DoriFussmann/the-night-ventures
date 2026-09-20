@@ -6,6 +6,7 @@ import { handleProposeExternalLinks } from '../lib/external-links/handler.js'
 import { handleCheckLinks } from '../lib/check-links/handler.js'
 import { handleArticleUpdates } from '../lib/article-updates/handler.js'
 import { handleCompanyDataImport } from '../lib/company-data-import/handler.js'
+import { handleAuditSummary } from '../lib/audit-summary/handler.js'
 
 export const config = {
   maxDuration: 120,
@@ -37,6 +38,9 @@ function requestAction(req) {
     }
     if (path.endsWith('/company-data-import')) {
       return 'company-data-import'
+    }
+    if (path.endsWith('/audit-summary')) {
+      return 'audit-summary'
     }
   } catch {
     // ignore
@@ -277,7 +281,8 @@ export default async function handler(req, res) {
   // instead of adding more api/*.js files.
   // Public: POST /api/scan-live-articles, POST /api/publish-to-site,
   // POST /api/wire-internal-links, POST /api/propose-external-links,
-  // POST /api/check-links, POST /api/article-updates.
+  // POST /api/check-links, POST /api/article-updates,
+  // POST /api/company-data-import, POST /api/audit-summary.
   const action = requestAction(req)
   if (action === 'scan-live') {
     return handleScanLiveArticles(req, res)
@@ -299,6 +304,9 @@ export default async function handler(req, res) {
   }
   if (action === 'company-data-import') {
     return handleCompanyDataImport(req, res)
+  }
+  if (action === 'audit-summary') {
+    return handleAuditSummary(req, res)
   }
 
   if (req.method === 'OPTIONS') {

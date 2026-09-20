@@ -242,3 +242,149 @@ export async function updateCoverageDrafted({
   }
   return result;
 }
+
+/**
+ * Mark matched coverage articles as published after a successful site commit.
+ *
+ * @param {object} opts
+ * @param {string} opts.companyId
+ * @param {string} opts.pillarKeyword
+ * @param {string} [opts.supportingKeyword]
+ * @param {Array<{ targetKeyword?: string, title?: string, frontmatter?: object }>} opts.successes
+ * @param {string} [opts.publishedUrl]
+ * @returns {Promise<{ updated: number, unmatched: number, pillars: object[], warning?: string }>}
+ */
+export async function updateCoveragePublished({
+  companyId,
+  pillarKeyword,
+  supportingKeyword,
+  successes,
+  publishedUrl,
+}) {
+  const list = Array.isArray(successes) ? successes : [];
+  if (!companyId || list.length === 0) {
+    return { updated: 0, unmatched: list.length, pillars: [] };
+  }
+
+  const { data, error } = await supabase
+    .from("content_coverage")
+    .select("pillars")
+    .eq("company_id", companyId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message || "Failed to load content coverage");
+  }
+
+  const pillars = Array.isArray(data?.pillars)
+    ? data.pillars.map((p) => ({ ...p }))
+    : [];
+
+  const pillar = findPillar(pillars, pillarKeyword);
+  if (!pillar) {
+    return {
+      updated: 0,
+      unmatched: list.length,
+      pillars,
+      warning: `No coverage pillar matched “${pillarKeyword || "(empty)"}”.`,
+    };
+  }
+
+  const now = new Date().toISOString();
+  const url = String(publishedUrl || "").trim();
+  let updated = 0;
+  let unmatched = 0;
+
+  const markPublished = (existing, frontmatter) => {
+    const fm = frontmatter && typeof frontmatter === "object" ? frontmatter : {};
+    return {
+      ...existing,
+      status: "published",
+      publishedAt: now,
+      updatedAt: now,
+      draft: false,
+      ...(url ? { publishedUrl: url } : {}),
+      ...(fm.title ? { title: String(fm.title) } : {}),
+      ...(fm.slug ? { slug: String(fm.slug) } : {}),
+    };
+  };
+
+  if (!supportingKeyword) {
+    for (const success of list) {
+      const current =
+        pillar.pillarArticle && typeof pillar.pillarArticle === "object"
+          ? pillar.pillarArticle
+          : { status: "planned" };
+
+      const matches =
+        !pillar.pillarArticle ||
+        typeof pillar.pillarArticle !== "object" ||
+        articleMatches(current, success) ||
+        (!current.targetKeyword && !current.title);
+
+      if (!matches) {
+        unmatched += 1;
+        continue;
+      }
+
+      pillar.pillarArticle = markPublished(current, success.frontmatter);
+      updated += 1;
+    }
+  } else {
+    const supporting = findSupporting(pillar, supportingKeyword);
+    if (!supporting) {
+      return {
+        updated: 0,
+        unmatched: list.length,
+        pillars,
+        warning: `No coverage supporting keyword matched “${supportingKeyword}”.`,
+      };
+    }
+
+    const planned = Array.isArray(supporting.plannedArticles)
+      ? [...supporting.plannedArticles]
+      : [];
+
+    for (const success of list) {
+      const idx = planned.findIndex((item) => articleMatches(item, success));
+      if (idx === -1) {
+        unmatched += 1;
+        continue;
+      }
+      planned[idx] = markPublished(planned[idx], success.frontmatter);
+      updated += 1;
+    }
+
+    supporting.plannedArticles = planned;
+    pillar.supporting = (pillar.supporting || []).map((s) =>
+      s.slug === supporting.slug || norm(s.keyword) === norm(supporting.keyword)
+        ? supporting
+        : s
+    );
+  }
+
+  const nextPillars = pillars.map((p) =>
+    p.slug === pillar.slug || norm(p.keyword) === norm(pillar.keyword)
+      ? pillar
+      : p
+  );
+
+  const { error: upsertError } = await supabase.from("content_coverage").upsert(
+    {
+      company_id: companyId,
+      pillars: nextPillars,
+      updated_at: now,
+    },
+    { onConflict: "company_id" }
+  );
+
+  if (upsertError) {
+    throw new Error(upsertError.message || "Failed to update content coverage");
+  }
+
+  const result = { updated, unmatched, pillars: nextPillars };
+  if (unmatched > 0) {
+    result.warning = `${unmatched} article${unmatched === 1 ? "" : "s"} could not be marked published in coverage.`;
+  }
+  return result;
+}

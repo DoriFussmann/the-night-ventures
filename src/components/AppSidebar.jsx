@@ -15,30 +15,39 @@ import {
 } from "@/components/ui/dialog";
 import {
   Database,
-  BarChart3,
-  ListTodo,
-  FileText,
   Palette,
-  Wand2,
   LayoutTemplate,
-  Lightbulb,
   PenLine,
   BookOpen,
-  RefreshCw,
   Image,
   Sparkles,
   MessageSquareText,
   Camera,
-  Workflow,
   Layers,
   LogOut,
   ArrowLeft,
   Construction,
-  ChevronUp,
-  Moon,
   Loader2,
   Trash2,
+  Map,
 } from "lucide-react";
+
+const STATUS_STYLES = {
+  Done: "text-emerald-700/80 bg-emerald-500/10",
+  Partial: "text-amber-700/80 bg-amber-500/10",
+  Verify: "text-slate-500 bg-slate-500/10",
+  "To Build": "text-violet-700/70 bg-violet-500/10",
+};
+
+function StatusTag({ status }) {
+  return (
+    <span
+      className={`ml-auto shrink-0 rounded px-1 py-px text-[8px] font-medium uppercase tracking-wide ${STATUS_STYLES[status]}`}
+    >
+      {status}
+    </span>
+  );
+}
 
 function NavItem({ item }) {
   const location = useLocation();
@@ -55,7 +64,8 @@ function NavItem({ item }) {
       }`}
     >
       <Icon className="w-3.5 h-3.5 shrink-0" />
-      <span className="leading-tight">{item.label}</span>
+      <span className="min-w-0 flex-1 truncate leading-tight">{item.label}</span>
+      {item.status ? <StatusTag status={item.status} /> : null}
     </Link>
   );
 }
@@ -122,47 +132,39 @@ export default function AppSidebar({ user }) {
   // (e.g. "← Rupert") does not appear before a selection is made.
   const isCompanyPicker = location.pathname === "/";
   const activeCompanyId = routeCompanyId || (isCompanyPicker ? "" : readLastCompanyId());
-  const siteBuildFlowPath = activeCompanyId
-    ? `/company/${activeCompanyId}/site-build-flow`
-    : "";
-  const isSiteBuildFlowActive = location.pathname === siteBuildFlowPath;
 
-  const companyNav = [
-    { label: "Company Data", path: `/company/${activeCompanyId}/company-data`, icon: Database },
-    { label: "Analytics", path: `/company/${activeCompanyId}/analytics`, icon: BarChart3 },
-    { label: "Tasks", path: `/company/${activeCompanyId}/tasks`, icon: ListTodo },
+  const topNav = [
+    { label: "Company Data", path: `/company/${activeCompanyId}/company-data`, icon: Database, status: "Done" },
   ];
 
-  const seoNav = [
-    { label: "The Nightwatch", path: `/company/${activeCompanyId}/nightwatch`, icon: Moon },
-    { type: "separator" },
-    { label: "SEO AI Advisor", path: `/company/${activeCompanyId}/seo-ai-advisor`, icon: MessageSquareText },
-    { label: "Technical Audit", path: `/company/${activeCompanyId}/external-audit-snapshot`, icon: Camera },
+  const buildNav = [
+    { label: "Site Build Flow", path: `/company/${activeCompanyId}/site-build-flow`, icon: Construction, status: "Done" },
+    { label: "Design Builder", path: `/company/${activeCompanyId}/design-guide-builder`, icon: Palette, status: "Done" },
+    { label: "Site Content Builder", path: `/company/${activeCompanyId}/site-content-builder`, icon: LayoutTemplate, status: "Done" },
+    { label: "Pillar Generation", path: `/company/${activeCompanyId}/pillar-automation`, icon: Layers, status: "Done" },
+    { label: "Cluster Generation", path: `/company/${activeCompanyId}/article-generation`, icon: PenLine, status: "Done" },
   ];
 
-  const manualTools = [
-    { label: "Topic Generator", path: `/company/${activeCompanyId}/article-topic-suggestion`, icon: Lightbulb },
-    { label: "Article Generator", path: `/company/${activeCompanyId}/article-generation`, icon: PenLine },
-    { label: "Pillar Automation", path: `/company/${activeCompanyId}/pillar-automation`, icon: Layers },
-    { label: "Articles Automation", path: `/company/${activeCompanyId}/articles-automation`, icon: Workflow },
-    { label: "Articles", path: `/company/${activeCompanyId}/articles`, icon: BookOpen },
-    { label: "Articles Update", path: `/company/${activeCompanyId}/articles-update`, icon: RefreshCw },
+  const ongoingNav = [
+    { label: "Articles", path: `/company/${activeCompanyId}/articles`, icon: BookOpen, status: "Done" },
+    { label: "Pillar Generation", path: `/company/${activeCompanyId}/pillar-automation`, icon: Layers, status: "Done" },
+    { label: "Cluster Generation", path: `/company/${activeCompanyId}/article-generation`, icon: PenLine, status: "Done" },
   ];
-  const isManualToolActive = manualTools.some((item) => location.pathname === item.path);
 
-  const designTools = [
-    { label: "Design Builder", path: `/company/${activeCompanyId}/design-guide-builder`, icon: Palette },
-    { label: "Image Generator", path: `/company/${activeCompanyId}/image-generator`, icon: Sparkles },
+  const analyticsNav = [
+    { label: "Analytics", path: `/company/${activeCompanyId}/external-audit-snapshot`, icon: Camera, status: "Partial" },
   ];
-  const isDesignToolActive = designTools.some((item) => location.pathname === item.path);
 
-  const additionalTools = [
-    { label: "Initial Site Build Prompt", path: `/company/${activeCompanyId}/initial-site-build-prompt`, icon: FileText },
-    { label: "Specific Prompt", path: `/company/${activeCompanyId}/template-to-prompt`, icon: Wand2 },
-    { label: "Cluster Images", path: `/company/${activeCompanyId}/cluster-image-generator`, icon: Image },
-    { label: "Site Content Build", path: `/company/${activeCompanyId}/site-content-build`, icon: LayoutTemplate },
+  const manualToolsNav = [
+    { label: "SEO AI Advisor", path: `/company/${activeCompanyId}/seo-ai-advisor`, icon: MessageSquareText, status: "Verify" },
+    { label: "Image Generator", path: `/company/${activeCompanyId}/image-generator`, icon: Sparkles, status: "Verify" },
+    { label: "Cluster Images", path: `/company/${activeCompanyId}/cluster-image-generator`, icon: Image, status: "Verify" },
   ];
-  const isAdditionalToolActive = additionalTools.some((item) => location.pathname === item.path);
+
+  const adminNav = [
+    { label: "System Map", path: `/company/${activeCompanyId}/system-map`, icon: Map },
+  ];
+
   useEffect(() => {
     let cancelled = false;
 
@@ -262,167 +264,58 @@ export default function AppSidebar({ user }) {
       <nav className="flex-1 overflow-y-auto px-2.5 pb-3">
         {activeCompanyId && (
           <>
-            <SectionHeader label="Company" />
-            <div className="space-y-1.5">
-              {companyNav.map((item) => (
+            <div className="space-y-1.5 pt-1">
+              {topNav.map((item) => (
                 <NavItem key={item.path} item={item} />
               ))}
             </div>
 
-            <SectionHeader label="SEO Tools" />
+            <SectionHeader label="Build" />
             <div className="space-y-1.5">
-              {seoNav.map((item, index) =>
-                item.type === "separator" ? (
-                  <div key={`seo-sep-${index}`} className="my-1 border-t border-border" />
-                ) : (
-                  <NavItem key={item.path} item={item} />
-                )
-              )}
+              {buildNav.map((item) => (
+                <NavItem key={item.path} item={item} />
+              ))}
+            </div>
+
+            <SectionHeader label="Ongoing" />
+            <div className="space-y-1.5">
+              {ongoingNav.map((item) => (
+                <NavItem key={item.path} item={item} />
+              ))}
+            </div>
+
+            <SectionHeader label="Analytics" />
+            <div className="space-y-1.5">
+              {analyticsNav.map((item) => (
+                <NavItem key={item.path} item={item} />
+              ))}
+            </div>
+
+            <SectionHeader label="Manual Tools" />
+            <div className="space-y-1.5">
+              {manualToolsNav.map((item) => (
+                <NavItem key={item.path} item={item} />
+              ))}
+            </div>
+
+            <SectionHeader label="Admin" />
+            <div className="space-y-1.5">
+              {adminNav.map((item) => (
+                <NavItem key={item.path} item={item} />
+              ))}
+              <button
+                type="button"
+                onClick={() => handleDangerOpenChange(true)}
+                disabled={!companyName.trim()}
+                className="w-full flex items-center gap-2 rounded-md border border-destructive/30 px-2.5 py-1.5 text-left text-xs text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                <span className="leading-tight">Danger Zone</span>
+              </button>
             </div>
           </>
         )}
       </nav>
-
-      {activeCompanyId && (
-        <div className="border-t border-border px-2.5 py-2 space-y-1.5">
-          <Link
-            to={siteBuildFlowPath}
-            className={`w-full flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors ${
-              isSiteBuildFlowActive
-                ? "border-border bg-accent text-foreground"
-                : "border-border text-foreground/80 hover:bg-accent hover:text-foreground"
-            }`}
-          >
-            <Construction className="w-3.5 h-3.5 shrink-0" />
-            <span className="leading-tight">Site Build Flow</span>
-          </Link>
-
-          <div className="group relative">
-            <button
-              type="button"
-              className={`w-full flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors ${
-                isManualToolActive
-                  ? "border-border bg-accent text-foreground"
-                  : "border-border text-foreground/80 group-hover:bg-accent group-hover:text-foreground"
-              }`}
-            >
-              <ChevronUp className="w-3.5 h-3.5 shrink-0 transition-transform group-hover:rotate-180" />
-              <span className="leading-tight">Manual Tools</span>
-            </button>
-            <div className="pointer-events-none absolute bottom-full left-0 right-0 z-50 pb-1 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
-              <div className="rounded-md border border-border bg-card p-1 shadow-md">
-                {manualTools.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = location.pathname === item.path;
-                  return (
-                    <Link
-                      key={item.path}
-                      to={item.path}
-                      className={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs transition-colors ${
-                        isActive
-                          ? "bg-accent text-foreground"
-                          : "text-foreground/80 hover:bg-accent hover:text-foreground"
-                      }`}
-                    >
-                      <Icon className="w-3.5 h-3.5 shrink-0" />
-                      <span className="leading-tight">{item.label}</span>
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          <div className="group relative">
-            <button
-              type="button"
-              className={`w-full flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors ${
-                isDesignToolActive
-                  ? "border-border bg-accent text-foreground"
-                  : "border-border text-foreground/80 group-hover:bg-accent group-hover:text-foreground"
-              }`}
-            >
-              <ChevronUp className="w-3.5 h-3.5 shrink-0 transition-transform group-hover:rotate-180" />
-              <span className="leading-tight">Design Tools</span>
-            </button>
-            <div className="pointer-events-none absolute bottom-full left-0 right-0 z-50 pb-1 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
-              <div className="rounded-md border border-border bg-card p-1 shadow-md">
-                {designTools.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = location.pathname === item.path;
-                  return (
-                    <Link
-                      key={item.path}
-                      to={item.path}
-                      className={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs transition-colors ${
-                        isActive
-                          ? "bg-accent text-foreground"
-                          : "text-foreground/80 hover:bg-accent hover:text-foreground"
-                      }`}
-                    >
-                      <Icon className="w-3.5 h-3.5 shrink-0" />
-                      <span className="leading-tight">{item.label}</span>
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          <div className="group relative">
-            <button
-              type="button"
-              className={`w-full flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors ${
-                isAdditionalToolActive
-                  ? "border-border bg-accent text-foreground"
-                  : "border-border text-foreground/80 group-hover:bg-accent group-hover:text-foreground"
-              }`}
-            >
-              <ChevronUp className="w-3.5 h-3.5 shrink-0 transition-transform group-hover:rotate-180" />
-              <span className="leading-tight">Additional Tools</span>
-            </button>
-            <div className="pointer-events-none absolute bottom-full left-0 right-0 z-50 pb-1 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
-              <div className="rounded-md border border-border bg-card p-1 shadow-md">
-                {additionalTools.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = location.pathname === item.path;
-                  return (
-                    <Link
-                      key={item.path}
-                      to={item.path}
-                      className={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs transition-colors ${
-                        isActive
-                          ? "bg-accent text-foreground"
-                          : "text-foreground/80 hover:bg-accent hover:text-foreground"
-                      }`}
-                    >
-                      <Icon className="w-3.5 h-3.5 shrink-0" />
-                      <span className="leading-tight">{item.label}</span>
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {activeCompanyId && (
-        <div className="border-t border-border px-2.5 py-2">
-          <p className="px-2.5 pb-1.5 text-[9px] font-semibold uppercase tracking-widest text-destructive/70">
-            Danger Zone
-          </p>
-          <button
-            type="button"
-            onClick={() => handleDangerOpenChange(true)}
-            disabled={!companyName.trim()}
-            className="w-full flex items-center gap-2 rounded-md border border-destructive/30 px-2.5 py-1.5 text-left text-xs text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
-          >
-            <Trash2 className="w-3.5 h-3.5 shrink-0" />
-            <span className="leading-tight">Remove company</span>
-          </button>
-        </div>
-      )}
 
       {/* Footer */}
       <div className="border-t border-border px-3 py-2.5">

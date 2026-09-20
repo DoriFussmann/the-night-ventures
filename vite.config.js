@@ -87,6 +87,11 @@ function localApiPlugin() {
             const parsed = new URL(url, 'http://localhost')
             parsed.searchParams.set('action', 'company-data-import')
             req.url = `/api/check-article-update${parsed.search}`
+          } else if (name === 'audit-summary') {
+            name = 'check-article-update'
+            const parsed = new URL(url, 'http://localhost')
+            parsed.searchParams.set('action', 'audit-summary')
+            req.url = `/api/check-article-update${parsed.search}`
           }
 
           const filePath = path.resolve(__dirname, 'api', `${name}.js`)

@@ -364,10 +364,10 @@ export default function ClusterImageGenerator() {
             </Link>
             , then plan coverage in{" "}
             <Link
-              to={`/company/${companyId}/article-topic-suggestion`}
+              to={`/company/${companyId}/article-generation`}
               className="underline underline-offset-2 hover:text-foreground"
             >
-              Topic Generator
+              Cluster Generation
             </Link>
             .
           </p>

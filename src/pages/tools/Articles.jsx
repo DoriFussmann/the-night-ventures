@@ -1,21 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import ReactMarkdown from "react-markdown";
-import { Download, ExternalLink, Loader2, Radar, Search, Trash2, Upload } from "lucide-react";
+import { Download, ExternalLink, Loader2, Radar, Search, Upload } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { scanLiveArticles } from "./articles/scanLiveApi";
-import CheckLinksPanel from "./articles/CheckLinksPanel";
-import CleanupPanel from "./articles/CleanupPanel";
-import RewritePanel from "./articles/RewritePanel";
+import FaceliftPanel from "./articles/FaceliftPanel";
+import ArticleCmsDialog from "./articles/ArticleCmsDialog";
 import { Input } from "@/components/ui/input";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,7 +31,6 @@ import {
 import {
   daysSinceUpdate,
   daysSinceUpdateBadgeClass,
-  formatDaysSinceUpdateLabel,
 } from "./articleGeneration/daysSinceUpdate";
 import { downloadMarkdownFile } from "./articleGeneration/serializeArticleMarkdown";
 import {
@@ -153,95 +143,45 @@ function PillarBadge({ keyword }) {
   );
 }
 
-function DaysSinceUpdateBadge({ dateValue }) {
-  const days = daysSinceUpdate(dateValue);
-  if (days == null) return null;
+function LinkHealthCell({ kind, row, health }) {
+  const entry = health?.[row.slug];
+  const raw = kind === "internal" ? row.internalLinks : row.externalLinks;
+  if (!entry?.audited) {
+    return (
+      <span className="tabular-nums text-muted-foreground">
+        {raw == null ? "—" : raw}
+      </span>
+    );
+  }
+  if (kind === "internal") {
+    if (entry.internalOk) {
+      return (
+        <span className="tabular-nums font-medium text-emerald-700">
+          {raw == null ? "ok" : raw}
+        </span>
+      );
+    }
+    return (
+      <span className="tabular-nums font-medium text-red-700">
+        {entry.internalMissing} missing
+      </span>
+    );
+  }
+  const needed = entry.externalNeeded || 3;
+  const current = entry.externalCurrent;
+  if (entry.externalOk) {
+    return (
+      <span className="tabular-nums font-medium text-emerald-700">
+        {current == null ? (raw == null ? "ok" : `${raw}/${needed}`) : `${current}/${needed}`}
+      </span>
+    );
+  }
+  const shown = current == null ? raw ?? 0 : current;
   return (
-    <span
-      className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[11px] font-medium tabular-nums ${daysSinceUpdateBadgeClass(days)}`}
-      title={`updatedDate: ${dateValue}`}
-    >
-      {formatDaysSinceUpdateLabel(days)}
+    <span className="tabular-nums font-medium text-red-700">
+      {shown}/{needed}
     </span>
   );
-}
-
-function bodyForReader(body) {
-  return String(body || "")
-    .replace(/<!--\s*WHERE-THINGS-STAND:START\s*-->\s*/gi, "")
-    .replace(/<!--\s*WHERE-THINGS-STAND:END\s*-->\s*/gi, "")
-    .trim();
-}
-
-const markdownComponents = {
-  h1: ({ children }) => (
-    <h1 className="text-2xl font-semibold tracking-tight text-foreground mt-2 mb-4">
-      {children}
-    </h1>
-  ),
-  h2: ({ children }) => (
-    <h2 className="text-xl font-semibold tracking-tight text-foreground mt-9 mb-3 pb-2 border-b border-border/60">
-      {children}
-    </h2>
-  ),
-  h3: ({ children }) => (
-    <h3 className="text-lg font-medium text-foreground mt-6 mb-2">{children}</h3>
-  ),
-  p: ({ children }) => (
-    <p className="mb-4 text-xs leading-[1.75] text-foreground/90">{children}</p>
-  ),
-  ul: ({ children }) => (
-    <ul className="mb-4 ml-5 list-disc space-y-1.5 text-xs leading-[1.7] text-foreground/90">
-      {children}
-    </ul>
-  ),
-  ol: ({ children }) => (
-    <ol className="mb-4 ml-5 list-decimal space-y-1.5 text-xs leading-[1.7] text-foreground/90">
-      {children}
-    </ol>
-  ),
-  li: ({ children }) => <li className="pl-0.5">{children}</li>,
-  strong: ({ children }) => (
-    <strong className="font-semibold text-foreground">{children}</strong>
-  ),
-  em: ({ children }) => <em className="italic">{children}</em>,
-  blockquote: ({ children }) => (
-    <blockquote className="my-4 border-l-2 border-border pl-4 text-muted-foreground italic">
-      {children}
-    </blockquote>
-  ),
-  a: ({ href, children }) => (
-    <a
-      href={href}
-      className="underline underline-offset-2 text-foreground hover:text-foreground/80"
-      target="_blank"
-      rel="noreferrer"
-    >
-      {children}
-    </a>
-  ),
-  hr: () => <hr className="my-8 border-border" />,
-};
-
-function asStringList(value) {
-  if (!Array.isArray(value)) return [];
-  return value.map((item) => String(item ?? "")).filter(Boolean);
-}
-
-function asFaqList(value) {
-  if (!Array.isArray(value)) return [];
-  return value.filter((item) => item && typeof item === "object");
-}
-
-function asSourceList(value) {
-  if (!Array.isArray(value)) return [];
-  return value
-    .filter((item) => item && typeof item === "object")
-    .map((item) => ({
-      url: String(item.url || "").trim(),
-      note: String(item.note || "").trim(),
-    }))
-    .filter((item) => item.url || item.note);
 }
 
 function formatDisplayDate(value) {
@@ -250,13 +190,52 @@ function formatDisplayDate(value) {
   return raw;
 }
 
-function uniqueSorted(values) {
-  const set = new Set();
-  for (const value of values) {
-    const key = String(value || "").trim();
-    if (key) set.add(key);
+function indexLiveRows(rows) {
+  const map = new Map();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const slug = String(row?.slug || "").trim();
+    if (slug) map.set(slug, row);
   }
-  return Array.from(set).sort((a, b) => a.localeCompare(b));
+  return map;
+}
+
+function overlayLibraryArticle(article, live) {
+  if (!live) return article;
+  const found = !live.error;
+  return {
+    ...article,
+    status: found
+      ? live.status || (live.draft ? "drafted" : "published")
+      : article.status,
+    updated_date: live.lastDate || article.updated_date,
+    date: live.lastDate || article.date,
+    published_url: live.url || article.published_url,
+    internalLinks: live.internalLinks,
+    externalLinks: live.externalLinks,
+    liveError: live.error || null,
+  };
+}
+
+function liveOnlyArticle(live) {
+  return {
+    id: null,
+    slug: live.slug,
+    title: live.title || live.slug,
+    type: live.articleType,
+    articleType: live.articleType,
+    pillar_keyword: live.pillarKeyword,
+    target_keyword: live.keyword,
+    supporting_keyword: live.keywordRole === "supporting" ? live.keyword : "",
+    keywordRole: live.keywordRole,
+    status: live.status || (live.draft ? "drafted" : "published"),
+    updated_date: live.lastDate,
+    date: live.lastDate,
+    published_url: live.url,
+    internalLinks: live.internalLinks,
+    externalLinks: live.externalLinks,
+    liveError: live.error || null,
+    liveOnly: true,
+  };
 }
 
 // Strip the "(no volume data)" marker so a pillar doesn't split into phantom
@@ -295,10 +274,8 @@ export default function Articles() {
   const [scanLoading, setScanLoading] = useState(false);
   const [scanError, setScanError] = useState("");
   const [scanResult, setScanResult] = useState(null);
-  const [liveSearchInput, setLiveSearchInput] = useState("");
-  const [liveDebouncedSearch, setLiveDebouncedSearch] = useState("");
-  const [livePillarFilter, setLivePillarFilter] = useState("all");
-  const [liveClusterFilter, setLiveClusterFilter] = useState("all");
+  const [linkHealth, setLinkHealth] = useState(null);
+  const [faceliftLiveRows, setFaceliftLiveRows] = useState([]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -308,19 +285,10 @@ export default function Articles() {
   }, [searchInput]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setLiveDebouncedSearch(liveSearchInput.trim());
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [liveSearchInput]);
-
-  useEffect(() => {
     setScanResult(null);
     setScanError("");
-    setLiveSearchInput("");
-    setLiveDebouncedSearch("");
-    setLivePillarFilter("all");
-    setLiveClusterFilter("all");
+    setLinkHealth(null);
+    setFaceliftLiveRows([]);
   }, [companyId]);
 
   useEffect(() => {
@@ -383,18 +351,41 @@ export default function Articles() {
     };
   }, [companyId]);
 
+  const liveBySlug = useMemo(() => {
+    const map = indexLiveRows(faceliftLiveRows);
+    for (const [slug, row] of indexLiveRows(scanResult?.articles)) {
+      map.set(slug, row);
+    }
+    return map;
+  }, [faceliftLiveRows, scanResult]);
+
+  const displayArticles = useMemo(() => {
+    const used = new Set();
+    const merged = articles.map((article) => {
+      const slug = String(article.slug || "").trim();
+      const live = slug ? liveBySlug.get(slug) : null;
+      if (slug && live) used.add(slug);
+      return overlayLibraryArticle(article, live);
+    });
+    for (const [slug, live] of liveBySlug) {
+      if (used.has(slug)) continue;
+      merged.push(liveOnlyArticle(live));
+    }
+    return merged;
+  }, [articles, liveBySlug]);
+
   const pillarOptions = useMemo(() => {
     const set = new Set();
-    for (const article of articles) {
+    for (const article of displayArticles) {
       const key = cleanPillar(article.pillar_keyword);
       if (key) set.add(key);
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [articles]);
+  }, [displayArticles]);
 
   const filtered = useMemo(() => {
     const q = debouncedSearch.toLowerCase();
-    return articles.filter((article) => {
+    return displayArticles.filter((article) => {
       if (slugFilter && article.slug !== slugFilter) return false;
       if (pillarFilter !== "all" && cleanPillar(article.pillar_keyword) !== pillarFilter) {
         return false;
@@ -413,7 +404,7 @@ export default function Articles() {
       const target = String(article.target_keyword || "").toLowerCase();
       return title.includes(q) || target.includes(q);
     });
-  }, [articles, debouncedSearch, pillarFilter, keywordRoleFilter, typeFilter, slugFilter]);
+  }, [displayArticles, debouncedSearch, pillarFilter, keywordRoleFilter, typeFilter, slugFilter]);
 
   const selected = useMemo(
     () => articles.find((article) => article.id === selectedId) || null,
@@ -566,7 +557,9 @@ export default function Articles() {
     }
   };
 
-  const hasAnyArticles = articles.length > 0;
+  const hasLibraryArticles = articles.length > 0;
+  const hasAnyArticles = displayArticles.length > 0;
+  const showLiveFields = liveBySlug.size > 0 || Boolean(linkHealth);
   const hasActiveFilters =
     Boolean(debouncedSearch) ||
     pillarFilter !== "all" ||
@@ -574,62 +567,15 @@ export default function Articles() {
     typeFilter !== "all" ||
     Boolean(slugFilter);
 
-  const liveArticles = Array.isArray(scanResult?.articles)
-    ? scanResult.articles
-    : [];
-
-  const livePillarOptions = useMemo(
-    () => uniqueSorted(liveArticles.map((row) => row.pillarKeyword)),
-    [liveArticles]
-  );
-
-  const liveClusterOptions = useMemo(() => {
-    const rows =
-      livePillarFilter === "all"
-        ? liveArticles
-        : liveArticles.filter((row) => row.pillarKeyword === livePillarFilter);
-    return uniqueSorted(rows.map((row) => row.cluster));
-  }, [liveArticles, livePillarFilter]);
-
-  const filteredLiveArticles = useMemo(() => {
-    const q = liveDebouncedSearch.toLowerCase();
-    return liveArticles.filter((row) => {
-      if (
-        livePillarFilter !== "all" &&
-        row.pillarKeyword !== livePillarFilter
-      ) {
-        return false;
-      }
-      if (liveClusterFilter !== "all" && row.cluster !== liveClusterFilter) {
-        return false;
-      }
-      if (!q) return true;
-      return String(row.title || "")
-        .toLowerCase()
-        .includes(q);
-    });
-  }, [
-    liveArticles,
-    liveDebouncedSearch,
-    livePillarFilter,
-    liveClusterFilter,
-  ]);
-
-  const liveFiltersActive =
-    Boolean(liveDebouncedSearch) ||
-    livePillarFilter !== "all" ||
-    liveClusterFilter !== "all";
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-xs text-foreground mb-1">Articles</h1>
           <p className="text-sm text-muted-foreground">
-            Saved drafts from Article Generator — full frontmatter and body.
-            Status is read-only here; mark articles published in Topic Generator
-            after shipping through the site CMS. Scan Live reads the published
-            site independently of this library.
+            CMS for this company’s destination site. Open an article to edit,
+            replace its image, save, or publish — each action commits to the
+            live repo. Scan Live updates this table from the published site.
           </p>
         </div>
         <Button
@@ -661,196 +607,36 @@ export default function Articles() {
         </p>
       )}
 
-      <CheckLinksPanel
+      <FaceliftPanel
         companyId={companyId}
         destination={publishDestination}
+        onHealthChange={({ liveRows, linkHealth: nextHealth }) => {
+          if (Array.isArray(liveRows)) setFaceliftLiveRows(liveRows);
+          if (nextHealth) setLinkHealth(nextHealth);
+        }}
       />
-
-      <CleanupPanel
-        companyId={companyId}
-        destination={publishDestination}
-      />
-
-      <RewritePanel
-        companyId={companyId}
-        destination={publishDestination}
-      />
-
-      {scanResult && (
-        <section className="space-y-3">
-          <div>
-            <h2 className="text-sm font-medium text-foreground">Live on site</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {liveFiltersActive
-                ? `${filteredLiveArticles.length} of ${liveArticles.length} articles`
-                : `${liveArticles.length} ${
-                    liveArticles.length === 1 ? "article" : "articles"
-                  }`}{" "}
-              from{" "}
-              <a
-                href={scanResult.articlesIndexUrl || scanResult.siteUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="underline underline-offset-2 hover:text-foreground"
-              >
-                {displayLiveUrl(scanResult.siteUrl)}
-              </a>
-              {scanResult.scannedAt
-                ? ` · scanned ${formatScannedAt(scanResult.scannedAt)}`
-                : ""}
-              . Read-only — this does not save into the library below.
-            </p>
-          </div>
-
-          {liveArticles.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
-              <p className="text-sm text-foreground font-medium">
-                No live articles found
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Sitemap, RSS, and the /articles/ listing returned no article
-                URLs for this domain.
-              </p>
-            </div>
-          ) : (
-            <>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <div className="relative flex-1">
-                  <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    value={liveSearchInput}
-                    onChange={(e) => setLiveSearchInput(e.target.value)}
-                    placeholder="Search by title…"
-                    className="pl-8 h-9"
-                  />
-                </div>
-                <Select
-                  value={livePillarFilter}
-                  onValueChange={(value) => {
-                    setLivePillarFilter(value);
-                    setLiveClusterFilter("all");
-                  }}
-                >
-                  <SelectTrigger className="w-full sm:w-[200px] h-9">
-                    <SelectValue placeholder="Keyword (pillar)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All pillars</SelectItem>
-                    {livePillarOptions.map((pillar) => (
-                      <SelectItem key={pillar} value={pillar}>
-                        {pillar}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select
-                  value={liveClusterFilter}
-                  onValueChange={setLiveClusterFilter}
-                >
-                  <SelectTrigger className="w-full sm:w-[200px] h-9">
-                    <SelectValue placeholder="Cluster" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All clusters</SelectItem>
-                    {liveClusterOptions.map((cluster) => (
-                      <SelectItem key={cluster} value={cluster}>
-                        {cluster}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {filteredLiveArticles.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
-                  <p className="text-sm text-foreground font-medium">
-                    No matching live articles
-                  </p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Try clearing search or filters.
-                  </p>
-                </div>
-              ) : (
-            <div className="overflow-x-auto rounded-lg border border-border">
-              <table className="w-full min-w-[56rem] text-sm">
-                <thead>
-                  <tr className="border-b border-border bg-muted/30 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                    <th className="px-3 py-2 font-medium">Title</th>
-                    <th className="px-3 py-2 font-medium">Keyword</th>
-                    <th className="px-3 py-2 font-medium whitespace-nowrap">
-                      Keyword type
-                    </th>
-                    <th className="px-3 py-2 font-medium">Type</th>
-                    <th className="px-3 py-2 font-medium whitespace-nowrap">
-                      Last Date
-                    </th>
-                    <th className="px-3 py-2 font-medium text-center">URL</th>
-                    <th className="px-3 py-2 font-medium text-right whitespace-nowrap">
-                      Internal
-                    </th>
-                    <th className="px-3 py-2 font-medium text-right whitespace-nowrap">
-                      External
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {filteredLiveArticles.map((row) => (
-                    <tr key={row.slug || row.url} className="align-top">
-                      <td className="px-3 py-2.5 font-medium text-foreground">
-                        {row.title || row.slug || "(untitled)"}
-                        {row.error ? (
-                          <p className="mt-0.5 text-xs font-normal text-destructive">
-                            {row.error}
-                          </p>
-                        ) : null}
-                      </td>
-                      <td className="px-3 py-2.5 text-muted-foreground">
-                        {row.keyword || "—"}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <KeywordTypeBadge role={row.keywordRole} />
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <TypeBadge type={row.articleType} />
-                      </td>
-                      <td className="px-3 py-2.5 tabular-nums text-muted-foreground whitespace-nowrap">
-                        {row.lastDate || "—"}
-                      </td>
-                      <td className="px-3 py-2.5 text-center">
-                        {row.url ? (
-                          <a
-                            href={row.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            title={`Open ${row.url}`}
-                            aria-label={`Open ${row.title || row.slug || "article"}`}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                          >
-                            <ExternalLink className="h-3.5 w-3.5" />
-                          </a>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 tabular-nums text-right text-foreground">
-                        {row.internalLinks == null ? "—" : row.internalLinks}
-                      </td>
-                      <td className="px-3 py-2.5 tabular-nums text-right text-foreground">
-                        {row.externalLinks == null ? "—" : row.externalLinks}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-              )}
-            </>
-          )}
-        </section>
-      )}
 
       {scanResult ? (
-        <h2 className="text-sm font-medium text-foreground">Saved drafts</h2>
+        <p className="text-sm text-muted-foreground">
+          Table updated from{" "}
+          <a
+            href={scanResult.articlesIndexUrl || scanResult.siteUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-2 hover:text-foreground"
+          >
+            {displayLiveUrl(scanResult.siteUrl)}
+          </a>
+          {scanResult.scannedAt
+            ? ` · scanned ${formatScannedAt(scanResult.scannedAt)}`
+            : ""}
+          {typeof scanResult.articleCount === "number"
+            ? ` · ${scanResult.articleCount} live ${
+                scanResult.articleCount === 1 ? "article" : "articles"
+              }`
+            : ""}
+          . Live fields stay in this view and are not saved to the library.
+        </p>
       ) : null}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -917,7 +703,7 @@ export default function Articles() {
           variant="outline"
           size="sm"
           className="h-9 shrink-0"
-          disabled={!hasAnyArticles || loading || downloadingSummary}
+          disabled={!hasLibraryArticles || loading || downloadingSummary}
           onClick={downloadSummary}
         >
           {downloadingSummary ? (
@@ -953,7 +739,7 @@ export default function Articles() {
           )}
         </Button>
       </div>
-      {publishDestination && !destinationMapped && hasAnyArticles && (
+      {publishDestination && !destinationMapped && hasLibraryArticles && (
         <p className="text-sm text-muted-foreground">
           No destination repo set for this company.
         </p>
@@ -1062,16 +848,31 @@ export default function Articles() {
         </div>
       ) : !hasAnyArticles ? (
         <div className="rounded-lg border border-dashed border-border px-4 py-10 text-center">
-          <p className="text-sm text-foreground font-medium">No articles saved yet</p>
+          <p className="text-sm text-foreground font-medium">
+            {scanResult ? "No live articles found" : "No articles saved yet"}
+          </p>
           <p className="mt-1 text-sm text-muted-foreground">
-            This library only shows drafts saved from{" "}
-            <Link
-              to={`/company/${companyId}/article-generation`}
-              className="underline underline-offset-2 hover:text-foreground"
-            >
-              Article Generator
-            </Link>
-            . Use Scan Live to list articles already on the published site.
+            {scanResult ? (
+              "Sitemap, RSS, and the /articles/ listing returned no article URLs for this domain."
+            ) : (
+              <>
+                Nothing in the library yet. Generate articles in{" "}
+                <Link
+                  to={`/company/${companyId}/article-generation`}
+                  className="underline underline-offset-2 hover:text-foreground"
+                >
+                  Cluster Generation
+                </Link>{" "}
+                or{" "}
+                <Link
+                  to={`/company/${companyId}/pillar-automation`}
+                  className="underline underline-offset-2 hover:text-foreground"
+                >
+                  Pillar Generation
+                </Link>
+                , then edit and publish them here.
+              </>
+            )}
           </p>
         </div>
       ) : filtered.length === 0 ? (
@@ -1084,202 +885,162 @@ export default function Articles() {
           </p>
         </div>
       ) : (
-        <ul className="rounded-lg border border-border divide-y divide-border overflow-hidden">
-          {filtered.map((article) => (
-            <li key={article.id}>
-              <button
-                type="button"
-                onClick={() => setSelectedId(article.id)}
-                className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted/40 transition-colors"
-              >
-                <span className="min-w-0 flex-1 truncate font-medium text-foreground">
-                  {article.title || "(untitled)"}
-                </span>
-                <PillarBadge keyword={article.pillar_keyword} />
-                <KeywordTypeBadge role={articleKeywordRole(article)} />
-                <TypeBadge type={articleTypeKey(article)} />
-                <StatusBadge status={article.status} />
-                <DaysSinceUpdateBadge
-                  dateValue={article.updated_date || article.date}
-                />
-                <span className="shrink-0 text-xs text-muted-foreground tabular-nums w-[5.5rem] text-right">
-                  {formatDisplayDate(article.updated_date || article.date)}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
+        <div className="overflow-x-auto rounded-lg border border-border">
+          <table className={`w-full text-sm${showLiveFields ? " min-w-[56rem]" : ""}`}>
+            <thead>
+              <tr className="border-b border-border bg-muted/30 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                <th className="px-3 py-2 font-medium">Title</th>
+                <th className="px-3 py-2 font-medium">Type</th>
+                <th className="px-3 py-2 font-medium whitespace-nowrap">
+                  Related Pillar
+                </th>
+                <th className="px-3 py-2 font-medium">Status</th>
+                <th className="px-3 py-2 font-medium whitespace-nowrap">
+                  Refresh Days
+                </th>
+                <th className="px-3 py-2 font-medium">Date</th>
+                {showLiveFields ? (
+                  <>
+                    <th className="px-3 py-2 font-medium text-center">URL</th>
+                    <th className="px-3 py-2 font-medium text-right whitespace-nowrap">
+                      Internal
+                    </th>
+                    <th className="px-3 py-2 font-medium text-right whitespace-nowrap">
+                      External
+                    </th>
+                  </>
+                ) : null}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {filtered.map((article) => {
+                const days = daysSinceUpdate(
+                  article.updated_date || article.date
+                );
+                const canOpen = Boolean(article.id) && !article.liveOnly;
+                const liveUrl = article.published_url;
+                return (
+                  <tr
+                    key={article.id || article.slug}
+                    onClick={() => {
+                      if (canOpen) setSelectedId(article.id);
+                    }}
+                    className={
+                      canOpen ? "cursor-pointer hover:bg-muted/40" : "align-top"
+                    }
+                  >
+                    <td className="max-w-[24rem] px-3 py-2.5 font-medium text-foreground">
+                      <span className="block truncate">
+                        {article.title || "(untitled)"}
+                      </span>
+                      {article.liveError ? (
+                        <p className="mt-0.5 text-xs font-normal text-destructive">
+                          {article.liveError}
+                        </p>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <TypeBadge type={articleTypeKey(article)} />
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <PillarBadge keyword={article.pillar_keyword} />
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <StatusBadge status={article.status} />
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {days == null ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : (
+                        <span
+                          className={`tabular-nums ${daysSinceUpdateBadgeClass(days)}`}
+                        >
+                          {days}
+                        </span>
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 tabular-nums text-muted-foreground">
+                      {formatDisplayDate(
+                        article.updated_date || article.date
+                      )}
+                    </td>
+                    {showLiveFields ? (
+                      <>
+                        <td className="px-3 py-2.5 text-center">
+                          {liveUrl ? (
+                            <a
+                              href={liveUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              title={`Open ${liveUrl}`}
+                              aria-label={`Open ${article.title || article.slug || "article"}`}
+                              onClick={(event) => event.stopPropagation()}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          <LinkHealthCell
+                            kind="internal"
+                            row={article}
+                            health={linkHealth}
+                          />
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          <LinkHealthCell
+                            kind="external"
+                            row={article}
+                            health={linkHealth}
+                          />
+                        </td>
+                      </>
+                    ) : null}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
 
-      <Dialog
+      <ArticleCmsDialog
+        article={selected}
+        companyId={companyId}
+        destination={publishDestination}
         open={selected != null}
-        onOpenChange={(open) => {
-          if (!open) setSelectedId(null);
+        deleting={deleting}
+        onOpenChange={(next) => {
+          if (!next) setSelectedId(null);
         }}
-      >
-        <DialogContent className="max-w-3xl max-h-[90vh] h-[90vh] overflow-hidden flex flex-col gap-0 p-0 min-h-0">
-          {selected && (
+        onDelete={() => selected && setDeleteId(selected.id)}
+        onUpdated={(row) => {
+          if (!row?.id) return;
+          setArticles((prev) =>
+            prev.map((item) => (item.id === row.id ? { ...item, ...row } : item))
+          );
+        }}
+        badges={
+          selected ? (
             <>
-              <div className="shrink-0 border-b border-border px-6 pt-6 pb-4 pr-14">
-                <DialogHeader className="space-y-2 text-left">
-                  <DialogTitle className="text-xl leading-snug font-semibold tracking-tight">
-                    {selected.title || "(untitled)"}
-                  </DialogTitle>
-                  {selected.description && (
-                    <DialogDescription className="text-sm leading-relaxed text-muted-foreground">
-                      {selected.description}
-                    </DialogDescription>
+              <PillarBadge keyword={selected.pillar_keyword} />
+              <KeywordTypeBadge role={articleKeywordRole(selected)} />
+              <TypeBadge type={articleTypeKey(selected)} />
+              <StatusBadge status={selected.status} />
+              {selected.status === "published" && selected.published_at ? (
+                <span className="text-xs text-muted-foreground">
+                  {formatDisplayDate(
+                    String(selected.published_at).slice(0, 10)
                   )}
-                </DialogHeader>
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <PillarBadge keyword={selected.pillar_keyword} />
-                  <KeywordTypeBadge role={articleKeywordRole(selected)} />
-                  <TypeBadge type={articleTypeKey(selected)} />
-                  <StatusBadge status={selected.status} />
-                  {selected.status === "published" && selected.published_at ? (
-                    <span className="text-xs text-muted-foreground">
-                      {formatDisplayDate(
-                        String(selected.published_at).slice(0, 10)
-                      )}
-                    </span>
-                  ) : null}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="ml-auto text-destructive hover:text-destructive"
-                    disabled={deleting}
-                    onClick={() => setDeleteId(selected.id)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-                    Delete
-                  </Button>
-                </div>
-              </div>
-
-              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-                <div className="border-b border-border px-6 py-4 space-y-3">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                    <DetailRow label="slug" value={selected.slug} mono />
-                    <DetailRow label="category" value={selected.category} />
-                    <DetailRow label="date" value={selected.date} />
-                    <DetailRow
-                      label="updatedDate"
-                      value={selected.updated_date}
-                    />
-                    <DetailRow label="author" value={selected.author} />
-                    <DetailRow label="imageAlt" value={selected.image_alt} />
-                    <DetailRow
-                      label="pillarKeyword"
-                      value={selected.pillar_keyword}
-                    />
-                    <DetailRow
-                      label="supportingKeyword"
-                      value={selected.supporting_keyword}
-                    />
-                    <DetailRow
-                      label="articleType"
-                      value={selected.type}
-                    />
-                    <DetailRow
-                      label="targetKeyword"
-                      value={selected.target_keyword}
-                    />
-                    <DetailRow
-                      label="draft"
-                      value={selected.draft ? "true" : "false"}
-                    />
-                    <DetailRow
-                      label="publishedAt"
-                      value={
-                        selected.published_at
-                          ? String(selected.published_at).slice(0, 10)
-                          : null
-                      }
-                    />
-                    <DetailRow
-                      label="publishedUrl"
-                      value={selected.published_url}
-                    />
-                  </div>
-                  <div className="space-y-2 text-sm">
-                    <DetailList label="tags" items={asStringList(selected.tags)} />
-                    <DetailList
-                      label="keywords"
-                      items={asStringList(selected.keywords)}
-                    />
-                    <DetailList
-                      label="internalLinks"
-                      items={asStringList(selected.internal_links)}
-                    />
-                    <DetailList
-                      label="externalLinks"
-                      items={asStringList(selected.external_links)}
-                    />
-                  </div>
-                  {asFaqList(selected.faqs).length > 0 && (
-                    <div className="text-sm">
-                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">
-                        faqs
-                      </p>
-                      <div className="space-y-2">
-                        {asFaqList(selected.faqs).map((faq, i) => (
-                          <div key={`faq-${i}`}>
-                            <p className="font-medium text-foreground">
-                              {faq.question || "—"}
-                            </p>
-                            <p className="mt-0.5 text-muted-foreground">
-                              {faq.answer || "—"}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="px-6 py-6 bg-[linear-gradient(180deg,hsl(var(--muted)/0.35)_0%,transparent_120px)]">
-                  <article className="mx-auto max-w-2xl">
-                    <ReactMarkdown components={markdownComponents}>
-                      {bodyForReader(selected.body)}
-                    </ReactMarkdown>
-
-                    {asSourceList(selected.where_things_stand_sources).length >
-                      0 && (
-                      <section className="mt-10 pt-6 border-t border-border">
-                        <h2 className="text-xl font-semibold tracking-tight text-foreground mb-4">
-                          Sources
-                        </h2>
-                        <ul className="space-y-2 text-sm">
-                          {asSourceList(
-                            selected.where_things_stand_sources
-                          ).map((source, i) => (
-                            <li key={`article-source-${i}`}>
-                              <p className="font-medium text-foreground">
-                                {source.note || "Source"}
-                              </p>
-                              {source.url ? (
-                                <a
-                                  href={source.url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="mt-0.5 block break-all text-xs underline underline-offset-2 text-muted-foreground hover:text-foreground"
-                                >
-                                  {source.url}
-                                </a>
-                              ) : null}
-                            </li>
-                          ))}
-                        </ul>
-                      </section>
-                    )}
-                  </article>
-                </div>
-              </div>
+                </span>
+              ) : null}
             </>
-          )}
-        </DialogContent>
-      </Dialog>
+          ) : null
+        }
+      />
 
       <AlertDialog
         open={deleteTarget != null}
@@ -1335,33 +1096,3 @@ function formatScannedAt(value) {
   return date.toLocaleString();
 }
 
-function DetailRow({ label, value, mono }) {
-  const display = value != null && String(value).trim() !== "" ? String(value) : null;
-  return (
-    <div>
-      <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-0.5">
-        {label}
-      </p>
-      <div
-        className={`text-foreground break-words ${mono ? "font-mono text-xs" : ""}`}
-      >
-        {display || <span className="text-muted-foreground">—</span>}
-      </div>
-    </div>
-  );
-}
-
-function DetailList({ label, items }) {
-  return (
-    <div>
-      <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-0.5">
-        {label}
-      </p>
-      {items.length === 0 ? (
-        <p className="text-muted-foreground">—</p>
-      ) : (
-        <p className="text-foreground break-words">{items.join(", ")}</p>
-      )}
-    </div>
-  );
-}

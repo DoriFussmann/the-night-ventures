@@ -5,15 +5,18 @@ export const STATUSES = ["open", "wip", "done"];
 export const STATUS_META = {
   open: {
     label: "Open",
-    className: "bg-slate-100 text-slate-600 border-slate-200",
+    className:
+      "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900",
   },
   wip: {
     label: "WIP",
-    className: "bg-orange-50 text-orange-700 border-orange-200",
+    className:
+      "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950/40 dark:text-orange-300 dark:border-orange-900",
   },
   done: {
     label: "Done",
-    className: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    className:
+      "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900",
   },
 };
 
@@ -260,17 +263,12 @@ export const PREDEFINED_ITEMS = {
   "site-activation": [
     {
       item_key: "build-site-content-from-chatgpt",
-      title: "Generate site content and build with Cursor",
+      title: "Open Site Content Builder",
       description:
-        "In TNV → Company Data, download the company markdown. In ChatGPT, run the Site Content prompt with company-data.md attached to produce the full site-content spec. Review depth per page, then paste the completed doc into Cursor to build all pages. The doc opens with build instructions (use Design Guide.md for design; do not degrade SEO/GEO infra; don't break the build; one H1 per page). After the build, run npm run build locally and view-source the homepage to confirm a single H1.",
-      prompts: [
-        {
-          label: "ChatGPT site-content prompt",
-          text: "You are writing the complete content specification for an SEO-optimized website. I've attached company-data.md — everything you need about the business is in it. Use only what's in that file; do not invent facts, services, team members, statistics, or claims that aren't supported by it.\n\nThe site is built on an existing SEO/GEO-optimized template, and the repo contains a Design Guide.md file that defines all visual design. So you are NOT designing visuals — you're specifying, for each page, its purpose, its sections in order, the actual finished copy, and the *spirit* of how each section should feel and lay out (e.g. \"hero: single strong promise, one primary CTA, calm and confident\" — not colors, fonts, or pixel specs). Cursor will handle the real design from Design Guide.md.\n\nPAGES TO WRITE:\n[List the pages you want, e.g. Home, About, Services, Contact, FAQ. If I don't specify, use: Home, About, Services, Contact, FAQ.]\n\nFOR EACH PAGE, produce:\n1. Page purpose — one line on what this page is for and who it's for.\n2. SEO intent — target keyword/topic, a meta title (~55–60 chars), a meta description (~140–160 chars), and the single H1.\n3. Sections in order — for every section: a short label, the spirit of its layout/feel (one line), and the FULL finished copy — real headlines, real body paragraphs, real CTA button text. Write publish-ready copy, not summaries or placeholders. Depth matters: each page should be substantive and complete, never thin or generic filler.\n4. Internal CTAs — where each section should link (only to pages in the list above or routes that clearly already exist).\n\nGUARDRAILS (follow exactly):\n- Do not invent services or team members. If Company Data lists them, use them; if it doesn't, omit that section rather than fabricate.\n- Testimonials/reviews: never write fabricated quotes. If a testimonials section is wanted, insert '[PLACEHOLDER: real testimonial needed]' for each quote and add a visible note that this section must be populated with real quotes or removed before launch.\n- Every factual claim must trace to company-data.md.\n\nOUTPUT FORMAT:\nReturn ONE complete markdown document I can paste directly into Cursor. Begin the document with this exact block, then the per-page content below it:\n\n---\nBUILD INSTRUCTIONS FOR CURSOR:\n- Use Design Guide.md in the repo for ALL visual design decisions (layout, color, type, spacing).\n- Do NOT modify the site's infrastructure, SEO plumbing, build config, metadata, sitemap, RSS, or structured data in any way that degrades the SEO/GEO optimization. Preserve every existing SEO optimization.\n- Do NOT break existing functionality. If any change risks breaking the build, stop and flag it before proceeding.\n- Verify exactly one H1 renders per page against the existing template. If the template already outputs its own H1 (especially on the homepage), do not add a second. Reconcile to one.\n- Implement all page content below in full — do not shorten, summarize, or skip sections.\n---",
-        },
-      ],
-      linkTo: "/company/:companyId/company-data",
-      linkLabel: "Open Company Data →",
+        "Go to Site Content Builder in TNV. Download company markdown, run the ChatGPT site-content prompt, then paste the spec into Cursor to build the pages.",
+      prompts: [],
+      linkTo: "/company/:companyId/site-content-builder",
+      linkLabel: "Open Site Content Builder →",
     },
     {
       item_key: "set-publish-destination",
@@ -304,21 +302,21 @@ export const PREDEFINED_ITEMS = {
     },
     {
       item_key: "plan-topics-in-topic-generator",
-      title: "Plan topics in Topic Generator",
+      title: "Plan clusters in Cluster Generation",
       description:
-        "In TNV → Topic Generator, the pillar and supporting keywords from Company Data are already present. Click Plan for each keyword you want to seed. When the cluster is planned, download the cluster markdown (.md) — this is the input for Article Generation.",
+        "In TNV → Cluster Generation, pillar and supporting keywords from Company Data appear as the pillar→cluster tree. Plan the clusters you want to seed; coverage is the input for generation.",
       prompts: [],
-      linkTo: "/company/:companyId/topic-generator",
-      linkLabel: "Open Topic Generator →",
+      linkTo: "/company/:companyId/article-generation",
+      linkLabel: "Open Cluster Generation →",
     },
     {
       item_key: "generate-and-publish-articles",
       title: "Generate articles (with images) and publish",
       description:
-        "In TNV → Article Generation, import/drag the cluster markdown. IMPORTANT: enable image generation before running — image generation is OFF by default and is per-article; use select-all or tick each article, because publish REQUIRES a hero image and silently skips any article without one. Generate the articles (one API call at a time). When generation completes, publish to the site — this commits each article to a publish/<timestamp> branch and merges to main, triggering a site rebuild.",
+        "In TNV → Cluster Generation, select a supporting cluster and click Generate (pillar article must already be published). Images are on by default. When generation completes, the run commits to the site automatically, then offers to wire internal links.",
       prompts: [],
       linkTo: "/company/:companyId/article-generation",
-      linkLabel: "Open Article Generation →",
+      linkLabel: "Open Cluster Generation →",
     },
     {
       item_key: "verify-articles-live",
@@ -351,7 +349,7 @@ export const PREDEFINED_ITEMS = {
       item_key: "plan-both-clusters",
       title: "Plan both clusters",
       description:
-        "In Topic Generator, choose one supporting-keyword cluster per pillar and click Plan for both, pasting the matching Keyword Slip results into 'Keyword data (optional)' for each.",
+        "In Cluster Generation, choose one supporting-keyword cluster per pillar and click Plan for both, pasting the matching Keyword Slip results into 'Keyword data (optional)' for each.",
       prompts: [],
     },
     {
@@ -372,7 +370,7 @@ export const PREDEFINED_ITEMS = {
       item_key: "generate-all-articles",
       title: "Generate all articles",
       description:
-        "In Article Generator, drag & drop each cluster .md and each pillar .md, generate, and save/download every resulting article file — expect roughly 10 total files (2 pillar articles + supporting cluster articles).",
+        "In Cluster Generation, generate each supporting cluster and both pillar articles via Pillar Generation — expect roughly 10 total files (2 pillar articles + supporting cluster articles).",
       prompts: [],
     },
     {

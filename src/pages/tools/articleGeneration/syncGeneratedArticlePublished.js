@@ -81,7 +81,7 @@ export async function findGeneratedArticleForCoverage({
 }
 
 /**
- * When Topic Generator marks an article published, sync the matching
+ * When Cluster Generation marks an article published, sync the matching
  * generated_articles library row (status, published_at, published_url).
  *
  * @returns {Promise<{ matched: boolean, warning?: string, rowId?: string }>}

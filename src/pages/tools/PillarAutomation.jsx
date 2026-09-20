@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import ConfirmGate from "./articlesAutomation/ConfirmGate";
+import GenerationReport from "./articlesAutomation/GenerationReport";
 import {
   loadAutomationContext,
   persistPlannedCluster,
@@ -348,8 +349,8 @@ export default function PillarAutomation() {
       .catch((err) => {
         if (cancelled) return;
         setPublishDestination({ owner: "", repo: "", tokenKey: "" });
-        setError(err?.message || "Failed to load pillar automation");
-        console.error("Failed to load Pillar Automation context:", err);
+        setError(err?.message || "Failed to load pillar generation");
+        console.error("Failed to load Pillar Generation context:", err);
       })
       .finally(() => {
         if (!cancelled) setContextLoading(false);
@@ -729,7 +730,7 @@ export default function PillarAutomation() {
     } catch (err) {
       if (!stillCurrent(token)) return;
       setPhase("error");
-      setError(err?.message || "Failed to start Pillar Automation");
+      setError(err?.message || "Failed to start Pillar Generation");
     }
   };
 
@@ -777,7 +778,7 @@ export default function PillarAutomation() {
   return (
     <div className="space-y-6 pb-24">
       <div>
-        <h1 className="text-xs text-foreground mb-1">Pillar Automation</h1>
+        <h1 className="text-xs text-foreground mb-1">Pillar Generation</h1>
         <p className="text-sm text-muted-foreground">
           One pillar article per run: pick a pillar keyword, plan the
           comprehensive pillar article, generate it with a hero image, then
@@ -847,7 +848,7 @@ export default function PillarAutomation() {
           {!contextLoading && pillars.length === 0 && (
             <p className="text-sm text-muted-foreground">
               No pillars found. Add pillar keywords in Company Data, then open
-              Topic Generator once so coverage is initialized.
+              Cluster Generation once so coverage is initialized.
             </p>
           )}
           {!contextLoading && pillars.length > 0 && (
@@ -916,7 +917,7 @@ export default function PillarAutomation() {
               </div>
               <Progress value={phase === "persisting" ? 90 : 40} className="h-1.5" />
               <p className="text-xs text-muted-foreground">
-                Same Plan Cluster call as Topic Generator, seeded on the pillar
+                Same Plan Cluster call, seeded on the pillar
                 keyword for the comprehensive article only.
               </p>
             </div>
@@ -1036,9 +1037,6 @@ export default function PillarAutomation() {
               <span className="font-medium">{failedJobs.length}</span> failed
             </p>
           )}
-          {finishNote && (
-            <p className="text-sm text-foreground">{finishNote}</p>
-          )}
           {viewingStage === "articles" &&
             publishDestination &&
             !destinationMapped && (
@@ -1052,74 +1050,27 @@ export default function PillarAutomation() {
             </p>
           )}
           {publishResult && viewingStage === "articles" && (
-            <div
-              className={`text-sm rounded-md px-3 py-2 space-y-1.5 ${
+            <GenerationReport
+              title={
                 publishResult.ok
-                  ? "text-emerald-800 bg-emerald-50 border border-emerald-200"
-                  : "text-amber-800 bg-amber-50 border border-amber-200"
-              }`}
-            >
-              <p className="font-medium">
-                {publishResult.ok
-                  ? "Published to site"
-                  : "Publish did not complete"}
-              </p>
-              {publishResult.branch && (
-                <p>
-                  Branch:{" "}
-                  <span className="font-mono">{publishResult.branch}</span>
-                </p>
-              )}
-              {publishResult.mergeCommitSha && (
-                <p>
-                  Merge SHA:{" "}
-                  <span className="font-mono break-all">
-                    {publishResult.mergeCommitSha}
-                  </span>
-                </p>
-              )}
-              {Array.isArray(publishResult.committed) &&
-                publishResult.committed.length > 0 && (
-                  <div>
-                    <p className="font-medium">Committed files</p>
-                    <ul className="list-disc pl-5 font-mono text-xs">
-                      {publishResult.committed.map((file) => (
-                        <li key={file.path || file.filename}>
-                          {file.path || file.filename}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              {Array.isArray(publishResult.skipped) &&
-                publishResult.skipped.length > 0 && (
-                  <div>
-                    <p className="font-medium">Skipped</p>
-                    <ul className="list-disc pl-5 text-xs">
-                      {publishResult.skipped.map((item, i) => (
-                        <li key={`${item.filename || "skipped"}-${i}`}>
-                          {item.filename ? `${item.filename}: ` : ""}
-                          {item.message || item.reason}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              {Array.isArray(publishResult.errors) &&
-                publishResult.errors.length > 0 && (
-                  <div>
-                    <p className="font-medium">Errors</p>
-                    <ul className="list-disc pl-5 text-xs">
-                      {publishResult.errors.map((item, i) => (
-                        <li key={`${item.filename || "error"}-${i}`}>
-                          {item.filename ? `${item.filename}: ` : ""}
-                          {item.message || String(item)}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-            </div>
+                  ? "Pillar article published"
+                  : "Publish did not complete"
+              }
+              summary={
+                publishResult.ok
+                  ? `Generated the comprehensive pillar article for “${
+                      picked?.pillarKeyword || "this pillar"
+                    }” and published it. Supporting clusters under this pillar can now be generated.`
+                  : "The pillar article was generated, but the site commit did not finish. Review the problems below."
+              }
+              destinationLabel={
+                destinationMapped
+                  ? `Published to ${publishDestination.owner}/${publishDestination.repo}. A rebuild should start from this commit.`
+                  : null
+              }
+              jobs={jobs}
+              publishResult={publishResult}
+            />
           )}
           {phase === "generate_review" && (
             <ConfirmGate

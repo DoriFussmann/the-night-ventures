@@ -149,7 +149,7 @@ function parseArticleBlock(lines, startIndex) {
 }
 
 /**
- * Parse a Topic Generator cluster or pillar markdown export.
+ * Parse a Cluster Generation cluster or pillar markdown export.
  * @param {string} markdown
  * @returns {{ meta: object, articles: object[] }}
  */

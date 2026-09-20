@@ -82,6 +82,37 @@ export async function finishHeroImage({ companyId, slug, cropped }) {
   };
 }
 
+export function resolveHeroPath(companyId, article) {
+  const recorded = String(article?.hero_storage_path || "").trim();
+  if (recorded) return recorded;
+  return heroStoragePath(companyId, article?.slug);
+}
+
+export async function signedHeroUrl(path, expiresIn = 3600) {
+  const objectPath = String(path || "").trim();
+  if (!objectPath) return "";
+  const { data, error } = await supabase.storage
+    .from(HERO_BUCKET)
+    .createSignedUrl(objectPath, expiresIn);
+  if (error || !data?.signedUrl) return "";
+  return data.signedUrl;
+}
+
+export async function heroPreviewUrl(companyId, article) {
+  const path = resolveHeroPath(companyId, article);
+  if (!path) return "";
+  const signed = await signedHeroUrl(path);
+  if (signed) return signed;
+  const downloaded = await downloadGeneratedHeroBase64({
+    companyId,
+    slug: article?.slug,
+    path,
+  });
+  if (!downloaded?.b64) return "";
+  const mime = downloaded.ext === "jpg" ? "image/jpeg" : "image/png";
+  return `data:${mime};base64,${downloaded.b64}`;
+}
+
 export async function downloadGeneratedHeroBase64({ companyId, slug, path }) {
   const objectPath = String(path || heroStoragePath(companyId, slug, "png")).trim();
   if (!objectPath) return null;
