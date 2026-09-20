@@ -35,6 +35,10 @@
       "source": "/api/audit-summary",
       "destination": "/api/check-article-update?action=audit-summary"
     },
+    {
+      "source": "/api/core-version",
+      "destination": "/api/check-article-update?action=core-version"
+    },
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]

@@ -7,6 +7,7 @@ import { handleCheckLinks } from '../lib/check-links/handler.js'
 import { handleArticleUpdates } from '../lib/article-updates/handler.js'
 import { handleCompanyDataImport } from '../lib/company-data-import/handler.js'
 import { handleAuditSummary } from '../lib/audit-summary/handler.js'
+import { handleCoreVersion } from '../lib/core-version/handler.js'
 
 export const config = {
   maxDuration: 120,
@@ -307,6 +308,9 @@ export default async function handler(req, res) {
   }
   if (action === 'audit-summary') {
     return handleAuditSummary(req, res)
+  }
+  if (action === 'core-version') {
+    return handleCoreVersion(req, res)
   }
 
   if (req.method === 'OPTIONS') {
