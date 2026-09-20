@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   ArrowUpCircle,
   AlertTriangle,
+  BookOpen,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
@@ -16,6 +17,127 @@ import {
   getCoreVersionStatus,
   applyCoreVersionUpdate,
 } from './articles/coreVersionApi'
+
+const RUNBOOK_STEPS = [
+  {
+    num: "0", tag: "Decide", title: "Classify the change",
+    points: [
+      "Additive = you ADD something new/optional; existing sites keep working untouched. This is a minor update — one-click rollout.",
+      "Breaking = you change or remove something sites rely on (renamed export, optional field made required, changed component inputs, stricter audit rule). This is a major update — hands-on rollout.",
+      "Golden rule: extend core, never weaken it. If a rule doesn't fit one site, add an opt-in flag instead of loosening the shared rule.",
+      "When in doubt, make it additive.",
+    ],
+  },
+  {
+    num: "1", tag: "Edit", title: "Make the change in seo-core",
+    points: [
+      "Open the seo-core repo in Cursor (not a project repo).",
+      "Schema (article / team / service) → src/schemas.ts",
+      "Reading components (TOC, Sources, FAQ, etc.) → src/components/",
+      "llms.txt / rss / robots → src/generators/",
+      "Audit rules → src/audit.ts     •     Helper logic → src/lib/",
+      "Ask Cursor to keep it additive, and confirm the build/typecheck is green before stopping.",
+    ],
+  },
+  {
+    num: "2", tag: "Publish", title: "Bump the version + tag it",
+    points: [
+      "This is the step that makes the change real — nothing rolls out until you tag.",
+      "Additive change → bump the MIDDLE number (0.4.0 → 0.5.0).",
+      "Breaking change → bump the FIRST number (0.4.0 → 1.0.0).",
+      "Commit, create a matching git tag (e.g. v0.5.0), and push BOTH the commit and the tag.",
+      "The tag is what this panel reads as \"Latest\".",
+    ],
+  },
+  {
+    num: "3", tag: "Roll out", title: "Update each site here",
+    points: [
+      "For each project: open it in TNV → Core Version → Refresh.",
+      "Green \"Update to vX\" (additive) → click it. That project bumps and rebuilds itself. Do one, confirm it's healthy, then the next.",
+      "Amber \"Migration required\" (breaking) → no button. Migrate that project in Cursor first, then deploy it there.",
+      "Nothing auto-updates — you choose the order and timing.",
+    ],
+  },
+]
+
+const RUNBOOK_TAG_STYLES = {
+  Decide: 'bg-amber-500/10 text-amber-700',
+  Edit: 'bg-blue-500/10 text-blue-700',
+  Publish: 'bg-violet-500/10 text-violet-700',
+  'Roll out': 'bg-emerald-500/10 text-emerald-700',
+}
+
+function RunbookTag({ tag }) {
+  return (
+    <span
+      className={`shrink-0 rounded px-1.5 py-px text-[10px] font-medium uppercase tracking-wide ${RUNBOOK_TAG_STYLES[tag]}`}
+    >
+      {tag}
+    </span>
+  )
+}
+
+function CoreVersionRunbook() {
+  const [selectedNum, setSelectedNum] = useState('0')
+  const selected =
+    RUNBOOK_STEPS.find((step) => step.num === selectedNum) || RUNBOOK_STEPS[0]
+
+  return (
+    <section className="rounded-lg border border-border bg-card/40 p-4 sm:p-5 space-y-4">
+      <header className="space-y-1">
+        <h2 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+          <BookOpen className="h-4 w-4 text-muted-foreground" />
+          Runbook — changing seo-core
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          How to make an SEO change once and roll it out to every site.
+        </p>
+      </header>
+
+      <div className="grid gap-4 md:grid-cols-[minmax(0,15rem)_1fr]">
+        <div className="flex flex-col gap-1.5">
+          {RUNBOOK_STEPS.map((step) => {
+            const isSelected = step.num === selected.num
+            return (
+              <button
+                key={step.num}
+                type="button"
+                onClick={() => setSelectedNum(step.num)}
+                className={`flex items-center gap-2 rounded-md border px-2.5 py-2 text-left text-sm transition-colors ${
+                  isSelected
+                    ? 'border-border bg-accent text-foreground'
+                    : 'border-border text-foreground/80 hover:bg-accent hover:text-foreground'
+                }`}
+              >
+                <span className="w-4 shrink-0 font-mono text-xs text-muted-foreground">
+                  {step.num}
+                </span>
+                <RunbookTag tag={step.tag} />
+                <span className="min-w-0 truncate leading-tight">{step.title}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="rounded-md border border-border bg-background/40 p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-xs text-muted-foreground">{selected.num}</span>
+            <RunbookTag tag={selected.tag} />
+            <h3 className="text-sm font-semibold leading-tight">{selected.title}</h3>
+          </div>
+          <ul className="space-y-2 text-sm text-muted-foreground">
+            {selected.points.map((point) => (
+              <li key={point} className="pl-4 relative">
+                <span className="absolute left-0 text-muted-foreground/70">•</span>
+                {point}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </section>
+  )
+}
 
 function VersionPill({ label, value }) {
   return (
@@ -229,6 +351,8 @@ export default function CoreVersion() {
           )}
         </section>
       )}
+
+      <CoreVersionRunbook />
     </div>
   )
 }
