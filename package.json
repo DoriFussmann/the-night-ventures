@@ -10,7 +10,8 @@
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc -p ./jsconfig.json",
     "preview": "vite preview",
-    "check:system-doc": "bash scripts/check-system-doc-stale.sh"
+    "check:system-doc": "bash scripts/check-system-doc-stale.sh",
+    "cleanup:branches": "node scripts/cleanup-merged-updates-branches.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
@@ -57,6 +58,7 @@
     "framer-motion": "^11.16.4",
     "html2canvas": "^1.4.1",
     "input-otp": "^1.4.2",
+    "js-yaml": "^4.1.0",
     "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
     "lodash": "^4.17.21",
