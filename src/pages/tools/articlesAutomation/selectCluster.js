@@ -106,6 +106,30 @@ export function listRunnableClusters(pillars) {
     );
 }
 
+/**
+ * One cluster per pillar — the "ensure each pillar has at least one cluster"
+ * batch. For each PUBLISHED pillar that has no cluster article yet (no
+ * "completed" cluster), take its first "available" supporting cluster (no plan
+ * yet, so Confirm won't overwrite), falling back to a "planned" one. Pillars
+ * that already have a cluster article are skipped, so it stops once every
+ * pillar has one and is safely re-runnable. Returns the SAME full cluster
+ * objects as listRunnableClusters, so it drops straight into the batch loop.
+ */
+export function pickCoverageClusters(pillars) {
+  const out = [];
+  for (const node of buildClusterTree(pillars)) {
+    if (!node.pillarPublished) continue;
+    const clusters = Array.isArray(node.clusters) ? node.clusters : [];
+    const alreadyCovered = clusters.some((c) => c.status === "completed");
+    if (alreadyCovered) continue;
+    const pick =
+      clusters.find((c) => c.status === "available") ||
+      clusters.find((c) => c.status === "planned");
+    if (pick) out.push(pick);
+  }
+  return out;
+}
+
 export function buildClusterTree(pillars) {
   return (Array.isArray(pillars) ? pillars : [])
     .map((pillar) => {

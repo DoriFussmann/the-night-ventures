@@ -32,7 +32,7 @@ import {
 import WireInternalLinksPanel from "./articleGeneration/WireInternalLinksPanel";
 import {
   buildClusterTree,
-  listRunnableClusters,
+  pickCoverageClusters,
 } from "./articlesAutomation/selectCluster";
 
 const STAGES = [
@@ -970,7 +970,7 @@ export default function ClusterGeneration() {
     } catch {
       /* use whatever context we have */
     }
-    const todo = listRunnableClusters(ctx?.pillars || pillars);
+    const todo = pickCoverageClusters(ctx?.pillars || pillars);
 
     if (todo.length === 0) {
       setBatch({
@@ -1056,7 +1056,7 @@ export default function ClusterGeneration() {
     ? batch.results.filter((r) => r.ok).length
     : 0;
   const runnableClusters = useMemo(
-    () => listRunnableClusters(pillars),
+    () => pickCoverageClusters(pillars),
     [pillars]
   );
 
@@ -1100,12 +1100,15 @@ export default function ClusterGeneration() {
       <div className="rounded-lg border border-border bg-card px-4 py-4 space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-sm font-medium">Generate all clusters</h2>
+            <h2 className="text-sm font-medium">
+              Generate one cluster per pillar
+            </h2>
             <p className="text-xs text-muted-foreground">
-              One click plans, generates, and publishes articles for every
-              supporting cluster that isn’t done yet ({runnableClusters.length}{" "}
-              to do). Completed clusters are skipped. Keep this tab open until
-              it finishes.
+              One click gives every published pillar its first cluster — plans,
+              generates, and publishes one supporting cluster for each pillar
+              that doesn’t have one yet ({runnableClusters.length} to do).
+              Pillars that already have a cluster are skipped. Keep this tab open
+              until it finishes.
             </p>
           </div>
           {batch?.running ? (
