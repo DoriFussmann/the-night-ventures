@@ -1,4 +1,5 @@
 import { serviceHasContent } from "../templateToPrompt/customFieldKeys";
+import { parsedFieldPresent } from "./parseCompanyMarkdown";
 
 function textFilled(value) {
   return Boolean(String(value ?? "").trim());
@@ -46,24 +47,53 @@ function socialLinksFilled(value) {
 
 export const COMPANY_DATA_POINT_DEFS = [
   { id: "domain", label: "Domain", parsedKey: "domain" },
+  { id: "contact_email", label: "Contact Email", parsedKey: "contact_email" },
+  { id: "social_links", label: "Social Links", parsedKey: "social_links" },
+  { id: "legal_name", label: "Legal Name", parsedKey: "legal_name" },
+  { id: "founded_date", label: "Founded / Incorporation Date", parsedKey: "founded_date" },
+  { id: "location_markets", label: "Location / Markets Served", parsedKey: "location_markets" },
   { id: "product_name", label: "Product Name", parsedKey: "product_name" },
   { id: "category", label: "Category", parsedKey: "category" },
-  { id: "target", label: "Target Description", parsedKey: "target_audience" },
+  { id: "target", label: "Ideal Customer", parsedKey: "target_audience" },
   { id: "design-guide", label: "Design Abstract", parsedKey: "design-guide" },
   { id: "services", label: "Products & Services", parsedKey: "services" },
   { id: "abstract", label: "Abstract", parsedKey: "abstract" },
-  { id: "short", label: "Short Description", parsedKey: "short_description" },
+  { id: "short", label: "What We Do", parsedKey: "short_description" },
   { id: "medium", label: "Medium Description", parsedKey: "medium_description" },
-  { id: "long", label: "Long Description", parsedKey: "long_description" },
+  { id: "long", label: "Story & Mission", parsedKey: "long_description" },
   { id: "business_model", label: "Business Model", parsedKey: "business_model" },
+  { id: "company_stage", label: "Company Stage & Context", parsedKey: "company_stage" },
+  { id: "customer_problem", label: "Customer Problem", parsedKey: "customer_problem" },
+  { id: "trigger_moment", label: "Trigger / Moment of Need", parsedKey: "trigger_moment" },
+  { id: "buying_criteria", label: "Buying Criteria", parsedKey: "buying_criteria" },
+  { id: "how_it_works", label: "How It Works", parsedKey: "how_it_works" },
+  { id: "customer_outcome", label: "Customer Outcome", parsedKey: "customer_outcome" },
+  { id: "commercial_model", label: "Commercial Model", parsedKey: "commercial_model" },
   {
     id: "core_value_proposition",
     label: "Core Value Proposition",
     parsedKey: "core_value_proposition",
   },
-  { id: "scope_boundaries", label: "Scope / Boundaries", parsedKey: "scope_boundaries", hidden: true },
+  { id: "differentiation", label: "Differentiation", parsedKey: "differentiation" },
+  { id: "messaging_hierarchy", label: "Messaging Hierarchy", parsedKey: "messaging_hierarchy" },
+  { id: "scope_boundaries", label: "What We Are / Are Not", parsedKey: "scope_boundaries" },
+  { id: "market_category", label: "Market & Category", parsedKey: "market_category" },
+  { id: "competitive_position", label: "Competitive Position", parsedKey: "competitive_position" },
+  { id: "market_dynamics", label: "Market Dynamics", parsedKey: "market_dynamics" },
+  { id: "brand_feel", label: "Brand Personality", parsedKey: "brand_feel" },
+  { id: "brand_voice", label: "Voice & Tone", parsedKey: "brand_voice" },
+  { id: "brand_references", label: "References", parsedKey: "brand_references" },
+  { id: "brand_boundaries", label: "Brand Boundaries", parsedKey: "brand_boundaries" },
+  { id: "reasons_to_believe", label: "Reasons to Believe", parsedKey: "reasons_to_believe" },
+  { id: "results_proof", label: "Results & Customer Proof", parsedKey: "results_proof" },
+  { id: "team_members", label: "Team & Founder Credibility", parsedKey: "team_members" },
+  { id: "trust_signals", label: "Other Trust Signals", parsedKey: "trust_signals" },
+  { id: "marketing_objectives", label: "Business & Marketing Objectives", parsedKey: "marketing_objectives" },
+  { id: "growth_priorities", label: "Priorities", parsedKey: "growth_priorities" },
+  { id: "customer_acquisition", label: "Customer Acquisition & Sales", parsedKey: "customer_acquisition" },
+  { id: "learnings_constraints", label: "Learnings & Constraints", parsedKey: "learnings_constraints" },
   { id: "pillars", label: "Pillar Keywords", parsedKey: "core_keywords" },
-  { id: "competitors", label: "Competitors", parsedKey: "competitors" },
+  { id: "competitors", label: "Competitors & Alternatives", parsedKey: "competitors" },
   { id: "social-shops", label: "Social & Shops", parsedKey: "social_shops" },
   {
     id: "publish-destination",
@@ -131,6 +161,12 @@ export function getCompanyDataPoints({
       case "competitors":
         filled = competitorsFilled(fields?.competitors);
         break;
+      case "social_links":
+        filled = socialLinksFilled(fields?.social_links);
+        break;
+      case "team_members":
+        filled = teamFilled(fields?.team_members);
+        break;
       case "social-shops":
         filled = Boolean(socialShopsFilled);
         break;
@@ -141,7 +177,7 @@ export function getCompanyDataPoints({
           textFilled(githubTokenKey);
         break;
       default:
-        filled = false;
+        filled = textFilled(fields?.[def.parsedKey]);
     }
     return { ...def, filled };
   });
@@ -275,6 +311,43 @@ export function mergeParsedCompanyFields({
         break;
       case "competitors":
         nextFields.competitors = parsed.competitors;
+        break;
+      case "social_links":
+        nextFields.social_links = parsed.social_links;
+        break;
+      case "team_members":
+        nextFields.team_members = parsed.team_members;
+        break;
+      case "contact_email":
+        nextFields.contact_email = parsed.contact_email;
+        break;
+      case "legal_name":
+      case "founded_date":
+      case "location_markets":
+      case "company_stage":
+      case "customer_problem":
+      case "trigger_moment":
+      case "buying_criteria":
+      case "how_it_works":
+      case "customer_outcome":
+      case "commercial_model":
+      case "differentiation":
+      case "messaging_hierarchy":
+      case "market_category":
+      case "competitive_position":
+      case "market_dynamics":
+      case "brand_feel":
+      case "brand_voice":
+      case "brand_references":
+      case "brand_boundaries":
+      case "reasons_to_believe":
+      case "results_proof":
+      case "trust_signals":
+      case "marketing_objectives":
+      case "growth_priorities":
+      case "customer_acquisition":
+      case "learnings_constraints":
+        nextFields[point.parsedKey] = parsed[point.parsedKey];
         break;
       case "social-shops":
         nextSocialAccounts = parsed.social_shops?.accounts || [];

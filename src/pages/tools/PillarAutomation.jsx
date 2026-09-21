@@ -1224,7 +1224,7 @@ export default function PillarAutomation() {
           )}
           {!contextLoading && pillars.length === 0 && (
             <p className="text-sm text-muted-foreground">
-              No pillars found. Add pillar keywords in Company Data, then open
+              No pillars found. Add pillar keywords in Company Intelligence → SEO & configuration, then open
               Cluster Generation once so coverage is initialized.
             </p>
           )}

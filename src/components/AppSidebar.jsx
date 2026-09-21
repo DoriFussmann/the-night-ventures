@@ -146,7 +146,7 @@ export default function AppSidebar({ user }) {
   const activeCompanyId = routeCompanyId || (isCompanyPicker ? "" : readLastCompanyId());
 
   const companyDataItem = {
-    label: "Company Data",
+    label: "Company Intelligence",
     path: `/company/${activeCompanyId}/company-data`,
     icon: Database,
     status: "Done",

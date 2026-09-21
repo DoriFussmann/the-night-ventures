@@ -624,7 +624,7 @@ export default function DesignGuideBuilder() {
               to={`/company/${companyId}/company-data`}
               className="text-primary font-medium underline underline-offset-2"
             >
-              Company Data
+              Company Intelligence
             </Link>
             .
           </p>
@@ -847,7 +847,7 @@ export default function DesignGuideBuilder() {
             {companyPanel ? (
               <Button asChild variant="outline">
                 <Link to={`/company/${companyId}/company-data`}>
-                  Edit in Company Data
+                  Edit in Company Intelligence
                 </Link>
               </Button>
             ) : (

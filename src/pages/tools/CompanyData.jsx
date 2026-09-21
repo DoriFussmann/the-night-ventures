@@ -33,6 +33,8 @@ import {
 } from "@/components/ui/dialog";
 import {
   emptyServiceEntry,
+  emptySocialLinkEntry,
+  emptyTeamEntry,
   formatServiceCopyBlock,
   normalizeServices,
   normalizeSocialLinks,
@@ -56,9 +58,21 @@ import {
   getCompanyDataPoints,
   mergeParsedCompanyFields,
 } from "./companyData/dataPoints";
+import IntelligenceBrief from "./companyData/IntelligenceBrief";
+import {
+  EMPTY_INTELLIGENCE_TEXT,
+  allBriefPoints,
+  applyCustomFieldFallbacks,
+  briefProgress,
+} from "./companyData/intelligenceFields";
 
 const HIDDEN_CUSTOM_FIELDS = new Set([
   "founded year",
+  "founded",
+  "founded / incorporation date",
+  "incorporation date",
+  "legal name",
+  "official address",
   "business model",
   "core value proposition",
   "scope / boundaries",
@@ -166,25 +180,6 @@ function PanelModalActions({
   );
 }
 
-function PanelTrigger({ title, filled = false, onClick }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex h-9 w-full items-center justify-between gap-3 rounded-md border border-border px-3 text-left transition-colors hover:bg-muted/50"
-    >
-      <span className="text-sm font-medium leading-none">{title}</span>
-      {filled ? (
-        <Check
-          className="h-3.5 w-3.5 shrink-0 text-emerald-600"
-          strokeWidth={2.5}
-          aria-label="Has content"
-        />
-      ) : null}
-    </button>
-  );
-}
-
 function emptySupporting(count = DEFAULT_SUPPORTING_COUNT) {
   return Array.from({ length: count }, () => "");
 }
@@ -256,6 +251,12 @@ function isLooseHttpUrl(value) {
   return /^https?:\/\//i.test(url);
 }
 
+const PROFILE_SELECT_BASE =
+  "id, domain, product_name, target_audience, abstract, short_description, medium_description, long_description, business_model, core_value_proposition, scope_boundaries, design_guide_raw, design_guide_abstract, brand_feel, brand_accent, brand_band, brand_positive, wordmark_primary, wordmark_accent, brand_voice, core_keywords, competitors, services, team_members, contact_email, social_links, custom_fields";
+
+const PROFILE_SELECT_INTELLIGENCE =
+  "legal_name, founded_date, location_markets, company_stage, customer_problem, trigger_moment, buying_criteria, how_it_works, customer_outcome, commercial_model, differentiation, messaging_hierarchy, market_category, competitive_position, market_dynamics, brand_references, brand_boundaries, reasons_to_believe, results_proof, trust_signals, marketing_objectives, growth_priorities, customer_acquisition, learnings_constraints";
+
 const EMPTY_PROFILE = {
   domain: "",
   product_name: "",
@@ -282,7 +283,50 @@ const EMPTY_PROFILE = {
   team_members: [],
   contact_email: "",
   social_links: [],
+  ...EMPTY_INTELLIGENCE_TEXT,
 };
+
+function profileFromRow(profile) {
+  return {
+    domain: profile.domain || "",
+    product_name: profile.product_name || "",
+    target_audience: profile.target_audience || "",
+    abstract: profile.abstract || "",
+    short_description: profile.short_description || "",
+    medium_description: profile.medium_description || "",
+    long_description: profile.long_description || "",
+    business_model: profile.business_model || "",
+    core_value_proposition: profile.core_value_proposition || "",
+    scope_boundaries: profile.scope_boundaries || "",
+    design_guide_raw: profile.design_guide_raw || "",
+    design_guide_abstract: profile.design_guide_abstract || "",
+    brand_feel: profile.brand_feel || "",
+    brand_accent: profile.brand_accent || "",
+    brand_band: profile.brand_band || "",
+    brand_positive: profile.brand_positive || "",
+    wordmark_primary: profile.wordmark_primary || "",
+    wordmark_accent: profile.wordmark_accent || "",
+    brand_voice: profile.brand_voice || "",
+    core_keywords: normalizePillarKeywords(profile.core_keywords, {
+      minCount:
+        Array.isArray(profile.core_keywords) && profile.core_keywords.length > 0
+          ? 0
+          : DEFAULT_PILLAR_COUNT,
+    }),
+    competitors: normalizeCompetitors(profile.competitors),
+    services: normalizeServices(profile.services),
+    team_members: normalizeTeamMembers(profile.team_members),
+    contact_email: profile.contact_email || "",
+    social_links: normalizeSocialLinks(profile.social_links),
+    ...EMPTY_INTELLIGENCE_TEXT,
+    ...Object.fromEntries(
+      Object.keys(EMPTY_INTELLIGENCE_TEXT).map((key) => [
+        key,
+        profile[key] || "",
+      ])
+    ),
+  };
+}
 
 function downloadMarkdown(filename, content) {
   const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
@@ -381,6 +425,8 @@ export default function CompanyData() {
   const [importDragOver, setImportDragOver] = useState(false);
   const [importBusy, setImportBusy] = useState(false);
   const [importResult, setImportResult] = useState(null);
+  const [openGroups, setOpenGroups] = useState({});
+  const [configOpen, setConfigOpen] = useState(false);
   const importFileRef = useRef(null);
 
   const loadData = useCallback(async () => {
@@ -400,11 +446,22 @@ export default function CompanyData() {
       supabase.from("companies").select("name, github_owner, github_repo, github_token_key").eq("id", companyId).maybeSingle(),
       supabase
         .from("company_profiles")
-        .select(
-          "id, domain, product_name, target_audience, abstract, short_description, medium_description, long_description, business_model, core_value_proposition, scope_boundaries, design_guide_raw, design_guide_abstract, brand_feel, brand_accent, brand_band, brand_positive, wordmark_primary, wordmark_accent, brand_voice, core_keywords, competitors, services, team_members, contact_email, social_links, custom_fields"
-        )
+        .select(`${PROFILE_SELECT_BASE}, ${PROFILE_SELECT_INTELLIGENCE}`)
         .eq("company_id", companyId)
-        .maybeSingle(),
+        .maybeSingle()
+        .then(async (result) => {
+          if (
+            result.error &&
+            /legal_name|founded_date|column/i.test(result.error.message || "")
+          ) {
+            return supabase
+              .from("company_profiles")
+              .select(PROFILE_SELECT_BASE)
+              .eq("company_id", companyId)
+              .maybeSingle();
+          }
+          return result;
+        }),
       supabase
         .from("company_custom_fields")
         .select("id, name, created_at")
@@ -477,42 +534,12 @@ export default function CompanyData() {
     } else if (profileResult.data) {
       const profile = profileResult.data;
       setProfileId(profile.id);
-      setFields({
-        domain: profile.domain || "",
-        product_name: profile.product_name || "",
-        target_audience: profile.target_audience || "",
-        abstract: profile.abstract || "",
-        short_description: profile.short_description || "",
-        medium_description: profile.medium_description || "",
-        long_description: profile.long_description || "",
-        business_model: profile.business_model || "",
-        core_value_proposition: profile.core_value_proposition || "",
-        scope_boundaries: profile.scope_boundaries || "",
-        design_guide_raw: profile.design_guide_raw || "",
-        design_guide_abstract: profile.design_guide_abstract || "",
-        brand_feel: profile.brand_feel || "",
-        brand_accent: profile.brand_accent || "",
-        brand_band: profile.brand_band || "",
-        brand_positive: profile.brand_positive || "",
-        wordmark_primary: profile.wordmark_primary || "",
-        wordmark_accent: profile.wordmark_accent || "",
-        brand_voice: profile.brand_voice || "",
-        core_keywords: normalizePillarKeywords(profile.core_keywords, {
-          minCount: Array.isArray(profile.core_keywords) && profile.core_keywords.length > 0
-            ? 0
-            : DEFAULT_PILLAR_COUNT,
-        }),
-        competitors: normalizeCompetitors(profile.competitors),
-        services: normalizeServices(profile.services),
-        team_members: normalizeTeamMembers(profile.team_members),
-        contact_email: profile.contact_email || "",
-        social_links: normalizeSocialLinks(profile.social_links),
-      });
-      setCustomValues(
+      const loadedCustom =
         profile.custom_fields && typeof profile.custom_fields === "object"
           ? { ...profile.custom_fields }
-          : {}
-      );
+          : {};
+      setFields(applyCustomFieldFallbacks(profileFromRow(profile), loadedCustom));
+      setCustomValues(loadedCustom);
       setConnectionsFilled(
         connectionsHaveContent(
           profile.custom_fields && typeof profile.custom_fields === "object"
@@ -703,6 +730,71 @@ export default function CompanyData() {
     setCustomValues((prev) => ({ ...prev, [name]: value }));
   };
 
+  const addSocialLink = () => {
+    setFields((prev) => ({
+      ...prev,
+      social_links: [...normalizeSocialLinks(prev.social_links), emptySocialLinkEntry()],
+    }));
+  };
+
+  const updateSocialLink = (index, key, value) => {
+    setFields((prev) => {
+      const next = normalizeSocialLinks(prev.social_links);
+      next[index] = { ...next[index], [key]: value };
+      return { ...prev, social_links: next };
+    });
+  };
+
+  const removeSocialLink = (index) => {
+    setFields((prev) => ({
+      ...prev,
+      social_links: normalizeSocialLinks(prev.social_links).filter((_, i) => i !== index),
+    }));
+  };
+
+  const addTeamMember = () => {
+    setFields((prev) => ({
+      ...prev,
+      team_members: [...normalizeTeamMembers(prev.team_members), emptyTeamEntry()],
+    }));
+  };
+
+  const updateTeamMember = (index, key, value) => {
+    setFields((prev) => {
+      const next = normalizeTeamMembers(prev.team_members);
+      next[index] = { ...next[index], [key]: value };
+      return { ...prev, team_members: next };
+    });
+  };
+
+  const updateTeamSameAs = (index, sameAsIndex, value) => {
+    setFields((prev) => {
+      const next = normalizeTeamMembers(prev.team_members);
+      const sameAs = [...(next[index].same_as || [])];
+      sameAs[sameAsIndex] = value;
+      next[index] = { ...next[index], same_as: sameAs };
+      return { ...prev, team_members: next };
+    });
+  };
+
+  const addTeamSameAs = (index) => {
+    setFields((prev) => {
+      const next = normalizeTeamMembers(prev.team_members);
+      next[index] = {
+        ...next[index],
+        same_as: [...(next[index].same_as || []), ""],
+      };
+      return { ...prev, team_members: next };
+    });
+  };
+
+  const removeTeamMember = (index) => {
+    setFields((prev) => ({
+      ...prev,
+      team_members: normalizeTeamMembers(prev.team_members).filter((_, i) => i !== index),
+    }));
+  };
+
   const handleAddField = async () => {
     const raw = window.prompt("New field name:");
     if (raw == null) return;
@@ -711,7 +803,7 @@ export default function CompanyData() {
     if (!name) return;
 
     if (HIDDEN_CUSTOM_FIELDS.has(name.toLowerCase())) {
-      setError(`"${name}" is no longer used on Company Data.`);
+      setError(`"${name}" is no longer used on Company Intelligence.`);
       return;
     }
 
@@ -797,6 +889,9 @@ export default function CompanyData() {
         break;
       case "services":
         setFields((prev) => ({ ...prev, services: [] }));
+        break;
+      case "team":
+        setFields((prev) => ({ ...prev, team_members: [] }));
         break;
       case "abstract":
         updateField("abstract", "");
@@ -903,6 +998,21 @@ export default function CompanyData() {
       return trimServicesForSave(fields.services)
         .map((s) => formatServiceCopyBlock(s))
         .join("\n\n");
+    }
+
+    if (panelId === "team") {
+      return trimTeamMembersForSave(fields.team_members)
+        .map((member) => {
+          const meta = [member.role, member.credentials].filter(Boolean).join(" · ");
+          const head = `- ${member.name || "(unnamed)"}${meta ? `: ${meta}` : ""}`;
+          const detailLines = [];
+          if (member.bio) detailLines.push(`  ${member.bio}`);
+          for (const url of member.same_as || []) {
+            detailLines.push(`  - ${url}`);
+          }
+          return detailLines.length > 0 ? `${head}\n${detailLines.join("\n")}` : head;
+        })
+        .join("\n");
     }
 
     if (panelId === "social-shops") {
@@ -1046,12 +1156,19 @@ export default function CompanyData() {
     for (const def of customFieldDefs) {
       custom_fields[def.name] = currentCustomValues[def.name] ?? "";
     }
-    // Preserve reserved keys written by other tools (e.g. Analytics `_analytics_tools`).
+    // Preserve reserved keys and leftover custom values (founded year, etc.).
     for (const [key, value] of Object.entries(currentCustomValues)) {
-      if (key.startsWith("_") && !(key in custom_fields)) {
+      if (!(key in custom_fields)) {
         custom_fields[key] = value;
       }
     }
+
+    const intelligenceFields = Object.fromEntries(
+      Object.keys(EMPTY_INTELLIGENCE_TEXT).map((key) => [
+        key,
+        String(currentFields[key] || "").trim() || null,
+      ])
+    );
 
     const payload = {
       company_id: companyId,
@@ -1082,6 +1199,7 @@ export default function CompanyData() {
       contact_email: currentFields.contact_email.trim() || null,
       social_links,
       custom_fields,
+      ...intelligenceFields,
       updated_at: new Date().toISOString(),
     };
 
@@ -1089,11 +1207,33 @@ export default function CompanyData() {
       payload.id = profileId;
     }
 
-    const { data, error: upsertError } = await supabase
+    let { data, error: upsertError } = await supabase
       .from("company_profiles")
       .upsert(payload, { onConflict: "company_id" })
       .select("id")
       .single();
+
+    if (
+      upsertError &&
+      /legal_name|founded_date|column/i.test(upsertError.message || "")
+    ) {
+      const fallback = { ...payload };
+      for (const key of Object.keys(EMPTY_INTELLIGENCE_TEXT)) {
+        delete fallback[key];
+      }
+      const retry = await supabase
+        .from("company_profiles")
+        .upsert(fallback, { onConflict: "company_id" })
+        .select("id")
+        .single();
+      data = retry.data;
+      upsertError = retry.error;
+      if (!upsertError) {
+        setError(
+          "Saved existing fields. Run the Company Intelligence migration to store the new brief fields."
+        );
+      }
+    }
 
     if (upsertError) {
       console.error("Failed to save company profile:", upsertError);
@@ -1137,6 +1277,7 @@ export default function CompanyData() {
     const { error: companyUpdateError } = await supabase
       .from("companies")
       .update({
+        ...(companyName.trim() ? { name: companyName.trim() } : {}),
         github_owner: githubOwner.trim() || null,
         github_repo: githubRepo.trim() || null,
         github_token_key: githubTokenKey.trim().toUpperCase() || null,
@@ -1438,24 +1579,52 @@ export default function CompanyData() {
       .join("\n");
 
     const fixedEntries = [
+      ["Company Name", companyName],
       ["Domain", fields.domain],
-      ["Product Name", fields.product_name],
-      ["Category", categoryLines],
-      ["Target Description", fields.target_audience],
-      ["Pillar Keywords", pillarLines],
-      ["Competitors", competitorLines],
-      ["Social & Shops", socialShopsLines],
-      ["Connections", connectionsLines],
-      ["Products & Services", serviceLines],
-      ["Team Members", teamLines],
+      ["Legal Name", fields.legal_name],
+      ["Founded / Incorporation Date", fields.founded_date],
+      ["Location / Markets Served", fields.location_markets],
       ["Contact Email", fields.contact_email],
       ["Social Links", socialLinkLines],
-      ["Abstract", fields.abstract],
-      ["Short Description", fields.short_description],
-      ["Medium Description", fields.medium_description],
-      ["Long Description", fields.long_description],
+      ["What We Do", fields.short_description],
+      ["Story & Mission", fields.long_description],
       ["Business Model", fields.business_model],
+      ["Company Stage & Context", fields.company_stage],
+      ["Ideal Customer", fields.target_audience],
+      ["Customer Problem", fields.customer_problem],
+      ["Trigger / Moment of Need", fields.trigger_moment],
+      ["Buying Criteria", fields.buying_criteria],
+      ["Products & Services", serviceLines],
+      ["How It Works", fields.how_it_works],
+      ["Customer Outcome", fields.customer_outcome],
+      ["Commercial Model", fields.commercial_model],
       ["Core Value Proposition", fields.core_value_proposition],
+      ["Differentiation", fields.differentiation],
+      ["Messaging Hierarchy", fields.messaging_hierarchy],
+      ["What We Are / Are Not", fields.scope_boundaries],
+      ["Market & Category", fields.market_category],
+      ["Competitors & Alternatives", competitorLines],
+      ["Competitive Position", fields.competitive_position],
+      ["Market Dynamics", fields.market_dynamics],
+      ["Brand Personality", fields.brand_feel],
+      ["Voice & Tone", fields.brand_voice],
+      ["References", fields.brand_references],
+      ["Brand Boundaries", fields.brand_boundaries],
+      ["Reasons to Believe", fields.reasons_to_believe],
+      ["Results & Customer Proof", fields.results_proof],
+      ["Team & Founder Credibility", teamLines],
+      ["Other Trust Signals", fields.trust_signals],
+      ["Business & Marketing Objectives", fields.marketing_objectives],
+      ["Priorities", fields.growth_priorities],
+      ["Customer Acquisition & Sales", fields.customer_acquisition],
+      ["Learnings & Constraints", fields.learnings_constraints],
+      ["Product Name", fields.product_name],
+      ["Category", categoryLines],
+      ["Abstract", fields.abstract],
+      ["Medium Description", fields.medium_description],
+      ["Pillar Keywords", pillarLines],
+      ["Social & Shops", socialShopsLines],
+      ["Connections", connectionsLines],
       [
         "Publish Destination",
         [
@@ -1479,14 +1648,44 @@ export default function CompanyData() {
     const lines = [`# ${companyName || "Company"}`, ""];
 
     const blockLabels = new Set([
+      "Location / Markets Served",
+      "Social Links",
+      "What We Do",
+      "Story & Mission",
+      "Business Model",
+      "Company Stage & Context",
+      "Ideal Customer",
+      "Customer Problem",
+      "Trigger / Moment of Need",
+      "Buying Criteria",
+      "Products & Services",
+      "How It Works",
+      "Customer Outcome",
+      "Commercial Model",
+      "Core Value Proposition",
+      "Differentiation",
+      "Messaging Hierarchy",
+      "What We Are / Are Not",
+      "Market & Category",
+      "Competitors & Alternatives",
+      "Competitive Position",
+      "Market Dynamics",
+      "Brand Personality",
+      "Voice & Tone",
+      "References",
+      "Brand Boundaries",
+      "Reasons to Believe",
+      "Results & Customer Proof",
+      "Team & Founder Credibility",
+      "Other Trust Signals",
+      "Business & Marketing Objectives",
+      "Priorities",
+      "Customer Acquisition & Sales",
+      "Learnings & Constraints",
       "Category",
       "Pillar Keywords",
-      "Competitors",
       "Social & Shops",
       "Connections",
-      "Products & Services",
-      "Team Members",
-      "Social Links",
       "Brand Tokens",
       "Design Guide",
       "Publish Destination",
@@ -1522,7 +1721,23 @@ export default function CompanyData() {
       openDesignGuideModal();
       return;
     }
-    setOpenPanel(id);
+    const structured = {
+      services: "services",
+      competitors: "competitors",
+      team_members: "team",
+      social_links: null,
+    };
+    if (structured[id]) {
+      setOpenPanel(structured[id]);
+      return;
+    }
+    const point = allBriefPoints({ fields, companyName }).find((item) => item.id === id);
+    if (point?.section && point.section !== "basic") {
+      setOpenGroups((prev) => ({ ...prev, [point.section]: true }));
+    }
+    if (id === "product_name" || id === "category" || id === "pillars") {
+      setOpenPanel(id);
+    }
   };
 
   const handleGenerateDesignGuideAbstract = async () => {
@@ -1654,7 +1869,7 @@ export default function CompanyData() {
   };
 
   if (loading) {
-    return <p className="text-sm text-muted-foreground">Loading company data...</p>;
+    return <p className="text-sm text-muted-foreground">Loading company intelligence...</p>;
   }
 
   const pillars = normalizePillarKeywords(fields.core_keywords);
@@ -1677,138 +1892,154 @@ export default function CompanyData() {
   const publishDestinationFilled = Boolean(
     githubOwner.trim() && githubRepo.trim() && githubTokenKey.trim()
   );
-  const dataPoints = getCompanyDataPoints({
-    fields,
-    selectedIndustryIds,
-    socialShopsFilled,
-    customFieldDefs,
-    customValues,
-    githubOwner,
-    githubRepo,
-    githubTokenKey,
-  });
-  const completedCount = dataPoints.filter((point) => point.filled).length;
-  const missingPoints = dataPoints.filter((point) => !point.filled);
+  const briefCtx = { fields, companyName };
+  const brief = briefProgress(briefCtx);
+  const briefPoints = allBriefPoints(briefCtx);
+  const missingPoints = briefPoints.filter((point) => !point.filled);
+  const completedCount = brief.filled;
+
+  const servicesPreview = services
+    .filter(serviceHasContent)
+    .map((service) => {
+      const title = service.title.trim() || "Untitled offering";
+      const summary = service.summary.trim();
+      return summary ? `${title} — ${summary}` : title;
+    });
+  const competitorsPreview = competitors
+    .filter((item) => item.name.trim() || item.url.trim())
+    .map((item) =>
+      item.url.trim()
+        ? `${item.name.trim() || item.url.trim()} (${item.url.trim()})`
+        : item.name.trim()
+    );
+  const teamPreview = normalizeTeamMembers(fields.team_members)
+    .filter(
+      (member) =>
+        member.name.trim() ||
+        member.role.trim() ||
+        member.bio.trim() ||
+        member.credentials.trim()
+    )
+    .map((member) => {
+      const meta = [member.role, member.credentials].filter((part) => part.trim()).join(" · ");
+      const head = member.name.trim() || "Unnamed";
+      return meta ? `${head} — ${meta}` : head;
+    });
 
   return (
     <div>
-      <h1 className="text-xs text-foreground mb-4">
-        {companyName || "Company Data"}
-      </h1>
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-medium text-foreground">
+            {companyName || "Company Intelligence"}
+          </h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Canonical brief of the business. Nothing here is required.
+          </p>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          {completedCount} / {brief.total} brief fields
+        </p>
+      </div>
 
       {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
 
-      <form onSubmit={handleSave} className="space-y-1.5">
-        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-5">
-          <PanelTrigger
-            title="Domain"
-            filled={Boolean(fields.domain.trim())}
-            onClick={() => setOpenPanel("domain")}
-          />
-          <PanelTrigger
-            title="Product Name"
-            filled={Boolean(fields.product_name.trim())}
-            onClick={() => setOpenPanel("product_name")}
-          />
-          <PanelTrigger
-            title="Category"
-            filled={selectedIndustries.length > 0}
-            onClick={() => setOpenPanel("category")}
-          />
-          <PanelTrigger
-            title="Target Description"
-            filled={Boolean(fields.target_audience.trim())}
-            onClick={() => setOpenPanel("target")}
-          />
-          <PanelTrigger
-            title="Design Abstract"
-            filled={hasDesignGuide}
-            onClick={openDesignGuideModal}
-          />
-          <PanelTrigger
-            title="Products & Services"
-            filled={services.some(serviceHasContent)}
-            onClick={() => setOpenPanel("services")}
-          />
-          <PanelTrigger
-            title="Abstract"
-            filled={Boolean(fields.abstract.trim())}
-            onClick={() => setOpenPanel("abstract")}
-          />
-          <PanelTrigger
-            title="Short Description"
-            filled={Boolean(fields.short_description.trim())}
-            onClick={() => setOpenPanel("short")}
-          />
-          <PanelTrigger
-            title="Medium Description"
-            filled={Boolean(fields.medium_description.trim())}
-            onClick={() => setOpenPanel("medium")}
-          />
-          <PanelTrigger
-            title="Long Description"
-            filled={Boolean(fields.long_description.trim())}
-            onClick={() => setOpenPanel("long")}
-          />
-          <PanelTrigger
-            title="Business Model"
-            filled={Boolean(fields.business_model.trim())}
-            onClick={() => setOpenPanel("business_model")}
-          />
-          <PanelTrigger
-            title="Core Value Proposition"
-            filled={Boolean(fields.core_value_proposition.trim())}
-            onClick={() => setOpenPanel("core_value_proposition")}
-          />
-          <PanelTrigger
-            title={`Pillar Keywords (${pillarTotal})`}
-            filled={pillars.some(
-              (pillar) =>
-                pillar.keyword.trim() || countFilled(pillar.supporting) > 0
-            )}
-            onClick={() => setOpenPanel("pillars")}
-          />
-          <PanelTrigger
-            title={`Competitors (${competitors.length})`}
-            filled={competitors.some(
-              (item) => item.name.trim() || item.url.trim()
-            )}
-            onClick={() => setOpenPanel("competitors")}
-          />
-          <PanelTrigger
-            title="Social & Shops"
-            filled={socialShopsFilled}
-            onClick={() => setOpenPanel("social-shops")}
-          />
-          <PanelTrigger
-            title="Connections"
-            filled={connectionsFilled}
-            onClick={() => setOpenPanel("connections")}
-          />
-          <PanelTrigger
-            title="Publish Destination"
-            filled={publishDestinationFilled}
-            onClick={() => setOpenPanel("publish-destination")}
-          />
-          {customFieldDefs.map((def) => (
-            <PanelTrigger
-              key={def.id}
-              title={def.name}
-              filled={Boolean((customValues[def.name] || "").trim())}
-              onClick={() => setOpenPanel(`custom:${def.id}`)}
-            />
-          ))}
-        </div>
+      <form onSubmit={handleSave} className="space-y-4">
+        <IntelligenceBrief
+          companyName={companyName}
+          onCompanyNameChange={setCompanyName}
+          fields={fields}
+          onFieldChange={updateField}
+          socialLinks={normalizeSocialLinks(fields.social_links)}
+          onSocialChange={updateSocialLink}
+          onAddSocial={addSocialLink}
+          onRemoveSocial={removeSocialLink}
+          servicesPreview={servicesPreview}
+          competitorsPreview={competitorsPreview}
+          teamPreview={teamPreview}
+          onOpenStructured={(id) => setOpenPanel(id)}
+          openGroups={openGroups}
+          onToggleGroup={(id, open) =>
+            setOpenGroups((prev) => ({ ...prev, [id]: open }))
+          }
+          configOpen={configOpen}
+          onToggleConfig={setConfigOpen}
+          configTriggers={[
+            {
+              id: "product_name",
+              title: "Product Name",
+              filled: Boolean(fields.product_name.trim()),
+              onClick: () => setOpenPanel("product_name"),
+            },
+            {
+              id: "category",
+              title: "SEO Category",
+              filled: selectedIndustries.length > 0,
+              onClick: () => setOpenPanel("category"),
+            },
+            {
+              id: "abstract",
+              title: "Abstract (legacy)",
+              filled: Boolean(fields.abstract.trim()),
+              onClick: () => setOpenPanel("abstract"),
+            },
+            {
+              id: "medium",
+              title: "Medium Description (legacy)",
+              filled: Boolean(fields.medium_description.trim()),
+              onClick: () => setOpenPanel("medium"),
+            },
+            {
+              id: "design-guide",
+              title: "Design Abstract",
+              filled: hasDesignGuide,
+              onClick: openDesignGuideModal,
+            },
+            {
+              id: "pillars",
+              title: `Pillar Keywords (${pillarTotal})`,
+              filled: pillars.some(
+                (pillar) =>
+                  pillar.keyword.trim() || countFilled(pillar.supporting) > 0
+              ),
+              onClick: () => setOpenPanel("pillars"),
+            },
+            {
+              id: "social-shops",
+              title: "Social & Shops",
+              filled: socialShopsFilled,
+              onClick: () => setOpenPanel("social-shops"),
+            },
+            {
+              id: "connections",
+              title: "Connections",
+              filled: connectionsFilled,
+              onClick: () => setOpenPanel("connections"),
+            },
+            {
+              id: "publish-destination",
+              title: "Publish Destination",
+              filled: publishDestinationFilled,
+              onClick: () => setOpenPanel("publish-destination"),
+            },
+            ...customFieldDefs.map((def) => ({
+              id: `custom:${def.id}`,
+              title: def.name,
+              filled: Boolean((customValues[def.name] || "").trim()),
+              onClick: () => setOpenPanel(`custom:${def.id}`),
+            })),
+          ]}
+        />
 
-        <div className="flex flex-wrap items-center gap-3 pt-2">
-          <Button type="button" variant="outline" onClick={handleAddField}>
-            + Add a field
-          </Button>
+        <div className="flex flex-wrap items-center gap-3">
           <Button type="submit" disabled={saving}>
-            {saving ? "Saving..." : "Save"}
+            {saving ? "Saving..." : "Save brief"}
           </Button>
           <Button type="button" variant="secondary" onClick={handleDownloadMarkdown}>
             Download as Markdown
+          </Button>
+          <Button type="button" variant="outline" onClick={handleAddField}>
+            + Add leftover field
           </Button>
           {savedMessage && (
             <span className="text-sm text-muted-foreground">{savedMessage}</span>
@@ -1818,7 +2049,7 @@ export default function CompanyData() {
 
       <div className="mt-8 space-y-2 border-t border-border pt-4">
         <p className="text-sm text-muted-foreground">
-          {completedCount} / {dataPoints.length} fields completed
+          {completedCount} / {brief.total} brief fields completed
         </p>
         {missingPoints.length > 0 ? (
           <Collapsible open={missingOpen} onOpenChange={setMissingOpen}>
@@ -1827,7 +2058,7 @@ export default function CompanyData() {
                 type="button"
                 className="flex w-full items-center justify-between rounded-md py-1 text-left text-sm font-medium text-foreground hover:text-foreground"
               >
-                Missing Data Points
+                Still open in the brief
                 <ChevronDown
                   className={`h-4 w-4 text-muted-foreground transition-transform ${
                     missingOpen ? "rotate-180" : ""
@@ -2419,6 +2650,104 @@ export default function CompanyData() {
               type="button"
               variant="destructive"
               onClick={() => confirmClearPanel("services", "Products & Services")}
+            >
+              Delete
+            </Button>
+            <PanelModalActions
+              onCopy={() => handleCopyPanel(openPanel)}
+              onClose={() => setOpenPanel(null)}
+              onSave={saveAndClosePanel}
+              saving={saving}
+            />
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Team */}
+      <Dialog
+        open={openPanel === "team"}
+        onOpenChange={(open) => setOpenPanel(open ? "team" : null)}
+      >
+        <DialogContent className={PANEL_DIALOG_CLASS}>
+          <DialogHeader className="shrink-0 space-y-1 border-b border-border px-6 py-4 pr-12 text-left">
+            <DialogTitle>Team & Founder Credibility</DialogTitle>
+            <DialogDescription>
+              People, roles, credentials, and background that strengthen trust.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-4">
+            {normalizeTeamMembers(fields.team_members).map((member, index) => (
+              <div
+                key={index}
+                className="space-y-2 rounded-md border border-border p-3"
+              >
+                <div className="flex items-start gap-2">
+                  <Input
+                    value={member.name}
+                    onChange={(e) => updateTeamMember(index, "name", e.target.value)}
+                    placeholder="Name"
+                    aria-label={`Team member ${index + 1} name`}
+                  />
+                  <Input
+                    value={member.role}
+                    onChange={(e) => updateTeamMember(index, "role", e.target.value)}
+                    placeholder="Role"
+                    aria-label={`Team member ${index + 1} role`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeTeamMember(index)}
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-destructive"
+                    aria-label="Remove team member"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <Input
+                  value={member.credentials}
+                  onChange={(e) =>
+                    updateTeamMember(index, "credentials", e.target.value)
+                  }
+                  placeholder="Credentials"
+                  aria-label={`Team member ${index + 1} credentials`}
+                />
+                <Textarea
+                  value={member.bio}
+                  onChange={(e) => updateTeamMember(index, "bio", e.target.value)}
+                  placeholder="Background and credibility notes"
+                  className="min-h-[72px]"
+                  aria-label={`Team member ${index + 1} bio`}
+                />
+                {(member.same_as || []).map((url, sameAsIndex) => (
+                  <Input
+                    key={sameAsIndex}
+                    value={url}
+                    onChange={(e) =>
+                      updateTeamSameAs(index, sameAsIndex, e.target.value)
+                    }
+                    placeholder="https://linkedin.com/in/..."
+                    aria-label={`Team member ${index + 1} profile URL ${sameAsIndex + 1}`}
+                  />
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => addTeamSameAs(index)}
+                >
+                  + Profile URL
+                </Button>
+              </div>
+            ))}
+            <Button type="button" variant="outline" size="sm" onClick={addTeamMember}>
+              + Add person
+            </Button>
+          </div>
+          <DialogFooter className="shrink-0 gap-2 border-t border-border px-6 py-4 sm:justify-between">
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => confirmClearPanel("team", "Team & Founder Credibility")}
             >
               Delete
             </Button>

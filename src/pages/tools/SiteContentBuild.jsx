@@ -530,7 +530,7 @@ export default function SiteContentBuild() {
                   to={`/company/${companyId}/company-data`}
                   className="text-primary font-medium underline underline-offset-2"
                 >
-                  Company Data
+                  Company Intelligence
                 </Link>
                 .
               </p>
