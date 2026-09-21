@@ -172,6 +172,7 @@ export default function SiteBuildFlow() {
 
     let stages = stagesResult.data || [];
     let items = itemsResult.data || [];
+    let stageSyncError = "";
 
     if (stages.length === 0 && items.length === 0) {
       const stageRows = STAGES.map((stage) => ({
@@ -245,13 +246,14 @@ export default function SiteBuildFlow() {
 
         if (missingStageError) {
           console.error(missingStageError);
-          setError(missingStageError.message || "Failed to sync new stages");
-          setLoading(false);
-          return;
+          stageSyncError =
+            missingStageError.message || "Failed to sync new stages";
+        } else {
+          stages = [...stages, ...(insertedStages || [])];
         }
-
-        stages = [...stages, ...(insertedStages || [])];
       }
+
+      const persistedStageKeys = new Set(stages.map((stage) => stage.stage_key));
 
       const orderByKey = new Map(STAGES.map((s) => [s.stage_key, s.order_index]));
       const stageOrderUpdates = stages.filter(
@@ -346,6 +348,7 @@ export default function SiteBuildFlow() {
       const metaUpdates = [];
 
       for (const stage of STAGES) {
+        if (!persistedStageKeys.has(stage.stage_key)) continue;
         const predefined = PREDEFINED_ITEMS[stage.stage_key] || [];
         const byKey = new Map(
           items
@@ -530,6 +533,14 @@ export default function SiteBuildFlow() {
     }
     stages = syncedStages;
 
+    if (stageSyncError) {
+      setError(
+        stageSyncError.includes("stage_key_check")
+          ? "Seed Articles Content could not be saved yet. Apply supabase/migrations/050_setup_flow_seed_articles.sql in the Supabase SQL editor, then reload."
+          : stageSyncError
+      );
+    }
+
     const next = { stages, items };
     setSavedState(cloneState(next));
     setDraftState(cloneState(next));
@@ -713,14 +724,18 @@ export default function SiteBuildFlow() {
     );
   }
 
-  if (loading || !draftState) {
+  if (!draftState) {
     return (
       <div>
         <h1 className="text-xs text-foreground mb-1">Site Build Flow</h1>
-        <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          Loading…
-        </div>
+        {error ? (
+          <p className="mt-4 max-w-xl text-sm text-destructive">{error}</p>
+        ) : (
+          <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Loading…
+          </div>
+        )}
       </div>
     );
   }
