@@ -8,6 +8,7 @@ import {
   LayoutTemplate,
   PenLine,
   BookOpen,
+  Mail,
   Image,
   Sparkles,
   MessageSquareText,
@@ -320,6 +321,7 @@ export default function AppSidebar({ user }) {
   const location = useLocation();
   const { companyId: routeCompanyId } = useParams();
   const [companyName, setCompanyName] = useState("");
+  const [emailEnabled, setEmailEnabled] = useState(false);
 
   useEffect(() => {
     if (routeCompanyId) {
@@ -372,12 +374,13 @@ export default function AppSidebar({ user }) {
     async function loadCompany() {
       if (!activeCompanyId) {
         setCompanyName("");
+        setEmailEnabled(false);
         return;
       }
 
       const { data, error } = await supabase
         .from("companies")
-        .select("name")
+        .select("name, email_campaigns_enabled")
         .eq("id", activeCompanyId)
         .maybeSingle();
 
@@ -386,10 +389,12 @@ export default function AppSidebar({ user }) {
       if (error) {
         console.error("Failed to load company:", error);
         setCompanyName("");
+        setEmailEnabled(false);
         return;
       }
 
       setCompanyName(data?.name || "");
+      setEmailEnabled(Boolean(data?.email_campaigns_enabled));
     }
 
     loadCompany();
@@ -469,6 +474,15 @@ export default function AppSidebar({ user }) {
                   status: "Partial",
                 }}
               />
+              {emailEnabled && (
+                <NavItem
+                  item={{
+                    label: "Email Campaigns",
+                    path: `/company/${activeCompanyId}/email-campaigns`,
+                    icon: Mail,
+                  }}
+                />
+              )}
             </div>
 
             <SectionRule />
