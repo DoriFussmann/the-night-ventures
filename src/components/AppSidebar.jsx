@@ -235,7 +235,7 @@ export default function AppSidebar({ user }) {
         )}
         <Link
           to="/admin"
-          title="Workspace admin"
+          title="Workspace Admin"
           className="ml-auto h-7 w-7 shrink-0 rounded-md border border-border flex items-center justify-center text-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
         >
           <Settings className="w-3.5 h-3.5" />
