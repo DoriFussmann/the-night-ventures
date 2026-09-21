@@ -28,4 +28,5 @@ BUILD INSTRUCTIONS FOR CURSOR:
 - Do NOT break existing functionality. If any change risks breaking the build, stop and flag it before proceeding.
 - Verify exactly one H1 renders per page against the existing template. If the template already outputs its own H1 (especially on the homepage), do not add a second. Reconcile to one.
 - Implement all page content below in full — do not shorten, summarize, or skip sections.
+- Put Articles in the top navigation. That item opens an Articles grid. Clicking an article in the grid opens that article's page.
 ---`;
