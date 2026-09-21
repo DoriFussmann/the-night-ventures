@@ -1,11 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Download, Loader2, Upload, X } from "lucide-react";
+import { Check, Download, Loader2, Upload, Workflow, X } from "lucide-react";
 import { useParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import ConfirmGate from "./articlesAutomation/ConfirmGate";
 import GenerationReport from "./articlesAutomation/GenerationReport";
+import BatchPublishReport, {
+  articlesFromJobs,
+  formatElapsed,
+  markArticlesPublished,
+  topicsFromArticles,
+} from "./articlesAutomation/BatchPublishReport";
 import {
   loadAutomationContext,
   persistPlannedCluster,
@@ -24,7 +30,10 @@ import {
   publishArticlesToSite,
 } from "./articleGeneration/publishToSite";
 import WireInternalLinksPanel from "./articleGeneration/WireInternalLinksPanel";
-import { buildClusterTree } from "./articlesAutomation/selectCluster";
+import {
+  buildClusterTree,
+  listRunnableClusters,
+} from "./articlesAutomation/selectCluster";
 
 const STAGES = [
   { id: "cluster", label: "Cluster Selection" },
@@ -49,6 +58,12 @@ const TYPE_COLORS = {
 };
 
 const IDLE_PHASES = new Set(["idle", "selected", "done", "declined", "error"]);
+
+function throwBatch(message, extra) {
+  const err = new Error(message);
+  if (extra && typeof extra === "object") err.batchResult = extra;
+  throw err;
+}
 
 function TypeBadge({ type }) {
   const key = TYPE_COLORS[type] ? type : "flex";
@@ -192,6 +207,7 @@ export default function ClusterGeneration() {
   const [statusMessage, setStatusMessage] = useState("");
   const [error, setError] = useState("");
   const [companyName, setCompanyName] = useState("");
+  const [siteDomain, setSiteDomain] = useState("");
   const [pillars, setPillars] = useState([]);
   const [contextLoading, setContextLoading] = useState(true);
   const [picked, setPicked] = useState(null);
@@ -208,6 +224,10 @@ export default function ClusterGeneration() {
   const [publishError, setPublishError] = useState(null);
   const [wireActive, setWireActive] = useState(false);
 
+  const [batch, setBatch] = useState(null);
+  const [nowTick, setNowTick] = useState(Date.now());
+  const stopRef = useRef(false);
+
   const contextRef = useRef(null);
   const pickedRef = useRef(null);
   const proposalRef = useRef(null);
@@ -216,14 +236,21 @@ export default function ClusterGeneration() {
   const stageRef = useRef(currentStage);
   stageRef.current = currentStage;
 
-  const busy = !IDLE_PHASES.has(phase) || wireActive;
+  const busy = !IDLE_PHASES.has(phase) || wireActive || Boolean(batch?.running);
   const tree = useMemo(() => buildClusterTree(pillars), [pillars]);
 
   const refreshContext = useCallback(async () => {
-    if (!companyId) return null;
+    if (!companyId) {
+      contextRef.current = null;
+      setCompanyName("");
+      setSiteDomain("");
+      setPillars([]);
+      return null;
+    }
     const ctx = await loadAutomationContext(companyId);
     contextRef.current = ctx;
     setCompanyName(ctx.companyName);
+    setSiteDomain(ctx.domain || "");
     setPillars(Array.isArray(ctx.pillars) ? ctx.pillars : []);
     return ctx;
   }, [companyId]);
@@ -253,6 +280,7 @@ export default function ClusterGeneration() {
     if (!companyId) {
       setPillars([]);
       setCompanyName("");
+      setSiteDomain("");
       setContextLoading(false);
       return;
     }
@@ -718,6 +746,320 @@ export default function ClusterGeneration() {
   const handleWireActiveChange = useCallback((active) => {
     setWireActive(Boolean(active));
   }, []);
+
+  useEffect(() => {
+    if (!batch?.running) return undefined;
+    const id = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [batch?.running]);
+
+  const generateOneCluster = useCallback(
+    async (cluster, destination, onStatus) => {
+      const ctx = contextRef.current;
+      if (!ctx) throw new Error("Missing company context");
+      const say = (m) => onStatus && onStatus(m);
+
+      let planned = [];
+      let topics = [];
+
+      if (
+        cluster.status === "planned" &&
+        Array.isArray(cluster.plannedArticles) &&
+        cluster.plannedArticles.length > 0
+      ) {
+        planned = cluster.plannedArticles;
+        topics = topicsFromArticles(planned);
+        say(`Using saved plan for “${cluster.clusterKeyword}”…`);
+      } else {
+        say(`Planning topics for “${cluster.clusterKeyword}”…`);
+        const proposal = await requestClusterPlan({
+          pillarKeyword: cluster.pillarKeyword,
+          supportingKeyword: cluster.clusterKeyword,
+          abstract: ctx.abstract,
+          shortDescription: ctx.shortDescription,
+          audience: ctx.audience,
+          competitors: ctx.competitors,
+          pillars: ctx.pillars,
+        });
+        topics = topicsFromArticles(proposal.articles);
+        const savedPlan = await persistPlannedCluster({
+          companyId,
+          pillarSlug: cluster.pillarSlug,
+          pillarKeyword: cluster.pillarKeyword,
+          supportingSlug: cluster.clusterSlug,
+          supportingKeyword: cluster.clusterKeyword,
+          articles: proposal.articles,
+          clusterRationale: proposal.clusterRationale,
+        });
+        planned = savedPlan.plannedArticles;
+        if (contextRef.current) {
+          contextRef.current = {
+            ...contextRef.current,
+            pillars: savedPlan.pillars,
+          };
+        }
+      }
+
+      if (!planned.length) {
+        throwBatch(`“${cluster.clusterKeyword}” has no topics to generate.`, {
+          topics,
+          articles: [],
+        });
+      }
+
+      say(
+        `Generating ${planned.length} article${
+          planned.length === 1 ? "" : "s"
+        } for “${cluster.clusterKeyword}”…`
+      );
+      const gen = await generateClusterArticles({
+        companyId,
+        pillarKeyword: cluster.pillarKeyword,
+        supportingKeyword: cluster.clusterKeyword,
+        articles: planned,
+        withImages: true,
+        onStatus: (m) => say(m),
+      });
+      const successJobs = (gen.jobs || []).filter(
+        (job) => job.status === "done" && job.markdown
+      );
+      const drafted = articlesFromJobs(gen.jobs || [], planned);
+      if (successJobs.length === 0) {
+        throwBatch(
+          `Every article in “${cluster.clusterKeyword}” failed to generate.`,
+          { topics, articles: drafted }
+        );
+      }
+
+      say(`Saving “${cluster.clusterKeyword}”…`);
+      const saved = await saveGeneratedArticles({
+        supabase,
+        companyId,
+        pillarKeyword: cluster.pillarKeyword,
+        supportingKeyword: cluster.clusterKeyword,
+        articles: successJobs.map((job) => {
+          const article = planned[job.index] || {};
+          return {
+            type: job.type || article.type,
+            targetKeyword: article.targetKeyword || "",
+            frontmatter: job.frontmatter,
+            body: job.body,
+            whereThingsStandSources: job.whereThingsStandSources,
+            heroStoragePath: job.image?.storagePath || null,
+          };
+        }),
+      });
+      if (saved.error) {
+        throwBatch(saved.error.message || "Failed to save articles", {
+          topics,
+          articles: drafted,
+        });
+      }
+
+      say(
+        `Publishing “${cluster.clusterKeyword}” to ${destination.owner}/${destination.repo}…`
+      );
+      const result = await publishArticlesToSite(
+        successJobs.map((job) => ({
+          frontmatter: job.frontmatter,
+          body: job.body,
+          markdown: job.markdown,
+          heroStoragePath: job.image?.storagePath || null,
+          image:
+            job.image?.status === "done"
+              ? {
+                  ...(job.image.result || {}),
+                  storagePath: job.image.storagePath || null,
+                }
+              : null,
+        })),
+        {
+          companyId,
+          owner: destination.owner,
+          repo: destination.repo,
+          tokenKey: destination.tokenKey,
+          branch: DEFAULT_PUBLISH_BRANCH,
+        },
+        {}
+      );
+      const committedCount = Array.isArray(result.committed)
+        ? result.committed.length
+        : 0;
+      if (!result.ok || committedCount === 0) {
+        throwBatch(
+          `Publish did not complete for “${cluster.clusterKeyword}”`,
+          {
+            topics,
+            articles: markArticlesPublished(drafted, result),
+            committedCount,
+            merged: false,
+            branch: result.branch || "",
+          }
+        );
+      }
+
+      const now = new Date().toISOString();
+      const publishedUrl = result.pullRequestUrl || "";
+      const coverage = await updateCoveragePublished({
+        companyId,
+        pillarKeyword: cluster.pillarKeyword,
+        supportingKeyword: cluster.clusterKeyword,
+        successes: successJobs.map((job) => {
+          const article = planned[job.index] || {};
+          return {
+            targetKeyword: article.targetKeyword,
+            title: job.frontmatter?.title || job.title || article.title,
+            frontmatter: job.frontmatter,
+          };
+        }),
+        publishedUrl,
+      });
+      if (coverage.pillars?.length) {
+        setPillars(coverage.pillars);
+        if (contextRef.current) {
+          contextRef.current = {
+            ...contextRef.current,
+            pillars: coverage.pillars,
+          };
+        }
+      }
+
+      for (const job of successJobs) {
+        const article = planned[job.index] || {};
+        await syncGeneratedArticlePublished({
+          companyId,
+          pillarKeyword: cluster.pillarKeyword,
+          supportingKeyword: cluster.clusterKeyword,
+          article: {
+            slug: job.frontmatter?.slug,
+            title: job.frontmatter?.title || job.title,
+            targetKeyword:
+              article.targetKeyword || job.frontmatter?.targetKeyword,
+          },
+          publishedUrl,
+          publishedAt: now,
+        });
+      }
+
+      return {
+        committedCount,
+        topics,
+        articles: markArticlesPublished(drafted, result),
+        merged: true,
+        branch: result.branch || "",
+        publishedUrl,
+      };
+    },
+    [companyId]
+  );
+
+  const stopAllClusters = useCallback(() => {
+    stopRef.current = true;
+  }, []);
+
+  const runAllClusters = useCallback(async () => {
+    const destination = publishDestination;
+    if (!isPublishDestinationMapped(destination)) {
+      setError("Set Publish Destination in Company Data first");
+      return;
+    }
+
+    let ctx = contextRef.current;
+    try {
+      ctx = await refreshContext();
+    } catch {
+      /* use whatever context we have */
+    }
+    const todo = listRunnableClusters(ctx?.pillars || pillars);
+
+    if (todo.length === 0) {
+      setBatch({
+        running: false,
+        done: true,
+        total: 0,
+        index: 0,
+        results: [],
+        startedAt: Date.now(),
+        finishedAt: Date.now(),
+        statusMessage: "",
+      });
+      return;
+    }
+
+    stopRef.current = false;
+    setError("");
+    const results = [];
+    setBatch({
+      running: true,
+      done: false,
+      total: todo.length,
+      index: 0,
+      results,
+      startedAt: Date.now(),
+      statusMessage: "",
+    });
+
+    for (let i = 0; i < todo.length; i += 1) {
+      if (stopRef.current) break;
+      const item = todo[i];
+      setBatch((b) => (b ? { ...b, index: i, statusMessage: "" } : b));
+      try {
+        const r = await generateOneCluster(item, destination, (m) =>
+          setBatch((b) => (b ? { ...b, statusMessage: m } : b))
+        );
+        results.push({
+          keyword: item.clusterKeyword,
+          parentKeyword: item.pillarKeyword,
+          ok: true,
+          committed: r.committedCount,
+          topics: r.topics || [],
+          articles: r.articles || [],
+          merged: Boolean(r.merged),
+          branch: r.branch || "",
+          publishedUrl: r.publishedUrl || "",
+        });
+      } catch (err) {
+        results.push({
+          keyword: item.clusterKeyword,
+          parentKeyword: item.pillarKeyword,
+          ok: false,
+          error: err?.message || "Failed",
+          ...(err?.batchResult || {}),
+        });
+      }
+      setBatch((b) => (b ? { ...b, results: [...results] } : b));
+    }
+
+    setBatch((b) =>
+      b
+        ? {
+            ...b,
+            running: false,
+            done: true,
+            index: todo.length,
+            finishedAt: Date.now(),
+            statusMessage: "",
+            stopped: stopRef.current,
+          }
+        : b
+    );
+  }, [publishDestination, pillars, refreshContext, generateOneCluster]);
+
+  const batchElapsed = batch
+    ? Math.floor(
+        (((batch.running ? nowTick : batch.finishedAt || nowTick) -
+          batch.startedAt) ||
+          0) / 1000
+      )
+    : 0;
+  const batchSucceeded = batch
+    ? batch.results.filter((r) => r.ok).length
+    : 0;
+  const runnableClusters = useMemo(
+    () => listRunnableClusters(pillars),
+    [pillars]
+  );
+
   const progressPct =
     jobs.length > 0 ? Math.round((currentStep / jobs.length) * 100) : 0;
   const currentJob =
@@ -753,6 +1095,79 @@ export default function ClusterGeneration() {
           internal links. Confirm or Decline at each step; the countdown
           auto-confirms after 10 seconds.
         </p>
+      </div>
+
+      <div className="rounded-lg border border-border bg-card px-4 py-4 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-medium">Generate all clusters</h2>
+            <p className="text-xs text-muted-foreground">
+              One click plans, generates, and publishes articles for every
+              supporting cluster that isn’t done yet ({runnableClusters.length}{" "}
+              to do). Completed clusters are skipped. Keep this tab open until
+              it finishes.
+            </p>
+          </div>
+          {batch?.running ? (
+            <Button type="button" size="sm" variant="destructive" onClick={stopAllClusters}>
+              <X className="h-4 w-4 mr-2" /> Stop
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              onClick={runAllClusters}
+              disabled={busy || runnableClusters.length === 0}
+            >
+              <Workflow className="h-4 w-4 mr-2" /> Generate &amp; publish all (
+              {runnableClusters.length})
+            </Button>
+          )}
+        </div>
+
+        {batch && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+              {batch.running && <Loader2 className="h-4 w-4 animate-spin" />}
+              <span>
+                {batch.running
+                  ? `Working ${Math.min(batch.index + 1, batch.total)} of ${batch.total}`
+                  : batch.total === 0
+                    ? "Nothing to do — every cluster already has articles."
+                    : `${batch.stopped ? "Stopped" : "Done"} — ${batchSucceeded}/${batch.total} succeeded`}
+              </span>
+              <span className="font-mono ml-auto">{formatElapsed(batchElapsed)}</span>
+            </div>
+            {batch.running && batch.statusMessage && (
+              <div className="text-xs text-muted-foreground">{batch.statusMessage}</div>
+            )}
+            {batch.running && batch.results.length > 0 && (
+              <ul className="text-xs space-y-1">
+                {batch.results.map((r, idx) => (
+                  <li
+                    key={`${r.keyword}-${idx}`}
+                    className={r.ok ? "text-emerald-600" : "text-destructive"}
+                  >
+                    {r.ok ? "✓" : "✗"} {r.keyword}
+                    {r.ok
+                      ? ` — ${r.articles?.length || r.committed || 0} article${
+                          (r.articles?.length || r.committed || 0) === 1 ? "" : "s"
+                        } published`
+                      : ` — ${r.error}`}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {batch.done && (
+              <BatchPublishReport
+                groupNoun="cluster"
+                batch={batch}
+                destination={publishDestination}
+                siteDomain={siteDomain}
+              />
+            )}
+          </div>
+        )}
       </div>
 
       <div className="rounded-lg border border-border bg-card px-4 py-4 space-y-4">

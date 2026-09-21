@@ -727,7 +727,7 @@ export default function SiteBuildFlow() {
 
   return (
     <div className="flex min-h-[calc(100vh-3rem)] flex-col">
-      <div className="sticky top-0 z-20 -mx-8 -mt-6 border-b border-border bg-background/95 px-8 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+      <div className="sticky top-0 z-20 border-b border-border bg-background/95 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-xs text-foreground mb-0.5">Site Build Flow</h1>

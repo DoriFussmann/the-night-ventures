@@ -6,6 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import ConfirmGate from "./articlesAutomation/ConfirmGate";
 import GenerationReport from "./articlesAutomation/GenerationReport";
+import BatchPublishReport, {
+  articlesFromJobs,
+  formatElapsed,
+  markArticlesPublished,
+  topicsFromArticles,
+} from "./articlesAutomation/BatchPublishReport";
 import {
   loadAutomationContext,
   persistPlannedCluster,
@@ -48,11 +54,10 @@ const IDLE_PHASES = new Set(["idle", "done", "declined", "error"]);
 
 const PILLAR_ARTICLE_TYPE_COUNTS = { comprehensive: 1 };
 
-function formatElapsed(totalSeconds) {
-  const s = Math.max(0, Math.floor(totalSeconds || 0));
-  const m = Math.floor(s / 60);
-  const r = s % 60;
-  return `${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
+function throwBatch(message, extra) {
+  const err = new Error(message);
+  if (extra && typeof extra === "object") err.batchResult = extra;
+  throw err;
 }
 
 function pillarArticleStatus(pillarArticle) {
@@ -294,6 +299,7 @@ export default function PillarAutomation() {
   const [statusMessage, setStatusMessage] = useState("");
   const [error, setError] = useState("");
   const [companyName, setCompanyName] = useState("");
+  const [siteDomain, setSiteDomain] = useState("");
   const [pillars, setPillars] = useState([]);
   const [contextLoading, setContextLoading] = useState(false);
   const [picked, setPicked] = useState(null);
@@ -329,12 +335,14 @@ export default function PillarAutomation() {
     if (!companyId) {
       contextRef.current = null;
       setCompanyName("");
+      setSiteDomain("");
       setPillars([]);
       return null;
     }
     const ctx = await loadAutomationContext(companyId);
     contextRef.current = ctx;
     setCompanyName(ctx.companyName);
+    setSiteDomain(ctx.domain || "");
     setPillars(Array.isArray(ctx.pillars) ? ctx.pillars : []);
     return ctx;
   }, [companyId]);
@@ -356,6 +364,7 @@ export default function PillarAutomation() {
         if (cancelled) return;
         contextRef.current = ctx;
         setCompanyName(ctx.companyName);
+        setSiteDomain(ctx.domain || "");
         setPillars(Array.isArray(ctx.pillars) ? ctx.pillars : []);
         setPublishDestination(destination);
       })
@@ -812,6 +821,7 @@ export default function PillarAutomation() {
       });
       const article = proposal?.articles?.[0];
       if (!article) throw new Error("No pillar article in the plan");
+      const topics = topicsFromArticles(proposal.articles);
 
       // 2) Persist planned (cluster if matching + pillar article)
       const matchingSupporting = (pillar.pillar?.supporting || []).find((sup) =>
@@ -853,8 +863,12 @@ export default function PillarAutomation() {
       const successJobs = (gen.jobs || []).filter(
         (job) => job.status === "done" && job.markdown
       );
+      const drafted = articlesFromJobs(gen.jobs || [], planned);
       if (successJobs.length === 0) {
-        throw new Error("The pillar article failed to generate.");
+        throwBatch("The pillar article failed to generate.", {
+          topics,
+          articles: drafted,
+        });
       }
 
       // 4) Save to library
@@ -876,7 +890,12 @@ export default function PillarAutomation() {
           };
         }),
       });
-      if (saved.error) throw saved.error;
+      if (saved.error) {
+        throwBatch(saved.error.message || "Failed to save articles", {
+          topics,
+          articles: drafted,
+        });
+      }
 
       // 5) Publish to the destination site
       say(`Publishing “${pillar.pillarKeyword}” to ${destination.owner}/${destination.repo}…`);
@@ -907,7 +926,13 @@ export default function PillarAutomation() {
         ? result.committed.length
         : 0;
       if (!result.ok || committedCount === 0) {
-        throw new Error(`Publish did not complete for “${pillar.pillarKeyword}”`);
+        throwBatch(`Publish did not complete for “${pillar.pillarKeyword}”`, {
+          topics,
+          articles: markArticlesPublished(drafted, result),
+          committedCount,
+          merged: false,
+          branch: result.branch || "",
+        });
       }
 
       // 6) Mark published + refresh context so the next iteration sees it done
@@ -929,7 +954,14 @@ export default function PillarAutomation() {
       if (contextRef.current) {
         contextRef.current = { ...contextRef.current, pillars: nextPillars };
       }
-      return { committedCount };
+      return {
+        committedCount,
+        topics,
+        articles: markArticlesPublished(drafted, result),
+        merged: true,
+        branch: result.branch || "",
+        publishedUrl: result.pullRequestUrl || "",
+      };
     },
     [companyId]
   );
@@ -998,12 +1030,22 @@ export default function PillarAutomation() {
         const r = await generateOnePillar(item, destination, (m) =>
           setBatch((b) => (b ? { ...b, statusMessage: m } : b))
         );
-        results.push({ keyword: item.pillarKeyword, ok: true, committed: r.committedCount });
+        results.push({
+          keyword: item.pillarKeyword,
+          ok: true,
+          committed: r.committedCount,
+          topics: r.topics || [],
+          articles: r.articles || [],
+          merged: Boolean(r.merged),
+          branch: r.branch || "",
+          publishedUrl: r.publishedUrl || "",
+        });
       } catch (err) {
         results.push({
           keyword: item.pillarKeyword,
           ok: false,
           error: err?.message || "Failed",
+          ...(err?.batchResult || {}),
         });
       }
       setBatch((b) => (b ? { ...b, results: [...results] } : b));
@@ -1069,7 +1111,7 @@ export default function PillarAutomation() {
               type="button"
               size="sm"
               onClick={runAllPillars}
-              disabled={busy || runnablePillars.length === 0}
+              disabled={busy || Boolean(batch?.running) || runnablePillars.length === 0}
             >
               <Workflow className="h-4 w-4 mr-2" /> Generate &amp; publish all (
               {runnablePillars.length})
@@ -1093,7 +1135,7 @@ export default function PillarAutomation() {
             {batch.running && batch.statusMessage && (
               <div className="text-xs text-muted-foreground">{batch.statusMessage}</div>
             )}
-            {batch.results.length > 0 && (
+            {batch.running && batch.results.length > 0 && (
               <ul className="text-xs space-y-1">
                 {batch.results.map((r, idx) => (
                   <li
@@ -1101,10 +1143,22 @@ export default function PillarAutomation() {
                     className={r.ok ? "text-emerald-600" : "text-destructive"}
                   >
                     {r.ok ? "✓" : "✗"} {r.keyword}
-                    {r.ok ? "" : ` — ${r.error}`}
+                    {r.ok
+                      ? ` — ${r.articles?.length || r.committed || 0} article${
+                          (r.articles?.length || r.committed || 0) === 1 ? "" : "s"
+                        } published`
+                      : ` — ${r.error}`}
                   </li>
                 ))}
               </ul>
+            )}
+            {batch.done && (
+              <BatchPublishReport
+                groupNoun="pillar"
+                batch={batch}
+                destination={publishDestination}
+                siteDomain={siteDomain}
+              />
             )}
           </div>
         )}
@@ -1190,7 +1244,7 @@ export default function PillarAutomation() {
                     type="button"
                     size="sm"
                     variant={selected ? "default" : "outline"}
-                    disabled={published || busy || !companyId}
+                    disabled={published || busy || Boolean(batch?.running) || !companyId}
                     onClick={() => startFlow(pillar)}
                   >
                     {published && <Check className="h-3.5 w-3.5 mr-1.5" />}

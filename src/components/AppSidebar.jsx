@@ -19,6 +19,7 @@ import {
   Map,
   GitBranch,
   ChevronDown,
+  PlugZap,
 } from "lucide-react";
 
 const STATUS_STYLES = {
@@ -171,6 +172,7 @@ export default function AppSidebar({ user }) {
   const adminItems = [
     { label: "System Map", path: `/company/${activeCompanyId}/system-map`, icon: Map },
     { label: "Core Version", path: `/company/${activeCompanyId}/core-version`, icon: GitBranch },
+    { label: "Integrations", path: `/company/${activeCompanyId}/integrations`, icon: PlugZap },
   ];
 
   useEffect(() => {

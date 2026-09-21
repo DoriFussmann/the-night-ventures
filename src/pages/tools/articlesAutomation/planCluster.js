@@ -94,7 +94,7 @@ export async function loadAutomationContext(companyId) {
     supabase.from("companies").select("name").eq("id", companyId).maybeSingle(),
     supabase
       .from("company_profiles")
-      .select("abstract, short_description, competitors, target_audience")
+      .select("abstract, short_description, competitors, target_audience, domain")
       .eq("company_id", companyId)
       .maybeSingle(),
     supabase
@@ -123,6 +123,7 @@ export async function loadAutomationContext(companyId) {
     abstract: profileResult.data?.abstract || "",
     shortDescription: profileResult.data?.short_description || "",
     audience: String(profileResult.data?.target_audience || "").trim(),
+    domain: String(profileResult.data?.domain || "").trim(),
     competitors: normalizeCompetitors(profileResult.data?.competitors),
     pillars: Array.isArray(coverageResult.data?.pillars)
       ? coverageResult.data.pillars

@@ -98,6 +98,14 @@ export function classifySupportingCluster(pillar, supporting) {
   };
 }
 
+export function listRunnableClusters(pillars) {
+  return buildClusterTree(pillars)
+    .flatMap((pillar) => pillar.clusters)
+    .filter(
+      (cluster) => cluster.status === "available" || cluster.status === "planned"
+    );
+}
+
 export function buildClusterTree(pillars) {
   return (Array.isArray(pillars) ? pillars : [])
     .map((pillar) => {

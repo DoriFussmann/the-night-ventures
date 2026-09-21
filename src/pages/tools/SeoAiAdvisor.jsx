@@ -420,7 +420,7 @@ export default function SeoAiAdvisor() {
     : []
 
   return (
-    <div className="-mx-8 -my-6 flex h-screen min-h-[560px] flex-col">
+    <div className="flex h-[calc(100vh-3rem)] min-h-[560px] flex-col">
       <header className="flex items-center justify-between border-b border-border px-4 py-3">
         <div>
           <h1 className="flex items-center gap-2 font-display text-lg tracking-tight">
@@ -503,7 +503,7 @@ export default function SeoAiAdvisor() {
                 <Loader2 className="h-4 w-4 animate-spin" /> Loading session…
               </div>
             ) : (
-              <div className="mx-auto flex max-w-3xl flex-col gap-4">
+              <div className="flex flex-col gap-4">
                 {sessionTitle && (
                   <p className="text-center text-xs text-muted-foreground">
                     {sessionTitle}
@@ -548,34 +548,32 @@ export default function SeoAiAdvisor() {
           </ScrollArea>
 
           <div className="border-t border-border px-4 py-3">
-            <div className="mx-auto max-w-3xl">
-              <ToolStatusBar activeTools={activeTools} />
-              <div className="flex items-end gap-2">
-                <Textarea
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask about pillars, competitors, traffic, or technical SEO…"
-                  className="min-h-[72px] flex-1 resize-none text-sm"
-                  disabled={sending}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault()
-                      handleSend()
-                    }
-                  }}
-                />
-                <Button
-                  onClick={() => handleSend()}
-                  disabled={sending || !input.trim()}
-                  className="h-[72px] px-4"
-                >
-                  {sending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
+            <ToolStatusBar activeTools={activeTools} />
+            <div className="flex items-end gap-2">
+              <Textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Ask about pillars, competitors, traffic, or technical SEO…"
+                className="min-h-[72px] flex-1 resize-none text-sm"
+                disabled={sending}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    handleSend()
+                  }
+                }}
+              />
+              <Button
+                onClick={() => handleSend()}
+                disabled={sending || !input.trim()}
+                className="h-[72px] px-4"
+              >
+                {sending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+              </Button>
             </div>
           </div>
         </section>
