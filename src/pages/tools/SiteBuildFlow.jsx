@@ -810,47 +810,51 @@ export default function SiteBuildFlow() {
             const doneCount = stageItems.filter((i) => i.status === "done").length;
             const selected = activeStageKey === stage.stage_key;
 
+            const selectStage = () => {
+              setActiveStageKey(stage.stage_key);
+              setExpandedItemKey(null);
+            };
+
             return (
               <div
                 key={stage.stage_key}
+                role="button"
+                tabIndex={0}
+                onClick={selectStage}
+                onKeyDown={(event) => {
+                  if (event.target !== event.currentTarget) return;
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    selectStage();
+                  }
+                }}
                 className={cn(
-                  "w-full rounded-[14px] border border-border bg-card px-4 py-3 text-left transition-colors",
+                  "w-full cursor-pointer rounded-[14px] border border-border bg-card px-4 py-3 text-left transition-colors",
                   selected
                     ? "bg-accent"
                     : "hover:bg-accent/40"
                 )}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveStageKey(stage.stage_key);
-                      setExpandedItemKey(null);
-                    }}
-                    className="min-w-0 flex-1 text-left text-sm leading-snug text-foreground"
-                  >
+                  <p className="min-w-0 flex-1 text-sm leading-snug text-foreground">
                     {stage.name}
-                  </button>
+                  </p>
                   <StatusBadge
                     status={status}
                     onCycle={() => cycleStageStatus(stage.stage_key)}
                   />
                 </div>
                 <div className="mt-1.5 flex items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveStageKey(stage.stage_key);
-                      setExpandedItemKey(null);
-                    }}
-                    className="text-left text-[11px] text-muted-foreground"
-                  >
+                  <p className="text-[11px] text-muted-foreground">
                     ({doneCount} of {stageItems.length} done)
-                  </button>
+                  </p>
                   {stageItems.length > 0 && doneCount < stageItems.length && (
                     <button
                       type="button"
-                      onClick={() => markStageAllDone(stage.stage_key)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        markStageAllDone(stage.stage_key);
+                      }}
                       className="shrink-0 text-[11px] font-medium text-foreground underline-offset-2 hover:underline"
                     >
                       Mark All Done
