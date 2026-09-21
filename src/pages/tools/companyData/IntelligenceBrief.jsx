@@ -24,6 +24,32 @@ function ProgressMark({ filled, total }) {
   );
 }
 
+function SectionButton({ number, title, filled, total, open, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-expanded={open}
+      className={`flex min-w-0 flex-col gap-1 rounded-lg border border-border px-3 py-2.5 text-left transition-colors hover:bg-accent/40 ${
+        open ? "bg-accent" : "bg-card"
+      }`}
+    >
+      <span className="flex items-center justify-between gap-2">
+        <span className="text-[11px] tabular-nums text-muted-foreground">{number}</span>
+        <span className="flex shrink-0 items-center gap-1.5">
+          <ProgressMark filled={filled} total={total} />
+          <ChevronDown
+            className={`h-4 w-4 text-muted-foreground transition-transform ${
+              open ? "rotate-180" : ""
+            }`}
+          />
+        </span>
+      </span>
+      <span className="text-sm font-medium leading-snug text-foreground">{title}</span>
+    </button>
+  );
+}
+
 function FieldLabel({ field, filled }) {
   return (
     <div className="mb-1.5 flex items-start justify-between gap-3">
@@ -82,38 +108,50 @@ export default function IntelligenceBrief({
   const ctx = { fields, companyName };
   const basic = basicProgress(ctx);
   const identityOpen = openGroups.identity === true;
+  const sectionButtons = [
+    {
+      id: "identity",
+      number: "00",
+      title: "Identity",
+      filled: basic.filled,
+      total: basic.total,
+    },
+    ...INTELLIGENCE_GROUPS.map((group) => {
+      const progress = groupProgress(group, ctx);
+      return {
+        id: group.id,
+        number: group.number,
+        title: group.title,
+        filled: progress.filled,
+        total: progress.total,
+      };
+    }),
+  ];
 
   return (
-    <div className="space-y-1.5">
-      <Collapsible
-        open={identityOpen}
-        onOpenChange={(next) => onToggleGroup("identity", next)}
-        className="rounded-lg border border-border"
-      >
-        <div
-          className={`flex items-center justify-between gap-3 px-4 py-2.5 ${
-            identityOpen ? "border-b border-border" : ""
-          }`}
-        >
-          <CollapsibleTrigger asChild>
-            <button
-              type="button"
-              className="flex min-w-0 flex-1 items-center gap-3 text-left"
-            >
-              <span className="text-[11px] tabular-nums text-muted-foreground">
-                00
-              </span>
-              <h2 className="text-sm font-medium text-foreground">Identity</h2>
-              <ChevronDown
-                className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
-                  identityOpen ? "rotate-180" : ""
-                }`}
-              />
-            </button>
-          </CollapsibleTrigger>
-          <ProgressMark filled={basic.filled} total={basic.total} />
-        </div>
-        <CollapsibleContent>
+    <div className="space-y-3">
+      <div className="grid grid-cols-4 gap-2">
+        {sectionButtons.map((section) => (
+          <SectionButton
+            key={section.id}
+            number={section.number}
+            title={section.title}
+            filled={section.filled}
+            total={section.total}
+            open={openGroups[section.id] === true}
+            onClick={() => onToggleGroup(section.id, openGroups[section.id] !== true)}
+          />
+        ))}
+      </div>
+
+      {identityOpen ? (
+        <div className="rounded-lg border border-border">
+          <div className="border-b border-border px-4 py-2.5">
+            <h2 className="text-sm font-medium text-foreground">
+              <span className="mr-3 text-[11px] tabular-nums text-muted-foreground">00</span>
+              Identity
+            </h2>
+          </div>
           <div className="grid grid-cols-1 gap-4 px-4 py-4 sm:grid-cols-2">
             {VISIBLE_BASIC_FIELDS.map((field) => {
               const filled = intelligenceFieldFilled(field, ctx);
@@ -188,44 +226,23 @@ export default function IntelligenceBrief({
               );
             })}
           </div>
-        </CollapsibleContent>
-      </Collapsible>
+        </div>
+      ) : null}
 
       {INTELLIGENCE_GROUPS.map((group) => {
-        const progress = groupProgress(group, ctx);
         const open = openGroups[group.id] === true;
+        if (!open) return null;
         return (
-          <Collapsible
-            key={group.id}
-            open={open}
-            onOpenChange={(next) => onToggleGroup(group.id, next)}
-            className="rounded-lg border border-border"
-          >
-            <div
-              className={`flex items-center justify-between gap-3 px-4 py-2.5 ${
-                open ? "border-b border-border" : ""
-              }`}
-            >
-              <CollapsibleTrigger asChild>
-                <button
-                  type="button"
-                  className="flex min-w-0 flex-1 items-center gap-3 text-left"
-                >
-                  <span className="text-[11px] tabular-nums text-muted-foreground">
-                    {group.number}
-                  </span>
-                  <h2 className="text-sm font-medium text-foreground">{group.title}</h2>
-                  <ChevronDown
-                    className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
-                      open ? "rotate-180" : ""
-                    }`}
-                  />
-                </button>
-              </CollapsibleTrigger>
-              <ProgressMark filled={progress.filled} total={progress.total} />
+          <div key={group.id} className="rounded-lg border border-border">
+            <div className="border-b border-border px-4 py-2.5">
+              <h2 className="text-sm font-medium text-foreground">
+                <span className="mr-3 text-[11px] tabular-nums text-muted-foreground">
+                  {group.number}
+                </span>
+                {group.title}
+              </h2>
             </div>
-            <CollapsibleContent>
-              <div className="space-y-6 px-4 py-5">
+            <div className="space-y-6 px-4 py-5">
                 {group.fields.map((field) => {
                   const filled = intelligenceFieldFilled(field, ctx);
                   if (field.kind === "services") {
@@ -300,9 +317,8 @@ export default function IntelligenceBrief({
                     </div>
                   );
                 })}
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
+            </div>
+          </div>
         );
       })}
 
