@@ -10,12 +10,15 @@ import {
   buildSystemPrompt,
   messagesFromRows,
 } from '../lib/seo-advisor/context.js'
+import { randomUUID } from 'node:crypto'
 import {
   TOOL_DEFINITIONS,
   executeTool,
   providerLabelForTool,
   MAX_TOOL_CALLS_PER_TURN,
   healthSnapshot,
+  EST_CREDITS,
+  estCreditsForPlan,
 } from '../lib/seo-advisor/tools.js'
 
 const MODEL = 'claude-sonnet-4-6'
@@ -114,6 +117,127 @@ async function maybeTitleSession(anthropic, supabase, session, userText, assista
   }
 }
 
+async function persistAndStreamToolResult({
+  supabase,
+  sessionId,
+  toolUse,
+  result,
+  closed,
+  res,
+}) {
+  const provider = providerLabelForTool(toolUse.name)
+  if (!closed && provider) {
+    sseWrite(res, 'tool_end', {
+      id: toolUse.id,
+      name: toolUse.name,
+      provider,
+      ok: result?.available !== false && !(result?.saved === false),
+    })
+  }
+  if (
+    !closed &&
+    toolUse.name !== 'save_insight' &&
+    toolUse.name !== 'propose_data_pull' &&
+    result
+  ) {
+    sseWrite(res, 'tool_data', {
+      id: toolUse.id,
+      name: toolUse.name,
+      provider,
+      result,
+    })
+  }
+  if (
+    !closed &&
+    result?.available !== false &&
+    EST_CREDITS[toolUse.name]
+  ) {
+    sseWrite(res, 'spend', {
+      tool: toolUse.name,
+      estCredits: EST_CREDITS[toolUse.name],
+    })
+  }
+
+  const stored = {
+    type: 'tool_result',
+    tool_use_id: toolUse.id,
+    name: toolUse.name,
+    content: result,
+  }
+  await insertMessage(supabase, sessionId, 'tool', stored)
+  return {
+    type: 'tool_result',
+    tool_use_id: toolUse.id,
+    content: JSON.stringify(result),
+  }
+}
+
+async function executeApprovedPlan({
+  supabase,
+  sessionId,
+  plan,
+  toolContext,
+  closed,
+  res,
+}) {
+  const steps = (Array.isArray(plan) ? plan : [])
+    .map((step) => ({
+      id: randomUUID(),
+      name: String(step?.tool || '').trim(),
+      input: step?.input && typeof step.input === 'object' ? step.input : {},
+    }))
+    .filter((step) => step.name && step.name !== 'propose_data_pull')
+    .slice(0, MAX_TOOL_CALLS_PER_TURN)
+
+  if (steps.length === 0) {
+    return { toolCalls: 0, assistantBlocks: [], toolResults: [] }
+  }
+
+  const assistantBlocks = steps.map((step) => ({
+    type: 'tool_use',
+    id: step.id,
+    name: step.name,
+    input: step.input,
+  }))
+  await insertMessage(supabase, sessionId, 'assistant', assistantBlocks)
+
+  const toolResults = []
+  for (const step of steps) {
+    const provider = providerLabelForTool(step.name)
+    if (!closed && provider) {
+      sseWrite(res, 'tool_start', {
+        id: step.id,
+        name: step.name,
+        provider,
+      })
+    }
+    let result
+    try {
+      result = await executeTool(step.name, step.input, toolContext)
+    } catch (err) {
+      result = {
+        available: false,
+        reason: err?.message || 'Tool execution failed',
+      }
+    }
+    const packed = await persistAndStreamToolResult({
+      supabase,
+      sessionId,
+      toolUse: step,
+      result,
+      closed,
+      res,
+    })
+    toolResults.push(packed)
+  }
+
+  return {
+    toolCalls: steps.length,
+    assistantBlocks,
+    toolResults,
+  }
+}
+
 export default async function handler(req, res) {
   if (handleOptions(req, res, 'POST, OPTIONS')) return
 
@@ -133,9 +257,14 @@ export default async function handler(req, res) {
   const companyId = String(body.companyId || '').trim()
   const userMessage = String(body.message || '').trim()
   const sessionIdIn = body.sessionId ? String(body.sessionId).trim() : null
+  const approval =
+    body.approval && typeof body.approval === 'object' ? body.approval : null
+  const decision = approval ? String(approval.decision || '').trim() : ''
 
   if (!companyId) return json(res, 400, { error: 'companyId is required' })
-  if (!userMessage) return json(res, 400, { error: 'message is required' })
+  if (!userMessage && decision !== 'approve' && decision !== 'decline') {
+    return json(res, 400, { error: 'message is required' })
+  }
 
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
@@ -160,16 +289,28 @@ export default async function handler(req, res) {
     const session = await ensureSession(supabase, companyId, sessionIdIn)
     sseWrite(res, 'session', { id: session.id, title: session.title })
 
-    const historyRows = await loadHistory(supabase, session.id)
-    await insertMessage(supabase, session.id, 'user', { type: 'text', text: userMessage })
+    const approvalNote =
+      decision === 'approve'
+        ? 'User approved the data pull.'
+        : decision === 'decline'
+          ? 'User declined the data pull'
+          : ''
+    const storedUserText = userMessage || approvalNote
+    if (storedUserText) {
+      await insertMessage(supabase, session.id, 'user', {
+        type: 'text',
+        text: storedUserText,
+      })
+    }
 
+    const historyRows = await loadHistory(supabase, session.id)
     const system = buildSystemPrompt(ctx)
     let messages = messagesFromRows(historyRows)
-    messages.push({ role: 'user', content: userMessage })
 
     let toolCallsThisTurn = 0
     let finalAssistantBlocks = []
     let streamedText = ''
+    let awaitingApproval = false
 
     const toolContext = {
       supabase,
@@ -180,7 +321,23 @@ export default async function handler(req, res) {
       },
     }
 
-    while (!closed) {
+    if (decision === 'approve') {
+      const ran = await executeApprovedPlan({
+        supabase,
+        sessionId: session.id,
+        plan: approval.plan,
+        toolContext,
+        closed,
+        res,
+      })
+      toolCallsThisTurn += ran.toolCalls
+      if (ran.assistantBlocks.length) {
+        messages.push({ role: 'assistant', content: ran.assistantBlocks })
+        messages.push({ role: 'user', content: ran.toolResults })
+      }
+    }
+
+    while (!closed && !awaitingApproval) {
       const stream = anthropic.messages.stream({
         model: MODEL,
         max_tokens: MAX_TOKENS,
@@ -223,6 +380,45 @@ export default async function handler(req, res) {
       }
 
       const remaining = Math.max(0, MAX_TOOL_CALLS_PER_TURN - toolCallsThisTurn)
+      const proposal = toolUses.find((t) => t.name === 'propose_data_pull')
+      if (proposal) {
+        const requestId = randomUUID()
+        const input = proposal.input && typeof proposal.input === 'object' ? proposal.input : {}
+        const plan = Array.isArray(input.plan) ? input.plan : []
+        if (!closed) {
+          sseWrite(res, 'data_request', {
+            requestId,
+            rationale: String(input.rationale || ''),
+            recommended_provider: String(input.recommended_provider || 'DataForSEO'),
+            summary: String(input.summary || ''),
+            plan,
+            estCredits: estCreditsForPlan(plan),
+          })
+        }
+        const result = { status: 'awaiting_approval', requestId }
+        await insertMessage(supabase, session.id, 'tool', {
+          type: 'tool_result',
+          tool_use_id: proposal.id,
+          name: proposal.name,
+          content: result,
+        })
+        const skippedPaid = toolUses.filter((t) => t.id !== proposal.id)
+        for (const toolUse of skippedPaid) {
+          const skipped = {
+            available: false,
+            reason: 'Deferred until the user approves the data pull',
+          }
+          await insertMessage(supabase, session.id, 'tool', {
+            type: 'tool_result',
+            tool_use_id: toolUse.id,
+            name: toolUse.name,
+            content: skipped,
+          })
+        }
+        awaitingApproval = true
+        break
+      }
+
       const toRun = toolUses.slice(0, remaining)
       const skipped = toolUses.slice(remaining)
       const toolResults = []
@@ -253,6 +449,17 @@ export default async function handler(req, res) {
             name: toolUse.name,
             provider,
             ok: result?.available !== false && !(result?.saved === false),
+          })
+        }
+
+        if (
+          !closed &&
+          result?.available !== false &&
+          EST_CREDITS[toolUse.name]
+        ) {
+          sseWrite(res, 'spend', {
+            tool: toolUse.name,
+            estCredits: EST_CREDITS[toolUse.name],
           })
         }
 
@@ -320,7 +527,7 @@ export default async function handler(req, res) {
       anthropic,
       supabase,
       session,
-      userMessage,
+      storedUserText || userMessage,
       assistantText
     )
     if (title && !closed) {

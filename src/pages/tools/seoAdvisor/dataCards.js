@@ -262,6 +262,45 @@ export function rowsToCsv(columns, rows) {
   return `${header}\n${body}`
 }
 
+export function parseFormattedNumber(value) {
+  if (value == null || value === '' || value === '—') return null
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  const cleaned = String(value).replace(/[^0-9.-]/g, '')
+  if (!cleaned) return null
+  const n = Number(cleaned)
+  return Number.isFinite(n) ? n : null
+}
+
+export function shortlistItemFromRow(card, row) {
+  if (!row) return null
+  const keyword = String(row.keyword || row.term || '').trim()
+  if (!keyword || keyword === '—') return null
+  const search_volume = parseFormattedNumber(
+    row.searchVolume ?? row.search_volume ?? row.volume
+  )
+  let difficulty = parseFormattedNumber(
+    row.keywordDifficulty ?? row.difficulty
+  )
+  if (difficulty == null) {
+    const competitionIndex = parseFormattedNumber(row.competitionIndex)
+    if (competitionIndex != null) difficulty = competitionIndex
+    else {
+      const competition = parseFormattedNumber(row.competition)
+      if (competition != null) {
+        difficulty = competition <= 1 ? Math.round(competition * 100) : competition
+      }
+    }
+  }
+  const intent = row.intent ? String(row.intent) : undefined
+  return {
+    keyword,
+    search_volume,
+    difficulty,
+    intent,
+    source: card?.provider || undefined,
+  }
+}
+
 export function humanizeColumn(key) {
   return String(key)
     .replace(/_/g, ' ')

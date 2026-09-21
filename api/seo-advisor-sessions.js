@@ -7,7 +7,7 @@ import {
 import { healthSnapshot } from '../lib/seo-advisor/tools.js'
 
 export default async function handler(req, res) {
-  if (handleOptions(req, res, 'GET, POST, DELETE, OPTIONS')) return
+  if (handleOptions(req, res, 'GET, POST, PATCH, DELETE, OPTIONS')) return
 
   let auth
   try {
@@ -26,13 +26,51 @@ export default async function handler(req, res) {
 
       if (!companyId) return json(res, 400, { error: 'companyId is required' })
 
+      if (url.searchParams.get('composer') === '1') {
+        const [profileRes, industriesRes] = await Promise.all([
+          supabase
+            .from('company_profiles')
+            .select(
+              'domain, product_name, target_audience, location_markets, core_keywords, supporting_keywords, competitors, growth_priorities, marketing_objectives'
+            )
+            .eq('company_id', companyId)
+            .maybeSingle(),
+          supabase
+            .from('company_industries')
+            .select('industry_id, industries(name)')
+            .eq('company_id', companyId),
+        ])
+        if (profileRes.error) throw profileRes.error
+        if (industriesRes.error) throw industriesRes.error
+        const industries = (industriesRes.data || [])
+          .map((row) => row.industries?.name)
+          .filter(Boolean)
+        return json(res, 200, {
+          ...(profileRes.data || {}),
+          industries,
+        })
+      }
+
       if (sessionId) {
-        const { data: session, error: sessionError } = await supabase
+        let session
+        const first = await supabase
           .from('chat_sessions')
-          .select('id, company_id, title, created_at, updated_at')
+          .select('id, company_id, title, created_at, updated_at, shortlist')
           .eq('id', sessionId)
           .maybeSingle()
-        if (sessionError) throw sessionError
+        if (first.error && /shortlist/i.test(first.error.message || '')) {
+          const retry = await supabase
+            .from('chat_sessions')
+            .select('id, company_id, title, created_at, updated_at')
+            .eq('id', sessionId)
+            .maybeSingle()
+          if (retry.error) throw retry.error
+          session = retry.data
+        } else if (first.error) {
+          throw first.error
+        } else {
+          session = first.data
+        }
         if (!session || session.company_id !== companyId) {
           return json(res, 404, { error: 'Session not found' })
         }
@@ -95,6 +133,38 @@ export default async function handler(req, res) {
         .single()
       if (error) throw error
 
+      return json(res, 200, { session: data })
+    }
+
+    if (req.method === 'PATCH') {
+      const body = parseBody(req)
+      const companyId = String(body.companyId || '').trim()
+      const sessionId = String(body.sessionId || '').trim()
+      if (!companyId || !sessionId) {
+        return json(res, 400, { error: 'companyId and sessionId are required' })
+      }
+
+      const { data: session, error: sessionError } = await supabase
+        .from('chat_sessions')
+        .select('id, company_id')
+        .eq('id', sessionId)
+        .maybeSingle()
+      if (sessionError) throw sessionError
+      if (!session || session.company_id !== companyId) {
+        return json(res, 404, { error: 'Session not found' })
+      }
+
+      const shortlist = Array.isArray(body.shortlist) ? body.shortlist : []
+      const { data, error } = await supabase
+        .from('chat_sessions')
+        .update({
+          shortlist,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', sessionId)
+        .select('id, company_id, title, created_at, updated_at, shortlist')
+        .single()
+      if (error) throw error
       return json(res, 200, { session: data })
     }
 
