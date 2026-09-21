@@ -27,11 +27,12 @@ export function nextStatus(current) {
 
 export const STAGES = [
   { stage_key: "code-setup", name: "Code Setup", order_index: 0 },
-  { stage_key: "deployment", name: "Deployment", order_index: 1 },
-  { stage_key: "site-activation", name: "Site Activation", order_index: 2 },
-  { stage_key: "connection-layer", name: "Connection Layer", order_index: 3 },
-  { stage_key: "links-wiring", name: "Links Wiring", order_index: 4 },
-  { stage_key: "seed-qa", name: "Initial Seed Content QA", order_index: 5 },
+  { stage_key: "seed-articles-content", name: "Seed Articles Content", order_index: 1 },
+  { stage_key: "deployment", name: "Deployment", order_index: 2 },
+  { stage_key: "site-activation", name: "Site Activation", order_index: 3 },
+  { stage_key: "connection-layer", name: "Connection Layer", order_index: 4 },
+  { stage_key: "links-wiring", name: "Links Wiring", order_index: 5 },
+  { stage_key: "seed-qa", name: "Initial Seed Content QA", order_index: 6 },
 ];
 
 const FILL_FIELDS_PROMPT =
@@ -176,6 +177,60 @@ export const PREDEFINED_ITEMS = {
       title: "You have a website",
       description:
         "That's it. You now have a website locally, with content and design based on your input, and the ability to publish and update from TNV.",
+      prompts: [],
+    },
+  ],
+  "seed-articles-content": [
+    {
+      item_key: "advisor-general-seo-research",
+      title: "Run general SEO research and the approach",
+      description:
+        "Use the Advisor tool to conduct general SEO research about the site, and the SEO approach.",
+      prompts: [],
+      linkTo: "/company/:companyId/seo-ai-advisor",
+      linkLabel: "Open Advisor →",
+    },
+    {
+      item_key: "advisor-pillar-research",
+      title: "Research, confirm, and save pillars",
+      description:
+        "Use the Advisor tool to conduct research on the Pillar Articles. Confirm and save each pillar.",
+      prompts: [],
+      linkTo: "/company/:companyId/seo-ai-advisor",
+      linkLabel: "Open Advisor →",
+    },
+    {
+      item_key: "advisor-cluster-research",
+      title: "Research, confirm, and save clusters",
+      description:
+        "Use the Advisor tool to conduct research on the Clusters and Supporting Keywords. Do them one by one. Confirm and save one by one.",
+      prompts: [],
+      linkTo: "/company/:companyId/seo-ai-advisor",
+      linkLabel: "Open Advisor →",
+    },
+    {
+      item_key: "generate-publish-all-pillars",
+      title: "Generate and publish all pillar articles",
+      description:
+        "Go to Generation in Build → Pillar, and click Generate & publish all. One click plans, generates, and publishes a pillar article for every pillar that doesn’t have one yet.",
+      prompts: [],
+      linkTo: "/company/:companyId/pillar-automation",
+      linkLabel: "Open Pillar Generation →",
+    },
+    {
+      item_key: "generate-publish-all-clusters",
+      title: "Generate and publish all cluster articles",
+      description:
+        "Go to Generation in Build → Cluster, and click Generate & publish all. One click plans, generates, and publishes one supporting cluster for each published pillar that doesn’t have one yet.",
+      prompts: [],
+      linkTo: "/company/:companyId/article-generation",
+      linkLabel: "Open Cluster Generation →",
+    },
+    {
+      item_key: "review-articles-locally",
+      title: "Review the articles locally",
+      description:
+        "Run npm run dev on the new site, navigate to articles, and check them out. Confirm everything looks legit.",
       prompts: [],
     },
   ],
