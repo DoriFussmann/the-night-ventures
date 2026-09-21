@@ -112,6 +112,7 @@ export const BASIC_FIELDS = [
     label: "Location / Markets Served",
     kind: "textarea",
     rows: 3,
+    hidden: true,
   },
   {
     id: "contact_email",
@@ -119,6 +120,7 @@ export const BASIC_FIELDS = [
     label: "Contact Email",
     kind: "text",
     rows: 1,
+    hidden: true,
   },
   {
     id: "social_links",
@@ -127,6 +129,8 @@ export const BASIC_FIELDS = [
     kind: "social",
   },
 ];
+
+export const VISIBLE_BASIC_FIELDS = BASIC_FIELDS.filter((field) => !field.hidden);
 
 export const INTELLIGENCE_GROUPS = [
   {
@@ -424,8 +428,10 @@ export function groupProgress(group, ctx) {
 }
 
 export function basicProgress(ctx) {
-  const filled = BASIC_FIELDS.filter((field) => intelligenceFieldFilled(field, ctx)).length;
-  return { filled, total: BASIC_FIELDS.length };
+  const filled = VISIBLE_BASIC_FIELDS.filter((field) =>
+    intelligenceFieldFilled(field, ctx)
+  ).length;
+  return { filled, total: VISIBLE_BASIC_FIELDS.length };
 }
 
 export function briefProgress(ctx) {
@@ -447,7 +453,7 @@ export function briefProgress(ctx) {
 
 export function allBriefPoints(ctx) {
   return [
-    ...BASIC_FIELDS.map((field) => ({
+    ...VISIBLE_BASIC_FIELDS.map((field) => ({
       id: field.id,
       label: field.label,
       key: field.key,
