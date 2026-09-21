@@ -868,6 +868,12 @@ export default function CompanyData() {
       case "product_name":
         updateField("product_name", "");
         break;
+      case "location_markets":
+        updateField("location_markets", "");
+        break;
+      case "contact_email":
+        updateField("contact_email", "");
+        break;
       case "category":
         setSelectedIndustryIds([]);
         setIndustryFilter("");
@@ -939,6 +945,8 @@ export default function CompanyData() {
 
     if (panelId === "domain") return fields.domain.trim();
     if (panelId === "product_name") return fields.product_name.trim();
+    if (panelId === "location_markets") return (fields.location_markets || "").trim();
+    if (panelId === "contact_email") return (fields.contact_email || "").trim();
     if (panelId === "target") return fields.target_audience.trim();
     if (panelId === "abstract") return fields.abstract.trim();
     if (panelId === "short") return fields.short_description.trim();
@@ -1732,10 +1740,20 @@ export default function CompanyData() {
       return;
     }
     const point = allBriefPoints({ fields, companyName }).find((item) => item.id === id);
-    if (point?.section && point.section !== "basic") {
+    if (point?.section === "basic") {
+      setOpenGroups((prev) => ({ ...prev, identity: true }));
+      return;
+    }
+    if (point?.section) {
       setOpenGroups((prev) => ({ ...prev, [point.section]: true }));
     }
-    if (id === "product_name" || id === "category" || id === "pillars") {
+    if (
+      id === "product_name" ||
+      id === "category" ||
+      id === "pillars" ||
+      id === "location_markets" ||
+      id === "contact_email"
+    ) {
       setOpenPanel(id);
     }
   };
@@ -1952,7 +1970,6 @@ export default function CompanyData() {
           onFieldChange={updateField}
           socialLinks={normalizeSocialLinks(fields.social_links)}
           onSocialChange={updateSocialLink}
-          onAddSocial={addSocialLink}
           onRemoveSocial={removeSocialLink}
           servicesPreview={servicesPreview}
           competitorsPreview={competitorsPreview}
@@ -1976,6 +1993,18 @@ export default function CompanyData() {
               title: "SEO Category",
               filled: selectedIndustries.length > 0,
               onClick: () => setOpenPanel("category"),
+            },
+            {
+              id: "location_markets",
+              title: "Location / Markets Served",
+              filled: Boolean((fields.location_markets || "").trim()),
+              onClick: () => setOpenPanel("location_markets"),
+            },
+            {
+              id: "contact_email",
+              title: "Contact Email",
+              filled: Boolean((fields.contact_email || "").trim()),
+              onClick: () => setOpenPanel("contact_email"),
             },
             {
               id: "abstract",
@@ -2241,6 +2270,77 @@ export default function CompanyData() {
               type="button"
               variant="destructive"
               onClick={() => confirmClearPanel("product_name", "Product Name")}
+            >
+              Delete
+            </Button>
+            <PanelModalActions
+              onCopy={() => handleCopyPanel(openPanel)}
+              onClose={() => setOpenPanel(null)}
+              onSave={saveAndClosePanel}
+              saving={saving}
+            />
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Location / Markets Served */}
+      <Dialog
+        open={openPanel === "location_markets"}
+        onOpenChange={(open) => setOpenPanel(open ? "location_markets" : null)}
+      >
+        <DialogContent className={PANEL_DIALOG_CLASS}>
+          <DialogHeader className="shrink-0 space-y-1 border-b border-border px-6 py-4 pr-12 text-left">
+            <DialogTitle>Location / Markets Served</DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+            <Textarea
+              id="location_markets"
+              value={fields.location_markets || ""}
+              onChange={(e) => updateField("location_markets", e.target.value)}
+              className="min-h-full h-full"
+            />
+          </div>
+          <DialogFooter className="shrink-0 gap-2 border-t border-border px-6 py-4 sm:justify-between">
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() =>
+                confirmClearPanel("location_markets", "Location / Markets Served")
+              }
+            >
+              Delete
+            </Button>
+            <PanelModalActions
+              onCopy={() => handleCopyPanel(openPanel)}
+              onClose={() => setOpenPanel(null)}
+              onSave={saveAndClosePanel}
+              saving={saving}
+            />
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Contact Email */}
+      <Dialog
+        open={openPanel === "contact_email"}
+        onOpenChange={(open) => setOpenPanel(open ? "contact_email" : null)}
+      >
+        <DialogContent className={PANEL_DIALOG_CLASS}>
+          <DialogHeader className="shrink-0 space-y-1 border-b border-border px-6 py-4 pr-12 text-left">
+            <DialogTitle>Contact Email</DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+            <Input
+              id="contact_email"
+              value={fields.contact_email || ""}
+              onChange={(e) => updateField("contact_email", e.target.value)}
+            />
+          </div>
+          <DialogFooter className="shrink-0 gap-2 border-t border-border px-6 py-4 sm:justify-between">
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => confirmClearPanel("contact_email", "Contact Email")}
             >
               Delete
             </Button>
