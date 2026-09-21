@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Link, useLocation, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
 import { supabase } from "@/lib/supabase";
 import {
@@ -21,7 +21,19 @@ import {
   ChevronDown,
   PlugZap,
   Settings,
+  TriangleAlert,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const STATUS_STYLES = {
   Done: "text-emerald-700/80 bg-emerald-500/10",
@@ -116,6 +128,184 @@ function NavDropdown({ label, icon: Icon, items }) {
 }
 
 const LAST_COMPANY_ID_KEY = "lastCompanyId";
+
+function DangerZone({ companyId, companyName }) {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [step, setStep] = useState("confirm");
+  const [typed, setTyped] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState("");
+
+  const expectedName = companyName.trim();
+  const nameMatches = expectedName.length > 0 && typed.trim() === expectedName;
+
+  const resetDialog = () => {
+    setStep("confirm");
+    setTyped("");
+    setError("");
+    setDeleting(false);
+  };
+
+  const handleDialogOpenChange = (next) => {
+    if (deleting) return;
+    setDialogOpen(next);
+    if (!next) resetDialog();
+  };
+
+  const handleDelete = async () => {
+    if (!nameMatches || deleting) return;
+    setDeleting(true);
+    setError("");
+
+    const { data, error: deleteError } = await supabase
+      .from("companies")
+      .delete()
+      .eq("id", companyId)
+      .select("id");
+
+    if (deleteError || !data?.length) {
+      console.error("Failed to delete company:", deleteError);
+      setError(deleteError?.message || "Failed to delete company");
+      setDeleting(false);
+      return;
+    }
+
+    try {
+      sessionStorage.removeItem(LAST_COMPANY_ID_KEY);
+    } catch (err) {
+      console.error("Failed to clear lastCompanyId:", err);
+    }
+
+    setDialogOpen(false);
+    resetDialog();
+    navigate("/");
+  };
+
+  return (
+    <div className="border-t border-border px-2.5 py-2.5">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 rounded-md border border-destructive/30 px-2.5 py-1.5 text-left text-xs text-destructive transition-colors hover:bg-destructive/10"
+      >
+        <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
+        <span className="min-w-0 flex-1 truncate leading-tight">Danger Zone</span>
+        <ChevronDown
+          className={`h-3 w-3 shrink-0 transition-transform duration-200 ease-out ${
+            open ? "rotate-180" : ""
+          }`}
+        />
+      </button>
+      <div
+        className={`grid transition-[grid-template-rows] duration-200 ease-out ${
+          open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+        }`}
+      >
+        <div className="overflow-hidden">
+          <div className="mt-1.5 ml-2 border-l border-destructive/30 pl-2">
+            <button
+              type="button"
+              onClick={() => {
+                resetDialog();
+                setDialogOpen(true);
+              }}
+              disabled={!expectedName}
+              className="flex w-full items-center rounded-md border border-destructive/30 px-2.5 py-1.5 text-left text-xs text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
+            >
+              Delete Company
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
+        <DialogContent>
+          {step === "confirm" ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>Delete this company?</DialogTitle>
+                <DialogDescription>
+                  {expectedName || "This company"} and everything stored for it
+                  will be permanently deleted. This cannot be undone.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => handleDialogOpenChange(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={() => setStep("type")}
+                  disabled={!expectedName}
+                >
+                  Continue
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle>Type the company name to confirm</DialogTitle>
+                <DialogDescription>
+                  Type{" "}
+                  <span className="font-medium text-foreground">{expectedName}</span>{" "}
+                  to delete this company.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-2">
+                <Label htmlFor="delete-company-confirm">Company name</Label>
+                <Input
+                  id="delete-company-confirm"
+                  value={typed}
+                  onChange={(event) => setTyped(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      handleDelete();
+                    }
+                  }}
+                  autoComplete="off"
+                  autoFocus
+                  placeholder={expectedName}
+                  disabled={deleting}
+                />
+                {error ? (
+                  <p className="text-sm text-destructive">{error}</p>
+                ) : null}
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => handleDialogOpenChange(false)}
+                  disabled={deleting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={handleDelete}
+                  disabled={!nameMatches || deleting}
+                >
+                  {deleting ? "Deleting…" : "Delete Company"}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
 
 function readLastCompanyId() {
   try {
@@ -297,6 +487,10 @@ export default function AppSidebar({ user }) {
           </>
         )}
       </nav>
+
+      {activeCompanyId ? (
+        <DangerZone companyId={activeCompanyId} companyName={companyName} />
+      ) : null}
 
       {/* Footer */}
       <div className="border-t border-border px-3 py-2.5">
