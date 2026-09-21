@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { slugifyKeyword } from '../../../../lib/seo-advisor/pillars.js'
 
 async function authHeaders() {
   const { data } = await supabase.auth.getSession()
@@ -63,13 +64,15 @@ export async function streamChat({
   companyId,
   sessionId,
   message,
-  approval,
+  mode,
+  pillarSlug,
   onEvent,
   signal,
 }) {
   const headers = await authHeaders()
   const payload = { companyId, sessionId, message }
-  if (approval) payload.approval = approval
+  if (mode) payload.mode = mode
+  if (pillarSlug) payload.pillarSlug = pillarSlug
   const res = await fetch('/api/seo-advisor-chat', {
     method: 'POST',
     headers,
@@ -116,7 +119,7 @@ export async function streamChat({
 }
 
 /** Convert stored messages into UI chat bubbles (text + tool markers). */
-export function messagesToUi(rows) {
+export function messagesToUi(rows, opts = {}) {
   const ui = []
   for (const row of rows || []) {
     if (row.role === 'user') {
@@ -142,41 +145,89 @@ export function messagesToUi(rows) {
         .join('\n')
       const tools = blocks
         .filter((b) => b.type === 'tool_use')
-        .map((b) => ({ name: b.name, id: b.id }))
-      const visibleTools = tools.filter((t) => t.name !== 'propose_data_pull')
-      if (text || visibleTools.length) {
-        ui.push({ id: row.id, role: 'assistant', text: text || '', tools: visibleTools })
-      }
-      const proposal = tools.find((t) => t.name === 'propose_data_pull')
-      if (proposal) {
-        const input = blocks.find((b) => b.type === 'tool_use' && b.id === proposal.id)
-          ?.input
+        .map((b) => ({ name: b.name, id: b.id, input: b.input }))
+      if (text || tools.length) {
         ui.push({
-          id: `${row.id}-approval`,
-          role: 'approval',
-          requestId: '',
-          rationale: input?.rationale || '',
-          recommended_provider: input?.recommended_provider || 'DataForSEO',
-          summary: input?.summary || '',
-          plan: Array.isArray(input?.plan) ? input.plan : [],
-          estCredits: null,
-          status: 'pending',
+          id: row.id,
+          role: 'assistant',
+          text: text || '',
+          tools: tools.filter(
+            (t) =>
+              t.name !== 'propose_audience' &&
+              t.name !== 'propose_pillars' &&
+              t.name !== 'propose_clusters'
+          ),
+        })
+      }
+      const audience = tools.find((t) => t.name === 'propose_audience')
+      if (audience) {
+        const audienceText = String(audience.input?.audience_text || '').trim()
+        const current = String(opts.targetAudience || '').trim()
+        ui.push({
+          id: `${row.id}-audience`,
+          role: 'audience_proposal',
+          brief: String(audience.input?.brief || ''),
+          audience_text: audienceText,
+          confirmed: Boolean(current && audienceText && current === audienceText),
+        })
+      }
+      const pillarsTool = tools.find((t) => t.name === 'propose_pillars')
+      if (pillarsTool) {
+        const pillars = Array.isArray(pillarsTool.input?.pillars)
+          ? pillarsTool.input.pillars
+          : []
+        const savedSlugs = new Set(
+          (opts.pillars || []).map((item) =>
+            slugifyKeyword(item.slug || item.keyword)
+          )
+        )
+        const confirmed =
+          pillars.length > 0 &&
+          pillars.every((item) =>
+            savedSlugs.has(slugifyKeyword(item.keyword))
+          )
+        ui.push({
+          id: `${row.id}-pillars`,
+          role: 'pillars_proposal',
+          rationale: String(pillarsTool.input?.rationale || ''),
+          pillars,
+          confirmed,
+        })
+      }
+      const clustersTool = tools.find((t) => t.name === 'propose_clusters')
+      if (clustersTool) {
+        const clusters = Array.isArray(clustersTool.input?.clusters)
+          ? clustersTool.input.clusters
+          : []
+        const pillarSlug = slugifyKeyword(
+          clustersTool.input?.pillar_slug || clustersTool.input?.pillar_keyword
+        )
+        const pillar = (opts.pillars || []).find(
+          (item) => slugifyKeyword(item.slug || item.keyword) === pillarSlug
+        )
+        const savedSlugs = new Set(
+          (pillar?.supporting || []).map((item) =>
+            slugifyKeyword(item.slug || item.keyword)
+          )
+        )
+        const confirmed =
+          clusters.length > 0 &&
+          clusters.every((item) =>
+            savedSlugs.has(slugifyKeyword(item.keyword))
+          )
+        ui.push({
+          id: `${row.id}-clusters`,
+          role: 'clusters_proposal',
+          pillar_slug: String(clustersTool.input?.pillar_slug || ''),
+          pillar_keyword: String(clustersTool.input?.pillar_keyword || ''),
+          rationale: String(clustersTool.input?.rationale || ''),
+          clusters,
+          confirmed,
         })
       }
     }
   }
 
-  for (let i = 0; i < ui.length; i += 1) {
-    const item = ui[i]
-    if (item.role !== 'approval') continue
-    const nextTool = (rows || []).find((row) => {
-      if (row.role !== 'tool') return false
-      return row.content?.name === 'propose_data_pull'
-    })
-    const content = nextTool?.content?.content || nextTool?.content
-    if (content?.requestId) item.requestId = content.requestId
-    if (content?.status === 'awaiting_approval') item.status = 'pending'
-  }
   return ui
 }
 
@@ -212,6 +263,67 @@ export async function deleteSession({ companyId, sessionId }) {
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.error || 'Failed to clear topic')
+  return data
+}
+
+export async function getCoveragePillars(companyId) {
+  const headers = await authHeaders()
+  const res = await fetch(
+    `/api/seo-advisor-sessions?companyId=${encodeURIComponent(companyId)}&pillars=1`,
+    { headers }
+  )
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || 'Failed to load pillars')
+  return data
+}
+
+export async function saveClusters({ companyId, pillarSlug, clusters }) {
+  const headers = await authHeaders()
+  const res = await fetch('/api/seo-advisor-insights', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      companyId,
+      action: 'save_clusters',
+      pillarSlug,
+      clusters,
+    }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || 'Failed to save clusters')
+  return data
+}
+
+export async function savePillars({ companyId, pillars }) {
+  const headers = await authHeaders()
+  const res = await fetch('/api/seo-advisor-insights', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      companyId,
+      action: 'save_pillars',
+      pillars,
+    }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || 'Failed to save pillars')
+  return data
+}
+
+export async function saveAudience({ companyId, audience_text, override }) {
+  const headers = await authHeaders()
+  const res = await fetch('/api/seo-advisor-insights', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      companyId,
+      action: 'save_audience',
+      audience_text,
+      override: Boolean(override),
+    }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || 'Failed to save audience')
   return data
 }
 

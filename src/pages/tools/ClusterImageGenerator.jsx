@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Download, Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -11,6 +12,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   DEFAULT_STYLE_SPEC,
   IMAGE_HEIGHT,
@@ -54,6 +65,11 @@ function normalizePillarsFromCoreKeywords(raw) {
   if (!Array.isArray(raw)) return [];
   return raw
     .map((item) => {
+      if (typeof item === "string") {
+        const keyword = item.trim();
+        if (!keyword) return null;
+        return { slug: slugify(keyword), keyword, supporting: [] };
+      }
       const keyword = String(item?.keyword || "").trim();
       if (!keyword) return null;
       const supporting = (Array.isArray(item?.supporting) ? item.supporting : [])
@@ -70,7 +86,6 @@ function normalizePillarsFromCoreKeywords(raw) {
 
 export default function ClusterImageGenerator() {
   const { companyId } = useParams();
-  const canvasRef = useRef(null);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -82,6 +97,9 @@ export default function ClusterImageGenerator() {
 
   const [pillarSlug, setPillarSlug] = useState("");
   const [supportingValue, setSupportingValue] = useState(PILLAR_LEVEL_VALUE);
+  const [impactPrompt, setImpactPrompt] = useState("");
+  const [extraGuidelines, setExtraGuidelines] = useState("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const [styleSpec, setStyleSpec] = useState(DEFAULT_STYLE_SPEC);
   const [specLoading, setSpecLoading] = useState(false);
@@ -235,60 +253,55 @@ export default function ClusterImageGenerator() {
     };
   }, [companyId, designGuideAbstract, loading]);
 
-  // Live preview redraw
-  useEffect(() => {
-    let cancelled = false;
-
-    async function paint() {
-      if (!canvasRef.current || !selectedPillar) return;
-      await ensureFontLoaded(styleSpec.fontFamily);
-      if (cancelled) return;
-      drawClusterImage(canvasRef.current, {
-        spec: styleSpec,
-        companyName,
-        productName,
-        domain,
-        pillarKeyword: selectedPillar.keyword,
-        supportingKeyword,
-      });
-    }
-
-    paint();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    styleSpec,
-    companyName,
-    productName,
-    domain,
-    selectedPillar,
-    supportingKeyword,
-  ]);
+  const plannedImageCount = selectedPillar ? 1 : 0;
 
   const handlePillarChange = (value) => {
     setPillarSlug(value);
     setSupportingValue(PILLAR_LEVEL_VALUE);
   };
 
-  const handleDownload = async () => {
-    if (!canvasRef.current || !selectedPillar || exporting) return;
+  async function resolveSpecForGenerate() {
+    const extra = extraGuidelines.trim();
+    if (!extra || !designGuideAbstract) return styleSpec;
 
+    const abstract = `${designGuideAbstract}\n\nAdditional guidelines:\n${extra}`;
+    const res = await fetch("/api/cluster-image-spec", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ abstract }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || `Style spec failed (${res.status})`);
+    }
+    return { ...DEFAULT_STYLE_SPEC, ...(data.spec || {}) };
+  }
+
+  const handleDownload = async () => {
+    if (!selectedPillar || exporting) return;
+
+    setConfirmOpen(false);
     setExporting(true);
     setError("");
 
     try {
-      await ensureFontLoaded(styleSpec.fontFamily);
-      drawClusterImage(canvasRef.current, {
-        spec: styleSpec,
+      const spec = await resolveSpecForGenerate();
+      await ensureFontLoaded(spec.fontFamily);
+
+      const canvas = document.createElement("canvas");
+      canvas.width = IMAGE_WIDTH;
+      canvas.height = IMAGE_HEIGHT;
+      drawClusterImage(canvas, {
+        spec,
         companyName,
         productName,
         domain,
         pillarKeyword: selectedPillar.keyword,
         supportingKeyword,
+        impact: impactPrompt.trim(),
       });
 
-      const blob = await canvasToPngBlob(canvasRef.current);
+      const blob = await canvasToPngBlob(canvas);
       const filename = buildHeroFilename(
         selectedPillar.slug,
         supportingValue === PILLAR_LEVEL_VALUE ? "" : supportingValue
@@ -335,7 +348,7 @@ export default function ClusterImageGenerator() {
         <h1 className="text-xs text-foreground mb-1">Cluster Image Generator</h1>
         <p className="text-sm text-muted-foreground">
           Branded 16:9 topic cards ({IMAGE_WIDTH}×{IMAGE_HEIGHT}) for pillar and
-          cluster hero images — preview live, download PNG.
+          cluster hero images.
         </p>
       </div>
 
@@ -374,6 +387,44 @@ export default function ClusterImageGenerator() {
         </div>
       ) : (
         <>
+          {!designGuideAbstract ? null : (
+            <div className="space-y-2 rounded-lg border border-border p-4">
+              <p className="text-xs font-medium text-muted-foreground">
+                Design Guidelines (from Company Data)
+              </p>
+              <p className="text-sm text-foreground whitespace-pre-wrap max-h-40 overflow-auto">
+                {designGuideAbstract}
+              </p>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label htmlFor="cluster-impact-prompt">Image prompt</Label>
+            <Textarea
+              id="cluster-impact-prompt"
+              value={impactPrompt}
+              onChange={(e) => setImpactPrompt(e.target.value)}
+              className="min-h-[120px]"
+              placeholder="Impact — optional headline or direction for this card…"
+              disabled={exporting}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="cluster-extra-guidelines">
+              Additional guidelines{" "}
+              <span className="text-muted-foreground font-normal">(optional)</span>
+            </Label>
+            <Textarea
+              id="cluster-extra-guidelines"
+              value={extraGuidelines}
+              onChange={(e) => setExtraGuidelines(e.target.value)}
+              className="min-h-[80px]"
+              placeholder="e.g. bolder type, more contrast, no extra decoration…"
+              disabled={exporting}
+            />
+          </div>
+
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Pillar</Label>
@@ -438,37 +489,24 @@ export default function ClusterImageGenerator() {
             )}
           </div>
 
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm text-muted-foreground">Live preview</p>
-              <Button
-                type="button"
-                onClick={handleDownload}
-                disabled={!selectedPillar || exporting || specLoading}
-              >
-                {exporting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Exporting…
-                  </>
-                ) : (
-                  <>
-                    <Download className="w-4 h-4 mr-2" />
-                    Generate &amp; Download
-                  </>
-                )}
-              </Button>
-            </div>
-
-            <div className="rounded-lg border border-border bg-muted/30 overflow-hidden">
-              <canvas
-                ref={canvasRef}
-                width={IMAGE_WIDTH}
-                height={IMAGE_HEIGHT}
-                className="w-full h-auto block"
-                aria-label="Cluster hero preview"
-              />
-            </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              type="button"
+              onClick={() => setConfirmOpen(true)}
+              disabled={!selectedPillar || exporting || specLoading}
+            >
+              {exporting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Exporting…
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4 mr-2" />
+                  Generate &amp; Download
+                </>
+              )}
+            </Button>
           </div>
 
           {recent.length > 0 && (
@@ -504,6 +542,30 @@ export default function ClusterImageGenerator() {
       )}
 
       {error && <p className="text-sm text-destructive">{error}</p>}
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Generate &amp; Download</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will generate {plannedImageCount}{" "}
+              {plannedImageCount === 1 ? "image" : "images"}.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={exporting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!selectedPillar || exporting}
+              onClick={(event) => {
+                event.preventDefault();
+                handleDownload();
+              }}
+            >
+              Generate &amp; Download
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

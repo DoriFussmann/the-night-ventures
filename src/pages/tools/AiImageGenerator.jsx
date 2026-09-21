@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import {
   IMAGE_SIZES,
+  appendKeywordContext,
   buildStyleContext,
   downloadGeneratedImage,
   generateOneImage,
@@ -25,6 +26,53 @@ import {
   loadSavedPrompts,
   savePrompt,
 } from "./aiImage/savedPrompts";
+import { slugify } from "./clusterImage/slugify";
+
+const NONE_VALUE = "__none__";
+
+function normalizePillarsFromCoverage(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((pillar) => {
+      const keyword = String(pillar?.keyword || "").trim();
+      if (!keyword) return null;
+      const slug = String(pillar?.slug || slugify(keyword)).trim() || slugify(keyword);
+      const supporting = (Array.isArray(pillar?.supporting) ? pillar.supporting : [])
+        .map((sup) => {
+          const supKeyword = String(sup?.keyword || "").trim();
+          if (!supKeyword) return null;
+          const supSlug =
+            String(sup?.slug || slugify(supKeyword)).trim() || slugify(supKeyword);
+          return { slug: supSlug, keyword: supKeyword };
+        })
+        .filter(Boolean);
+      return { slug, keyword, supporting };
+    })
+    .filter(Boolean);
+}
+
+function normalizePillarsFromCoreKeywords(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      if (typeof item === "string") {
+        const keyword = item.trim();
+        if (!keyword) return null;
+        return { slug: slugify(keyword), keyword, supporting: [] };
+      }
+      const keyword = String(item?.keyword || "").trim();
+      if (!keyword) return null;
+      const supporting = (Array.isArray(item?.supporting) ? item.supporting : [])
+        .map((s) => String(s || "").trim())
+        .filter(Boolean)
+        .map((supKeyword) => ({
+          slug: slugify(supKeyword),
+          keyword: supKeyword,
+        }));
+      return { slug: slugify(keyword), keyword, supporting };
+    })
+    .filter(Boolean);
+}
 
 function promptPreview(text, max = 90) {
   const oneLine = String(text || "").replace(/\s+/g, " ").trim();
@@ -45,6 +93,9 @@ export default function AiImageGenerator() {
   const [extraGuidelines, setExtraGuidelines] = useState("");
   const [imageSize, setImageSize] = useState("1024x1024");
   const [savedPrompts, setSavedPrompts] = useState([]);
+  const [pillars, setPillars] = useState([]);
+  const [pillarSlug, setPillarSlug] = useState(NONE_VALUE);
+  const [supportingValue, setSupportingValue] = useState(NONE_VALUE);
 
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState(null);
@@ -55,11 +106,16 @@ export default function AiImageGenerator() {
     setLoading(true);
     setError("");
 
-    const [companyResult, profileResult] = await Promise.all([
+    const [companyResult, profileResult, coverageResult] = await Promise.all([
       supabase.from("companies").select("name").eq("id", companyId).maybeSingle(),
       supabase
         .from("company_profiles")
-        .select("design_guide_abstract")
+        .select("design_guide_abstract, core_keywords")
+        .eq("company_id", companyId)
+        .maybeSingle(),
+      supabase
+        .from("content_coverage")
+        .select("pillars")
         .eq("company_id", companyId)
         .maybeSingle(),
     ]);
@@ -78,10 +134,24 @@ export default function AiImageGenerator() {
       return;
     }
 
+    if (coverageResult.error) {
+      console.error(coverageResult.error);
+      setError(coverageResult.error.message || "Failed to load content coverage");
+      setLoading(false);
+      return;
+    }
+
     setCompanyName(companyResult.data?.name || "");
     setDesignGuideAbstract(
       String(profileResult.data?.design_guide_abstract || "").trim()
     );
+    const fromCoverage = normalizePillarsFromCoverage(coverageResult.data?.pillars);
+    const fromCore = normalizePillarsFromCoreKeywords(
+      profileResult.data?.core_keywords
+    );
+    setPillars(fromCoverage.length > 0 ? fromCoverage : fromCore);
+    setPillarSlug(NONE_VALUE);
+    setSupportingValue(NONE_VALUE);
     setSavedPrompts(loadSavedPrompts(companyId));
     setLoading(false);
   }, [companyId]);
@@ -126,6 +196,22 @@ export default function AiImageGenerator() {
     }
   };
 
+  const selectedPillar =
+    pillarSlug === NONE_VALUE
+      ? null
+      : pillars.find((pillar) => pillar.slug === pillarSlug) || null;
+  const pillarKeyword = selectedPillar?.keyword || "";
+  const supportingKeyword =
+    supportingValue === NONE_VALUE
+      ? ""
+      : selectedPillar?.supporting?.find((item) => item.slug === supportingValue)
+          ?.keyword || "";
+
+  const handlePillarChange = (value) => {
+    setPillarSlug(value);
+    setSupportingValue(NONE_VALUE);
+  };
+
   const handleGenerate = async () => {
     const trimmed = prompt.trim();
     if (!trimmed || generating) return;
@@ -139,7 +225,11 @@ export default function AiImageGenerator() {
         extraGuidelines
       );
       const data = await generateOneImage({
-        prompt: trimmed,
+        prompt: appendKeywordContext(
+          trimmed,
+          pillarKeyword,
+          supportingKeyword
+        ),
         size: imageSize,
         styleContext,
       });
@@ -210,6 +300,49 @@ export default function AiImageGenerator() {
           </p>
         </div>
       )}
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label>Pillar keyword</Label>
+          <Select
+            value={pillarSlug}
+            onValueChange={handlePillarChange}
+            disabled={generating}
+          >
+            <SelectTrigger className="h-9">
+              <SelectValue placeholder="None" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE_VALUE}>None</SelectItem>
+              {pillars.map((pillar) => (
+                <SelectItem key={pillar.slug} value={pillar.slug}>
+                  {pillar.keyword}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>Supporting keyword</Label>
+          <Select
+            value={supportingValue}
+            onValueChange={setSupportingValue}
+            disabled={generating || !selectedPillar}
+          >
+            <SelectTrigger className="h-9">
+              <SelectValue placeholder="None" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE_VALUE}>None</SelectItem>
+              {(selectedPillar?.supporting || []).map((sup) => (
+                <SelectItem key={sup.slug} value={sup.slug}>
+                  {sup.keyword}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
 
       <div className="space-y-2">
         <Label htmlFor="image-prompt">Image prompt</Label>

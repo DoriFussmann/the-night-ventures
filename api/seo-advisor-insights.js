@@ -4,6 +4,10 @@ import {
   parseBody,
   json,
 } from '../lib/seo-advisor/auth.js'
+import {
+  appendProposedClusters,
+  appendProposedPillars,
+} from '../lib/seo-advisor/pillars.js'
 
 const PROFILE_FIELDS = new Set([
   'competitors',
@@ -57,6 +61,84 @@ export default async function handler(req, res) {
       const companyId = String(body.companyId || '').trim()
       const action = String(body.action || '').trim()
       if (!companyId) return json(res, 400, { error: 'companyId is required' })
+
+      if (action === 'save_audience') {
+        const audienceText = String(body.audience_text || '').trim()
+        const override = body.override === true
+        if (!audienceText) {
+          return json(res, 400, { error: 'audience_text is required' })
+        }
+
+        const { data: profile, error: profileError } = await supabase
+          .from('company_profiles')
+          .select('target_audience')
+          .eq('company_id', companyId)
+          .maybeSingle()
+        if (profileError) throw profileError
+
+        const current = String(profile?.target_audience || '').trim()
+        if (current && !override) {
+          return json(res, 200, { needsOverride: true, current })
+        }
+
+        if (profile) {
+          const { error: updateError } = await supabase
+            .from('company_profiles')
+            .update({ target_audience: audienceText })
+            .eq('company_id', companyId)
+          if (updateError) throw updateError
+        } else {
+          const { error: insertError } = await supabase
+            .from('company_profiles')
+            .insert({ company_id: companyId, target_audience: audienceText })
+          if (insertError) throw insertError
+        }
+
+        return json(res, 200, { ok: true })
+      }
+
+      if (action === 'save_pillars') {
+        const pillars = Array.isArray(body.pillars) ? body.pillars : []
+        const cleaned = pillars
+          .map((item) => ({
+            keyword: String(item?.keyword || '').trim(),
+            search_volume:
+              item?.search_volume == null ? null : Number(item.search_volume),
+            difficulty: item?.difficulty == null ? null : Number(item.difficulty),
+          }))
+          .filter((item) => item.keyword)
+        if (cleaned.length === 0) {
+          return json(res, 400, { error: 'pillars is required' })
+        }
+        const saved = await appendProposedPillars(supabase, companyId, cleaned)
+        return json(res, 200, saved)
+      }
+
+      if (action === 'save_clusters') {
+        const pillarSlug = String(body.pillarSlug || body.pillar_slug || '').trim()
+        const clusters = Array.isArray(body.clusters) ? body.clusters : []
+        const cleaned = clusters
+          .map((item) => ({
+            keyword: String(item?.keyword || '').trim(),
+            search_volume:
+              item?.search_volume == null ? null : Number(item.search_volume),
+            difficulty: item?.difficulty == null ? null : Number(item.difficulty),
+          }))
+          .filter((item) => item.keyword)
+        if (!pillarSlug) {
+          return json(res, 400, { error: 'pillarSlug is required' })
+        }
+        if (cleaned.length === 0) {
+          return json(res, 400, { error: 'clusters is required' })
+        }
+        const saved = await appendProposedClusters(
+          supabase,
+          companyId,
+          pillarSlug,
+          cleaned
+        )
+        return json(res, 200, saved)
+      }
 
       if (action === 'save_shortlist') {
         const sessionId = body.sessionId ? String(body.sessionId).trim() : null

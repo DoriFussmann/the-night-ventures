@@ -5,6 +5,7 @@ import {
   json,
 } from '../lib/seo-advisor/auth.js'
 import { healthSnapshot } from '../lib/seo-advisor/tools.js'
+import { loadCoverageState, serializeCoverageState } from '../lib/seo-advisor/pillars.js'
 
 export default async function handler(req, res) {
   if (handleOptions(req, res, 'GET, POST, PATCH, DELETE, OPTIONS')) return
@@ -26,8 +27,13 @@ export default async function handler(req, res) {
 
       if (!companyId) return json(res, 400, { error: 'companyId is required' })
 
+      if (url.searchParams.get('pillars') === '1') {
+        const coverage = await loadCoverageState(supabase, companyId)
+        return json(res, 200, serializeCoverageState(coverage))
+      }
+
       if (url.searchParams.get('composer') === '1') {
-        const [profileRes, industriesRes] = await Promise.all([
+        const [profileRes, industriesRes, coverage] = await Promise.all([
           supabase
             .from('company_profiles')
             .select(
@@ -39,15 +45,20 @@ export default async function handler(req, res) {
             .from('company_industries')
             .select('industry_id, industries(name)')
             .eq('company_id', companyId),
+          loadCoverageState(supabase, companyId),
         ])
         if (profileRes.error) throw profileRes.error
         if (industriesRes.error) throw industriesRes.error
         const industries = (industriesRes.data || [])
           .map((row) => row.industries?.name)
           .filter(Boolean)
+        const coverageState = serializeCoverageState(coverage)
         return json(res, 200, {
           ...(profileRes.data || {}),
           industries,
+          pillars: coverageState.pillars,
+          lockedSlugs: coverageState.lockedSlugs,
+          pillarCount: coverageState.count,
         })
       }
 

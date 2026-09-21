@@ -13,18 +13,12 @@ import {
   Lightbulb,
   ChevronDown,
   ChevronRight,
+  Lock,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import {
   ResizableHandle,
   ResizablePanel,
@@ -50,6 +44,9 @@ import {
   messagesToUi,
   patchInsight,
   pushKeywords,
+  saveAudience,
+  saveClusters,
+  savePillars,
   saveSessionShortlist,
   saveShortlistInsight,
   streamChat,
@@ -123,81 +120,511 @@ function ToolStatusBar({ activeTools }) {
   )
 }
 
-function ApprovalCard({ card, disabled, onDecide }) {
-  const [provider, setProvider] = useState(
-    card.recommended_provider || 'DataForSEO'
-  )
-  const running = card.status === 'running'
+const ADVISOR_STEPS = [
+  {
+    mode: 'seo_approach',
+    label: 'SEO Approach',
+    lockedHint: '',
+  },
+  {
+    mode: 'pillar_advisory',
+    label: 'Pillars',
+    lockedHint: 'Complete SEO Approach (audience) first.',
+  },
+  {
+    mode: 'cluster_advisory',
+    label: 'Clusters',
+    lockedHint: 'Add at least 4 pillars first.',
+  },
+]
 
-  if (running) {
+function stepStatus(mode, { hasAudience, pillarCount, hasCluster }) {
+  if (mode === 'seo_approach') return hasAudience ? 'done' : 'available'
+  if (mode === 'pillar_advisory') {
+    if (!hasAudience) return 'locked'
+    return pillarCount >= 4 ? 'done' : 'available'
+  }
+  if (mode === 'cluster_advisory') {
+    if (pillarCount < 4) return 'locked'
+    return hasCluster ? 'done' : 'available'
+  }
+  return 'locked'
+}
+
+function AdvisorStepper({
+  activeMode,
+  hasAudience,
+  pillarCount = 0,
+  hasCluster = false,
+  disabled,
+  onSelect,
+}) {
+  return (
+    <div className="border-b border-border px-4 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
+        Advisor
+      </p>
+      <ol className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        {ADVISOR_STEPS.map((step, index) => {
+          const status = stepStatus(step.mode, {
+            hasAudience,
+            pillarCount,
+            hasCluster,
+          })
+          const active = activeMode === step.mode
+          const clickable = status !== 'locked' && !disabled
+          return (
+            <li key={step.mode} className="flex items-center gap-1.5">
+              {index > 0 && (
+                <span className="text-muted-foreground/50" aria-hidden>
+                  →
+                </span>
+              )}
+              <button
+                type="button"
+                disabled={!clickable}
+                title={status === 'locked' ? step.lockedHint : undefined}
+                onClick={() => onSelect(step.mode)}
+                className={cn(
+                  'rounded-md border px-2 py-1 text-[11px] transition-colors',
+                  status === 'locked' &&
+                    'cursor-not-allowed border-dashed border-border text-muted-foreground',
+                  status === 'available' &&
+                    'border-border bg-card text-foreground hover:bg-accent/60',
+                  status === 'done' &&
+                    'border-emerald-500/40 bg-emerald-500/10 text-foreground hover:bg-emerald-500/15',
+                  active && 'ring-1 ring-foreground/30'
+                )}
+              >
+                {step.label}
+                <span className="ml-1 text-[10px] text-muted-foreground">
+                  {status === 'locked'
+                    ? `· ${step.lockedHint}`
+                    : status === 'done'
+                      ? '· done'
+                      : '· available'}
+                </span>
+              </button>
+            </li>
+          )
+        })}
+      </ol>
+    </div>
+  )
+}
+
+function AudienceProposalCard({ card, disabled, onConfirm }) {
+  const [phase, setPhase] = useState(card.confirmed ? 'confirmed' : 'ready')
+  const [current, setCurrent] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    setPhase(card.confirmed ? 'confirmed' : 'ready')
+  }, [card.confirmed, card.id])
+
+  async function confirm(override) {
+    if (busy || disabled) return
+    setBusy(true)
+    try {
+      const data = await onConfirm({
+        audience_text: card.audience_text,
+        override,
+      })
+      if (data?.needsOverride) {
+        setCurrent(data.current || '')
+        setPhase('override')
+        return
+      }
+      setPhase('confirmed')
+    } catch {
+      // parent surfaces the error
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (phase === 'confirmed') {
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-        <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-        Running approved data pull…
+      <div className="rounded-lg border border-border bg-card p-3 shadow-sm">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+          Audience proposal
+        </p>
+        <p className="mt-2 inline-flex items-center gap-1 text-xs text-muted-foreground">
+          <Check className="h-3.5 w-3.5" /> Saved to Company Intelligence
+        </p>
       </div>
     )
   }
 
   return (
-    <div className="rounded-lg border border-amber-500/40 bg-card p-3 shadow-sm">
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-amber-800">
-        Data request · needs your approval
+    <div className="rounded-lg border border-primary/30 bg-card p-3 shadow-sm">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-primary">
+        Audience proposal
+      </p>
+      {card.brief && (
+        <div className="mt-2">
+          <p className="text-[11px] font-medium text-muted-foreground">Brief</p>
+          <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed">
+            {card.brief}
+          </p>
+        </div>
+      )}
+      {card.audience_text && (
+        <div className="mt-3">
+          <p className="text-[11px] font-medium text-muted-foreground">
+            Audience
+          </p>
+          <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed">
+            {card.audience_text}
+          </p>
+        </div>
+      )}
+      {phase === 'override' && (
+        <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs">
+          <p className="font-medium text-amber-900">
+            Company Intelligence already has a target audience.
+          </p>
+          <p className="mt-1 whitespace-pre-wrap text-foreground/80">{current}</p>
+          <div className="mt-2 flex flex-wrap justify-end gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => setPhase('ready')}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => setPhase('ready')}
+            >
+              Keep existing
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy}
+              onClick={() => confirm(true)}
+            >
+              {busy ? 'Saving…' : 'Override'}
+            </Button>
+          </div>
+        </div>
+      )}
+      {phase === 'ready' && (
+        <div className="mt-3 flex justify-end">
+          <Button
+            type="button"
+            size="sm"
+            disabled={busy || disabled}
+            onClick={() => confirm(false)}
+          >
+            {busy ? 'Saving…' : 'Confirm — save to Company Intelligence'}
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function formatMetric(value) {
+  if (value == null || value === '' || Number.isNaN(Number(value))) return '—'
+  return Number(value).toLocaleString()
+}
+
+function PillarsProposalCard({ card, disabled, onConfirm, existingSlugs = [] }) {
+  const [phase, setPhase] = useState(card.confirmed ? 'confirmed' : 'ready')
+  const [busy, setBusy] = useState(false)
+  const saved = new Set(existingSlugs)
+
+  useEffect(() => {
+    setPhase(card.confirmed ? 'confirmed' : 'ready')
+  }, [card.confirmed, card.id])
+
+  async function confirm() {
+    if (busy || disabled) return
+    setBusy(true)
+    try {
+      await onConfirm({ pillars: card.pillars || [] })
+      setPhase('confirmed')
+    } catch {
+      // parent surfaces the error
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (phase === 'confirmed') {
+    return (
+      <div className="rounded-lg border border-border bg-card p-3 shadow-sm">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+          Pillar proposal
+        </p>
+        <p className="mt-2 inline-flex items-center gap-1 text-xs text-muted-foreground">
+          <Check className="h-3.5 w-3.5" /> Pillars saved
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-lg border border-primary/30 bg-card p-3 shadow-sm">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-primary">
+        Pillar proposal
       </p>
       {card.rationale && (
-        <p className="mt-2 text-xs leading-relaxed text-foreground/85">
+        <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed">
           {card.rationale}
         </p>
       )}
-      <div className="mt-3 space-y-2 text-xs">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-muted-foreground">Source</span>
-          <Select value={provider} onValueChange={setProvider} disabled={disabled}>
-            <SelectTrigger className="h-8 w-[220px] text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="DataForSEO">DataForSEO</SelectItem>
-              <SelectItem value="Semrush">Semrush</SelectItem>
-              <SelectItem value="Moz">Moz</SelectItem>
-              <SelectItem value="Both">Both</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-muted-foreground">Fetches</span>
-          <span className="text-right">
-            {card.summary || `${card.plan?.length || 0} provider calls`}
-          </span>
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-muted-foreground">Estimated credits</span>
-          <Badge variant="outline">{card.estCredits ?? '—'} credits</Badge>
-        </div>
-      </div>
-      <div className="mt-3 flex justify-end gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={disabled}
-          onClick={() => onDecide({ decision: 'decline', provider })}
-        >
-          Not now
+      <ul className="mt-3 space-y-2">
+        {(card.pillars || []).map((pillar) => {
+          const already = saved.has(
+            String(pillar.keyword || '')
+              .toLowerCase()
+              .trim()
+              .replace(/[^\w\s-]/g, '')
+              .replace(/[\s_-]+/g, '-')
+              .replace(/^-+|-+$/g, '')
+          )
+          return (
+            <li
+              key={pillar.keyword}
+              className="rounded-md border border-border/80 px-2.5 py-2 text-sm"
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="font-medium">{pillar.keyword}</p>
+                {already && (
+                  <span className="text-[10px] text-muted-foreground">
+                    already saved
+                  </span>
+                )}
+              </div>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                vol {formatMetric(pillar.search_volume)} · KD{' '}
+                {formatMetric(pillar.difficulty)}
+              </p>
+              {pillar.note && (
+                <p className="mt-1 text-xs leading-relaxed text-foreground/80">
+                  {pillar.note}
+                </p>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+      <div className="mt-3 flex justify-end">
+        <Button type="button" size="sm" disabled={busy || disabled} onClick={confirm}>
+          {busy ? 'Saving…' : 'Confirm — save pillars'}
         </Button>
-        <Button
-          type="button"
-          size="sm"
-          disabled={disabled}
-          onClick={() =>
-            onDecide({
-              decision: 'approve',
-              provider,
-              plan: card.plan,
-              requestId: card.requestId,
-            })
-          }
-        >
-          Approve & run
+      </div>
+    </div>
+  )
+}
+
+function CoverageTree({ pillars = [] }) {
+  return (
+    <div className="mb-3">
+      <p className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
+        Coverage ({pillars.length} pillars)
+      </p>
+      {pillars.length === 0 ? (
+        <p className="px-1 py-2 text-xs text-muted-foreground">
+          No pillars saved yet.
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {pillars.map((pillar) => {
+            const supporting = Array.isArray(pillar.supporting)
+              ? pillar.supporting
+              : []
+            return (
+              <li
+                key={pillar.slug || pillar.keyword}
+                className="rounded-md border border-border/80 px-2 py-1.5"
+              >
+                <div className="flex items-center gap-1.5 text-xs">
+                  {pillar.locked && (
+                    <Lock
+                      className="h-3 w-3 shrink-0 text-muted-foreground"
+                      aria-label="Locked pillar"
+                    />
+                  )}
+                  <span className="min-w-0 truncate font-medium">
+                    {pillar.keyword}
+                  </span>
+                  <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
+                    {supporting.length}
+                  </span>
+                </div>
+                {supporting.length > 0 && (
+                  <ul className="mt-1 space-y-0.5 border-l border-border/70 pl-2">
+                    {supporting.map((item) => (
+                      <li
+                        key={item.slug || item.keyword}
+                        className="flex items-center gap-1.5 text-[11px] text-foreground/85"
+                      >
+                        {item.locked && (
+                          <Lock
+                            className="h-3 w-3 shrink-0 text-muted-foreground"
+                            aria-label="Locked supporting"
+                          />
+                        )}
+                        <span className="min-w-0 truncate">{item.keyword}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function ClusterPillarPicker({ pillars = [], selectedSlug, disabled, onSelect }) {
+  return (
+    <div className="space-y-1.5 border-t border-border px-2 py-2">
+      <p className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
+        Work on a pillar
+      </p>
+      {pillars.length === 0 ? (
+        <p className="px-1 py-2 text-xs text-muted-foreground">
+          Save at least 4 pillars first.
+        </p>
+      ) : (
+        <ul className="space-y-1">
+          {pillars.map((pillar) => {
+            const supporting = Array.isArray(pillar.supporting)
+              ? pillar.supporting
+              : []
+            const selected = selectedSlug === (pillar.slug || '')
+            return (
+              <li key={pillar.slug || pillar.keyword}>
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => onSelect(pillar)}
+                  className={cn(
+                    'flex w-full items-center gap-1.5 rounded-md border px-2 py-1.5 text-left text-xs transition-colors',
+                    selected
+                      ? 'border-border bg-accent'
+                      : 'border-transparent hover:bg-accent/50'
+                  )}
+                >
+                  {pillar.locked && (
+                    <Lock className="h-3 w-3 shrink-0 text-muted-foreground" />
+                  )}
+                  <span className="min-w-0 flex-1 truncate font-medium">
+                    {pillar.keyword}
+                  </span>
+                  <span className="shrink-0 text-[10px] text-muted-foreground">
+                    {supporting.length} supporting
+                  </span>
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function ClustersProposalCard({ card, disabled, onConfirm, existingSlugs = [] }) {
+  const [phase, setPhase] = useState(card.confirmed ? 'confirmed' : 'ready')
+  const [busy, setBusy] = useState(false)
+  const saved = new Set(existingSlugs)
+
+  useEffect(() => {
+    setPhase(card.confirmed ? 'confirmed' : 'ready')
+  }, [card.confirmed, card.id])
+
+  async function confirm() {
+    if (busy || disabled) return
+    setBusy(true)
+    try {
+      await onConfirm({
+        pillarSlug: card.pillar_slug,
+        pillarKeyword: card.pillar_keyword,
+        clusters: card.clusters || [],
+      })
+      setPhase('confirmed')
+    } catch {
+      // parent surfaces the error
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (phase === 'confirmed') {
+    return (
+      <div className="rounded-lg border border-border bg-card p-3 shadow-sm">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+          Cluster proposal · {card.pillar_keyword || 'pillar'}
+        </p>
+        <p className="mt-2 inline-flex items-center gap-1 text-xs text-muted-foreground">
+          <Check className="h-3.5 w-3.5" /> Clusters saved
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-lg border border-primary/30 bg-card p-3 shadow-sm">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-primary">
+        Cluster proposal · {card.pillar_keyword || 'pillar'}
+      </p>
+      {card.rationale && (
+        <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed">
+          {card.rationale}
+        </p>
+      )}
+      <ul className="mt-3 space-y-2">
+        {(card.clusters || []).map((item) => {
+          const already = saved.has(
+            String(item.keyword || '')
+              .toLowerCase()
+              .trim()
+              .replace(/[^\w\s-]/g, '')
+              .replace(/[\s_-]+/g, '-')
+              .replace(/^-+|-+$/g, '')
+          )
+          return (
+            <li
+              key={item.keyword}
+              className="rounded-md border border-border/80 px-2.5 py-2 text-sm"
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="font-medium">{item.keyword}</p>
+                {already && (
+                  <span className="text-[10px] text-muted-foreground">
+                    already saved
+                  </span>
+                )}
+              </div>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                vol {formatMetric(item.search_volume)} · KD{' '}
+                {formatMetric(item.difficulty)}
+              </p>
+              {item.note && (
+                <p className="mt-1 text-xs leading-relaxed text-foreground/80">
+                  {item.note}
+                </p>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+      <div className="mt-3 flex justify-end">
+        <Button type="button" size="sm" disabled={busy || disabled} onClick={confirm}>
+          {busy ? 'Saving…' : 'Confirm — save clusters'}
         </Button>
       </div>
     </div>
@@ -276,31 +703,42 @@ function InsightCard({ insight, onDismiss, onApply, busy }) {
   )
 }
 
-function PromptCards({ onPick, disabled }) {
+function PromptCards({ onPick, disabled, hasAudience, pillarCount = 0 }) {
   return (
     <div className="space-y-1.5 p-2">
       <p className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
         Prompts
       </p>
-      {PROMPTS.map((prompt) => (
-        <button
-          key={prompt.id}
-          type="button"
-          disabled={disabled}
-          onClick={() => onPick(prompt)}
-          className="w-full rounded-lg border border-border bg-card/60 p-3 text-left transition-colors hover:bg-accent/60 disabled:opacity-50"
-        >
-          <div className="flex items-center gap-2">
-            <p className="text-xs font-semibold text-foreground">{prompt.title}</p>
-            {prompt.badge && (
-              <Badge className="text-[9px] font-normal">{prompt.badge}</Badge>
-            )}
-          </div>
-          <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">
-            {prompt.desc}
-          </p>
-        </button>
-      ))}
+      {PROMPTS.map((prompt) => {
+        const needsAudience = Boolean(prompt.requiresAudience && !hasAudience)
+        const needsPillars = Boolean(
+          prompt.requiresMinPillars && pillarCount < prompt.requiresMinPillars
+        )
+        const locked = needsAudience || needsPillars
+        return (
+          <button
+            key={prompt.id}
+            type="button"
+            disabled={disabled || locked}
+            onClick={() => onPick(prompt)}
+            className="w-full rounded-lg border border-border bg-card/60 p-3 text-left transition-colors hover:bg-accent/60 disabled:opacity-50"
+          >
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-semibold text-foreground">{prompt.title}</p>
+              {prompt.badge && (
+                <Badge className="text-[9px] font-normal">{prompt.badge}</Badge>
+              )}
+            </div>
+            <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">
+              {needsAudience
+                ? 'Complete SEO Approach (audience) first.'
+                : needsPillars
+                  ? 'Add at least 4 pillars first.'
+                  : prompt.desc}
+            </p>
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -373,6 +811,8 @@ export default function SeoAiAdvisor() {
   const [activeTools, setActiveTools] = useState([])
   const [insightBusyId, setInsightBusyId] = useState(null)
   const [providerHealth, setProviderHealth] = useState(null)
+  const [advisorMode, setAdvisorMode] = useState('seo_approach')
+  const [focusPillar, setFocusPillar] = useState(null)
   const chatScrollRef = useRef(null)
   const abortRef = useRef(null)
   const sessionIdRef = useRef(null)
@@ -380,6 +820,16 @@ export default function SeoAiAdvisor() {
   useEffect(() => {
     sessionIdRef.current = sessionId
   }, [sessionId])
+
+  useEffect(() => {
+    setFocusPillar((prev) => {
+      if (!prev?.slug) return prev
+      const next = (ciFields?.pillars || []).find(
+        (pillar) => pillar.slug === prev.slug
+      )
+      return next || prev
+    })
+  }, [ciFields])
 
   const refreshSessions = useCallback(async () => {
     if (!companyId) return
@@ -441,7 +891,12 @@ export default function SeoAiAdvisor() {
       const data = await getSession(companyId, id)
       setSessionId(data.session.id)
       setSessionTitle(data.session.title)
-      setMessages(messagesToUi(data.messages))
+      setMessages(
+        messagesToUi(data.messages, {
+          targetAudience: ciFields?.target_audience,
+          pillars: ciFields?.pillars,
+        })
+      )
       setInsights(data.insights || [])
       setDataCards(dataCardsFromMessages(data.messages))
       setShortlist(Array.isArray(data.session.shortlist) ? data.session.shortlist : [])
@@ -468,29 +923,26 @@ export default function SeoAiAdvisor() {
     setError('')
   }
 
-  async function handleSend(overrideText, approval) {
-    const text = String(overrideText ?? (approval ? '' : input)).trim()
-    if ((!text && !approval) || !companyId || sending) return
+  async function handleSend(overrideText) {
+    const text = String(overrideText ?? input).trim()
+    if (!text || !companyId || sending) return
+    if (advisorMode === 'cluster_advisory' && !focusPillar?.slug) {
+      setError('Pick a pillar first.')
+      return
+    }
 
     setSending(true)
     setError('')
-    if (!approval) setInput('')
+    setInput('')
     setActiveTools([])
 
     const tempUserId = `local-user-${Date.now()}`
     const tempAsstId = `local-asst-${Date.now()}`
-    if (text) {
-      setMessages((prev) => [
-        ...prev,
-        { id: tempUserId, role: 'user', text },
-        { id: tempAsstId, role: 'assistant', text: '', streaming: true },
-      ])
-    } else {
-      setMessages((prev) => [
-        ...prev,
-        { id: tempAsstId, role: 'assistant', text: '', streaming: true },
-      ])
-    }
+    setMessages((prev) => [
+      ...prev,
+      { id: tempUserId, role: 'user', text },
+      { id: tempAsstId, role: 'assistant', text: '', streaming: true },
+    ])
 
     const controller = new AbortController()
     abortRef.current = controller
@@ -499,8 +951,10 @@ export default function SeoAiAdvisor() {
       await streamChat({
         companyId,
         sessionId,
-        message: text || undefined,
-        approval,
+        message: text,
+        mode: advisorMode,
+        pillarSlug:
+          advisorMode === 'cluster_advisory' ? focusPillar?.slug : undefined,
         signal: controller.signal,
         onEvent: (event, data) => {
           if (event === 'session') {
@@ -538,18 +992,41 @@ export default function SeoAiAdvisor() {
                 return [...prev, card]
               })
             }
-          } else if (event === 'data_request') {
+          } else if (event === 'audience_proposal') {
             setMessages((prev) => [
-              ...prev.filter((m) => m.id !== tempAsstId || (m.text && m.text.trim())),
+              ...prev,
               {
-                id: `approval-${data.requestId}`,
-                role: 'approval',
-                status: 'pending',
-                ...data,
+                id: `audience-${Date.now()}`,
+                role: 'audience_proposal',
+                brief: data.brief || '',
+                audience_text: data.audience_text || '',
+                confirmed: false,
               },
             ])
-          } else if (event === 'spend') {
-            setSessionSpend((n) => n + (Number(data.estCredits) || 0))
+          } else if (event === 'pillars_proposal') {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `pillars-${Date.now()}`,
+                role: 'pillars_proposal',
+                rationale: data.rationale || '',
+                pillars: Array.isArray(data.pillars) ? data.pillars : [],
+                confirmed: false,
+              },
+            ])
+          } else if (event === 'clusters_proposal') {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `clusters-${Date.now()}`,
+                role: 'clusters_proposal',
+                pillar_slug: data.pillar_slug || '',
+                pillar_keyword: data.pillar_keyword || '',
+                rationale: data.rationale || '',
+                clusters: Array.isArray(data.clusters) ? data.clusters : [],
+                confirmed: false,
+              },
+            ])
           } else if (event === 'insight') {
             setInsights((prev) => {
               if (prev.some((i) => i.id === data.id)) return prev
@@ -579,30 +1056,90 @@ export default function SeoAiAdvisor() {
       setActiveTools([])
       setSending(false)
       abortRef.current = null
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.role === 'approval' && m.status === 'running'
-            ? { ...m, status: 'done' }
-            : m
-        )
-      )
     }
   }
 
-  function handleApproval(card, payload) {
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === card.id
-          ? { ...m, status: payload.decision === 'approve' ? 'running' : 'declined' }
-          : m
+  async function handleSaveAudience({ audience_text, override }) {
+    try {
+      const data = await saveAudience({
+        companyId,
+        audience_text,
+        override,
+      })
+      if (data?.needsOverride) return data
+      toast({ title: 'Saved to Company Intelligence' })
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.role === 'audience_proposal' && m.audience_text === audience_text
+            ? { ...m, confirmed: true }
+            : m
+        )
       )
-    )
-    handleSend(null, {
-      requestId: payload.requestId || card.requestId,
-      decision: payload.decision,
-      provider: payload.provider,
-      plan: payload.plan || card.plan,
-    })
+      try {
+        const fields = await getComposerFields(companyId)
+        setCiFields(fields)
+      } catch {
+        // keep the saved toast even if composer fields fail to refresh
+      }
+      return data
+    } catch (err) {
+      setError(err.message || 'Failed to save audience')
+      throw err
+    }
+  }
+
+  async function handleSavePillars({ pillars }) {
+    try {
+      const data = await savePillars({ companyId, pillars })
+      toast({ title: `Pillars saved (${data.count ?? pillars.length})` })
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.role === 'pillars_proposal' ? { ...m, confirmed: true } : m
+        )
+      )
+      try {
+        const fields = await getComposerFields(companyId)
+        setCiFields(fields)
+      } catch {
+        // keep the saved toast even if composer fields fail to refresh
+      }
+      return data
+    } catch (err) {
+      setError(err.message || 'Failed to save pillars')
+      throw err
+    }
+  }
+
+  async function handleSaveClusters({ pillarSlug, pillarKeyword, clusters }) {
+    try {
+      const data = await saveClusters({
+        companyId,
+        pillarSlug,
+        clusters,
+      })
+      const label = pillarKeyword || data.pillar?.keyword || 'pillar'
+      toast({
+        title: `Clusters saved for ${label} (${data.supportingCount ?? clusters.length})`,
+      })
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.role === 'clusters_proposal' &&
+          (m.pillar_slug === pillarSlug || m.pillar_keyword === pillarKeyword)
+            ? { ...m, confirmed: true }
+            : m
+        )
+      )
+      try {
+        const fields = await getComposerFields(companyId)
+        setCiFields(fields)
+      } catch {
+        // keep the saved toast even if composer fields fail to refresh
+      }
+      return data
+    } catch (err) {
+      setError(err.message || 'Failed to save clusters')
+      throw err
+    }
   }
 
   function toggleStar(item) {
@@ -741,6 +1278,38 @@ export default function SeoAiAdvisor() {
         .map(([k]) => k)
     : []
 
+  const coveragePillars = Array.isArray(ciFields?.pillars) ? ciFields.pillars : []
+  const pillarCount = coveragePillars.length
+  const hasAudience = Boolean(String(ciFields?.target_audience || '').trim())
+  const hasCluster = coveragePillars.some(
+    (pillar) =>
+      Array.isArray(pillar?.supporting) && pillar.supporting.length > 0
+  )
+  const clusterPrompt = PROMPTS.find((prompt) => prompt.id === 'cluster_advisory')
+
+  function handlePickPrompt(prompt) {
+    setAdvisorMode(prompt.mode || '')
+    setComposerPrompt(prompt)
+    if (prompt.id === 'cluster_advisory') {
+      if (focusPillar) setComposerOpen(true)
+      return
+    }
+    setComposerOpen(true)
+  }
+
+  function handleSelectStep(mode) {
+    const prompt = PROMPTS.find((item) => item.mode === mode)
+    if (!prompt) return
+    handlePickPrompt(prompt)
+  }
+
+  function handlePickClusterPillar(pillar) {
+    setFocusPillar(pillar)
+    setAdvisorMode('cluster_advisory')
+    setComposerPrompt(clusterPrompt)
+    setComposerOpen(true)
+  }
+
   const chatPane = (
     <section className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2">
@@ -775,13 +1344,44 @@ export default function SeoAiAdvisor() {
               </div>
             )}
             {messages.map((m) => {
-              if (m.role === 'approval') {
+              if (m.role === 'audience_proposal') {
                 return (
-                  <ApprovalCard
+                  <AudienceProposalCard
                     key={m.id}
                     card={m}
                     disabled={sending}
-                    onDecide={(payload) => handleApproval(m, payload)}
+                    onConfirm={handleSaveAudience}
+                  />
+                )
+              }
+              if (m.role === 'pillars_proposal') {
+                return (
+                  <PillarsProposalCard
+                    key={m.id}
+                    card={m}
+                    disabled={sending}
+                    existingSlugs={(ciFields?.pillars || []).map(
+                      (pillar) => pillar.slug
+                    )}
+                    onConfirm={handleSavePillars}
+                  />
+                )
+              }
+              if (m.role === 'clusters_proposal') {
+                const pillar = (ciFields?.pillars || []).find(
+                  (item) =>
+                    item.slug === m.pillar_slug ||
+                    item.keyword === m.pillar_keyword
+                )
+                return (
+                  <ClustersProposalCard
+                    key={m.id}
+                    card={m}
+                    disabled={sending}
+                    existingSlugs={(pillar?.supporting || []).map(
+                      (item) => item.slug
+                    )}
+                    onConfirm={handleSaveClusters}
                   />
                 )
               }
@@ -846,6 +1446,7 @@ export default function SeoAiAdvisor() {
         Live Results
       </p>
       <ScrollArea className="flex-1 px-2 pb-3 pt-2">
+        <CoverageTree pillars={ciFields?.pillars || []} />
         <DataPanel
           cards={dataCards}
           shortlist={shortlist}
@@ -915,6 +1516,15 @@ export default function SeoAiAdvisor() {
         </Button>
       </header>
 
+      <AdvisorStepper
+        activeMode={advisorMode}
+        hasAudience={hasAudience}
+        pillarCount={pillarCount}
+        hasCluster={hasCluster}
+        disabled={sending}
+        onSelect={handleSelectStep}
+      />
+
       {error && (
         <div className="border-b border-destructive/30 bg-destructive/5 px-4 py-2 text-xs text-destructive">
           {error}
@@ -936,11 +1546,18 @@ export default function SeoAiAdvisor() {
                 <ScrollArea className="h-full">
                   <PromptCards
                     disabled={sending}
-                    onPick={(prompt) => {
-                      setComposerPrompt(prompt)
-                      setComposerOpen(true)
-                    }}
+                    hasAudience={hasAudience}
+                    pillarCount={pillarCount}
+                    onPick={handlePickPrompt}
                   />
+                  {advisorMode === 'cluster_advisory' && (
+                    <ClusterPillarPicker
+                      pillars={coveragePillars}
+                      selectedSlug={focusPillar?.slug || ''}
+                      disabled={sending}
+                      onSelect={handlePickClusterPillar}
+                    />
+                  )}
                 </ScrollArea>
               </ResizablePanel>
               <ResizableHandle />
@@ -989,11 +1606,18 @@ export default function SeoAiAdvisor() {
       <div className="flex min-h-0 flex-1 flex-col overflow-auto lg:hidden">
         <PromptCards
           disabled={sending}
-          onPick={(prompt) => {
-            setComposerPrompt(prompt)
-            setComposerOpen(true)
-          }}
+          hasAudience={hasAudience}
+          pillarCount={pillarCount}
+          onPick={handlePickPrompt}
         />
+        {advisorMode === 'cluster_advisory' && (
+          <ClusterPillarPicker
+            pillars={coveragePillars}
+            selectedSlug={focusPillar?.slug || ''}
+            disabled={sending}
+            onSelect={handlePickClusterPillar}
+          />
+        )}
         <div className="h-[min(70vh,640px)] min-h-[480px] overflow-hidden border-y border-border">
           {chatPane}
         </div>
@@ -1024,7 +1648,16 @@ export default function SeoAiAdvisor() {
 
       <PromptComposer
         prompt={composerPrompt}
-        ci={ciFields}
+        ci={{
+          ...ciFields,
+          parent_pillar: focusPillar?.keyword || '',
+          existing_supporting: (focusPillar?.supporting || [])
+            .map((item) =>
+              item.locked ? `${item.keyword} (locked)` : item.keyword
+            )
+            .filter(Boolean)
+            .join('\n'),
+        }}
         open={composerOpen}
         onOpenChange={setComposerOpen}
         onFeed={(text) => handleSend(text)}

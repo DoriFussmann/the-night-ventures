@@ -1,9 +1,18 @@
 export const PROMPTS = [
   {
+    id: 'seo_approach',
+    title: 'SEO Approach',
+    desc: 'Discuss the overall SEO approach and lock a plain-language audience.',
+    badge: 'Tool 1',
+    mode: 'seo_approach',
+    fields: [],
+    template: () =>
+      `Grab everything you know about this company from Company Intelligence and let's discuss the SEO approach. Use live data tools when they help. If a tool returns empty, unavailable, or errors, say so plainly — never invent metrics. When we agree, give a short approach brief and propose a 3-paragraph audience description (no keywords). Editing or removing a saved audience is done in Company Data, not here.`,
+  },
+  {
     id: 'general_research',
     title: 'General SEO Research',
     desc: 'Open-ended discovery for a topic — landscape, demand, and where the wins are.',
-    badge: 'Start here',
     fields: [
       {
         key: 'seed_topic',
@@ -25,61 +34,89 @@ Goal: ${v.goal || '(not set)'}
 Map the demand landscape, classify search intent, and surface the highest-opportunity keywords we should build around. Flag anything that overlaps our existing pillars.`,
   },
   {
-    id: 'pillar_selection',
-    title: 'Pillar keyword selection',
-    desc: 'Find the 1–3 broad, high-authority terms a new content pillar should own.',
+    id: 'pillar_advisory',
+    title: 'Pillar Advisory',
+    desc: 'Land 4–8 high-volume pillar keywords from the target audience.',
+    badge: 'Tool 2',
+    mode: 'pillar_advisory',
+    requiresAudience: true,
     fields: [
       {
-        key: 'theme',
-        label: 'Pillar theme',
-        ci: false,
-        type: 'input',
-        placeholder: 'broad theme',
-      },
-      { key: 'domain', label: 'Domain', ci: true, type: 'input' },
-      { key: 'market', label: 'Target market', ci: true, type: 'input' },
-      {
-        key: 'exclude_pillars',
-        label: 'Existing pillars (exclude)',
+        key: 'target_audience',
+        label: 'Target audience',
         ci: true,
-        type: 'input',
+        type: 'textarea',
+        readOnly: true,
+      },
+      {
+        key: 'existing_pillars',
+        label: 'Existing pillars',
+        ci: true,
+        type: 'textarea',
         readOnly: true,
       },
     ],
     template: (v) =>
-      `Recommend pillar keywords for a new content pillar around ${v.theme || '(theme)'} on ${v.domain || '(domain)'} in ${v.market || 'United States'}.
+      `Using this company's target audience and Company Intelligence, help us land 4–8 pillar keywords. High search volume is the priority; high competition is acceptable. Pull live volume and difficulty. If a tool returns empty, unavailable, or errors, say so plainly — never invent volumes or difficulty. Saves are add-only; editing or removing pillars is done in Company Data.
 
-We already own these pillars — do not re-suggest them: ${v.exclude_pillars || '(none)'}.
+Target audience:
+${v.target_audience || '(not set)'}
 
-Prioritise broad terms with enough authority headroom that we can realistically rank, and explain the trade-off between volume and difficulty for each.`,
+Existing pillars (locked ones already have content and cannot be removed or renamed):
+${v.existing_pillars || '(none saved)'}`,
   },
   {
-    id: 'cluster_selection',
-    title: 'Cluster keyword selection',
-    desc: 'Build the supporting cluster of mid- and long-tail terms under a chosen pillar.',
+    id: 'cluster_advisory',
+    title: 'Cluster Advisory',
+    desc: 'Find 3–5 supporting keywords under one saved pillar.',
+    badge: 'Tool 3',
+    mode: 'cluster_advisory',
+    requiresMinPillars: 4,
     fields: [
       {
-        key: 'parent_pillar',
-        label: 'Parent pillar',
-        ci: false,
-        type: 'input',
-        placeholder: 'chosen pillar',
+        key: 'target_audience',
+        label: 'Target audience',
+        ci: true,
+        type: 'textarea',
+        readOnly: true,
       },
-      { key: 'domain', label: 'Domain', ci: true, type: 'input' },
       {
-        key: 'cluster_size',
-        label: 'Cluster size',
-        ci: false,
-        type: 'select',
-        options: ['6–10', '10–15', '15–25'],
+        key: 'parent_pillar',
+        label: 'Chosen pillar',
+        ci: true,
+        type: 'input',
+        readOnly: true,
+      },
+      {
+        key: 'existing_supporting',
+        label: 'Existing supporting keywords',
+        ci: true,
+        type: 'textarea',
+        readOnly: true,
       },
     ],
     template: (v) =>
-      `Build a supporting keyword cluster under the pillar ${v.parent_pillar || '(pillar)'} for ${v.domain || '(domain)'}.
+      `Focus only on the pillar “${v.parent_pillar || '(pick a pillar)'}”. Using the target audience and Company Intelligence, find 3–5 strong supporting keywords for this pillar. Pull live volume and difficulty. If a tool returns empty, unavailable, or errors, say so plainly — never invent volumes or difficulty. Do not re-suggest keywords already under it. Saves are add-only; editing or removing clusters is done in Company Data.
 
-Return roughly ${v.cluster_size || '10–15'} mid- and long-tail terms grouped by sub-intent, each mapped to a content angle. Note where a term could cannibalise an existing page.`,
+Target audience:
+${v.target_audience || '(not set)'}
+
+Existing supporting keywords (locked ones already have content and cannot be removed or renamed):
+${v.existing_supporting || '(none yet)'}`,
   },
 ]
+
+function formatExistingPillars(ci) {
+  const pillars = Array.isArray(ci?.pillars) ? ci.pillars : []
+  if (pillars.length === 0) return ''
+  return pillars
+    .map((pillar) => {
+      const keyword = pillar.keyword || pillar.slug || ''
+      return pillar.locked ? `${keyword} (locked)` : keyword
+    })
+    .filter(Boolean)
+    .join('\n')
+}
 
 export function defaultPromptValues(prompt, ci) {
   const profile = ci || {}
@@ -99,6 +136,10 @@ export function defaultPromptValues(prompt, ci) {
     exclude_pillars: pillars,
     parent_pillar: '',
     cluster_size: '10–15',
+    target_audience: profile.target_audience || '',
+    existing_pillars: formatExistingPillars(profile),
+    parent_pillar: profile.parent_pillar || '',
+    existing_supporting: profile.existing_supporting || '',
   }
   const values = {}
   for (const field of prompt.fields || []) {

@@ -224,6 +224,7 @@ export function drawClusterImage(canvas, options) {
     domain = "",
     pillarKeyword = "",
     supportingKeyword = "",
+    impact = "",
   } = options;
 
   const width = IMAGE_WIDTH;
@@ -243,7 +244,9 @@ export function drawClusterImage(canvas, options) {
   paintBackground(ctx, spec, style);
 
   const companyLabel = String(productName || companyName || "Company").trim();
-  const headline = String(supportingKeyword || pillarKeyword || "Topic").trim();
+  const headline = String(
+    impact || supportingKeyword || pillarKeyword || "Topic"
+  ).trim();
   const eyebrow = supportingKeyword
     ? String(pillarKeyword || "").trim()
     : "Pillar";

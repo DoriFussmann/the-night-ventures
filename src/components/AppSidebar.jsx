@@ -165,9 +165,9 @@ export default function AppSidebar({ user }) {
   ];
 
   const tbcNav = [
-    { label: "Advisor", path: `/company/${activeCompanyId}/seo-ai-advisor`, icon: MessageSquareText, status: "Verify" },
-    { label: "Image Generation", path: `/company/${activeCompanyId}/image-generator`, icon: Sparkles, status: "Verify" },
-    { label: "Cluster Image..", path: `/company/${activeCompanyId}/cluster-image-generator`, icon: Image, status: "Verify" },
+    { label: "Advisor", path: `/company/${activeCompanyId}/seo-ai-advisor`, icon: MessageSquareText, status: "Done" },
+    { label: "Image Generation", path: `/company/${activeCompanyId}/image-generator`, icon: Sparkles, status: "Done" },
+    { label: "Cluster Image..", path: `/company/${activeCompanyId}/cluster-image-generator`, icon: Image, status: "Done" },
   ];
 
   const adminItems = [

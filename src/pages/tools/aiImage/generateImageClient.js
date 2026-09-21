@@ -62,6 +62,16 @@ export async function downloadGeneratedImage(label, result) {
   }
 }
 
+/** Append optional pillar / supporting keywords so the image can reflect them. */
+export function appendKeywordContext(prompt, pillarKeyword, supportingKeyword) {
+  const base = String(prompt || "").trim();
+  const extras = [];
+  if (pillarKeyword) extras.push(`pillar keyword “${pillarKeyword}”`);
+  if (supportingKeyword) extras.push(`supporting keyword “${supportingKeyword}”`);
+  if (extras.length === 0) return base;
+  return `${base}\n\nThe image should clearly reflect the ${extras.join(" and the ")}.`;
+}
+
 /** Combine company design guide + optional extra guidelines for styleContext. */
 export function buildStyleContext(designGuideAbstract, extraGuidelines) {
   const brand = String(designGuideAbstract || "").trim();
