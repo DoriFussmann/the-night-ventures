@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Loader2, Mail, AlertTriangle } from "lucide-react";
+import { Loader2, Mail, AlertTriangle, Upload, CheckCircle2 } from "lucide-react";
+import Papa from "papaparse";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { smartlead } from "./emailCampaigns/smartleadApi";
+import { cleanLeads, OUTPUT_FIELDS } from "./emailCampaigns/cleanLeads";
 
 const VIEWS = [
   { id: "campaign", label: "Summary", needsCampaign: true },
@@ -260,6 +262,229 @@ function CampaignsView({ data, onPick }) {
   );
 }
 
+function LeadImport({ campaignId }) {
+  const [fileName, setFileName] = useState("");
+  const [cleaning, setCleaning] = useState(false);
+  const [cleanErr, setCleanErr] = useState("");
+  const [cleaned, setCleaned] = useState(null); // { leads, stats }
+  const [confirming, setConfirming] = useState(false);
+  const [pushing, setPushing] = useState(false);
+  const [pushErr, setPushErr] = useState("");
+  const [pushResult, setPushResult] = useState(null);
+
+  const handleFile = (file) => {
+    if (!file) return;
+    setFileName(file.name);
+    setCleanErr("");
+    setCleaned(null);
+    setPushResult(null);
+    setConfirming(false);
+    setCleaning(true);
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (res) => {
+        try {
+          setCleaned(cleanLeads(res.data));
+        } catch (err) {
+          setCleanErr(err?.message || "Could not clean the file");
+        } finally {
+          setCleaning(false);
+        }
+      },
+      error: (err) => {
+        setCleanErr(err?.message || "Could not read the file");
+        setCleaning(false);
+      },
+    });
+  };
+
+  const onDrop = (e) => {
+    e.preventDefault();
+    const file = e.dataTransfer?.files?.[0];
+    handleFile(file);
+  };
+
+  const runPush = async () => {
+    if (!cleaned?.leads?.length) return;
+    if (!String(campaignId).trim()) {
+      setPushErr("Set a Campaign ID above first.");
+      return;
+    }
+    setPushing(true);
+    setPushErr("");
+    setPushResult(null);
+    try {
+      const data = await smartlead("leads-import", {
+        campaignId,
+        leads: cleaned.leads,
+      });
+      setPushResult(data);
+      setConfirming(false);
+    } catch (err) {
+      setPushErr(err?.message || "Push failed");
+    } finally {
+      setPushing(false);
+    }
+  };
+
+  const preview = cleaned?.leads?.slice(0, 50) || [];
+
+  return (
+    <div className="space-y-4 rounded-lg border border-border bg-card px-4 py-4">
+      <div>
+        <h2 className="text-sm font-medium">Import a lead list</h2>
+        <p className="text-xs text-muted-foreground">
+          Drop an AudienceLab CSV. Clean keeps only the useful fields, picks the
+          best email, and de-dupes. Push imports the leads into the campaign — it
+          does <span className="font-medium text-foreground">not</span> start
+          sending.
+        </p>
+      </div>
+
+      <div
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={onDrop}
+        className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/30 px-4 py-8 text-center"
+      >
+        <Upload className="h-5 w-5 text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">
+          Drag a CSV here, or
+        </p>
+        <label className="cursor-pointer text-sm font-medium text-primary underline">
+          choose a file
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => handleFile(e.target.files?.[0])}
+          />
+        </label>
+        {fileName && (
+          <p className="text-xs text-muted-foreground">Selected: {fileName}</p>
+        )}
+      </div>
+
+      {cleaning && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Cleaning…
+        </div>
+      )}
+      {cleanErr && (
+        <div className="flex items-center gap-2 text-sm text-destructive">
+          <AlertTriangle className="h-4 w-4" /> {cleanErr}
+        </div>
+      )}
+
+      {cleaned && !cleaning && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+            <span className="font-medium">{cleaned.stats.kept} leads ready</span>
+            <span className="text-muted-foreground">
+              {cleaned.stats.business} business · {cleaned.stats.personal} personal
+            </span>
+            <span className="text-muted-foreground">
+              {cleaned.stats.duplicates_removed} dupes removed
+            </span>
+            <span className="text-muted-foreground">
+              {cleaned.stats.dropped_no_email} dropped (no email)
+            </span>
+          </div>
+
+          <details className="rounded-md border border-border">
+            <summary className="cursor-pointer px-3 py-2 text-sm text-muted-foreground">
+              Preview cleaned data (first {preview.length} of {cleaned.stats.kept})
+            </summary>
+            <div className="max-h-96 overflow-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-muted/70 text-left uppercase tracking-wider text-muted-foreground">
+                  <tr>
+                    {OUTPUT_FIELDS.map((f) => (
+                      <th key={f} className="whitespace-nowrap px-2 py-1.5">
+                        {f}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {preview.map((row, i) => (
+                    <tr key={i} className="border-t border-border">
+                      {OUTPUT_FIELDS.map((f) => (
+                        <td key={f} className="whitespace-nowrap px-2 py-1 max-w-[16rem] truncate">
+                          {row[f]}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
+
+          {!confirming ? (
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                setPushErr("");
+                setConfirming(true);
+              }}
+              disabled={!cleaned.stats.kept}
+            >
+              Push {cleaned.stats.kept} leads to campaign
+            </Button>
+          ) : (
+            <div className="space-y-2 rounded-md border border-orange-200 bg-orange-50 px-3 py-3">
+              <p className="text-sm text-foreground">
+                Import {cleaned.stats.kept} leads into campaign{" "}
+                <span className="font-mono">{String(campaignId) || "—"}</span>? This
+                adds the leads but does not start sending.
+              </p>
+              <div className="flex gap-2">
+                <Button type="button" size="sm" onClick={runPush} disabled={pushing}>
+                  {pushing ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Pushing…
+                    </>
+                  ) : (
+                    "Confirm push"
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setConfirming(false)}
+                  disabled={pushing}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {pushErr && (
+            <div className="flex items-center gap-2 text-sm text-destructive">
+              <AlertTriangle className="h-4 w-4" /> {pushErr}
+            </div>
+          )}
+          {pushResult && (
+            <div className="flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-600" />
+              <span>
+                Done — added {pushResult.added}, already in campaign{" "}
+                {pushResult.already_in_campaign}, duplicates {pushResult.duplicates},
+                invalid {pushResult.invalid} (across {pushResult.batches} batch
+                {pushResult.batches === 1 ? "" : "es"}).
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function EmailCampaigns() {
   const { companyId } = useParams();
   const [loadingCompany, setLoadingCompany] = useState(true);
@@ -337,7 +562,7 @@ export default function EmailCampaigns() {
         : "—";
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 px-4 py-6">
+    <div className="w-full space-y-6 px-6 py-6">
       <div className="space-y-1">
         <h1 className="flex items-center gap-2 text-xl font-semibold">
           <Mail className="h-5 w-5" />
@@ -376,6 +601,8 @@ export default function EmailCampaigns() {
               className="max-w-xs"
             />
           </div>
+
+          <LeadImport campaignId={campaignId} />
 
           <div className="flex flex-wrap gap-2">
             {VIEWS.map((v) => (
