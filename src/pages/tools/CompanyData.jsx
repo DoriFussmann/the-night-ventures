@@ -15,6 +15,14 @@ import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
@@ -409,6 +417,9 @@ export default function CompanyData() {
   const [githubOwner, setGithubOwner] = useState("");
   const [githubRepo, setGithubRepo] = useState("");
   const [githubTokenKey, setGithubTokenKey] = useState("");
+  const [emailEnabled, setEmailEnabled] = useState(false);
+  const [emailProvider, setEmailProvider] = useState("");
+  const [emailCampaignId, setEmailCampaignId] = useState("");
   /** Active panel modal: 'target' | 'pillars' | 'competitors' | 'publish-destination' | ... | `custom:${id}` */
   const [openPanel, setOpenPanel] = useState(null);
   const [openPillars, setOpenPillars] = useState({});
@@ -443,7 +454,7 @@ export default function CompanyData() {
       companyIndustriesResult,
       socialAccountsResult,
     ] = await Promise.all([
-      supabase.from("companies").select("name, github_owner, github_repo, github_token_key").eq("id", companyId).maybeSingle(),
+      supabase.from("companies").select("name, github_owner, github_repo, github_token_key, email_campaigns_enabled, email_campaigns_provider, email_campaigns_campaign_id").eq("id", companyId).maybeSingle(),
       supabase
         .from("company_profiles")
         .select(`${PROFILE_SELECT_BASE}, ${PROFILE_SELECT_INTELLIGENCE}`)
@@ -488,6 +499,9 @@ export default function CompanyData() {
       setGithubOwner(companyResult.data?.github_owner || "");
       setGithubRepo(companyResult.data?.github_repo || "");
       setGithubTokenKey(companyResult.data?.github_token_key || "");
+      setEmailEnabled(Boolean(companyResult.data?.email_campaigns_enabled));
+      setEmailProvider(companyResult.data?.email_campaigns_provider || "");
+      setEmailCampaignId(companyResult.data?.email_campaigns_campaign_id || "");
     }
 
     if (customFieldsResult.error) {
@@ -1289,6 +1303,11 @@ export default function CompanyData() {
         github_owner: githubOwner.trim() || null,
         github_repo: githubRepo.trim() || null,
         github_token_key: githubTokenKey.trim().toUpperCase() || null,
+        email_campaigns_enabled: emailEnabled,
+        email_campaigns_provider: emailEnabled ? emailProvider || null : null,
+        email_campaigns_campaign_id: emailEnabled
+          ? emailCampaignId.trim() || null
+          : null,
       })
       .eq("id", companyId);
 
@@ -1910,6 +1929,7 @@ export default function CompanyData() {
   const publishDestinationFilled = Boolean(
     githubOwner.trim() && githubRepo.trim() && githubTokenKey.trim()
   );
+  const emailCampaignsFilled = Boolean(emailEnabled);
   const briefCtx = { fields, companyName };
   const brief = briefProgress(briefCtx);
   const briefPoints = allBriefPoints(briefCtx);
@@ -2050,6 +2070,12 @@ export default function CompanyData() {
               title: "Publish Destination",
               filled: publishDestinationFilled,
               onClick: () => setOpenPanel("publish-destination"),
+            },
+            {
+              id: "email-campaigns",
+              title: "Email Campaigns",
+              filled: emailCampaignsFilled,
+              onClick: () => setOpenPanel("email-campaigns"),
             },
             ...customFieldDefs.map((def) => ({
               id: `custom:${def.id}`,
@@ -2987,6 +3013,111 @@ export default function CompanyData() {
             </Button>
             <PanelModalActions
               onCopy={() => handleCopyPanel(openPanel)}
+              onClose={() => setOpenPanel(null)}
+              onSave={saveAndClosePanel}
+              saving={saving}
+            />
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Email Campaigns */}
+      <Dialog
+        open={openPanel === "email-campaigns"}
+        onOpenChange={(open) => setOpenPanel(open ? "email-campaigns" : null)}
+      >
+        <DialogContent className={PANEL_DIALOG_CLASS}>
+          <DialogHeader className="shrink-0 space-y-1 border-b border-border px-6 py-4 pr-12 text-left">
+            <DialogTitle>Email Campaigns</DialogTitle>
+            <DialogDescription>
+              Outreach for this company (EPIC). Turn it on, choose the provider,
+              and set the campaign ID. The provider API key lives in a Vercel
+              environment variable (INSTANTLY_API_KEY / SMARTLEAD_API_KEY), not
+              here.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-1">
+                <Label htmlFor="email_campaigns_enabled">
+                  Email campaigns enabled
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  When on, this company shows the Email Campaigns page and can run
+                  outreach.
+                </p>
+              </div>
+              <Switch
+                id="email_campaigns_enabled"
+                checked={emailEnabled}
+                onCheckedChange={setEmailEnabled}
+              />
+            </div>
+
+            {emailEnabled && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="email_campaigns_provider">Provider</Label>
+                  <Select value={emailProvider} onValueChange={setEmailProvider}>
+                    <SelectTrigger id="email_campaigns_provider">
+                      <SelectValue placeholder="Choose provider" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="instantly">Instantly</SelectItem>
+                      <SelectItem value="smartlead">SmartLead</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="email_campaigns_campaign_id">Campaign ID</Label>
+                  <Input
+                    id="email_campaigns_campaign_id"
+                    value={emailCampaignId}
+                    onChange={(e) => setEmailCampaignId(e.target.value)}
+                    placeholder="e.g. 01H8X..."
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  API key: set{" "}
+                  {emailProvider === "smartlead"
+                    ? "SMARTLEAD_API_KEY"
+                    : "INSTANTLY_API_KEY"}{" "}
+                  in Vercel → Settings → Environment Variables, then redeploy. The
+                  Integrations tab shows its status.
+                </p>
+              </>
+            )}
+          </div>
+          <DialogFooter className="shrink-0 gap-2 border-t border-border px-6 py-4 sm:justify-between">
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => {
+                setEmailEnabled(false);
+                setEmailProvider("");
+                setEmailCampaignId("");
+              }}
+            >
+              Clear
+            </Button>
+            <PanelModalActions
+              onCopy={async () => {
+                const text = [
+                  `Email campaigns: ${emailEnabled ? "on" : "off"}`,
+                  emailEnabled && emailProvider ? `Provider: ${emailProvider}` : "",
+                  emailEnabled && emailCampaignId.trim()
+                    ? `Campaign ID: ${emailCampaignId.trim()}`
+                    : "",
+                ]
+                  .filter(Boolean)
+                  .join("\n");
+                try {
+                  await navigator.clipboard.writeText(text);
+                  return true;
+                } catch {
+                  return false;
+                }
+              }}
               onClose={() => setOpenPanel(null)}
               onSave={saveAndClosePanel}
               saving={saving}
