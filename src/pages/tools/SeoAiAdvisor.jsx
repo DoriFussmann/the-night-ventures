@@ -373,7 +373,7 @@ export default function SeoAiAdvisor() {
   const [activeTools, setActiveTools] = useState([])
   const [insightBusyId, setInsightBusyId] = useState(null)
   const [providerHealth, setProviderHealth] = useState(null)
-  const bottomRef = useRef(null)
+  const chatScrollRef = useRef(null)
   const abortRef = useRef(null)
   const sessionIdRef = useRef(null)
 
@@ -415,7 +415,9 @@ export default function SeoAiAdvisor() {
   }, [companyId, refreshSessions])
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const el = chatScrollRef.current
+    if (!el) return
+    el.scrollTop = el.scrollHeight
   }, [messages, activeTools, sending])
 
   useEffect(() => {
@@ -740,8 +742,8 @@ export default function SeoAiAdvisor() {
     : []
 
   const chatPane = (
-    <section className="flex min-h-0 flex-col">
-      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+    <section className="flex h-full min-h-0 flex-col overflow-hidden">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2">
         <p className="truncate text-xs font-medium">
           {sessionTitle || 'New topic'}
         </p>
@@ -759,7 +761,7 @@ export default function SeoAiAdvisor() {
           </Button>
         </div>
       </div>
-      <ScrollArea className="flex-1 px-4 py-4">
+      <div ref={chatScrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         {loadingSession ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> Loading session…
@@ -803,11 +805,10 @@ export default function SeoAiAdvisor() {
                 </div>
               )
             })}
-            <div ref={bottomRef} />
           </div>
         )}
-      </ScrollArea>
-      <div className="border-t border-border px-4 py-3">
+      </div>
+      <div className="shrink-0 border-t border-border px-4 py-3">
         <ToolStatusBar activeTools={activeTools} />
         <div className="flex items-end gap-2">
           <Textarea
@@ -891,7 +892,7 @@ export default function SeoAiAdvisor() {
   )
 
   return (
-    <div className="flex h-[calc(100vh-3rem)] min-h-[560px] flex-col">
+    <div className="flex h-[calc(100vh-3rem)] min-h-0 flex-col overflow-hidden">
       <header className="flex items-center justify-between border-b border-border px-4 py-3">
         <div>
           <h1 className="flex items-center gap-2 font-display text-lg tracking-tight">
@@ -927,7 +928,7 @@ export default function SeoAiAdvisor() {
         </div>
       )}
 
-      <div className="hidden min-h-0 flex-1 lg:flex">
+      <div className="hidden min-h-0 flex-1 overflow-hidden lg:flex">
         <ResizablePanelGroup direction="horizontal">
           <ResizablePanel defaultSize={25} minSize={16}>
             <ResizablePanelGroup direction="vertical">
@@ -993,7 +994,9 @@ export default function SeoAiAdvisor() {
             setComposerOpen(true)
           }}
         />
-        <div className="min-h-[480px] border-y border-border">{chatPane}</div>
+        <div className="h-[min(70vh,640px)] min-h-[480px] overflow-hidden border-y border-border">
+          {chatPane}
+        </div>
         <div className="min-h-[280px]">{resultsPane}</div>
         <div className="min-h-[240px] border-t border-border">
           <Shortlist
