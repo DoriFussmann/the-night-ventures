@@ -8,6 +8,7 @@ import { handleArticleUpdates } from '../lib/article-updates/handler.js'
 import { handleCompanyDataImport } from '../lib/company-data-import/handler.js'
 import { handleAuditSummary } from '../lib/audit-summary/handler.js'
 import { handleCoreVersion } from '../lib/core-version/handler.js'
+import { handleSmartlead } from '../lib/smartlead/handler.js'
 import { handleIntegrations } from '../lib/integrations/handler.js'
 
 export const config = {
@@ -315,6 +316,9 @@ export default async function handler(req, res) {
   }
   if (action === 'core-version') {
     return handleCoreVersion(req, res)
+  }
+  if (action === 'smartlead') {
+    return handleSmartlead(req, res)
   }
   if (action === 'integrations') {
     return handleIntegrations(req, res)
