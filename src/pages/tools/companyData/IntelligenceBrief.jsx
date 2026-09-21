@@ -1,5 +1,5 @@
 import React from "react";
-import { Check, ChevronDown, Plus, Trash2 } from "lucide-react";
+import { Check, ChevronDown, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -9,8 +9,8 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import {
-  BASIC_FIELDS,
   INTELLIGENCE_GROUPS,
+  VISIBLE_BASIC_FIELDS,
   basicProgress,
   groupProgress,
   intelligenceFieldFilled,
@@ -68,7 +68,6 @@ export default function IntelligenceBrief({
   onFieldChange,
   socialLinks,
   onSocialChange,
-  onAddSocial,
   onRemoveSocial,
   servicesPreview = [],
   competitorsPreview = [],
@@ -82,90 +81,115 @@ export default function IntelligenceBrief({
 }) {
   const ctx = { fields, companyName };
   const basic = basicProgress(ctx);
+  const identityOpen = openGroups.identity === true;
 
   return (
     <div className="space-y-1.5">
-      <section className="rounded-lg border border-border bg-background">
-        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5">
-          <h2 className="text-sm font-medium text-foreground">Identity</h2>
+      <Collapsible
+        open={identityOpen}
+        onOpenChange={(next) => onToggleGroup("identity", next)}
+        className="rounded-lg border border-border"
+      >
+        <div
+          className={`flex items-center justify-between gap-3 px-4 py-2.5 ${
+            identityOpen ? "border-b border-border" : ""
+          }`}
+        >
+          <CollapsibleTrigger asChild>
+            <button
+              type="button"
+              className="flex min-w-0 flex-1 items-center gap-3 text-left"
+            >
+              <span className="text-[11px] tabular-nums text-muted-foreground">
+                00
+              </span>
+              <h2 className="text-sm font-medium text-foreground">Identity</h2>
+              <ChevronDown
+                className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+                  identityOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+          </CollapsibleTrigger>
           <ProgressMark filled={basic.filled} total={basic.total} />
         </div>
-        <div className="grid grid-cols-1 gap-4 px-4 py-4 sm:grid-cols-2">
-          {BASIC_FIELDS.map((field) => {
-            const filled = intelligenceFieldFilled(field, ctx);
-            if (field.kind === "social") {
-              return (
-                <div key={field.id} className="sm:col-span-2">
-                  <FieldLabel field={field} filled={filled} />
-                  <div className="space-y-2">
-                    {(socialLinks || []).map((link, index) => (
-                      <div key={index} className="flex items-start gap-2">
-                        <Input
-                          value={link.label}
-                          onChange={(e) =>
-                            onSocialChange(index, "label", e.target.value)
-                          }
-                          placeholder="Label"
-                          aria-label={`Social link ${index + 1} label`}
-                        />
-                        <Input
-                          value={link.url}
-                          onChange={(e) =>
-                            onSocialChange(index, "url", e.target.value)
-                          }
-                          placeholder="https://"
-                          aria-label={`Social link ${index + 1} URL`}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => onRemoveSocial(index)}
-                          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-destructive"
-                          aria-label="Remove social link"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    ))}
-                    <Button type="button" variant="outline" size="sm" onClick={onAddSocial}>
-                      <Plus className="mr-1.5 h-3.5 w-3.5" />
-                      Add link
-                    </Button>
+        <CollapsibleContent>
+          <div className="grid grid-cols-1 gap-4 px-4 py-4 sm:grid-cols-2">
+            {VISIBLE_BASIC_FIELDS.map((field) => {
+              const filled = intelligenceFieldFilled(field, ctx);
+              if (field.kind === "social") {
+                return (
+                  <div key={field.id} className="sm:col-span-2">
+                    <FieldLabel field={field} filled={filled} />
+                    <div className="space-y-2">
+                      {(socialLinks || []).map((link, index) => (
+                        <div key={index} className="flex items-start gap-2">
+                          <Input
+                            value={link.label}
+                            onChange={(e) =>
+                              onSocialChange(index, "label", e.target.value)
+                            }
+                            placeholder="Label"
+                            aria-label={`Social link ${index + 1} label`}
+                          />
+                          <Input
+                            value={link.url}
+                            onChange={(e) =>
+                              onSocialChange(index, "url", e.target.value)
+                            }
+                            placeholder="https://"
+                            aria-label={`Social link ${index + 1} URL`}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => onRemoveSocial(index)}
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-destructive"
+                            aria-label="Remove social link"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                      {(socialLinks || []).length === 0 ? (
+                        <p className="text-sm text-muted-foreground">None added.</p>
+                      ) : null}
+                    </div>
                   </div>
+                );
+              }
+
+              const value =
+                field.kind === "name" ? companyName : fields[field.key] || "";
+              const onChange =
+                field.kind === "name"
+                  ? onCompanyNameChange
+                  : (value) => onFieldChange(field.key, value);
+
+              return (
+                <div
+                  key={field.id}
+                  className={field.kind === "textarea" ? "sm:col-span-2" : ""}
+                >
+                  <FieldLabel field={field} filled={filled} />
+                  {field.kind === "textarea" ? (
+                    <Textarea
+                      value={value}
+                      onChange={(e) => onChange(e.target.value)}
+                      rows={field.rows || 3}
+                      className="min-h-[72px]"
+                    />
+                  ) : (
+                    <Input
+                      value={value}
+                      onChange={(e) => onChange(e.target.value)}
+                    />
+                  )}
                 </div>
               );
-            }
-
-            const value =
-              field.kind === "name" ? companyName : fields[field.key] || "";
-            const onChange =
-              field.kind === "name"
-                ? onCompanyNameChange
-                : (value) => onFieldChange(field.key, value);
-
-            return (
-              <div
-                key={field.id}
-                className={field.kind === "textarea" ? "sm:col-span-2" : ""}
-              >
-                <FieldLabel field={field} filled={filled} />
-                {field.kind === "textarea" ? (
-                  <Textarea
-                    value={value}
-                    onChange={(e) => onChange(e.target.value)}
-                    rows={field.rows || 3}
-                    className="min-h-[72px]"
-                  />
-                ) : (
-                  <Input
-                    value={value}
-                    onChange={(e) => onChange(e.target.value)}
-                  />
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </section>
+            })}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
 
       {INTELLIGENCE_GROUPS.map((group) => {
         const progress = groupProgress(group, ctx);

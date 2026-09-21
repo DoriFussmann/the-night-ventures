@@ -163,14 +163,14 @@
               <div class="title">Pillar Generation</div>
               <span class="pill done">Done</span>
             </div>
-            <p class="note">Plan, generate, publish one pillar.</p>
+            <p class="note">Plan, generate, publish one pillar. + “Generate all pillars” batch.</p>
           </div>
           <div class="card">
             <div class="row">
               <div class="title">Cluster Generation</div>
               <span class="pill done">Done</span>
             </div>
-            <p class="note">plan-cluster, pull-keyword-data, generate-article. Owns content_coverage.</p>
+            <p class="note">plan-cluster, pull-keyword-data, generate-article. Owns content_coverage. + “one cluster per pillar” batch.</p>
           </div>
         </div>
       </div>
@@ -190,14 +190,14 @@
               <div class="title">Pillar Generation</div>
               <span class="pill done">Done</span>
             </div>
-            <p class="note">Same page as Build. Plan, generate, publish one pillar.</p>
+            <p class="note">Same page as Build. Plan, generate, publish one pillar. + batch.</p>
           </div>
           <div class="card">
             <div class="row">
               <div class="title">Cluster Generation</div>
               <span class="pill done">Done</span>
             </div>
-            <p class="note">Same page as Build. Plan, generate, publish, then wire links.</p>
+            <p class="note">Same page as Build. Plan, generate, publish, then wire links. + one-per-pillar batch.</p>
           </div>
           <div class="card">
             <div class="row">
@@ -214,10 +214,10 @@
         <div class="col">
           <div class="card">
             <div class="row">
-              <div class="title">External Audit Snapshot</div>
+              <div class="title">Analytics (Audit Snapshot)</div>
               <span class="pill wip">WIP</span>
             </div>
-            <p class="note">api/audit-snapshot. Summarize via /api/audit-summary rewrite.</p>
+            <p class="note">api/audit-snapshot. Tabbed: Overview · Speed · Authority · AI Discoverability · Crawlability · Technical · Traffic, each with its own scan. Summarize via /api/audit-summary. GSC = skeleton in Traffic (not wired yet).</p>
           </div>
           <div class="card">
             <div class="row">
@@ -245,6 +245,40 @@
               <span class="pill todo">To-do</span>
             </div>
             <p class="note">api/cluster-image-spec + canvas draw.</p>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <p class="gname">Admin</p>
+        <div class="col">
+          <div class="card">
+            <div class="row">
+              <div class="title">System Map</div>
+              <span class="pill done">Done</span>
+            </div>
+            <p class="note">systemMap.html in an iframe. Fully global — no company data.</p>
+          </div>
+          <div class="card">
+            <div class="row">
+              <div class="title">Core Version</div>
+              <span class="pill done">Done</span>
+            </div>
+            <p class="note">seo-core pin per project (reads site/package.json). One project at a time — really a fleet tool.</p>
+          </div>
+          <div class="card">
+            <div class="row">
+              <div class="title">Integrations</div>
+              <span class="pill done">Done</span>
+            </div>
+            <p class="note">Status + Check per service. Env keys (Moz, PageSpeed, DataForSEO, Anthropic, OpenAI) are global; GitHub token is per-destination (GITHUB_TOKEN_&lt;KEY&gt;).</p>
+          </div>
+          <div class="card">
+            <div class="row">
+              <div class="title">Global admin scope</div>
+              <span class="pill todo">To-do</span>
+            </div>
+            <p class="note">Admin / Integrations / Core Version are universal but nested under /company/:id (piggyback on last company). Split into a global area.</p>
           </div>
         </div>
       </div>
