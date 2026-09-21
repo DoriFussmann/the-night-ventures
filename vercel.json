@@ -39,6 +39,10 @@
       "source": "/api/core-version",
       "destination": "/api/check-article-update?action=core-version"
     },
+    {
+      "source": "/api/integrations",
+      "destination": "/api/check-article-update?action=integrations"
+    },
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
