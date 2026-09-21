@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { Settings } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,6 +77,21 @@ export default function Companies() {
           {showForm ? "Cancel" : "Add Company"}
         </Button>
       </div>
+
+      <Link
+        to="/admin"
+        className="mb-6 flex items-center gap-2.5 rounded-lg border border-border p-4 transition-colors hover:bg-muted/50"
+      >
+        <Settings className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <div>
+          <div className="text-sm font-medium text-foreground">
+            Workspace admin
+          </div>
+          <div className="text-xs text-muted-foreground">
+            System Map, integrations, and versions — across all companies.
+          </div>
+        </div>
+      </Link>
 
       {showForm && (
         <form

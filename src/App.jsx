@@ -12,6 +12,7 @@ import ForgotPassword from '@/pages/ForgotPassword';
 import ResetPassword from '@/pages/ResetPassword';
 import AppShell from '@/components/AppShell';
 import Companies from '@/pages/Companies';
+import GlobalAdmin from '@/pages/GlobalAdmin';
 import CompanyData from '@/pages/tools/CompanyData';
 import SocialMediaTracker from '@/pages/tools/SocialMediaTracker';
 import DesignGuideBuilder from '@/pages/tools/DesignGuideBuilder';
@@ -46,6 +47,8 @@ const AuthenticatedApp = () => {
       <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
         <Route element={<AppShell />}>
           <Route path="/" element={<Companies />} />
+          <Route path="/admin" element={<GlobalAdmin />} />
+          <Route path="/admin/system-map" element={<SystemMap />} />
           <Route path="/company/:companyId/company-data" element={<CompanyData />} />
           <Route path="/company/:companyId/social-media-tracker" element={<SocialMediaTracker />} />
           <Route path="/company/:companyId/design-guide-builder" element={<DesignGuideBuilder />} />

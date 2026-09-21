@@ -20,6 +20,7 @@ import {
   GitBranch,
   ChevronDown,
   PlugZap,
+  Settings,
 } from "lucide-react";
 
 const STATUS_STYLES = {
@@ -170,7 +171,7 @@ export default function AppSidebar({ user }) {
   ];
 
   const adminItems = [
-    { label: "System Map", path: `/company/${activeCompanyId}/system-map`, icon: Map },
+    { label: "System Map", path: `/admin/system-map`, icon: Map },
     { label: "Core Version", path: `/company/${activeCompanyId}/core-version`, icon: GitBranch },
     { label: "Integrations", path: `/company/${activeCompanyId}/integrations`, icon: PlugZap },
   ];
@@ -232,6 +233,13 @@ export default function AppSidebar({ user }) {
             <span className="truncate">{companyName || "Loading…"}</span>
           </Link>
         )}
+        <Link
+          to="/admin"
+          title="Workspace admin"
+          className="ml-auto h-7 w-7 shrink-0 rounded-md border border-border flex items-center justify-center text-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
+        >
+          <Settings className="w-3.5 h-3.5" />
+        </Link>
       </div>
 
       {/* Navigation */}
