@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { renderDesignGuide } from './_designGuideTemplate.js'
+import { buildLayer2Tokens } from './_designGuideTemplate.js'
 
 export const config = {
   maxDuration: 120,
@@ -18,20 +18,76 @@ const TOKEN_DEFS = [
   { posted: 'brand_voice', json: 'voice', required: true },
 ]
 
-const SUGGEST_SYSTEM = `You propose brand tokens for a fixed marketing-site design system. The palette, type scale, spacing, motion, and photography rules are already locked. You only fill missing brand tokens.
+const TNV_HOUSE_RULES = `LOCKED — TNV HOUSE RULES (apply to every brand):
+- Typography: Inter only. Never bold — weights 400–500 max. Hierarchy via size/color/spacing, not weight.
+- Light mode only. Bright, content-forward. No dark sites.
+- Motion: smooth transition/morph as a signature, applied with discipline (entrances + interactions, not everything). Respect prefers-reduced-motion.
+- Standard component: collapsible panels with a chevron that open/close smoothly (accordion).
+- Accessibility: WCAG AA contrast, min ~16px body, visible keyboard focus.
+- Responsive down to mobile; consistent breakpoints.
+- Readable measure ~65–75 chars for body/content.
+- Performance: no heavy hero video by default; sensible image sizing (content/SEO sites).
+- Image treatment: standard aspect ratios, a corner-radius token, never bake text into images.`
+
+const GUIDE_SECTIONS = [
+  '1. Brand tokens',
+  '2. Principles',
+  '3. Color',
+  '4. Typography',
+  '5. Layout',
+  '6. Motion',
+  '7. Components',
+  '8. Page recipes',
+  '9. Voice',
+  '10. Never',
+]
+
+const SUGGEST_SYSTEM = `You propose seed brand tokens for one company. A later step authors the full Design Guide (palette, type scale, layout, spacing, motion, imagery) inside locked house rules. You only fill the missing seed tokens.
 
 Return ONLY a JSON object. No preamble, no markdown, no keys other than the ones the user listed as missing.
 
-Constraints:
-- feel: one sentence.
-- accent, band, positive: 6-digit hex strings starting with # (e.g. "#3A7D5E").
-- band must be dark enough for white text at WCAG AA.
-- accent must not be purple or electric blue. One restrained color for links, focus, and the nav underline only.
-- positive is a muted green for "gain / included" marks — not neon, not the accent.
-- wordmark_primary / wordmark_accent: split the brand name into two natural parts. If it cannot be split naturally, wordmark_primary is the full name and wordmark_accent is "".
-- voice: at most 120 words of do/don't in this register — measured, precise, candid; short declaratives; "you"; specifics over superlatives. Never exclamation marks, hype, emoji, urgency/scarcity, a hero headline that opens with "We", empty mission-speak, or AI-forward framing when the product is human.
+The site is light mode only: bright and content-forward. Do not propose a near-black page background.
 
-Do not invent a palette, type scale, spacing system, or motion language.`
+Constraints:
+- feel is not yours to set.
+- accent, band, positive: 6-digit hex strings starting with # (e.g. "#3A7D5E"). The three colors must be visibly different and specific to this brand.
+- accent: primary brand color for links and focus. It must reach WCAG AA against white (#FFFFFF).
+- band: a featured-section color on a light site, not the page background. Pair it with a text color that reaches WCAG AA — white on a deep band, or near-black on a light band.
+- positive: a color for gain / included / success marks. Not neon, and not the same hue as accent.
+- wordmark_primary / wordmark_accent: split the brand name into two natural parts. If it cannot be split naturally, wordmark_primary is the full name and wordmark_accent is "".
+- voice: at most 120 words of brand-specific do/don't. Short declaratives. No emoji, no hype.
+
+Do not write the Design Guide. Do not invent a type scale, spacing system, or motion language here.`
+
+const GENERATE_SYSTEM = `You author the Design Guide markdown for ONE brand. A human and Cursor will paste it in to build the site. Be concrete and implementable: real hex values, px spacing, Tailwind classes, and Framer Motion snippets. Do not write vague mood language unless you also give the values that implement it.
+
+Design strictly inside these house rules. Do not contradict them. Do not repeat this block — it is inserted above your sections verbatim.
+
+${TNV_HOUSE_RULES}
+
+Because Inter, no bold, and light mode are fixed, make this brand distinct with COLOR, LAYOUT, SPACING, and IMAGERY.
+
+Length: finish every section, but do not pad. One code sample per pattern. Prefer tables over long prose.
+
+FIXED SKELETON — output only these headings, in this order, with no preamble and no extra top-level sections:
+
+${GUIDE_SECTIONS.map((title) => `## ${title}`).join('\n')}
+
+Seed tokens are already chosen. Use those exact hex values and names. Do not change them. Build a fuller palette, type scale, and layout around them.
+
+Section requirements:
+1. Brand tokens — list BRAND_NAME, DOMAIN, FEEL, ACCENT, BAND, POSITIVE, and the wordmark split using the exact values given. Then list every additional token later sections will use.
+2. Principles — 4–6 principles specific to this brand, still inside the house rules.
+3. Color — a table of token, hex, and use. Light page surfaces. Call out WCAG AA pairs. Include the seed accent, band, and positive unchanged, plus the rest of the palette.
+4. Typography — Inter only. Weights 400 or 500 only. A table of role, size, line-height, color, and Tailwind. Body at least 16px. Measure about 65–75 characters. Never prescribe font-bold, font-semibold, font-black, or a weight above 500.
+5. Layout — container, grid, named breakpoints used consistently, section spacing, nav, and footer. Mobile through desktop.
+6. Motion — one signature smooth transition or morph, used with discipline (entrances and interactions, not everything). Include Framer Motion snippets and a prefers-reduced-motion rule.
+7. Components — concrete Tailwind for buttons, cards, inputs, images (standard aspect ratios, the corner-radius token, never bake text into images), and a collapsible panel with a chevron that opens and closes smoothly.
+8. Page recipes — home and one inner page, with section order and which components they use.
+9. Voice — use the provided voice notes, and say how headlines, labels, and body should sound for this brand.
+10. Never — brand-specific refusals, plus anything that would break the house rules (bold type, dark mode, heavy hero video, text baked into images).
+
+Output markdown only. Do not wrap the document in a code fence.`
 
 function json(res, status, body) {
   res.statusCode = status
@@ -100,9 +156,9 @@ function extractFirstJsonObject(text) {
 
 const TOKEN_JSON_PROPERTIES = {
   feel: { type: 'string', description: 'One sentence.' },
-  accent: { type: 'string', description: '6-digit hex starting with #, e.g. #3A7D5E' },
-  band: { type: 'string', description: 'Dark 6-digit hex starting with #, e.g. #1A1A2E' },
-  positive: { type: 'string', description: 'Muted green 6-digit hex starting with #' },
+  accent: { type: 'string', description: '6-digit hex starting with #. Primary brand color for links and focus. WCAG AA on white.' },
+  band: { type: 'string', description: '6-digit hex starting with #. Featured-section color on a light site, not the page background.' },
+  positive: { type: 'string', description: '6-digit hex starting with #. Gain / included / success color, distinct from accent.' },
   wordmark_primary: { type: 'string', description: 'First part of the brand name, or the full name' },
   wordmark_accent: { type: 'string', description: 'Second part of the brand name, or empty string' },
   voice: { type: 'string', description: 'At most 120 words of do/don\'t voice notes' },
@@ -365,6 +421,191 @@ async function suggestMissingTokens(apiKey, company, tokens, missingKeys) {
   return merged
 }
 
+function tokenFence(tokens) {
+  const json = JSON.stringify(
+    buildLayer2Tokens({
+      accent: tokens.brand_accent,
+      positive: tokens.brand_positive,
+    }),
+    null,
+    2
+  )
+  return '```tokens\n' + json + '\n```'
+}
+
+function houseRulesSection() {
+  return [
+    '## TNV House Rules',
+    '',
+    TNV_HOUSE_RULES,
+    '',
+    'These rules are locked. They override the tokens fence when they conflict: use Inter (not the fence font stack), body text at least 16px, font weight 400 or 500 only, and a light page.',
+    '',
+  ].join('\n')
+}
+
+function normalizeAuthored(text) {
+  let body = unwrapMarkdown(text).replace(/\r\n/g, '\n')
+  body = body.replace(/^#\s+Design Guide\s*/i, '').trim()
+  const sectionStart = body.search(/^##\s+1\.\s+Brand tokens\s*$/im)
+  if (sectionStart > 0) body = body.slice(sectionStart).trim()
+  const lines = body.split('\n').map((line) => {
+    const match = line.match(/^##\s+(.+?)\s*$/)
+    if (!match) return line
+    const found = GUIDE_SECTIONS.find(
+      (title) => title.toLowerCase() === match[1].toLowerCase()
+    )
+    return found ? `## ${found}` : line
+  })
+  return lines.join('\n').trim()
+}
+
+function missingSections(body) {
+  let cursor = 0
+  const missing = []
+  for (const title of GUIDE_SECTIONS) {
+    const heading = `## ${title}`
+    const at = body.indexOf(heading, cursor)
+    if (at < 0) missing.push(title)
+    else cursor = at + heading.length
+  }
+  return missing
+}
+
+function guideProblems(body, tokens) {
+  const problems = []
+  const missing = missingSections(body)
+  if (missing.length > 0) {
+    problems.push(`missing or mis-ordered sections: ${missing.join(', ')}`)
+  }
+  for (const hex of [tokens.brand_accent, tokens.brand_band, tokens.brand_positive]) {
+    if (hex && !body.toLowerCase().includes(hex.toLowerCase())) {
+      problems.push(`seed color ${hex} missing`)
+    }
+  }
+  if (tokens.wordmark_primary && !body.includes(tokens.wordmark_primary)) {
+    problems.push('wordmark_primary missing')
+  }
+  if (!/\bInter\b/.test(body)) problems.push('Typography must specify Inter')
+  if (!/prefers-reduced-motion/.test(body)) {
+    problems.push('Motion must include prefers-reduced-motion')
+  }
+  if (!/chevron/i.test(body)) {
+    problems.push('Components must include a chevron collapsible panel')
+  }
+  if (!/font-bold|font-semibold|font-black|weight above 500|never bold/i.test(body)) {
+    problems.push('Typography or Never must forbid bold weights')
+  }
+  if (!/#[0-9A-Fa-f]{6}/.test(body)) problems.push('Color must include hex values')
+  if (!/rounded-|px-|max-w-|text-\[|gap-/.test(body)) {
+    problems.push('Include Tailwind classes')
+  }
+  if (!/motion\.|framer-motion|whileInView|animate=/.test(body)) {
+    problems.push('Include a Framer Motion snippet')
+  }
+  return problems
+}
+
+function authorUserPrompt(company, tokens, reminder) {
+  const rendered = toRenderTokens(company, tokens)
+  const lines = []
+  if (reminder) {
+    lines.push(
+      `Your previous draft failed these checks: ${reminder}.`,
+      'Output the full 10-section skeleton again, and fix only those checks.',
+      ''
+    )
+  }
+  lines.push(
+    'Author the Design Guide sections for this company.',
+    '',
+    'Seed tokens (use these exact values; do not change the hex codes):',
+    JSON.stringify(
+      {
+        BRAND_NAME: rendered.BRAND_NAME,
+        DOMAIN: rendered.DOMAIN,
+        FEEL: rendered.FEEL || '(not set — write one sentence from the company data)',
+        ACCENT: rendered.ACCENT,
+        BAND: rendered.BAND,
+        POSITIVE: rendered.POSITIVE,
+        WORDMARK_PRIMARY: rendered.WORDMARK_PRIMARY,
+        WORDMARK_ACCENT: rendered.WORDMARK_ACCENT,
+        VOICE: rendered.VOICE,
+      },
+      null,
+      2
+    ),
+    '',
+    'Company data:',
+    JSON.stringify(companyContext(company), null, 2)
+  )
+  return lines.join('\n')
+}
+
+async function requestAuthoredGuide(apiKey, company, tokens, reminder) {
+  const anthropic = new Anthropic({ apiKey })
+  const message = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 16000,
+    temperature: 0.7,
+    system: GENERATE_SYSTEM,
+    messages: [
+      {
+        role: 'user',
+        content: authorUserPrompt(company, tokens, reminder),
+      },
+    ],
+  })
+
+  const authored = normalizeAuthored(textFromMessage(message))
+  if (!authored) {
+    throw Object.assign(new Error('Model did not return a Design Guide. Try generating again.'), {
+      statusCode: 502,
+    })
+  }
+
+  if (message?.stop_reason === 'max_tokens' && guideProblems(authored, tokens).length > 0) {
+    console.error('design-guide generate: authored guide truncated at max_tokens')
+    throw Object.assign(
+      new Error('Model response was truncated before the guide was complete. Try generating again.'),
+      { statusCode: 502 }
+    )
+  }
+
+  return authored
+}
+
+async function authorDesignGuide(apiKey, company, tokens) {
+  let reminder = ''
+  let lastError = null
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const authored = await requestAuthoredGuide(apiKey, company, tokens, reminder)
+      const problems = guideProblems(authored, tokens)
+      if (problems.length === 0) return authored
+      console.error('design-guide generate: draft failed checks', problems)
+      reminder = problems.join('; ')
+      lastError = null
+    } catch (err) {
+      if (!err.statusCode) throw err
+      lastError = err
+      reminder =
+        'The previous draft was cut off. Write a complete, tighter guide: one snippet per pattern, all 10 sections, no repeated explanation.'
+      console.error('design-guide generate: author attempt failed', err.message)
+    }
+  }
+  throw (
+    lastError ||
+    Object.assign(new Error('Model did not return a complete Design Guide. Try generating again.'), {
+      statusCode: 502,
+    })
+  )
+}
+
+function assembleDesignGuide(tokens, authored) {
+  return `# Design Guide\n\n${tokenFence(tokens)}\n\n${houseRulesSection()}\n${authored.trim()}\n`
+}
+
 async function handleGenerate(req, res, body, apiKey) {
   const company = body.company
 
@@ -376,7 +617,7 @@ async function handleGenerate(req, res, body, apiKey) {
   const missingKeys = missingTokenKeys(tokens)
 
   if (missingKeys.length === 0) {
-    console.log('design-guide generate: skipped LLM (all tokens set)')
+    console.log('design-guide generate: skipped token suggestion (all tokens set)')
   } else {
     console.log('design-guide generate: calling LLM for missing tokens', missingKeys)
     if (!apiKey) {
@@ -402,7 +643,21 @@ async function handleGenerate(req, res, body, apiKey) {
     })
   }
 
-  const markdown = renderDesignGuide(toRenderTokens(company, tokens))
+  if (!apiKey) {
+    console.error('Missing ANTHROPIC_API_KEY')
+    return json(res, 500, { error: 'Server configuration error' })
+  }
+
+  let authored
+  try {
+    console.log('design-guide generate: authoring guide')
+    authored = await authorDesignGuide(apiKey, company, tokens)
+  } catch (err) {
+    const status = err.statusCode || 500
+    return json(res, status, { error: err.message || 'Failed to author Design Guide' })
+  }
+
+  const markdown = assembleDesignGuide(tokens, authored)
   return json(res, 200, {
     markdown,
     tokens: responseTokens(company, tokens),
