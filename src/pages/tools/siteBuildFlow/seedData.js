@@ -26,133 +26,156 @@ export function nextStatus(current) {
 }
 
 export const STAGES = [
-  { stage_key: "setup", name: "Setup", order_index: 0 },
-  { stage_key: "infra-qa", name: "Initial Infrastructure Build QA", order_index: 1 },
-  { stage_key: "deployment", name: "Deployment", order_index: 2 },
-  { stage_key: "site-activation", name: "Site Activation", order_index: 3 },
-  { stage_key: "connection-layer", name: "Connection Layer", order_index: 4 },
-  { stage_key: "links-wiring", name: "Links Wiring", order_index: 5 },
-  { stage_key: "seed-qa", name: "Initial Seed Content QA", order_index: 6 },
+  { stage_key: "code-setup", name: "Code Setup", order_index: 0 },
+  { stage_key: "deployment", name: "Deployment", order_index: 1 },
+  { stage_key: "site-activation", name: "Site Activation", order_index: 2 },
+  { stage_key: "connection-layer", name: "Connection Layer", order_index: 3 },
+  { stage_key: "links-wiring", name: "Links Wiring", order_index: 4 },
+  { stage_key: "seed-qa", name: "Initial Seed Content QA", order_index: 5 },
 ];
 
+const FILL_FIELDS_PROMPT =
+  "Help me fill the missing fields for the new company, based on what I have provided you with - ask me all the questions you need to complete the fields. Give me in each turn a summary % completion, how many done and how many we have left. Be thorough, precise and super professional. Available to download as .md file";
+
+const PUBLISH_DESTINATION_INSTRUCTIONS = `In Company Intelligence, open Publish Destination and add the 3 fields: GitHub owner, GitHub repo, and GitHub token key.
+
+Create the token on GitHub: avatar (top-right) → Settings → Developer settings (bottom of left sidebar) → Personal access tokens → Fine-grained tokens → Generate new token.
+
+Set:
+
+- Name: anything memorable (e.g. perfect-ai-publish) — this GitHub label is cosmetic; it does not have to match anything in the app.
+- Expiration: longest allowed. Record the date — publishing silently 401s when it lapses.
+- Resource owner: your personal account (the one that owns the destination repo).
+- Repository access: Only select repositories → the single destination repo.
+- Permissions → Repository permissions: Contents = Read and write AND Pull requests = Read and write. Everything else: No access.
+
+Generate, then COPY the github_pat_… value immediately — GitHub shows it only once.
+
+Then put the token where the app reads it — Vercel, not the app UI:
+
+Vercel → the-night-ventures project → Settings → Environment Variables → Add:
+
+- Name: GITHUB_TOKEN_<KEY> — pick a KEY in CAPS with underscores only (e.g. GITHUB_TOKEN_PERFECT_AI_WEBSITES).
+- Value: the github_pat_… string.
+- Environments: Production (and Preview if used). Save.
+
+Redeploy TNV (env vars only load on a new deploy).
+
+Then point the app at it:
+
+Company Data → the project → Publish Destination → tokenKey field: enter just the KEY (e.g. PERFECT_AI_WEBSITES) — not the github_pat_… value. It must match the part after GITHUB_TOKEN_ in the Vercel variable.
+
+Secret hygiene: the github_pat_… value goes only into the Vercel Environment Variable. Never paste it into a screenshot, a chat, or the Company Data field — that field takes the KEY (a pointer), never the token itself.`;
+
 export const PREDEFINED_ITEMS = {
-  setup: [
+  "code-setup": [
     {
-      item_key: "add-new-company-in-tnv",
-      title: "Add new company in TNV",
+      item_key: "add-new-company",
+      title: "Add a new company and the details you have",
       description:
-        "In The Night Ventures, add a new company. Name can use uppercase letters and spaces here — the hyphenated lowercase name is for the GitHub repo and local folder.",
+        "In The Night Ventures, add a new company and enter the basic details you already have.",
       prompts: [],
       linkTo: "/",
       linkLabel: "Open Companies →",
     },
     {
-      item_key: "fill-company-data",
-      title: "Fill Company Data",
+      item_key: "download-company-intelligence",
+      title: "Download Company Intelligence as Markdown",
       description:
-        "Enter Company Data and complete every field to the best of your ability — product name, competitors, services, abstract, short/medium/long descriptions, ICP/target persona.",
+        "In Company Intelligence, once you have added all the details you have, click Download as Markdown.",
+      prompts: [],
+      linkTo: "/company/:companyId/company-data",
+      linkLabel: "Open Company Intelligence →",
+    },
+    {
+      item_key: "fill-missing-fields-in-chatgpt",
+      title: "Fill the missing fields in ChatGPT",
+      description:
+        "Upload the Company Intelligence markdown to ChatGPT and run the prompt. ChatGPT asks the questions it needs to complete the fields. The output is a markdown file you download.",
       prompts: [
         {
           label: "LLM prompt to help fill fields",
-          text: "I have a list of fields I am trying to fill for a new company which will provide content on an SEO site. The website is called [...], and it is aimed at providing information for [...]. I want to provide information about [...]. What I need is product name, competitors, services description, abstract, short description, medium description, long description, ICP / description of target persona.",
+          text: FILL_FIELDS_PROMPT,
         },
       ],
-      linkTo: "/company/:companyId/company-data",
-      linkLabel: "Open Company Data →",
     },
     {
-      item_key: "save-company-data",
-      title: "Save Company Data",
-      description: "Save once all fields are filled.",
+      item_key: "upload-completed-company-intelligence",
+      title: "Upload the completed Company Intelligence file",
+      description:
+        "Drag and drop the completed ChatGPT Company Intelligence .md file onto Company Intelligence and let it fill the missing fields.",
       prompts: [],
+      linkTo: "/company/:companyId/company-data",
+      linkLabel: "Open Company Intelligence →",
+    },
+    {
+      item_key: "generate-design-guide-and-abstract",
+      title: "Generate the Design Guide and Design Abstract",
+      description:
+        "If the relevant fields are filled, open Design Engine and click Generate Design Guide. When it finishes, download Design Guide.md and save it. Then go to Company Intelligence → Design Abstract, paste the guide, click Generate Abstract, and Save.",
+      prompts: [],
+      linkTo: "/company/:companyId/design-guide-builder",
+      linkLabel: "Open Design Engine →",
     },
     {
       item_key: "create-github-repo-from-template",
-      title: "Create GitHub repo from template",
+      title: "Create a GitHub repo from the SEO Blueprint template",
       description:
-        "On GitHub, create a new repository from the `blueprint-seo-template` template. Name it after the destination site — lowercase, hyphens between words (e.g. closing-day-ready).",
+        "On GitHub, create a new repository from the SEO Blueprint template.",
       prompts: [],
     },
     {
       item_key: "create-local-project-folder",
-      title: "Create local project folder",
+      title: "Create a local project folder",
       description:
-        "On your local machine, create a new folder with the same name as the destination site / GitHub repo — lowercase, using hyphens to connect words (e.g. closing-day-ready).",
+        "On your desktop, create a new folder under your development Cursor zone.",
       prompts: [],
     },
     {
-      item_key: "open-new-cursor-project",
-      title: "Open new Cursor project",
+      item_key: "clone-repo-and-add-design-guide",
+      title: "Clone the repo and add the Design Guide",
       description:
-        "Open a new project in Cursor, pointed at the folder you just created. The project name should match the destination site.",
+        "Open a new Cursor project for that folder. Tell the agent to git clone the GitHub URL into the folder root — clone into the folder itself, not a subfolder. Once the clone is done, drag Design Guide.md into the local root, then commit and push.",
       prompts: [],
     },
     {
-      item_key: "clone-github-repo",
-      title: "Clone the GitHub repo",
+      item_key: "follow-narrative-composer",
+      title: "Follow Narrative Composer",
       description:
-        "Clone the new GitHub repo (the one created from `blueprint-seo-template`) into the project folder. Clone into the folder itself, e.g. `git clone <repo-url> .` from inside it — do not clone into a subfolder, or you'll end up with a nested duplicate-named directory.",
+        "Go to Narrative Composer and follow the steps there, including the prompt.",
+      prompts: [],
+      linkTo: "/company/:companyId/site-content-builder",
+      linkLabel: "Open Narrative Composer →",
+    },
+    {
+      item_key: "paste-site-content-into-cursor",
+      title: "Paste the ChatGPT response into Cursor",
+      description:
+        "Once ChatGPT is done, paste the entire response into Cursor. This includes the Design Guide.md build. Make sure Design Guide.md is in the repo root.",
       prompts: [],
     },
     {
-      item_key: "create-new-theme-in-design-builder",
-      title: "Open Design Builder",
-      description:
-        "Go to Design Builder in TNV. Confirm Company Data is loaded; fill optional brand-vibe fields if you have a preference.",
+      item_key: "set-publish-destination",
+      title: "Set Publish Destination",
+      description: PUBLISH_DESTINATION_INSTRUCTIONS,
       prompts: [],
-      linkTo: "/company/:companyId/design-guide-builder",
-      linkLabel: "Open Design Builder →",
+      linkTo: "/company/:companyId/company-data",
+      linkLabel: "Open Company Intelligence →",
     },
     {
-      item_key: "generate-or-provide-design-guide",
-      title: "Generate Design Guide.md",
+      item_key: "update-core-version",
+      title: "Update Core Version",
       description:
-        "Click Generate Design Guide. Review the markdown, edit if needed, then Save (this also writes Company Data Design Guidelines and generates the abstract).",
+        "Go to Admin → Core Version, wait for the scan on the live deployed site, and update the version.",
       prompts: [],
+      linkTo: "/company/:companyId/core-version",
+      linkLabel: "Open Core Version →",
     },
     {
-      item_key: "download-design-guide",
-      title: "Download Design Guide.md",
-      description: "Download the generated file.",
-      prompts: [],
-    },
-    {
-      item_key: "add-design-guide-to-project-root",
-      title: "Copy Design Guide.md to site/Design Guide.md",
+      item_key: "website-ready",
+      title: "You have a website",
       description:
-        "Copy the downloaded file to `site/Design Guide.md` in the cloned project (replace the Layer 1 placeholder). Do not put it at the repo root. Site Activation's Design Activation prompt reads this path.",
-      prompts: [],
-    },
-    {
-      item_key: "push-design-abstract-to-company-data",
-      title: "Push Design Abstract to Company Data",
-      description:
-        "In Design Builder, click 'Push Design Abstract to Company Data'. This fills the missing Design Guidelines abstract field in Company Data. Open Company Data → Design Guidelines to confirm it populated.",
-      prompts: [],
-      linkTo: "/company/:companyId/design-guide-builder",
-      linkLabel: "Open Design Builder →",
-    },
-  ],
-  "infra-qa": [
-    {
-      item_key: "run-npm-install",
-      title: "Run npm install",
-      description:
-        "In the cloned project, run npm install. Confirm it completes with no errors.",
-      prompts: [],
-    },
-    {
-      item_key: "run-npm-run-build",
-      title: "Run npm run build",
-      description:
-        "Run npm run build. Confirm 'build complete' with no errors.",
-      prompts: [],
-    },
-    {
-      item_key: "run-dev-sanity-check",
-      title: "Run npm run dev and sanity-check",
-      description:
-        "Run npm run dev, get the local URL, and load the site. Confirm the homepage renders, there are no console errors, and the /articles/ listing page loads. An empty articles list is expected at this stage — no seed content exists yet.",
+        "That's it. You now have a website locally, with content and design based on your input, and the ability to publish and update from TNV.",
       prompts: [],
     },
   ],
