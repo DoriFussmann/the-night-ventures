@@ -16,6 +16,7 @@ import {
   loadAutomationContext,
   persistPlannedCluster,
   requestClusterPlan,
+  syncSupportingFromCompanyData,
 } from "./articlesAutomation/planCluster";
 import { generateClusterArticles } from "./articlesAutomation/runGeneration";
 import { downloadArticlesZip } from "./articleGeneration/downloadZip";
@@ -247,6 +248,7 @@ export default function ClusterGeneration() {
       setPillars([]);
       return null;
     }
+    await syncSupportingFromCompanyData(companyId);
     const ctx = await loadAutomationContext(companyId);
     contextRef.current = ctx;
     setCompanyName(ctx.companyName);

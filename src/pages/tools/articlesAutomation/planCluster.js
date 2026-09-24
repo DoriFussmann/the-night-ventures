@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { slugify } from "../clusterImage/slugify";
 import { stripNoVolumeTag } from "../articleGeneration/stripNoVolumeTag";
 
 const ARTICLE_TYPES = [
@@ -87,6 +88,99 @@ function normalizeCompetitors(value) {
       url: String(item.url || "").trim(),
     }))
     .filter((item) => item.name || item.url);
+}
+
+export async function syncSupportingFromCompanyData(companyId) {
+  try {
+    const [profileResult, coverageResult] = await Promise.all([
+      supabase
+        .from("company_profiles")
+        .select("core_keywords")
+        .eq("company_id", companyId)
+        .maybeSingle(),
+      supabase
+        .from("content_coverage")
+        .select("id, pillars")
+        .eq("company_id", companyId)
+        .maybeSingle(),
+    ]);
+
+    if (profileResult.error) throw profileResult.error;
+    if (coverageResult.error) throw coverageResult.error;
+
+    const coverage = coverageResult.data;
+    const coreKeywords = profileResult.data?.core_keywords;
+    if (!coverage || !Array.isArray(coreKeywords) || coreKeywords.length === 0) {
+      return;
+    }
+
+    const pillars = Array.isArray(coverage.pillars) ? coverage.pillars : [];
+    let added = false;
+
+    for (const item of coreKeywords) {
+      const keyword =
+        typeof item === "string"
+          ? item.trim()
+          : item && typeof item === "object"
+            ? String(item.keyword || "").trim()
+            : "";
+      if (!keyword) continue;
+
+      const pillarSlug = slugify(keyword);
+      const coveragePillar = pillars.find(
+        (pillar) =>
+          String(pillar?.slug || "") === pillarSlug ||
+          slugify(pillar?.keyword) === pillarSlug
+      );
+      if (!coveragePillar) continue;
+
+      const supporting =
+        item && typeof item === "object" && Array.isArray(item.supporting)
+          ? item.supporting
+          : [];
+
+      for (const raw of supporting) {
+        if (typeof raw !== "string") continue;
+        const supportingKeyword = raw.trim();
+        if (!supportingKeyword) continue;
+
+        const supportingSlug = slugify(supportingKeyword);
+        const entries = Array.isArray(coveragePillar.supporting)
+          ? coveragePillar.supporting
+          : [];
+        const exists = entries.some(
+          (entry) =>
+            String(entry?.slug || "") === supportingSlug ||
+            slugify(entry?.keyword) === supportingSlug
+        );
+        if (exists) continue;
+
+        if (!Array.isArray(coveragePillar.supporting)) {
+          coveragePillar.supporting = [];
+        }
+        coveragePillar.supporting.push({
+          slug: supportingSlug,
+          keyword: supportingKeyword,
+          plannedArticles: [],
+        });
+        added = true;
+      }
+    }
+
+    if (!added) return;
+
+    const { error } = await supabase
+      .from("content_coverage")
+      .update({
+        pillars,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("company_id", companyId);
+
+    if (error) throw error;
+  } catch (err) {
+    console.error(err);
+  }
 }
 
 export async function loadAutomationContext(companyId) {
