@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { pullKeywordData } from '../lib/pull-keyword-data/run.js'
 import { serpResults } from '../lib/seo-advisor/providers/dataforseo.js'
+import { slugify } from '../lib/slugify.js'
 import { stripNoVolumeTag } from '../lib/stripNoVolumeTag.js'
 
 function json(res, status, body) {
@@ -100,6 +101,21 @@ function enforceArticleTypeCounts(proposal, articleTypeCounts) {
     ...proposal,
     articles: kept,
   }
+}
+
+function assertUniqueTargetSlugs(proposal) {
+  const seen = new Map()
+  for (const article of proposal.articles) {
+    const slug = slugify(article.targetKeyword)
+    const first = seen.get(slug)
+    if (first) {
+      throw new Error(
+        `Two topics share the target keyword "${article.targetKeyword}" ("${first.title}" and "${article.title}"). Regenerate topics.`
+      )
+    }
+    seen.set(slug, article)
+  }
+  return proposal
 }
 
 function buildClusterTaskInstruction(articleTypeCounts) {
@@ -756,9 +772,8 @@ export default async function handler(req, res) {
       if (mode === 'pillar') {
         proposal = normalizePillarProposal(parsed)
       } else {
-        proposal = enforceArticleTypeCounts(
-          normalizeProposal(parsed),
-          articleTypeCounts
+        proposal = assertUniqueTargetSlugs(
+          enforceArticleTypeCounts(normalizeProposal(parsed), articleTypeCounts)
         )
       }
     } catch (err) {

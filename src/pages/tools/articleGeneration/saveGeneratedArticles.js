@@ -136,6 +136,20 @@ export async function saveGeneratedArticles({
     return { saved: [], error: err instanceof Error ? err : new Error(String(err)) };
   }
 
+  const seenSlugs = new Map();
+  for (const row of rows) {
+    const first = seenSlugs.get(row.slug);
+    if (first) {
+      return {
+        saved: [],
+        error: new Error(
+          `Duplicate slug "${row.slug}": "${first.title}" and "${row.title}". Give these topics different target keywords and regenerate.`
+        ),
+      };
+    }
+    seenSlugs.set(row.slug, row);
+  }
+
   const { data, error } = await supabase
     .from("generated_articles")
     .upsert(rows, { onConflict: "company_id,slug" })
