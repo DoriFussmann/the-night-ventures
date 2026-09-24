@@ -137,6 +137,9 @@ function buildClusterTaskInstruction(articleTypeCounts) {
   constraints.push(
     '(c) NO INTERNAL OVERLAP: No two proposed articles may share a search intent, and none may overlap with any existing planned/published article in the content map.'
   )
+  constraints.push(
+    '(d) UNIQUE KEYWORDS: Every article must have a different targetKeyword. Only the comprehensive article may use the supporting keyword itself. Every other article must use a longer or different query specific to its own angle (for example "<supporting keyword> faq", "how to choose a <supporting keyword>", "<supporting keyword> vs <alternative>"), and no two targetKeywords may differ only by capitalization, punctuation, or word order.'
+  )
 
   const internalLinksGuidance = hasComprehensive
     ? 'sibling titles; every non-comprehensive links to the comprehensive; all reference the pillar'
@@ -777,8 +780,54 @@ export default async function handler(req, res) {
         )
       }
     } catch (err) {
-      console.error('plan-cluster normalize failed:', err)
-      return json(res, 502, { error: err.message || 'Invalid proposal from model' })
+      const duplicateKeyword =
+        mode === 'cluster' &&
+        String(err?.message || '').startsWith('Two topics share the target keyword')
+      if (!duplicateKeyword) {
+        console.error('plan-cluster normalize failed:', err)
+        return json(res, 502, { error: err.message || 'Invalid proposal from model' })
+      }
+
+      console.error('plan-cluster duplicate target keyword, retrying once:', err)
+      const retryMessage = await anthropic.messages.create({
+        model: MODEL,
+        max_tokens: MAX_TOKENS_CLUSTER,
+        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+        messages: [
+          {
+            role: 'user',
+            content: `${prompt}\nYour previous answer reused the same targetKeyword for two articles (${err.message}). Every targetKeyword must be unique. Only the comprehensive article may use the supporting keyword itself.`,
+          },
+        ],
+      })
+
+      if (retryMessage?.stop_reason === 'max_tokens') {
+        console.error('plan-cluster truncated at max_tokens')
+        return json(res, 502, {
+          error:
+            'Model response was truncated before finishing JSON. Try again, or shorten keyword data.',
+        })
+      }
+
+      let retryParsed
+      try {
+        retryParsed = parseProposalFromContent(retryMessage?.content, mode)
+      } catch (parseErr) {
+        const preview = extractTextContent(retryMessage?.content).slice(0, 500)
+        console.error('plan-cluster JSON parse failed:', parseErr, preview)
+        return json(res, 502, { error: 'Failed to parse model response as JSON' })
+      }
+
+      try {
+        proposal = assertUniqueTargetSlugs(
+          enforceArticleTypeCounts(normalizeProposal(retryParsed), articleTypeCounts)
+        )
+      } catch (retryErr) {
+        console.error('plan-cluster normalize failed:', retryErr)
+        return json(res, 502, {
+          error: retryErr.message || 'Invalid proposal from model',
+        })
+      }
     }
 
     return json(res, 200, proposal)
