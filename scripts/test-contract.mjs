@@ -43,14 +43,14 @@ await check('unpinned (no version) -> version null', () => {
 })
 
 // --- classification ---------------------------------------------------------
-await check('current fleet 0.1.0..0.4.0 compatible', () => {
-  for (const v of ['0.1.0', '0.2.0', '0.3.0', '0.4.0']) {
+await check('current fleet 0.1.0..0.6.0 compatible', () => {
+  for (const v of ['0.1.0', '0.2.0', '0.3.0', '0.4.0', '0.5.0', '0.6.0']) {
     assert.equal(classifyCoreCompat(v).compatible, true, v)
     assert.equal(classifyCoreCompat(v).severity, 'ok', v)
   }
 })
 await check('newer minor within major runs but is flagged', () => {
-  const c = classifyCoreCompat('0.5.0')
+  const c = classifyCoreCompat('0.7.0')
   assert.equal(c.compatible, true)
   assert.equal(c.severity, 'minor_ahead')
 })
