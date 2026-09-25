@@ -206,4 +206,12 @@ assert.equal(
   4
 );
 
+assert.equal(processArticleBody("# Title"), "## Title");
+assert.equal(processArticleBody("## Section"), "## Section");
+assert.equal(
+  processArticleBody("```\n# comment\n```"),
+  "```\n# comment\n```"
+);
+assert.equal(processArticleBody("<h1>X</h1>"), "<h2>X</h2>");
+
 console.log("All post-process checks passed.");

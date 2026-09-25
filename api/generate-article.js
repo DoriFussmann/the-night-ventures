@@ -8,6 +8,7 @@ import {
 } from '../lib/generate-article/prompt.js'
 import { stripNoVolumeTag } from '../lib/stripNoVolumeTag.js'
 import { slugify } from '../lib/slugify.js'
+import { demoteBodyH1 } from '../lib/demoteBodyH1.js'
 
 export const config = {
   maxDuration: 300,
@@ -844,11 +845,11 @@ function mergeWtsBlocks(text) {
 }
 
 /**
- * Post-process body: merge orphans in main body and separately in WTS content.
- * Runs before marker validation.
+ * Post-process body: demote H1s, then merge orphans in main body and separately
+ * in WTS content. Runs before marker validation.
  */
 function processArticleBody(body) {
-  const text = String(body || '').replace(/\r\n/g, '\n')
+  const text = demoteBodyH1(String(body || '').replace(/\r\n/g, '\n'))
   const startIdx = text.indexOf(WTS_START)
   const endIdx = text.indexOf(WTS_END)
 
