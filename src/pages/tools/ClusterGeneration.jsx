@@ -5,7 +5,10 @@ import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import ConfirmGate from "./articlesAutomation/ConfirmGate";
-import GenerationReport from "./articlesAutomation/GenerationReport";
+import GenerationReport, {
+  imageNote,
+  imageTrailNote,
+} from "./articlesAutomation/GenerationReport";
 import BatchPublishReport, {
   articlesFromJobs,
   formatElapsed,
@@ -82,7 +85,7 @@ function ImageStatusBadge({ image }) {
   if (status === "done") {
     return (
       <span className="inline-flex shrink-0 items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
-        Image ready
+        {imageNote(image) || "Image ready"}
       </span>
     );
   }
@@ -1427,6 +1430,11 @@ export default function ClusterGeneration() {
                         <TypeBadge type={job.type} />
                         <ImageStatusBadge image={job.image} />
                       </div>
+                      {imageTrailNote(job.image) ? (
+                        <p className="text-xs text-muted-foreground">
+                          {imageTrailNote(job.image)}
+                        </p>
+                      ) : null}
                       {job.status === "failed" && job.error && (
                         <p className="text-xs text-destructive break-words">
                           {job.error}

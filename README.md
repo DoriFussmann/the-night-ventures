@@ -51,7 +51,12 @@ npx vercel dev
    | `SUPABASE_URL` | Same as project URL |
    | `SUPABASE_SERVICE_ROLE_KEY` | Service role (server only) |
    | `ANTHROPIC_API_KEY` | Anthropic API (plan-cluster, generate-article, design-guide routes) |
-   | `OPENAI_API_KEY` | OpenAI API (Site Content Build image generation via gpt-image-2) |
+   | `OPENAI_API_KEY` | OpenAI API (Site Content Build image generation via gpt-image-2). Final fallback after stock search |
+   | `UNSPLASH_ACCESS_KEY` | Unsplash Access Key (Client-ID). Article hero and Image Generator stock search |
+   | `SHUTTERSTOCK_API_TOKEN` | Shutterstock OAuth bearer token with licensing scope |
+   | `SHUTTERSTOCK_SUBSCRIPTION_ID` | Shutterstock subscription used to license the chosen image |
+   | `IMAGE_STOCK_ORDER` | Stock provider order, default `unsplash,shutterstock`. OpenAI is always the final fallback |
+   | `IMAGE_STOCK_MIN_SCORE` | Judge acceptance threshold 0–10, default `7` |
    | `GOOGLE_PAGESPEED_API_KEY` | Google PageSpeed Insights API (External Audit Snapshot) |
    | `RESEND_API_KEY` | From Resend dashboard |
    | `RESEND_FROM_EMAIL` | Verified sender (or Resend onboarding address for tests) |

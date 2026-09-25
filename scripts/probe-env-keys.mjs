@@ -62,6 +62,24 @@ mark(
   process.env.ANTHROPIC_API_KEY ? `len=${process.env.ANTHROPIC_API_KEY.length}` : 'missing'
 )
 
+mark(
+  'UNSPLASH_ACCESS_KEY',
+  Boolean(process.env.UNSPLASH_ACCESS_KEY) && process.env.UNSPLASH_ACCESS_KEY.length > 10,
+  process.env.UNSPLASH_ACCESS_KEY ? `len=${process.env.UNSPLASH_ACCESS_KEY.length}` : 'missing'
+)
+
+mark(
+  'SHUTTERSTOCK_API_TOKEN',
+  Boolean(process.env.SHUTTERSTOCK_API_TOKEN) && process.env.SHUTTERSTOCK_API_TOKEN.length > 10,
+  process.env.SHUTTERSTOCK_API_TOKEN ? `len=${process.env.SHUTTERSTOCK_API_TOKEN.length}` : 'missing'
+)
+
+mark(
+  'SHUTTERSTOCK_SUBSCRIPTION_ID',
+  Boolean(String(process.env.SHUTTERSTOCK_SUBSCRIPTION_ID || '').trim()),
+  process.env.SHUTTERSTOCK_SUBSCRIPTION_ID ? 'set' : 'missing'
+)
+
 const { semrushTools } = await import(
   pathToFileURL(path.join(root, 'lib/seo-advisor/providers/semrush.js')).href
 )

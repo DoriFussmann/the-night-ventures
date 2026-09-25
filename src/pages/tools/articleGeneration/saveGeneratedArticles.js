@@ -47,6 +47,7 @@ export function buildGeneratedArticleRow({
   body,
   whereThingsStandSources,
   heroStoragePath,
+  heroSource,
   status = "drafted",
 }) {
   const fm = frontmatter && typeof frontmatter === "object" ? frontmatter : {};
@@ -84,6 +85,7 @@ export function buildGeneratedArticleRow({
   };
   const storedHero = String(heroStoragePath || "").trim();
   if (storedHero) row.hero_storage_path = storedHero;
+  if (heroSource != null) row.hero_source = heroSource;
   return row;
 }
 
@@ -129,6 +131,7 @@ export async function saveGeneratedArticles({
         body: article.body,
         whereThingsStandSources: article.whereThingsStandSources,
         heroStoragePath: article.heroStoragePath || article.image?.storagePath,
+        heroSource: article.heroSource,
         status: "drafted",
       })
     );

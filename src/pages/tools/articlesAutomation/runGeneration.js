@@ -6,7 +6,7 @@ import { saveGeneratedArticles } from "../articleGeneration/saveGeneratedArticle
 import { finishHeroImage } from "../articleGeneration/heroImageStorage";
 import { downloadArticlesZip } from "../articleGeneration/downloadZip";
 import {
-  generateOneImage,
+  getImage,
   imageSrcFromResult,
 } from "../aiImage/generateImageClient";
 import { cropImageTo16x9 } from "../aiImage/cropImage";
@@ -138,18 +138,39 @@ async function generateOneArticle({
   return data;
 }
 
-async function generateAndCropArticleImage({ article, frontmatter, styleContext }) {
+async function generateAndCropArticleImage({
+  article,
+  frontmatter,
+  styleContext,
+  excludeIds,
+}) {
   const prompt = buildArticleImagePrompt(article, frontmatter);
-  const raw = await generateOneImage({
+  const raw = await getImage({
     prompt,
     size: "1536x1024",
     styleContext: styleContext || "",
+    stock: {
+      title: frontmatter?.title || article?.title || "",
+      description: frontmatter?.description || "",
+      keyword: article?.targetKeyword || "",
+      articleType: article?.type || "",
+      excludeIds,
+    },
   });
   const src = imageSrcFromResult(raw);
   if (!src) {
     throw new Error("No image returned");
   }
-  return cropImageTo16x9(src);
+  const cropped = await cropImageTo16x9(src);
+  return {
+    cropped,
+    meta: {
+      source: raw.source,
+      sourceId: raw.sourceId,
+      attribution: raw.attribution,
+      trail: raw.trail,
+    },
+  };
 }
 
 function buildBatchContextEntry(frontmatter, article) {
@@ -222,6 +243,7 @@ export async function generateClusterArticles({
 
   const context = [];
   const successAcc = [];
+  const usedStockIds = new Set();
 
   for (let step = 0; step < ordered.length; step++) {
     const { index, article } = ordered[step];
@@ -266,7 +288,7 @@ export async function generateClusterArticles({
 
       if (withImages) {
         onStatus?.(
-          `Generating hero image ${step + 1} of ${ordered.length}: ${
+          `Finding hero image ${step + 1} of ${ordered.length}: ${
             article.title || "(untitled)"
           }`
         );
@@ -276,16 +298,27 @@ export async function generateClusterArticles({
         };
         onJobsChange?.(cloneJobs(jobs));
         try {
-          const cropped = await generateAndCropArticleImage({
+          const { cropped, meta } = await generateAndCropArticleImage({
             article,
             frontmatter: data.frontmatter,
             styleContext,
+            excludeIds: [...usedStockIds],
           });
           image = await finishHeroImage({
             companyId,
             slug: String(data.frontmatter?.slug || "").trim(),
             cropped,
           });
+          image = {
+            ...image,
+            source: meta.source,
+            sourceId: meta.sourceId,
+            attribution: meta.attribution,
+            trail: meta.trail,
+          };
+          if (meta.source && meta.source !== "openai" && meta.sourceId) {
+            usedStockIds.add(String(meta.sourceId));
+          }
         } catch (imgErr) {
           image = {
             status: "failed",
@@ -368,6 +401,13 @@ export async function saveAndDownloadGenerated({
         body: job.body,
         whereThingsStandSources: job.whereThingsStandSources,
         heroStoragePath: job.image?.storagePath || null,
+        heroSource: job.image?.source
+          ? {
+              source: job.image.source,
+              sourceId: job.image.sourceId ?? null,
+              attribution: job.image.attribution ?? null,
+            }
+          : null,
       };
     }),
   });

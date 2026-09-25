@@ -1,11 +1,48 @@
 import React from "react";
 import { Check, X } from "lucide-react";
 
-function imageNote(image) {
+function providerLabel(provider) {
+  if (provider === "unsplash") return "Unsplash";
+  if (provider === "shutterstock") return "Shutterstock";
+  if (provider === "openai") return "OpenAI";
+  return provider ? String(provider) : "Stock";
+}
+
+export function imageNote(image) {
   const status = image?.status;
-  if (status === "done") return "hero image ready";
   if (status === "failed") return "hero image failed";
-  return null;
+  if (status !== "done") return null;
+  if (image.source === "unsplash") {
+    const name = image.attribution?.photographer;
+    return name
+      ? `hero image ready · Unsplash (Photo by ${name})`
+      : "hero image ready · Unsplash";
+  }
+  if (image.source === "shutterstock") return "hero image ready · Shutterstock";
+  return "hero image ready · generated";
+}
+
+export function imageTrailNote(image) {
+  const trail = Array.isArray(image?.trail) ? image.trail : [];
+  const unused = trail.filter((entry) => entry && entry.outcome !== "used");
+  if (unused.length === 0) return "";
+  return unused
+    .map((entry) => {
+      const name = providerLabel(entry.provider);
+      if (entry.outcome === "no_fit") {
+        const score = entry.score != null ? ` (score ${entry.score})` : "";
+        return `${name}: no fit${score}`;
+      }
+      if (entry.outcome === "not_configured") return `${name}: not configured`;
+      if (entry.outcome === "no_results") return `${name}: no results`;
+      if (entry.outcome === "judge_error") return `${name}: judge error`;
+      if (entry.outcome === "error") return `${name}: error`;
+      if (entry.outcome === "skipped") {
+        return entry.reason ? `${name}: skipped (${entry.reason})` : `${name}: skipped`;
+      }
+      return `${name}: ${entry.outcome}`;
+    })
+    .join(", ");
 }
 
 export default function GenerationReport({
@@ -66,6 +103,9 @@ export default function GenerationReport({
                         ? `Ready${img ? ` · ${img}` : ""}`
                         : job.error || "Failed to generate"}
                     </p>
+                    {imageTrailNote(job.image) ? (
+                      <p className="text-xs opacity-60">{imageTrailNote(job.image)}</p>
+                    ) : null}
                   </div>
                 </li>
               );

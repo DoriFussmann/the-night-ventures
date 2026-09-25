@@ -13,12 +13,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   IMAGE_SIZES,
   appendKeywordContext,
   buildStyleContext,
   downloadGeneratedImage,
   generateOneImage,
+  getImage,
   imageSrcFromResult,
 } from "./aiImage/generateImageClient";
 import {
@@ -29,6 +31,55 @@ import {
 import { slugify } from "./clusterImage/slugify";
 
 const NONE_VALUE = "__none__";
+
+function ImageSourceLine({ result }) {
+  if (!result?.source) return null;
+  const source = result.source;
+  const attribution = result.attribution;
+  let label = "Generated";
+  if (source === "unsplash") label = "Unsplash";
+  else if (source === "shutterstock") label = "Shutterstock";
+  const photographer = attribution?.photographer;
+  const photographerUrl = attribution?.photographerUrl;
+  const sourceUrl = attribution?.sourceUrl;
+  return (
+    <p className="text-xs text-muted-foreground">
+      {label}
+      {source === "unsplash" && photographer ? (
+        <>
+          {" "}
+          · Photo by{" "}
+          {photographerUrl ? (
+            <a
+              href={photographerUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="underline underline-offset-2"
+            >
+              {photographer}
+            </a>
+          ) : (
+            photographer
+          )}
+        </>
+      ) : null}
+      {source === "shutterstock" && sourceUrl ? (
+        <>
+          {" "}
+          ·{" "}
+          <a
+            href={sourceUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-2"
+          >
+            View on Shutterstock
+          </a>
+        </>
+      ) : null}
+    </p>
+  );
+}
 
 function normalizePillarsFromCoverage(raw) {
   if (!Array.isArray(raw)) return [];
@@ -98,6 +149,7 @@ export default function AiImageGenerator() {
   const [supportingValue, setSupportingValue] = useState(NONE_VALUE);
 
   const [generating, setGenerating] = useState(false);
+  const [searchStockFirst, setSearchStockFirst] = useState(true);
   const [result, setResult] = useState(null);
 
   const loadCompanyData = useCallback(async () => {
@@ -224,15 +276,27 @@ export default function AiImageGenerator() {
         designGuideAbstract,
         extraGuidelines
       );
-      const data = await generateOneImage({
-        prompt: appendKeywordContext(
-          trimmed,
-          pillarKeyword,
-          supportingKeyword
-        ),
-        size: imageSize,
-        styleContext,
-      });
+      const assembled = appendKeywordContext(
+        trimmed,
+        pillarKeyword,
+        supportingKeyword
+      );
+      const data = searchStockFirst
+        ? await getImage({
+            prompt: assembled,
+            size: imageSize,
+            styleContext,
+            stock: {
+              title: trimmed.slice(0, 120),
+              description: trimmed,
+              keyword: pillarKeyword || supportingKeyword || "",
+            },
+          })
+        : await generateOneImage({
+            prompt: assembled,
+            size: imageSize,
+            styleContext,
+          });
       setResult(data);
     } catch (err) {
       console.error("Image generation failed:", err);
@@ -391,6 +455,15 @@ export default function AiImageGenerator() {
         </Select>
       </div>
 
+      <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+        <Checkbox
+          checked={searchStockFirst}
+          onCheckedChange={(value) => setSearchStockFirst(value === true)}
+          disabled={generating}
+        />
+        Search stock first (Unsplash / Shutterstock)
+      </label>
+
       <div className="flex flex-wrap items-center gap-3">
         <Button
           type="button"
@@ -473,9 +546,10 @@ export default function AiImageGenerator() {
           <p className="text-xs font-medium text-muted-foreground">Preview</p>
           <img
             src={previewSrc}
-            alt="Generated"
+            alt={result?.altText || "Generated"}
             className="max-h-[512px] w-auto rounded-md border border-border"
           />
+          <ImageSourceLine result={result} />
         </div>
       ) : null}
     </div>
