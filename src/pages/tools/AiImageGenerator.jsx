@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { getImageryContext } from "@/lib/design/getImageryContext";
 import {
   IMAGE_SIZES,
   appendKeywordContext,
@@ -139,7 +140,7 @@ export default function AiImageGenerator() {
   const [error, setError] = useState("");
   const [saveMessage, setSaveMessage] = useState("");
 
-  const [designGuideAbstract, setDesignGuideAbstract] = useState("");
+  const [imageryContext, setImageryContext] = useState("");
   const [prompt, setPrompt] = useState("");
   const [extraGuidelines, setExtraGuidelines] = useState("");
   const [imageSize, setImageSize] = useState("1024x1024");
@@ -162,7 +163,7 @@ export default function AiImageGenerator() {
       supabase.from("companies").select("name").eq("id", companyId).maybeSingle(),
       supabase
         .from("company_profiles")
-        .select("design_guide_abstract, core_keywords")
+        .select("design_guide_raw, core_keywords")
         .eq("company_id", companyId)
         .maybeSingle(),
       supabase
@@ -194,9 +195,7 @@ export default function AiImageGenerator() {
     }
 
     setCompanyName(companyResult.data?.name || "");
-    setDesignGuideAbstract(
-      String(profileResult.data?.design_guide_abstract || "").trim()
-    );
+    setImageryContext(getImageryContext(profileResult.data?.design_guide_raw));
     const fromCoverage = normalizePillarsFromCoverage(coverageResult.data?.pillars);
     const fromCore = normalizePillarsFromCoreKeywords(
       profileResult.data?.core_keywords
@@ -212,7 +211,7 @@ export default function AiImageGenerator() {
     loadCompanyData();
   }, [loadCompanyData]);
 
-  const designGuideMissing = !designGuideAbstract.trim();
+  const designGuideMissing = !imageryContext.trim();
   const previewSrc = imageSrcFromResult(result);
 
   const handleSavePrompt = () => {
@@ -273,7 +272,7 @@ export default function AiImageGenerator() {
 
     try {
       const styleContext = buildStyleContext(
-        designGuideAbstract,
+        imageryContext,
         extraGuidelines
       );
       const assembled = appendKeywordContext(
@@ -331,8 +330,8 @@ export default function AiImageGenerator() {
         <h1 className="text-[15px] text-foreground mb-1">Image Generator</h1>
         <p className="text-sm text-muted-foreground">
           {companyName
-            ? `Generate a single image for ${companyName} using Design Guidelines from Company Data.`
-            : "Generate a single image using Design Guidelines from Company Data."}
+            ? `Generate a single image for ${companyName} using Design Guide (Imagery).`
+            : "Generate a single image using Design Guide (Imagery)."}
         </p>
       </div>
 
@@ -341,13 +340,13 @@ export default function AiImageGenerator() {
       {designGuideMissing && (
         <Alert variant="destructive">
           <AlertDescription>
-            No Design Guidelines set — generated images will not follow brand
+            No Design Guide (Imagery) set — generated images will not follow brand
             direction. Set this in{" "}
             <Link
-              to={`/company/${companyId}/company-data`}
+              to={`/company/${companyId}/design-guide-builder`}
               className="font-medium underline underline-offset-2"
             >
-              Company Data
+              Design
             </Link>{" "}
             first for on-brand results.
           </AlertDescription>
@@ -357,10 +356,10 @@ export default function AiImageGenerator() {
       {!designGuideMissing && (
         <div className="space-y-2 rounded-lg border border-border p-4">
           <p className="text-xs font-medium text-muted-foreground">
-            Design Guidelines (from Company Data)
+            Design Guide (Imagery)
           </p>
           <p className="text-sm text-foreground whitespace-pre-wrap max-h-40 overflow-auto">
-            {designGuideAbstract}
+            {imageryContext}
           </p>
         </div>
       )}

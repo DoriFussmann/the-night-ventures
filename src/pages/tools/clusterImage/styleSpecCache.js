@@ -10,8 +10,9 @@ function simpleHash(value) {
   return String(hash);
 }
 
-export function abstractCacheKey(abstract) {
-  return simpleHash(String(abstract || "").trim());
+/** Hash of the imagery brief used as the style-spec cache key. */
+export function abstractCacheKey(imagery) {
+  return simpleHash(String(imagery || "").trim());
 }
 
 export function readCachedStyleSpec(companyId, abstract) {

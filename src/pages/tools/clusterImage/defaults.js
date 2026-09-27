@@ -1,4 +1,4 @@
-/** Neutral fallback when design_guide_abstract is missing. */
+/** Neutral fallback when the Design Guide imagery brief is missing. */
 export const DEFAULT_STYLE_SPEC = {
   backgroundColor: "#111827",
   accentColor: "#6b7280",

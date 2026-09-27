@@ -22,6 +22,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { getImageryContext, getImageryPalette } from "@/lib/design/getImageryContext";
 import {
   DEFAULT_STYLE_SPEC,
   IMAGE_HEIGHT,
@@ -92,7 +93,8 @@ export default function ClusterImageGenerator() {
   const [companyName, setCompanyName] = useState("");
   const [productName, setProductName] = useState("");
   const [domain, setDomain] = useState("");
-  const [designGuideAbstract, setDesignGuideAbstract] = useState("");
+  const [imageryContext, setImageryContext] = useState("");
+  const [palette, setPalette] = useState(null);
   const [pillars, setPillars] = useState([]);
 
   const [pillarSlug, setPillarSlug] = useState("");
@@ -130,7 +132,7 @@ export default function ClusterImageGenerator() {
       supabase.from("companies").select("name").eq("id", companyId).maybeSingle(),
       supabase
         .from("company_profiles")
-        .select("product_name, domain, design_guide_abstract, core_keywords")
+        .select("product_name, domain, design_guide_raw, core_keywords")
         .eq("company_id", companyId)
         .maybeSingle(),
       supabase
@@ -164,9 +166,9 @@ export default function ClusterImageGenerator() {
     setCompanyName(companyResult.data?.name || "");
     setProductName(profileResult.data?.product_name || "");
     setDomain(profileResult.data?.domain || "");
-    setDesignGuideAbstract(
-      String(profileResult.data?.design_guide_abstract || "").trim()
-    );
+    const guide = profileResult.data?.design_guide_raw;
+    setImageryContext(getImageryContext(guide));
+    setPalette(getImageryPalette(guide));
 
     const fromCoverage = normalizePillarsFromCoverage(coverageResult.data?.pillars);
     const fromCore = normalizePillarsFromCoreKeywords(
@@ -192,15 +194,15 @@ export default function ClusterImageGenerator() {
     loadData();
   }, [loadData]);
 
-  // Resolve style spec once per company + abstract (cached in localStorage).
+  // Resolve style spec once per company + imagery brief (cached in localStorage).
   useEffect(() => {
     let cancelled = false;
 
     async function resolveSpec() {
       if (!companyId || loading) return;
 
-      const abstract = designGuideAbstract;
-      if (!abstract) {
+      const imagery = imageryContext;
+      if (!imagery) {
         setStyleSpec(DEFAULT_STYLE_SPEC);
         setUsingDefaultSpec(true);
         setSpecError("");
@@ -208,7 +210,7 @@ export default function ClusterImageGenerator() {
         return;
       }
 
-      const cached = readCachedStyleSpec(companyId, abstract);
+      const cached = readCachedStyleSpec(companyId, imagery);
       if (cached) {
         setStyleSpec({ ...DEFAULT_STYLE_SPEC, ...cached });
         setUsingDefaultSpec(false);
@@ -224,7 +226,7 @@ export default function ClusterImageGenerator() {
         const res = await fetch("/api/cluster-image-spec", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ abstract }),
+          body: JSON.stringify({ imagery, palette }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
@@ -233,7 +235,7 @@ export default function ClusterImageGenerator() {
         if (cancelled) return;
 
         const spec = { ...DEFAULT_STYLE_SPEC, ...(data.spec || {}) };
-        writeCachedStyleSpec(companyId, abstract, spec);
+        writeCachedStyleSpec(companyId, imagery, spec);
         setStyleSpec(spec);
         setUsingDefaultSpec(false);
       } catch (err) {
@@ -241,7 +243,7 @@ export default function ClusterImageGenerator() {
         if (cancelled) return;
         setStyleSpec(DEFAULT_STYLE_SPEC);
         setUsingDefaultSpec(true);
-        setSpecError(err?.message || "Failed to derive style from Design Guidelines");
+        setSpecError(err?.message || "Failed to derive style from Design Guide (Imagery)");
       } finally {
         if (!cancelled) setSpecLoading(false);
       }
@@ -251,7 +253,7 @@ export default function ClusterImageGenerator() {
     return () => {
       cancelled = true;
     };
-  }, [companyId, designGuideAbstract, loading]);
+  }, [companyId, imageryContext, palette, loading]);
 
   const plannedImageCount = selectedPillar ? 1 : 0;
 
@@ -262,13 +264,13 @@ export default function ClusterImageGenerator() {
 
   async function resolveSpecForGenerate() {
     const extra = extraGuidelines.trim();
-    if (!extra || !designGuideAbstract) return styleSpec;
+    if (!extra || !imageryContext) return styleSpec;
 
-    const abstract = `${designGuideAbstract}\n\nAdditional guidelines:\n${extra}`;
+    const imagery = `${imageryContext}\n\nAdditional guidelines:\n${extra}`;
     const res = await fetch("/api/cluster-image-spec", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ abstract }),
+      body: JSON.stringify({ imagery, palette }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -352,14 +354,14 @@ export default function ClusterImageGenerator() {
         </p>
       </div>
 
-      {!designGuideAbstract && (
+      {!imageryContext && (
         <div className="rounded-lg border border-dashed border-border px-4 py-4 text-sm">
           <p className="text-foreground">
-            No Design Guidelines set for this company yet — add one in Company Data
+            No Design Guide (Imagery) set for this company yet — add one in Design
             for on-brand results
           </p>
           <Button asChild variant="outline" size="sm" className="mt-3">
-            <Link to={`/company/${companyId}/company-data`}>Company Data</Link>
+            <Link to={`/company/${companyId}/design-guide-builder`}>Design</Link>
           </Button>
         </div>
       )}
@@ -387,13 +389,13 @@ export default function ClusterImageGenerator() {
         </div>
       ) : (
         <>
-          {!designGuideAbstract ? null : (
+          {!imageryContext ? null : (
             <div className="space-y-2 rounded-lg border border-border p-4">
               <p className="text-xs font-medium text-muted-foreground">
-                Design Guidelines (from Company Data)
+                Design Guide (Imagery)
               </p>
               <p className="text-sm text-foreground whitespace-pre-wrap max-h-40 overflow-auto">
-                {designGuideAbstract}
+                {imageryContext}
               </p>
             </div>
           )}
@@ -477,7 +479,7 @@ export default function ClusterImageGenerator() {
             <p className="text-muted-foreground">
               <span className="text-foreground">Style:</span>{" "}
               {specLoading
-                ? "Deriving from Design Guidelines…"
+                ? "Deriving from Design Guide (Imagery)…"
                 : usingDefaultSpec
                   ? "Neutral default"
                   : `${styleSpec.style} · ${styleSpec.fontFamily}`}

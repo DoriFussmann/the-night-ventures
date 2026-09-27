@@ -11,7 +11,7 @@ const MAX_TOKENS = 500
 
 const ALLOWED_STYLES = new Set(['minimal', 'bold', 'editorial'])
 
-const SYSTEM_PROMPT = `You turn a Design Guide Abstract into a small style spec for a branded topic-card graphic (SVG/canvas, not a photo).
+const SYSTEM_PROMPT = `You turn an Imagery brief into a small style spec for a branded topic-card graphic (SVG/canvas, not a photo).
 
 Respond ONLY with valid JSON, no markdown fences, no preamble:
 {
@@ -23,7 +23,8 @@ Respond ONLY with valid JSON, no markdown fences, no preamble:
 }
 
 Rules:
-- Prefer exact hex values from the abstract when present; otherwise choose close matches.
+- Prefer exact hex values from the imagery brief when present; otherwise choose close matches.
+- When exact brand colors are provided, use those hexes for backgroundColor (bg), textColor (fg), and accentColor (accent). Do not substitute nearby colors. Use Inter for fontFamily.
 - backgroundColor and textColor must contrast enough for large readable type (WCAG-ish).
 - fontFamily: a single primary family name (e.g. "Inter", "Georgia", "IBM Plex Sans", "Source Serif 4") — no CSS stacks.
 - style picks a layout variant: minimal = quiet/restrained; bold = high-contrast strong blocks; editorial = publication-like topic card.
@@ -101,6 +102,20 @@ function normalizeSpec(parsed) {
   }
 }
 
+function paletteFromBody(value) {
+  if (!value || typeof value !== 'object') return null
+  const pick = (key) => {
+    const raw = String(value[key] || '').trim()
+    return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw.toUpperCase() : ''
+  }
+  const bg = pick('bg')
+  const fg = pick('fg')
+  const accent = pick('accent')
+  const highlight = pick('highlight')
+  if (!bg || !fg || !accent || !highlight) return null
+  return { bg, fg, accent, highlight }
+}
+
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*')
@@ -121,11 +136,16 @@ export default async function handler(req, res) {
     }
 
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {}
-    const abstract = String(body.abstract || body.design_guide_abstract || '').trim()
+    const imagery = String(body.imagery || body.abstract || body.design_guide_abstract || '').trim()
+    const palette = paletteFromBody(body.palette)
 
-    if (!abstract) {
-      return json(res, 400, { error: 'abstract is required' })
+    if (!imagery) {
+      return json(res, 400, { error: 'imagery is required' })
     }
+
+    const paletteBlock = palette
+      ? `\n\nExact brand colors — use these hex values, do not substitute:\nbackgroundColor: ${palette.bg}\ntextColor: ${palette.fg}\naccentColor: ${palette.accent}\nhighlight: ${palette.highlight}\nfontFamily: Inter`
+      : ''
 
     const anthropic = new Anthropic({ apiKey })
     const message = await anthropic.messages.create({
@@ -135,7 +155,7 @@ export default async function handler(req, res) {
       messages: [
         {
           role: 'user',
-          content: `Design Guide Abstract:\n\n${abstract}`,
+          content: `Imagery brief:\n\n${imagery}${paletteBlock}`,
         },
       ],
     })

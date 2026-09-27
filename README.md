@@ -50,7 +50,7 @@ npx vercel dev
    | `VITE_SUPABASE_ANON_KEY` | Supabase anon/public key |
    | `SUPABASE_URL` | Same as project URL |
    | `SUPABASE_SERVICE_ROLE_KEY` | Service role (server only) |
-   | `ANTHROPIC_API_KEY` | Anthropic API (plan-cluster, generate-article, design-guide routes) |
+   | `ANTHROPIC_API_KEY` | Anthropic API (plan-cluster, generate-article, cluster-image-spec routes) |
    | `OPENAI_API_KEY` | OpenAI API (Site Content Build image generation via gpt-image-2). Final fallback after stock search |
    | `UNSPLASH_ACCESS_KEY` | Unsplash Access Key (Client-ID). Article hero and Image Generator stock search |
    | `SHUTTERSTOCK_API_TOKEN` | Shutterstock OAuth bearer token with licensing scope |

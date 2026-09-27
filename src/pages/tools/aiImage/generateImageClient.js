@@ -137,9 +137,9 @@ export function appendKeywordContext(prompt, pillarKeyword, supportingKeyword) {
   return `${base}\n\nThe image should clearly reflect the ${extras.join(" and the ")}.`;
 }
 
-/** Combine company design guide + optional extra guidelines for styleContext. */
-export function buildStyleContext(designGuideAbstract, extraGuidelines) {
-  const brand = String(designGuideAbstract || "").trim();
+/** Combine Design Guide imagery + optional extra guidelines for styleContext. */
+export function buildStyleContext(imageryContext, extraGuidelines) {
+  const brand = String(imageryContext || "").trim();
   const extra = String(extraGuidelines || "").trim();
   if (brand && extra) {
     return `${brand}\n\nAdditional guidelines:\n${extra}`;

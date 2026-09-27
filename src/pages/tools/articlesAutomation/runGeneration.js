@@ -9,6 +9,7 @@ import {
   getImage,
   imageSrcFromResult,
 } from "../aiImage/generateImageClient";
+import { getImageryContext } from "@/lib/design/getImageryContext";
 import { cropImageTo16x9 } from "../aiImage/cropImage";
 
 function skippedImageState() {
@@ -75,7 +76,7 @@ async function loadCompanyPositioning(companyId) {
   const { data, error } = await supabase
     .from("company_profiles")
     .select(
-      "abstract, short_description, competitors, target_audience, design_guide_abstract"
+      "abstract, short_description, competitors, target_audience, design_guide_raw"
     )
     .eq("company_id", companyId)
     .maybeSingle();
@@ -89,7 +90,7 @@ async function loadCompanyPositioning(companyId) {
     shortDescription: data?.short_description || "",
     competitors: normalizeCompetitors(data?.competitors),
     audience: String(data?.target_audience || "").trim(),
-    designGuideAbstract: String(data?.design_guide_abstract || "").trim(),
+    imageryContext: getImageryContext(data?.design_guide_raw),
   };
 }
 
@@ -234,7 +235,7 @@ export async function generateClusterArticles({
 
   onStatus?.("Loading company positioning…");
   const positioning = await loadCompanyPositioning(companyId);
-  const styleContext = positioning.designGuideAbstract || "";
+  const styleContext = positioning.imageryContext || "";
   const selected = new Set(list.map((_, index) => index));
   const ordered = orderSelectedArticles(list, selected);
   const jobs = initJobRows(ordered, withImages);
