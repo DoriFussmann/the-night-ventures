@@ -1,12 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { useParams } from "react-router-dom";
 import { Copy, Download, Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import {
   Select,
@@ -15,13 +13,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  normalizeServices,
-  normalizeTeamMembers,
-} from "./templateToPrompt/customFieldKeys";
-import { SITE_CONTENT_AUDIT_PROMPT } from "./siteContentBuild/auditPrompt";
-import { buildSiteContentPrompt } from "./siteContentBuild/buildSiteContentPrompt";
+import { getImageryContext } from "@/lib/design/getImageryContext";
+import { CURSOR_IMPLEMENT_PROMPT } from "./siteContentBuild/buildSiteContentPrompt";
 import { parsePlaceholders } from "./siteContentBuild/parsePlaceholders";
 import {
   IMAGE_SIZES,
@@ -30,112 +23,35 @@ import {
   imageSrcFromResult,
 } from "./aiImage/generateImageClient";
 
-const PAGE_OPTIONS = [
-  {
-    key: "homepage",
-    label: "Homepage refinement",
-    description:
-      "Rebuild homepage with the fixed structural section order (hero, trust, alternating, offering, optional testimonials, FAQ)",
-    defaultChecked: true,
-  },
-  {
-    key: "about",
-    label: "About",
-    description: "Company story and positioning page",
-    defaultChecked: true,
-  },
-  {
-    key: "services",
-    label: "Services",
-    description:
-      "Wire the existing services content collection to a real /services/ route",
-    defaultChecked: true,
-  },
-  {
-    key: "contact",
-    label: "Contact",
-    description:
-      "Contact page (form or details, based on what contact info exists in Company Data)",
-    defaultChecked: true,
-  },
-  {
-    key: "faq",
-    label: "FAQ",
-    description:
-      "Dedicated /faq/ route — only included when real Q&As are pasted below (homepage already gets an FAQ section)",
-    defaultChecked: false,
-  },
-  {
-    key: "testimonials",
-    label: "Testimonials",
-    description: null,
-    warning:
-      "No real client testimonials are available yet. Building this page now would require placeholder text. Recommend enabling only once real client quotes exist — never generate fabricated testimonials.",
-    defaultChecked: false,
-  },
-  {
-    key: "legal",
-    label: "Privacy Policy / Terms",
-    description: null,
-    note: "Legal content — recommend sourcing from counsel or a legal template service, not AI-generated. Enabling this will only scaffold a placeholder page structure, not real legal text.",
-    defaultChecked: false,
-  },
-];
+function PromptBlock({ label, text }) {
+  const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState("");
 
-function defaultPageSelection() {
-  return Object.fromEntries(
-    PAGE_OPTIONS.map((opt) => [opt.key, opt.defaultChecked])
-  );
-}
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyError("");
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Copy failed:", err);
+      setCopyError("Failed to copy to clipboard");
+    }
+  };
 
-function normalizeCompetitors(value) {
-  if (!Array.isArray(value)) return [];
-  return value.map((item) => {
-    if (!item || typeof item !== "object") return { name: "", url: "" };
-    return {
-      name: item.name == null ? "" : String(item.name),
-      url: item.url == null ? "" : String(item.url),
-    };
-  });
-}
-
-function PromptCodeBlock({ value, onCopy, copyMessage }) {
   return (
-    <div className="space-y-3">
-      <pre className="max-h-[480px] overflow-auto rounded-lg border border-border bg-muted/30 p-4 text-xs font-mono whitespace-pre-wrap text-foreground">
-        {value}
-      </pre>
-      <div className="flex flex-wrap items-center gap-3">
-        <Button type="button" variant="outline" onClick={onCopy}>
-          <Copy className="w-4 h-4" />
-          Copy
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-medium text-foreground">{label}</p>
+        <Button type="button" variant="outline" size="sm" onClick={handleCopy}>
+          <Copy className="h-3.5 w-3.5" />
+          {copied ? "Copied" : "Copy"}
         </Button>
-        {copyMessage && (
-          <span className="text-sm text-muted-foreground">{copyMessage}</span>
-        )}
       </div>
-    </div>
-  );
-}
-
-function ReadOnlyField({ label, value, multiline = false }) {
-  const text = String(value || "").trim();
-  return (
-    <div className="space-y-1">
-      <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      {text ? (
-        <p
-          className={
-            multiline
-              ? "text-sm text-foreground whitespace-pre-wrap"
-              : "text-sm text-foreground"
-          }
-        >
-          {text}
-        </p>
-      ) : (
-        <p className="text-sm text-muted-foreground italic">Not set</p>
-      )}
+      {copyError ? <p className="text-sm text-destructive">{copyError}</p> : null}
+      <pre className="max-h-[70vh] overflow-auto rounded-md border border-border bg-muted/40 p-3 text-xs whitespace-pre-wrap break-words text-foreground/90">
+        {text}
+      </pre>
     </div>
   );
 }
@@ -143,27 +59,8 @@ function ReadOnlyField({ label, value, multiline = false }) {
 export default function SiteContentBuild() {
   const { companyId } = useParams();
 
-  const [companyName, setCompanyName] = useState("");
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-
-  const [productName, setProductName] = useState("");
-  const [domain, setDomain] = useState("");
-  const [shortDescription, setShortDescription] = useState("");
-  const [mediumDescription, setMediumDescription] = useState("");
-  const [services, setServices] = useState([]);
-  const [teamMembers, setTeamMembers] = useState([]);
-  const [designGuideAbstract, setDesignGuideAbstract] = useState("");
-  const [competitors, setCompetitors] = useState([]);
-
-  const [auditCopyMessage, setAuditCopyMessage] = useState("");
-  const [copyMessage, setCopyMessage] = useState("");
-  const [auditReport, setAuditReport] = useState("");
-
-  const [pages, setPages] = useState(defaultPageSelection);
-  const [faqContent, setFaqContent] = useState("");
-
-  const [assembledPrompt, setAssembledPrompt] = useState("");
+  const [imageryContext, setImageryContext] = useState("");
 
   const [placeholderReport, setPlaceholderReport] = useState("");
   const [placeholderRows, setPlaceholderRows] = useState([]);
@@ -173,127 +70,25 @@ export default function SiteContentBuild() {
   const [batchLabel, setBatchLabel] = useState("");
   const [singleRunningId, setSingleRunningId] = useState(null);
 
-  const loadCompanyData = useCallback(async () => {
-    if (!companyId) return;
-
-    setLoading(true);
-    setError("");
-
-    const [companyResult, profileResult] = await Promise.all([
-      supabase.from("companies").select("name").eq("id", companyId).maybeSingle(),
-      supabase
-        .from("company_profiles")
-        .select(
-          "domain, product_name, short_description, medium_description, services, team_members, design_guide_abstract, competitors"
-        )
-        .eq("company_id", companyId)
-        .maybeSingle(),
-    ]);
-
-    if (companyResult.error) {
-      console.error(companyResult.error);
-      setError(companyResult.error.message || "Failed to load company");
-      setLoading(false);
-      return;
-    }
-
-    setCompanyName(companyResult.data?.name || "");
-
-    if (profileResult.error) {
-      console.error(profileResult.error);
-      setError(profileResult.error.message || "Failed to load company profile");
-      setLoading(false);
-      return;
-    }
-
-    const profile = profileResult.data;
-    setProductName(profile?.product_name || companyResult.data?.name || "");
-    setDomain(profile?.domain || "");
-    setShortDescription(profile?.short_description || "");
-    setMediumDescription(profile?.medium_description || "");
-    setServices(normalizeServices(profile?.services));
-    setTeamMembers(normalizeTeamMembers(profile?.team_members));
-    setDesignGuideAbstract(profile?.design_guide_abstract || "");
-    setCompetitors(normalizeCompetitors(profile?.competitors));
-
-    setLoading(false);
-  }, [companyId]);
-
   useEffect(() => {
-    loadCompanyData();
-  }, [loadCompanyData]);
+    if (!companyId) return undefined;
 
-  const usableServices = services.filter(
-    (s) => s.title.trim() || s.summary.trim() || s.detail.trim()
-  );
-  const usableTeam = teamMembers.filter(
-    (t) =>
-      t.name.trim() ||
-      t.role.trim() ||
-      t.bio.trim() ||
-      t.credentials.trim() ||
-      (t.same_as || []).some((u) => u.trim())
-  );
-  const usableCompetitors = competitors.filter(
-    (c) => c.name.trim() || c.url.trim()
-  );
+    let cancelled = false;
+    (async () => {
+      const { data, error: profileError } = await supabase
+        .from("company_profiles")
+        .select("design_guide_raw")
+        .eq("company_id", companyId)
+        .maybeSingle();
 
-  const anyPageSelected = Object.values(pages).some(Boolean);
-  const designGuideMissing = !designGuideAbstract.trim();
-  const auditMissing = !auditReport.trim();
+      if (cancelled || profileError) return;
+      setImageryContext(getImageryContext(data?.design_guide_raw));
+    })();
 
-  const subtitle = useMemo(() => {
-    if (companyName) {
-      return `Stage 6 — audit structure, then build remaining ${companyName} site pages from Company Data.`;
-    }
-    return "Stage 6 — audit structure, then build remaining site pages from Company Data.";
-  }, [companyName]);
-
-  const copyText = async (text, setMessage) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setMessage("Copied");
-      window.setTimeout(() => setMessage(""), 2000);
-    } catch (err) {
-      console.error("Clipboard copy failed:", err);
-      setError("Failed to copy to clipboard");
-    }
-  };
-
-  const handleGenerate = () => {
-    setError("");
-
-    if (auditMissing) {
-      setError("Paste the audit report from Tab 1 before generating the prompt.");
-      setAssembledPrompt("");
-      return;
-    }
-
-    if (!anyPageSelected) {
-      setError("Select at least one page to include in the prompt.");
-      setAssembledPrompt("");
-      return;
-    }
-
-    const prompt = buildSiteContentPrompt({
-      productName,
-      domain,
-      shortDescription,
-      mediumDescription,
-      services,
-      teamMembers,
-      designGuideAbstract,
-      pages,
-      faqContent,
-      auditReport,
-    });
-
-    setAssembledPrompt(prompt);
-  };
-
-  const togglePage = (key, checked) => {
-    setPages((prev) => ({ ...prev, [key]: checked === true }));
-  };
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId]);
 
   const updatePlaceholderRow = (id, patch) => {
     setPlaceholderRows((prev) =>
@@ -305,7 +100,9 @@ export default function SiteContentBuild() {
     setError("");
     const parsed = parsePlaceholders(placeholderReport);
     if (parsed.length === 0) {
-      setError("No placeholders found. Paste one Label: description per line.");
+      setError(
+        "No image briefs found. Paste the QA image-brief list (page → section → slide → brief)."
+      );
       setPlaceholderRows([]);
       return;
     }
@@ -321,14 +118,12 @@ export default function SiteContentBuild() {
     );
   };
 
-  const runGenerateForRow = async (row) => {
-    const data = await generateOneImage({
+  const runGenerateForRow = async (row) =>
+    generateOneImage({
       prompt: row.description,
       size: imageSize,
-      styleContext: designGuideAbstract,
+      styleContext: imageryContext,
     });
-    return data;
-  };
 
   const handleGenerateOne = async (rowId) => {
     const row = placeholderRows.find((r) => r.id === rowId);
@@ -362,7 +157,7 @@ export default function SiteContentBuild() {
     setBatchLabel("");
 
     const rows = placeholderRows.slice();
-    for (let step = 0; step < rows.length; step++) {
+    for (let step = 0; step < rows.length; step += 1) {
       const row = rows[step];
       setBatchStep(step + 1);
       setBatchLabel(row.label);
@@ -399,484 +194,190 @@ export default function SiteContentBuild() {
       : 0;
   const generationBusy = batchRunning || singleRunningId != null;
 
-  if (loading) {
-    return (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Loading company data...
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div>
-        <h1 className="text-xs text-foreground mb-1">Site Content Build</h1>
-        <p className="text-sm text-muted-foreground">{subtitle}</p>
+        <h1 className="text-xs text-foreground mb-1">Implement content in Cursor</h1>
+        <p className="text-sm text-muted-foreground">
+          Paste this prompt into Cursor, then paste ChatGPT&apos;s full response
+          below it.
+        </p>
       </div>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      <PromptBlock label="Cursor prompt" text={CURSOR_IMPLEMENT_PROMPT} />
 
-      <Tabs defaultValue="audit">
-        <TabsList>
-          <TabsTrigger value="audit">Audit Prompt</TabsTrigger>
-          <TabsTrigger value="build">Build Prompt</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="audit" className="space-y-4 pt-2">
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-xs text-foreground">Image briefs</h2>
           <p className="text-sm text-muted-foreground">
-            Run this first, in the target site&apos;s repo, before generating the
-            build prompt.
+            Paste the QA section from ChatGPT&apos;s response. Each image brief
+            (page → section → slide → brief) can be generated and downloaded,
+            then saved under site/src/assets/.
           </p>
-          <PromptCodeBlock
-            value={SITE_CONTENT_AUDIT_PROMPT}
-            onCopy={() =>
-              copyText(SITE_CONTENT_AUDIT_PROMPT, setAuditCopyMessage)
+        </div>
+
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+
+        <div className="space-y-2">
+          <Label htmlFor="placeholder-report">QA image-brief list</Label>
+          <Textarea
+            id="placeholder-report"
+            value={placeholderReport}
+            onChange={(e) => setPlaceholderReport(e.target.value)}
+            className="min-h-[140px] font-mono text-xs"
+            placeholder={
+              "=== QA ===\n4. Image briefs\nhome → hero → slide 1 → A person at a desk, framed for a 4:5 vertical crop..."
             }
-            copyMessage={auditCopyMessage}
+            disabled={generationBusy}
           />
-        </TabsContent>
+        </div>
 
-        <TabsContent value="build" className="space-y-8 pt-2">
-          {/* Audit report (required) */}
-          <section className="space-y-3">
-            <h2 className="text-xs text-foreground">Audit report</h2>
-            <div className="space-y-2">
-              <Label htmlFor="audit-report">
-                Paste the audit report from Tab 1 here.
-              </Label>
-              <Textarea
-                id="audit-report"
-                value={auditReport}
-                onChange={(e) => setAuditReport(e.target.value)}
-                className="min-h-[180px]"
-                placeholder="Paste the structured audit report here…"
-                required
-              />
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-2 w-full sm:w-[200px]">
+            <Label htmlFor="image-size">Size (all images)</Label>
+            <Select
+              value={imageSize}
+              onValueChange={setImageSize}
+              disabled={generationBusy}
+            >
+              <SelectTrigger id="image-size">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {IMAGE_SIZES.map((size) => (
+                  <SelectItem key={size} value={size}>
+                    {size}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleParsePlaceholders}
+            disabled={generationBusy || !placeholderReport.trim()}
+          >
+            Parse image briefs
+          </Button>
+          <Button
+            type="button"
+            onClick={handleGenerateAll}
+            disabled={generationBusy || placeholderRows.length === 0}
+          >
+            {batchRunning ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Generating…
+              </>
+            ) : (
+              "Generate All"
+            )}
+          </Button>
+        </div>
+
+        {batchRunning && (
+          <div className="rounded-lg border border-border bg-card px-4 py-4 space-y-3">
+            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>
+                Generating {batchStep} of {placeholderRows.length}
+                {batchLabel ? `: ${batchLabel}` : ""}
+              </span>
             </div>
-          </section>
+            <Progress value={batchProgressPct} className="h-1.5" />
+          </div>
+        )}
 
-          {/* Page selection */}
-          <section className="space-y-4">
-            <div>
-              <h2 className="text-xs text-foreground">Pages to build</h2>
-              <p className="text-sm text-muted-foreground">
-                Only checked pages are included in the generated Cursor prompt.
-              </p>
-            </div>
-
-            <ul className="space-y-3">
-              {PAGE_OPTIONS.map((opt) => (
+        {placeholderRows.length > 0 && (
+          <ul className="space-y-3">
+            {placeholderRows.map((row) => {
+              const src = imageSrcFromResult(row.result);
+              const isRowBusy =
+                row.status === "running" ||
+                (generationBusy && singleRunningId === row.id);
+              return (
                 <li
-                  key={opt.key}
-                  className="rounded-lg border border-border p-4 space-y-2"
+                  key={row.id}
+                  className="rounded-lg border border-border p-4 space-y-3"
                 >
-                  <label className="flex items-start gap-3 cursor-pointer">
-                    <Checkbox
-                      checked={pages[opt.key] === true}
-                      onCheckedChange={(v) => togglePage(opt.key, v)}
-                      className="mt-0.5"
-                    />
-                    <span className="space-y-1">
-                      <span className="block text-sm font-medium text-foreground">
-                        {opt.label}
-                      </span>
-                      {opt.description ? (
-                        <span className="block text-sm text-muted-foreground">
-                          {opt.description}
-                        </span>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-1 min-w-0 flex-1">
+                      <p className="text-sm font-medium text-foreground">
+                        {row.label}
+                      </p>
+                      <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                        {row.description}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Status:{" "}
+                        {row.status === "idle" && "Ready"}
+                        {row.status === "running" && "Generating…"}
+                        {row.status === "done" && "Done"}
+                        {row.status === "failed" && "Failed"}
+                      </p>
+                      {row.error ? (
+                        <p className="text-xs text-destructive">{row.error}</p>
                       ) : null}
-                    </span>
-                  </label>
-                  {opt.warning ? (
-                    <Alert variant="destructive">
-                      <AlertDescription>{opt.warning}</AlertDescription>
-                    </Alert>
-                  ) : null}
-                  {opt.note ? (
-                    <p className="text-sm text-muted-foreground pl-7">
-                      {opt.note}
-                    </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 shrink-0">
+                      {row.status === "done" ? (
+                        <>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDownload(row)}
+                            disabled={generationBusy}
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            Download
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleGenerateOne(row.id)}
+                            disabled={generationBusy}
+                          >
+                            Regenerate
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleGenerateOne(row.id)}
+                          disabled={generationBusy}
+                        >
+                          {isRowBusy ? (
+                            <>
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              Generating…
+                            </>
+                          ) : row.status === "failed" ? (
+                            "Retry"
+                          ) : (
+                            "Generate"
+                          )}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  {src ? (
+                    <img
+                      src={src}
+                      alt={row.label}
+                      className="max-h-64 w-auto rounded-md border border-border"
+                    />
                   ) : null}
                 </li>
-              ))}
-            </ul>
-
-            {(pages.homepage || pages.faq) && (
-              <div className="space-y-2 rounded-lg border border-border p-4">
-                <Label htmlFor="faq-content">
-                  FAQ content (real Q&amp;As — used on the homepage FAQ section;
-                  also required to emit a dedicated /faq/ page when FAQ is
-                  checked. Leave blank for structural placeholders only.)
-                </Label>
-                <Textarea
-                  id="faq-content"
-                  value={faqContent}
-                  onChange={(e) => setFaqContent(e.target.value)}
-                  className="min-h-[120px]"
-                  placeholder={"Q: …\nA: …\n\nQ: …\nA: …"}
-                />
-              </div>
-            )}
-          </section>
-
-          {/* Company Data (read-only) */}
-          <section className="space-y-4">
-            <div>
-              <h2 className="text-xs text-foreground">From Company Data</h2>
-              <p className="text-sm text-muted-foreground">
-                Read-only pull used to assemble the prompt. Edit values in{" "}
-                <Link
-                  to={`/company/${companyId}/company-data`}
-                  className="text-primary font-medium underline underline-offset-2"
-                >
-                  Company Intelligence
-                </Link>
-                .
-              </p>
-            </div>
-
-            {designGuideMissing && (
-              <Alert variant="destructive">
-                <AlertDescription>
-                  No Design Guidelines set — generated pages will use generic
-                  styling. Set this in Company Data first for on-brand results.
-                </AlertDescription>
-              </Alert>
-            )}
-
-            <div className="grid gap-4 sm:grid-cols-2 rounded-lg border border-border p-4">
-              <ReadOnlyField label="Product name" value={productName} />
-              <ReadOnlyField label="Domain" value={domain} />
-              <ReadOnlyField
-                label="Short description"
-                value={shortDescription}
-                multiline
-              />
-              <ReadOnlyField
-                label="Medium description"
-                value={mediumDescription}
-                multiline
-              />
-            </div>
-
-            <div className="space-y-3 rounded-lg border border-border p-4">
-              <h3 className="text-sm font-medium text-foreground">Services</h3>
-              {usableServices.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  None added yet — add them in Company Data.
-                </p>
-              ) : (
-                <ul className="space-y-2 text-sm text-foreground">
-                  {usableServices.map((s, i) => (
-                    <li key={`svc-${i}`}>
-                      <span className="font-medium">
-                        {s.title || "(untitled)"}
-                      </span>
-                      {s.summary ? (
-                        <span className="text-muted-foreground">
-                          {" "}
-                          — {s.summary}
-                        </span>
-                      ) : null}
-                      {s.detail ? (
-                        <p className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap">
-                          {s.detail}
-                        </p>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            <div className="space-y-3 rounded-lg border border-border p-4">
-              <h3 className="text-sm font-medium text-foreground">Team</h3>
-              {usableTeam.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  None added yet — add them in Company Data.
-                </p>
-              ) : (
-                <ul className="space-y-3 text-sm text-foreground">
-                  {usableTeam.map((t, i) => (
-                    <li key={`team-${i}`}>
-                      <span className="font-medium">
-                        {t.name || "(unnamed)"}
-                      </span>
-                      {t.role ? (
-                        <span className="text-muted-foreground">
-                          {" "}
-                          — {t.role}
-                        </span>
-                      ) : null}
-                      {t.bio ? (
-                        <p className="mt-1 text-muted-foreground whitespace-pre-wrap">
-                          {t.bio}
-                        </p>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            <div className="space-y-3 rounded-lg border border-border p-4">
-              <h3 className="text-sm font-medium text-foreground">
-                Design guide abstract
-              </h3>
-              {designGuideAbstract.trim() ? (
-                <p className="text-sm text-foreground whitespace-pre-wrap">
-                  {designGuideAbstract}
-                </p>
-              ) : (
-                <p className="text-sm text-muted-foreground italic">Not set</p>
-              )}
-            </div>
-
-            <div className="space-y-3 rounded-lg border border-border p-4">
-              <h3 className="text-sm font-medium text-foreground">
-                Competitors
-              </h3>
-              {usableCompetitors.length === 0 ? (
-                <p className="text-sm text-muted-foreground">None listed.</p>
-              ) : (
-                <ul className="space-y-1 text-sm text-foreground">
-                  {usableCompetitors.map((c, i) => (
-                    <li key={`comp-${i}`}>
-                      <span className="font-medium">
-                        {c.name || "(unnamed)"}
-                      </span>
-                      {c.url ? (
-                        <span className="text-muted-foreground">
-                          {" "}
-                          — {c.url}
-                        </span>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </section>
-
-          <div>
-            <Button
-              type="button"
-              onClick={handleGenerate}
-              disabled={!anyPageSelected || auditMissing}
-            >
-              Generate Prompt
-            </Button>
-          </div>
-
-          {assembledPrompt && (
-            <section className="space-y-3">
-              <h2 className="text-xs text-foreground">Assembled prompt</h2>
-              <PromptCodeBlock
-                value={assembledPrompt}
-                onCopy={() => copyText(assembledPrompt, setCopyMessage)}
-                copyMessage={copyMessage}
-              />
-            </section>
-          )}
-
-          {assembledPrompt && (
-            <section className="space-y-4">
-              <div>
-                <h2 className="text-xs text-foreground">
-                  Generate Placeholder Images
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  After Cursor reports image placeholders, paste the checklist
-                  here (one{" "}
-                  <span className="font-mono text-xs">Label: description</span>{" "}
-                  per line). Each image uses the Design Guidelines from Company
-                  Data as style context — generate and download, then upload into
-                  the CMS.
-                </p>
-              </div>
-
-              {designGuideMissing && (
-                <Alert variant="destructive">
-                  <AlertDescription>
-                    No Design Guidelines set — generated images will not follow
-                    brand direction. Set this in Company Data first for on-brand
-                    results.
-                  </AlertDescription>
-                </Alert>
-              )}
-
-              <div className="space-y-2">
-                <Label htmlFor="placeholder-report">
-                  Cursor placeholder report
-                </Label>
-                <Textarea
-                  id="placeholder-report"
-                  value={placeholderReport}
-                  onChange={(e) => setPlaceholderReport(e.target.value)}
-                  className="min-h-[140px] font-mono text-xs"
-                  placeholder={
-                    "Team photo: professional headshot of Dori Fussmann\nHero image: founder-investor connection/trust"
-                  }
-                  disabled={generationBusy}
-                />
-              </div>
-
-              <div className="flex flex-wrap items-end gap-3">
-                <div className="space-y-2 w-full sm:w-[200px]">
-                  <Label htmlFor="image-size">Size (all images)</Label>
-                  <Select
-                    value={imageSize}
-                    onValueChange={setImageSize}
-                    disabled={generationBusy}
-                  >
-                    <SelectTrigger id="image-size">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {IMAGE_SIZES.map((size) => (
-                        <SelectItem key={size} value={size}>
-                          {size}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleParsePlaceholders}
-                  disabled={generationBusy || !placeholderReport.trim()}
-                >
-                  Parse placeholders
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleGenerateAll}
-                  disabled={generationBusy || placeholderRows.length === 0}
-                >
-                  {batchRunning ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Generating…
-                    </>
-                  ) : (
-                    "Generate All"
-                  )}
-                </Button>
-              </div>
-
-              {batchRunning && (
-                <div className="rounded-lg border border-border bg-card px-4 py-4 space-y-3">
-                  <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>
-                      Generating {batchStep} of {placeholderRows.length}
-                      {batchLabel ? `: ${batchLabel}` : ""}
-                    </span>
-                  </div>
-                  <Progress value={batchProgressPct} className="h-1.5" />
-                  <p className="text-xs text-muted-foreground">
-                    Images run one at a time. Failures are skipped so the rest of
-                    the batch can finish.
-                  </p>
-                </div>
-              )}
-
-              {placeholderRows.length > 0 && (
-                <ul className="space-y-3">
-                  {placeholderRows.map((row) => {
-                    const src = imageSrcFromResult(row.result);
-                    const isRowBusy =
-                      row.status === "running" ||
-                      (generationBusy && singleRunningId === row.id);
-                    return (
-                      <li
-                        key={row.id}
-                        className="rounded-lg border border-border p-4 space-y-3"
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="space-y-1 min-w-0 flex-1">
-                            <p className="text-sm font-medium text-foreground">
-                              {row.label}
-                            </p>
-                            <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                              {row.description}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              Status:{" "}
-                              {row.status === "idle" && "Ready"}
-                              {row.status === "running" && "Generating…"}
-                              {row.status === "done" && "Done"}
-                              {row.status === "failed" && "Failed"}
-                            </p>
-                            {row.error ? (
-                              <p className="text-xs text-destructive">
-                                {row.error}
-                              </p>
-                            ) : null}
-                          </div>
-                          <div className="flex flex-wrap gap-2 shrink-0">
-                            {row.status === "done" ? (
-                              <>
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleDownload(row)}
-                                  disabled={generationBusy}
-                                >
-                                  <Download className="w-3.5 h-3.5" />
-                                  Download
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleGenerateOne(row.id)}
-                                  disabled={generationBusy}
-                                >
-                                  Regenerate
-                                </Button>
-                              </>
-                            ) : (
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleGenerateOne(row.id)}
-                                disabled={generationBusy}
-                              >
-                                {isRowBusy ? (
-                                  <>
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                    Generating…
-                                  </>
-                                ) : row.status === "failed" ? (
-                                  "Retry"
-                                ) : (
-                                  "Generate"
-                                )}
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                        {src ? (
-                          <img
-                            src={src}
-                            alt={row.label}
-                            className="max-h-64 w-auto rounded-md border border-border"
-                          />
-                        ) : null}
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </section>
-          )}
-        </TabsContent>
-      </Tabs>
+              );
+            })}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }

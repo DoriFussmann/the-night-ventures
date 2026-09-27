@@ -1,32 +1,103 @@
-/** ChatGPT prompt: produce a full site-content spec from company-data.md. */
+/** ChatGPT prompt: write every page from company-data.md. No design direction. */
 
-export const CHATGPT_SITE_CONTENT_PROMPT = `You are writing the complete content specification for an SEO-optimized website. I've attached company-data.md — everything you need about the business is in it. Use only what's in that file; do not invent facts, services, team members, statistics, or claims that aren't supported by it.
+export const CHATGPT_SITE_CONTENT_PROMPT = `You are writing the complete content for a company website. company-data.md is attached — it is the only source of facts. Do not invent services, team members, clients, numbers, awards, prices or claims.
 
-The site is built on an existing SEO/GEO-optimized template, and the repo contains a Design Guide.md file that defines all visual design. So you are NOT designing visuals — you're specifying, for each page, its purpose, its sections in order, the actual finished copy, and the *spirit* of how each section should feel and lay out (e.g. "hero: single strong promise, one primary CTA, calm and confident" — not colors, fonts, or pixel specs). Cursor will handle the real design from Design Guide.md.
+You write content only. Do not describe design, colors, fonts, layout or mood. The website template already has a fixed set of section types (below). You pick them according to the page recipes and fill their fields.
 
-PAGES TO WRITE:
-[List the pages you want, e.g. Home, About, Services, Contact, FAQ. If I don't specify, use: Home, About, Services, Contact, FAQ.]
+PAGES — write all of them, in this order:
+home, about, services, contact, faq, testimonials, privacy, terms
+Plus one SERVICE DETAIL for each service in company-data.md.
+Do not write Articles or Team pages — they already exist and are generated automatically. Link to them where natural.
+Valid internal links only: /, /about/, /services/, /services/<service-slug>/, /contact/, /faq/, /testimonials/, /privacy/, /terms/, /articles/, /team/
 
-FOR EACH PAGE, produce:
-1. Page purpose — one line on what this page is for and who it's for.
-2. SEO intent — target keyword/topic, a meta title (~55–60 chars), a meta description (~140–160 chars), and the single H1.
-3. Sections in order — for every section: a short label, the spirit of its layout/feel (one line), and the FULL finished copy — real headlines, real body paragraphs, real CTA button text. Write publish-ready copy, not summaries or placeholders. Depth matters: each page should be substantive and complete, never thin or generic filler.
-4. Internal CTAs — where each section should link (only to pages in the list above or routes that clearly already exist).
+SECTION TYPES — use only these, with exactly these fields (? = optional):
+- hero: eyebrow, h1, sub, cta_primary {label, href}, cta_secondary {label, href}, slides [4] {image, alt}
+- page-header: eyebrow?, h1, intro
+- trust: heading, items [] {label}
+- feature-split: eyebrow?, heading, body, highlights [2–3] {title, text}, image, alt
+- feature-grid: eyebrow?, heading, intro?, items [3–6] {title, text}
+- stats: heading?, items [3–4] {value, label}
+- process: eyebrow?, heading, intro?, steps [3–6] {title, text}
+- offerings: eyebrow?, heading, intro?, source: "services"
+- testimonials: heading, items [] {quote, name, role}
+- faq: eyebrow?, heading, intro?, cta? {label, href}, items [] {q, a}
+- cta-band: heading, sub?, cta_primary {label, href}, cta_secondary? {label, href}
+- rich-text: heading?, body (markdown)
+- contact: heading, body, email, response_note?
+- team-teaser: heading, intro?
+- articles-teaser: heading, intro?
 
-GUARDRAILS (follow exactly):
-- Do not invent services or team members. If Company Data lists them, use them; if it doesn't, omit that section rather than fabricate.
-- Testimonials/reviews: never write fabricated quotes. If a testimonials section is wanted, insert '[PLACEHOLDER: real testimonial needed]' for each quote and add a visible note that this section must be populated with real quotes or removed before launch.
-- Every factual claim must trace to company-data.md.
+PAGE RECIPES — sections in this order. "if real" = only when company-data.md supports it; otherwise omit the section.
+- home: hero → trust (if real) → feature-split ×3–5 → offerings → process (if real) → testimonials → faq (6–8 Q&As) → articles-teaser → cta-band
+- about: page-header → rich-text (story / why we exist) → feature-split ×2 (approach; what makes it different) → stats (if real) → team-teaser → cta-band
+- services: page-header → rich-text (overview) → offerings → process → faq (4–6) → cta-band
+- contact: page-header → contact → faq (3–4 practical: response time, what to include, what happens next)
+- faq: page-header → faq (12–16)
+- testimonials: page-header → testimonials (6 items) → cta-band
+- privacy: page-header → rich-text
+- terms: page-header → rich-text
 
-OUTPUT FORMAT:
-Return ONE complete markdown document I can paste directly into Cursor. Begin the document with this exact block, then the per-page content below it:
+HERO (home): h1 = the core promise in 10 words or fewer. sub = 1–2 sentences: who it is for and the outcome. cta_primary → /contact/ (or the most relevant conversion page). cta_secondary → /services/ or /about/.
+slides: exactly 4. Each image is a brief for an image generator, 30–60 words: subject, setting, action, composition, framing for a 4:5 vertical crop, lighting, mood. Describe content only — no colors, filters or art direction (the design system adds those). Never text, logos or UI screenshots in the image. alt: 15 words or fewer.
+Every feature-split image follows the same rules.
 
+DEPTH — no thin pages. Minimum visible words per page (excluding meta fields, image briefs and placeholders):
+home 900 · about 700 · services 500 · each service detail 600 · contact 150 · faq page 12+ Q&As · privacy 900 · terms 900
+FAQ answers 40–90 words each. feature-split body 60–120 words. Card, step and highlight texts 20–45 words.
+Depth comes from specifics in company-data.md: who it is for, the problem, how it works, what is included, outcomes, objections, proof. If the data cannot reach a minimum without inventing, stop short and insert a line "[GAP: what information is missing]" at that spot. Never pad with generic filler, repetition or buzzwords.
+
+VOICE: plain, specific, confident. Short sentences. No hype, no clichés ("unlock", "elevate", "seamless", "cutting-edge", "in today's fast-paced world"), no emoji, no exclamation marks.
+
+GUARDRAILS
+- testimonials: every quote "[PLACEHOLDER: real client testimonial]", name "[PLACEHOLDER: client name]", role "[PLACEHOLDER: role, company]". Never write anything that reads like a real quote.
+- trust and stats: real names and numbers from company-data.md only; otherwise omit the section.
+- privacy: a complete standard draft tailored to the business: what data is collected (contact forms, analytics, cookies), why, third-party processors, retention, user rights, how to contact. terms: use of the site, intellectual property, disclaimers, limitation of liability, governing law as "[PLACEHOLDER: jurisdiction]". The first line of each body is "**Draft — review with legal counsel before publishing.**" Use the company name and contact email from company-data.md.
+- One H1 per page: only hero.h1 or page-header.h1. Markdown bodies use ## and ### only, never #.
+- meta_title 50–60 characters. meta_description 140–160 characters. Each page targets one clear search intent.
+
+OUTPUT FORMAT — exactly this, nothing before or after.
+
+For each page:
+=== PAGE: <id> ===
+\`\`\`yaml
+route: "/"
+meta_title: "..."
+meta_description: "..."
+sections:
+  - type: "hero"
+    eyebrow: "..."
+    h1: "..."
+    sub: "..."
+    cta_primary:
+      label: "..."
+      href: "/contact/"
+    slides:
+      - image: "..."
+        alt: "..."
+  - type: "rich-text"
+    body: |
+      ## ...
+      ...
+\`\`\`
+Page ids and routes: home "/", about "/about/", services "/services/", contact "/contact/", faq "/faq/", testimonials "/testimonials/", privacy "/privacy/", terms "/terms/".
+
+For each service (slug = kebab-case of its title):
+=== SERVICE: <slug> ===
+\`\`\`markdown
 ---
-BUILD INSTRUCTIONS FOR CURSOR:
-- Use Design Guide.md in the repo for ALL visual design decisions (layout, color, type, spacing).
-- Do NOT modify the site's infrastructure, SEO plumbing, build config, metadata, sitemap, RSS, or structured data in any way that degrades the SEO/GEO optimization. Preserve every existing SEO optimization.
-- Do NOT break existing functionality. If any change risks breaking the build, stop and flag it before proceeding.
-- Verify exactly one H1 renders per page against the existing template. If the template already outputs its own H1 (especially on the homepage), do not add a second. Reconcile to one.
-- Implement all page content below in full — do not shorten, summarize, or skip sections.
-- Put Articles in the top navigation. That item opens an Articles grid. Clicking an article in the grid opens that article's page.
----`;
+title: "..."
+description: "... (140–160 characters)"
+order: 1
+icon: "<one lowercase word, e.g. layers>"
+---
+<body: markdown, ## and ### only, 600+ words>
+\`\`\`
+
+Then:
+=== QA ===
+1. A table: page | words | minimum | met?
+2. Every [GAP] line (page → section → text).
+3. Every [PLACEHOLDER] (page → section → text).
+4. Every image brief (page → section → slide/image → brief) — this is the owner's image sourcing checklist.
+
+YAML rules: 2-space indent. Double-quote every string value. Use | block scalars for markdown bodies. Field names and section types exactly as listed. No extra fields.`;
