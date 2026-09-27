@@ -84,7 +84,6 @@ const LABEL_TO_KEY = {
   "social and shops": "social_shops",
   "design guide": "design_guide_raw",
   "design guidelines": "design_guide_raw",
-  "design abstract": "design_guide_abstract",
   "brand tokens": "brand_tokens",
   "team members": "team_members",
   "team & founder credibility": "team_members",
@@ -96,6 +95,9 @@ const LABEL_TO_KEY = {
 };
 
 const PLACEHOLDER_RE = /^\((?:unnamed|untitled|label|none)\)$/i;
+
+/** Old brief headings. Recognized so they stay section boundaries, then dropped. */
+const IGNORED_LABELS = new Set(["design abstract"]);
 
 function asText(value) {
   return String(value ?? "").trim();
@@ -129,6 +131,7 @@ function coerceHttpUrl(value) {
 function knownLabels(extraLabels = []) {
   const labels = new Set([
     ...Object.keys(LABEL_TO_KEY),
+    ...IGNORED_LABELS,
     ...extraLabels.map(normalizeLabel).filter(Boolean),
   ]);
   return [...labels].sort((a, b) => b.length - a.length);
@@ -137,6 +140,7 @@ function knownLabels(extraLabels = []) {
 function resolveKey(rawLabel, extraLabels = []) {
   const normalized = normalizeLabel(rawLabel);
   if (!normalized) return null;
+  if (IGNORED_LABELS.has(normalized)) return { type: "ignored" };
   if (LABEL_TO_KEY[normalized]) {
     return { type: "known", key: LABEL_TO_KEY[normalized] };
   }
@@ -149,7 +153,7 @@ function resolveKey(rawLabel, extraLabels = []) {
 
 function assignSection(sections, custom, resolved, content) {
   const value = asText(content);
-  if (!resolved || !value) return;
+  if (!resolved || resolved.type === "ignored" || !value) return;
   if (resolved.type === "known") {
     if (sections[resolved.key] == null) sections[resolved.key] = value;
     return;
@@ -194,6 +198,7 @@ function collectHeadingSections(text, extraLabels, sections, custom) {
       const resolved = resolveKey(heading[1], extraLabels);
       const isKnown =
         resolved?.type === "known" ||
+        resolved?.type === "ignored" ||
         (resolved?.type === "custom" &&
           extraLabels.some((name) => normalizeLabel(name) === normalizeLabel(heading[1])));
       if (isKnown) {
@@ -455,88 +460,6 @@ function parseAccountDetailLines(lines) {
   return account;
 }
 
-const BRAND_TOKEN_FIELD_MAP = {
-  feel: "brand_feel",
-  "brand feel": "brand_feel",
-  accent: "brand_accent",
-  "brand accent": "brand_accent",
-  band: "brand_band",
-  "brand band": "brand_band",
-  positive: "brand_positive",
-  "brand positive": "brand_positive",
-  "wordmark primary": "wordmark_primary",
-  "wordmark (ink)": "wordmark_primary",
-  "wordmark ink": "wordmark_primary",
-  "wordmark accent": "wordmark_accent",
-  "wordmark (accent)": "wordmark_accent",
-  voice: "brand_voice",
-  "brand voice": "brand_voice",
-};
-
-function emptyBrandTokens() {
-  return {
-    brand_feel: "",
-    brand_accent: "",
-    brand_band: "",
-    brand_positive: "",
-    wordmark_primary: "",
-    wordmark_accent: "",
-    brand_voice: "",
-  };
-}
-
-function parseBrandTokens(value) {
-  const tokens = emptyBrandTokens();
-  const text = asText(value);
-  if (!text) return tokens;
-
-  const lines = text.split("\n");
-  let pendingKey = null;
-  for (const line of lines) {
-    const bullet = line.match(/^\s*[-*]\s+(.*)$/);
-    const content = bullet ? bullet[1] : line;
-    const labeled = content.match(/^([A-Za-z][A-Za-z ()]*):\s*(.*)$/);
-    if (labeled) {
-      const key = BRAND_TOKEN_FIELD_MAP[normalizeLabel(labeled[1])];
-      if (key) {
-        tokens[key] = asText(labeled[2]);
-        pendingKey = key;
-        continue;
-      }
-    }
-    if (pendingKey && asText(line)) {
-      tokens[pendingKey] = `${tokens[pendingKey]}\n${asText(line)}`.trim();
-    }
-  }
-  return tokens;
-}
-
-export function formatBrandTokensMarkdown(fields = {}) {
-  if (!brandTokensFilled(fields)) return "";
-  const lines = [
-    `Feel: ${asText(fields.brand_feel)}`,
-    `Accent: ${asText(fields.brand_accent)}`,
-    `Band: ${asText(fields.brand_band)}`,
-    `Positive: ${asText(fields.brand_positive)}`,
-    `Wordmark Primary: ${asText(fields.wordmark_primary)}`,
-    `Wordmark Accent: ${asText(fields.wordmark_accent)}`,
-    `Voice: ${asText(fields.brand_voice)}`,
-  ];
-  return lines.join("\n").trim();
-}
-
-export function brandTokensFilled(fields = {}) {
-  return Boolean(
-    asText(fields.brand_feel) ||
-      asText(fields.brand_accent) ||
-      asText(fields.brand_band) ||
-      asText(fields.brand_positive) ||
-      asText(fields.wordmark_primary) ||
-      asText(fields.wordmark_accent) ||
-      asText(fields.brand_voice)
-  );
-}
-
 function parseSocialShops(value) {
   const text = asText(value);
   if (!text) return { accounts: [], notes: [] };
@@ -614,7 +537,6 @@ export function parseCompanyMarkdown(markdown, options = {}) {
   const socialShops = sections.social_shops
     ? parseSocialShops(sections.social_shops)
     : { accounts: [], notes: [] };
-  const brandTokens = parseBrandTokens(sections.brand_tokens);
 
   return {
     domain: parseTextField(sections.domain),
@@ -628,9 +550,6 @@ export function parseCompanyMarkdown(markdown, options = {}) {
     business_model: parseTextField(sections.business_model),
     core_value_proposition: parseTextField(sections.core_value_proposition),
     scope_boundaries: parseTextField(sections.scope_boundaries),
-    design_guide_raw: parseTextField(sections.design_guide_raw),
-    design_guide_abstract: parseTextField(sections.design_guide_abstract),
-    ...brandTokens,
     core_keywords: parsePillars(sections.core_keywords),
     competitors: parseCompetitors(sections.competitors),
     services: parseServices(sections.services),
@@ -653,8 +572,8 @@ export function parseCompanyMarkdown(markdown, options = {}) {
     market_category: parseTextField(sections.market_category),
     competitive_position: parseTextField(sections.competitive_position),
     market_dynamics: parseTextField(sections.market_dynamics),
-    brand_feel: parseTextField(sections.brand_feel) || brandTokens.brand_feel || "",
-    brand_voice: parseTextField(sections.brand_voice) || brandTokens.brand_voice || "",
+    brand_feel: parseTextField(sections.brand_feel),
+    brand_voice: parseTextField(sections.brand_voice),
     brand_references: parseTextField(sections.brand_references),
     brand_boundaries: parseTextField(sections.brand_boundaries),
     reasons_to_believe: parseTextField(sections.reasons_to_believe),
@@ -678,12 +597,6 @@ export function parsedFieldPresent(parsed, key) {
   if (key === "social_links") return (parsed.social_links || []).length > 0;
   if (key === "social_shops") {
     return (parsed.social_shops?.accounts || []).length > 0;
-  }
-  if (key === "design-guide") {
-    return Boolean(parsed.design_guide_raw || parsed.design_guide_abstract);
-  }
-  if (key === "brand_tokens" || key === "brand-tokens") {
-    return brandTokensFilled(parsed);
   }
   return Boolean(asText(parsed[key]));
 }
