@@ -55,7 +55,6 @@ export const COMPANY_DATA_POINT_DEFS = [
   { id: "product_name", label: "Product Name", parsedKey: "product_name" },
   { id: "category", label: "Category", parsedKey: "category" },
   { id: "target", label: "Ideal Customer", parsedKey: "target_audience" },
-  { id: "design-guide", label: "Design Abstract", parsedKey: "design-guide" },
   { id: "services", label: "Products & Services", parsedKey: "services" },
   { id: "abstract", label: "Abstract", parsedKey: "abstract" },
   { id: "short", label: "What We Do", parsedKey: "short_description" },
@@ -112,10 +111,6 @@ export function getCompanyDataPoints({
   githubRepo = "",
   githubTokenKey = "",
 }) {
-  const hasDesignGuide =
-    textFilled(fields?.design_guide_raw) ||
-    textFilled(fields?.design_guide_abstract);
-
   const standard = COMPANY_DATA_POINT_DEFS.filter((def) => !def.hidden).map((def) => {
     let filled = false;
     switch (def.id) {
@@ -130,9 +125,6 @@ export function getCompanyDataPoints({
         break;
       case "target":
         filled = textFilled(fields?.target_audience);
-        break;
-      case "design-guide":
-        filled = hasDesignGuide;
         break;
       case "services":
         filled = servicesFilled(fields?.services);
@@ -250,7 +242,7 @@ export function mergeParsedCompanyFields({
   });
 
   for (const point of points) {
-    if (point.id === "publish-destination" || point.id === "design-guide") continue;
+    if (point.id === "publish-destination") continue;
 
     const inFile =
       point.id.startsWith("custom:")
@@ -388,26 +380,6 @@ export function mergeParsedCompanyFields({
     } else {
       skipped.push("Social Links");
     }
-  }
-
-  const brandTokenKeys = [
-    "brand_feel",
-    "brand_accent",
-    "brand_band",
-    "brand_positive",
-    "wordmark_primary",
-    "wordmark_accent",
-    "brand_voice",
-  ];
-  let brandFilledAny = false;
-  for (const key of brandTokenKeys) {
-    if (!textFilled(fields[key]) && textFilled(parsed[key])) {
-      nextFields[key] = parsed[key];
-      brandFilledAny = true;
-    }
-  }
-  if (brandFilledAny) {
-    filled.push("Brand Tokens");
   }
 
   return {

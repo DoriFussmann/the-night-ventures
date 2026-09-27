@@ -49,7 +49,7 @@ ${empty.map((item) => `- ${item}`).join("\n")}
 
 GOAL
 Extract and allocate across the FULL brief, including the newer Company Intelligence fields. Use only facts present in or clearly implied by the source. Do not research the web. Do not invent names, URLs, people, or offers. If a field is not supported by the source, omit that field entirely — do not write placeholders like "(unnamed)", "(untitled)", "TBD", or "N/A".
-Never emit **Design Abstract:** or **Design Guide:** — those come from Design Builder, not this import.
+Never emit **Design Abstract:**, **Design Guide:**, or **Brand Tokens:** — design comes from the Design page, not this import.
 Prefer the new brief labels below. Do not dump everything into Abstract, What We Do, or Story & Mission if a more specific field fits.
 
 ${emptySection}OUTPUT
@@ -149,7 +149,6 @@ Specialized / leftover (only if the source has this and it does not belong above
       - Username: @handle
 43. **Abstract:** leftover positioning only
 44. **Medium Description:** leftover copy only
-45. **Brand Tokens:** only if the source has brand tokens
 
 Accepted aliases if you already used the old names: Short Description → What We Do; Long Description → Story & Mission; Target Description → Ideal Customer; Scope / Boundaries → What We Are / Are Not; Competitors → Competitors & Alternatives; Team Members → Team & Founder Credibility.
 ${customSection}

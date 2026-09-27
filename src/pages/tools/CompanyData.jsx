@@ -58,10 +58,7 @@ import ConnectionsPanel, {
   connectionsHaveContent,
   formatConnectionsMarkdown,
 } from "./ConnectionsPanel";
-import {
-  formatBrandTokensMarkdown,
-  parseCompanyMarkdown,
-} from "./companyData/parseCompanyMarkdown";
+import { parseCompanyMarkdown } from "./companyData/parseCompanyMarkdown";
 import {
   getCompanyDataPoints,
   mergeParsedCompanyFields,
@@ -260,7 +257,7 @@ function isLooseHttpUrl(value) {
 }
 
 const PROFILE_SELECT_BASE =
-  "id, domain, product_name, target_audience, abstract, short_description, medium_description, long_description, business_model, core_value_proposition, scope_boundaries, design_guide_raw, design_guide_abstract, brand_feel, brand_accent, brand_band, brand_positive, wordmark_primary, wordmark_accent, brand_voice, core_keywords, competitors, services, team_members, contact_email, social_links, custom_fields";
+  "id, domain, product_name, target_audience, abstract, short_description, medium_description, long_description, business_model, core_value_proposition, scope_boundaries, brand_feel, brand_voice, core_keywords, competitors, services, team_members, contact_email, social_links, custom_fields";
 
 const PROFILE_SELECT_INTELLIGENCE =
   "legal_name, founded_date, location_markets, company_stage, customer_problem, trigger_moment, buying_criteria, how_it_works, customer_outcome, commercial_model, differentiation, messaging_hierarchy, market_category, competitive_position, market_dynamics, brand_references, brand_boundaries, reasons_to_believe, results_proof, trust_signals, marketing_objectives, growth_priorities, customer_acquisition, learnings_constraints";
@@ -276,14 +273,7 @@ const EMPTY_PROFILE = {
   business_model: "",
   core_value_proposition: "",
   scope_boundaries: "",
-  design_guide_raw: "",
-  design_guide_abstract: "",
   brand_feel: "",
-  brand_accent: "",
-  brand_band: "",
-  brand_positive: "",
-  wordmark_primary: "",
-  wordmark_accent: "",
   brand_voice: "",
   core_keywords: normalizePillarKeywords([], { minCount: DEFAULT_PILLAR_COUNT }),
   competitors: [],
@@ -306,14 +296,7 @@ function profileFromRow(profile) {
     business_model: profile.business_model || "",
     core_value_proposition: profile.core_value_proposition || "",
     scope_boundaries: profile.scope_boundaries || "",
-    design_guide_raw: profile.design_guide_raw || "",
-    design_guide_abstract: profile.design_guide_abstract || "",
     brand_feel: profile.brand_feel || "",
-    brand_accent: profile.brand_accent || "",
-    brand_band: profile.brand_band || "",
-    brand_positive: profile.brand_positive || "",
-    wordmark_primary: profile.wordmark_primary || "",
-    wordmark_accent: profile.wordmark_accent || "",
     brand_voice: profile.brand_voice || "",
     core_keywords: normalizePillarKeywords(profile.core_keywords, {
       minCount:
@@ -425,13 +408,6 @@ export default function CompanyData() {
   const [openPillars, setOpenPillars] = useState({});
   const [socialShopsFilled, setSocialShopsFilled] = useState(false);
   const [connectionsFilled, setConnectionsFilled] = useState(false);
-  const [designGuideOpen, setDesignGuideOpen] = useState(false);
-  const [designGuideDraftRaw, setDesignGuideDraftRaw] = useState("");
-  const [designGuideDraftAbstract, setDesignGuideDraftAbstract] = useState("");
-  const [designGuideAbstractReady, setDesignGuideAbstractReady] = useState(false);
-  const [designGuideGenerating, setDesignGuideGenerating] = useState(false);
-  const [designGuideSaving, setDesignGuideSaving] = useState(false);
-  const [designGuideError, setDesignGuideError] = useState("");
   const [missingOpen, setMissingOpen] = useState(false);
   const [importDragOver, setImportDragOver] = useState(false);
   const [importBusy, setImportBusy] = useState(false);
@@ -1083,17 +1059,6 @@ export default function CompanyData() {
       return lines.join("\n");
     }
 
-    if (panelId === "design-guide") {
-      const raw = (designGuideDraftRaw || fields.design_guide_raw || "").trim();
-      const abstract = (
-        designGuideDraftAbstract ||
-        fields.design_guide_abstract ||
-        ""
-      ).trim();
-      if (raw && abstract) return `${raw}\n\n---\n\nAbstract:\n${abstract}`;
-      return raw || abstract;
-    }
-
     if (typeof panelId === "string" && panelId.startsWith("custom:")) {
       const defId = panelId.slice("custom:".length);
       const def = customFieldDefs.find((field) => field.id === defId);
@@ -1205,14 +1170,7 @@ export default function CompanyData() {
       core_value_proposition:
         (currentFields.core_value_proposition || "").trim() || null,
       scope_boundaries: (currentFields.scope_boundaries || "").trim() || null,
-      design_guide_raw: currentFields.design_guide_raw.trim() || null,
-      design_guide_abstract: currentFields.design_guide_abstract.trim() || null,
       brand_feel: (currentFields.brand_feel || "").trim() || null,
-      brand_accent: (currentFields.brand_accent || "").trim() || null,
-      brand_band: (currentFields.brand_band || "").trim() || null,
-      brand_positive: (currentFields.brand_positive || "").trim() || null,
-      wordmark_primary: (currentFields.wordmark_primary || "").trim() || null,
-      wordmark_accent: (currentFields.wordmark_accent || "").trim() || null,
       brand_voice: (currentFields.brand_voice || "").trim() || null,
       core_keywords: normalizePillarKeywords(currentFields.core_keywords),
       competitors,
@@ -1474,8 +1432,7 @@ export default function CompanyData() {
         .filter(
           (point) =>
             !point.filled &&
-            point.id !== "publish-destination" &&
-            point.id !== "design-guide"
+            point.id !== "publish-destination"
         )
         .map((point) => point.label);
 
@@ -1662,9 +1619,6 @@ export default function CompanyData() {
           .filter(Boolean)
           .join("\n"),
       ],
-      ["Brand Tokens", formatBrandTokensMarkdown(fields)],
-      ["Design Guide", fields.design_guide_raw],
-      ["Design Abstract", fields.design_guide_abstract],
     ];
 
     const customEntries = customFieldDefs.map((def) => [
@@ -1713,8 +1667,6 @@ export default function CompanyData() {
       "Pillar Keywords",
       "Social & Shops",
       "Connections",
-      "Brand Tokens",
-      "Design Guide",
       "Publish Destination",
     ]);
 
@@ -1735,19 +1687,7 @@ export default function CompanyData() {
     downloadMarkdown(`${slug || "company"}-data.md`, lines.join("\n").trim() + "\n");
   };
 
-  const openDesignGuideModal = () => {
-    setDesignGuideDraftRaw(fields.design_guide_raw || "");
-    setDesignGuideDraftAbstract("");
-    setDesignGuideAbstractReady(false);
-    setDesignGuideError("");
-    setDesignGuideOpen(true);
-  };
-
   const openDataPoint = (id) => {
-    if (id === "design-guide") {
-      openDesignGuideModal();
-      return;
-    }
     const structured = {
       services: "services",
       competitors: "competitors",
@@ -1777,134 +1717,6 @@ export default function CompanyData() {
     }
   };
 
-  const handleGenerateDesignGuideAbstract = async () => {
-    const raw = designGuideDraftRaw.trim();
-    if (!raw || designGuideGenerating) return;
-
-    setDesignGuideGenerating(true);
-    setDesignGuideError("");
-    setDesignGuideAbstractReady(false);
-    setDesignGuideDraftAbstract("");
-
-    try {
-      const res = await fetch("/api/design-guide?action=abstract", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ raw }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.error || `Generate abstract failed (${res.status})`);
-      }
-
-      const abstract = String(data.abstract || "").trim();
-      if (!abstract) {
-        throw new Error("No abstract returned");
-      }
-
-      setDesignGuideDraftAbstract(abstract);
-      setDesignGuideAbstractReady(true);
-    } catch (err) {
-      console.error("Failed to generate design guide abstract:", err);
-      setDesignGuideError(err.message || "Failed to generate abstract");
-    } finally {
-      setDesignGuideGenerating(false);
-    }
-  };
-
-  const handleSaveDesignGuide = async () => {
-    if (!companyId || designGuideSaving || !designGuideAbstractReady) return;
-
-    const raw = designGuideDraftRaw.trim();
-    const abstract = designGuideDraftAbstract.trim();
-    if (!raw || !abstract) {
-      setDesignGuideError("Paste a Design Guide and generate an abstract before saving.");
-      return;
-    }
-
-    setDesignGuideSaving(true);
-    setDesignGuideError("");
-
-    const payload = {
-      company_id: companyId,
-      design_guide_raw: raw,
-      design_guide_abstract: abstract,
-      updated_at: new Date().toISOString(),
-    };
-    if (profileId) {
-      payload.id = profileId;
-    }
-
-    const { data, error: upsertError } = await supabase
-      .from("company_profiles")
-      .upsert(payload, { onConflict: "company_id" })
-      .select("id")
-      .single();
-
-    if (upsertError) {
-      console.error("Failed to save design guide:", upsertError);
-      setDesignGuideError(upsertError.message || "Failed to save design guide");
-      setDesignGuideSaving(false);
-      return;
-    }
-
-    setProfileId(data?.id || profileId);
-    setFields((prev) => ({
-      ...prev,
-      design_guide_raw: raw,
-      design_guide_abstract: abstract,
-    }));
-    setDesignGuideSaving(false);
-    setDesignGuideOpen(false);
-    setSavedMessage("Saved");
-    window.setTimeout(() => setSavedMessage(""), 2500);
-  };
-
-  const handleDeleteDesignGuide = async () => {
-    if (!companyId || designGuideSaving || designGuideGenerating) return;
-    if (!window.confirm("Delete the Design Guide and its abstract?")) return;
-
-    setDesignGuideSaving(true);
-    setDesignGuideError("");
-
-    const payload = {
-      company_id: companyId,
-      design_guide_raw: null,
-      design_guide_abstract: null,
-      updated_at: new Date().toISOString(),
-    };
-    if (profileId) {
-      payload.id = profileId;
-    }
-
-    const { data, error: upsertError } = await supabase
-      .from("company_profiles")
-      .upsert(payload, { onConflict: "company_id" })
-      .select("id")
-      .single();
-
-    if (upsertError) {
-      console.error("Failed to delete design guide:", upsertError);
-      setDesignGuideError(upsertError.message || "Failed to delete design guide");
-      setDesignGuideSaving(false);
-      return;
-    }
-
-    setProfileId(data?.id || profileId);
-    setFields((prev) => ({
-      ...prev,
-      design_guide_raw: "",
-      design_guide_abstract: "",
-    }));
-    setDesignGuideDraftRaw("");
-    setDesignGuideDraftAbstract("");
-    setDesignGuideAbstractReady(false);
-    setDesignGuideSaving(false);
-    setDesignGuideOpen(false);
-    setSavedMessage("Deleted");
-    window.setTimeout(() => setSavedMessage(""), 2500);
-  };
-
   if (loading) {
     return <p className="text-sm text-muted-foreground">Loading company intelligence...</p>;
   }
@@ -1913,10 +1725,6 @@ export default function CompanyData() {
   const pillarTotal = pillars.length;
   const competitors = normalizeCompetitors(fields.competitors);
   const services = normalizeServices(fields.services);
-  const hasDesignGuide = Boolean(
-    String(fields.design_guide_raw || "").trim() ||
-      String(fields.design_guide_abstract || "").trim()
-  );
   const industryQuery = industryFilter.trim().toLowerCase();
   const filteredIndustries = industryQuery
     ? industries.filter((industry) =>
@@ -2037,12 +1845,6 @@ export default function CompanyData() {
               title: "Medium Description (legacy)",
               filled: Boolean(fields.medium_description.trim()),
               onClick: () => setOpenPanel("medium"),
-            },
-            {
-              id: "design-guide",
-              title: "Design Abstract",
-              filled: hasDesignGuide,
-              onClick: openDesignGuideModal,
             },
             {
               id: "pillars",
@@ -3398,106 +3200,6 @@ export default function CompanyData() {
         );
       })}
 
-      <Dialog
-        open={designGuideOpen}
-        onOpenChange={(open) => {
-          if (designGuideGenerating || designGuideSaving) return;
-          setDesignGuideOpen(open);
-          if (!open) setDesignGuideError("");
-        }}
-      >
-        <DialogContent className={PANEL_DIALOG_CLASS}>
-          <DialogHeader className="shrink-0 space-y-1 border-b border-border px-6 py-4 pr-12 text-left">
-            <DialogTitle>
-              {hasDesignGuide ? "Update Design Abstract" : "Paste Design Guide"}
-            </DialogTitle>
-            <DialogDescription>
-              Paste your project&apos;s Design Guide.md, generate an abstract, then save.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="design_guide_raw_paste">Design Guide</Label>
-              <Textarea
-                id="design_guide_raw_paste"
-                value={designGuideDraftRaw}
-                onChange={(e) => {
-                  setDesignGuideDraftRaw(e.target.value);
-                  setDesignGuideAbstractReady(false);
-                  setDesignGuideDraftAbstract("");
-                }}
-                placeholder="Paste your project's Design Guide.md content here."
-                className="min-h-[220px] font-mono text-sm"
-              />
-            </div>
-
-            <Button
-              type="button"
-              onClick={handleGenerateDesignGuideAbstract}
-              disabled={
-                designGuideGenerating ||
-                designGuideSaving ||
-                !designGuideDraftRaw.trim()
-              }
-            >
-              {designGuideGenerating ? "Generating..." : "Generate Abstract"}
-            </Button>
-
-            {designGuideAbstractReady && (
-              <div className="space-y-2 rounded-md border border-dashed border-border p-3">
-                <Label htmlFor="design_guide_abstract_review">
-                  Review abstract before saving
-                </Label>
-                <Textarea
-                  id="design_guide_abstract_review"
-                  value={designGuideDraftAbstract}
-                  onChange={(e) => setDesignGuideDraftAbstract(e.target.value)}
-                  className="min-h-[160px]"
-                />
-              </div>
-            )}
-
-            {hasDesignGuide && fields.design_guide_abstract.trim() && !designGuideAbstractReady && (
-              <div className="space-y-2">
-                <Label>Current abstract</Label>
-                <p className="whitespace-pre-wrap text-sm text-muted-foreground">
-                  {fields.design_guide_abstract}
-                </p>
-              </div>
-            )}
-
-            {designGuideError && (
-              <p className="text-sm text-destructive">{designGuideError}</p>
-            )}
-          </div>
-
-          <DialogFooter className="shrink-0 gap-2 border-t border-border px-6 py-4 sm:justify-between">
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={handleDeleteDesignGuide}
-              disabled={designGuideGenerating || designGuideSaving || !hasDesignGuide}
-            >
-              Delete
-            </Button>
-            <PanelModalActions
-              onCopy={() => handleCopyPanel("design-guide")}
-              onClose={() => setDesignGuideOpen(false)}
-              closeLabel="Cancel"
-              closeDisabled={designGuideGenerating || designGuideSaving}
-              copyDisabled={designGuideGenerating || designGuideSaving}
-              onSave={handleSaveDesignGuide}
-              saving={designGuideSaving}
-              saveDisabled={
-                designGuideGenerating ||
-                !designGuideAbstractReady ||
-                !designGuideDraftAbstract.trim()
-              }
-            />
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
