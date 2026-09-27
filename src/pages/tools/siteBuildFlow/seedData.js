@@ -110,13 +110,13 @@ export const PREDEFINED_ITEMS = {
       linkLabel: "Open Company Intelligence →",
     },
     {
-      item_key: "generate-design-guide-and-abstract",
-      title: "Generate the Design Guide and Design Abstract",
+      item_key: "pick-design",
+      title: "Pick your design",
       description:
-        "If the relevant fields are filled, open Design Engine and click Generate Design Guide. When it finishes, download Design Guide.md and save it. Then go to Company Intelligence → Design Abstract, paste the guide, click Generate Abstract, and Save.",
+        "Open Design, pick one of the 6 templates, optionally set your brand color and wordmark, click Save, then Download Design Guide.md.",
       prompts: [],
       linkTo: "/company/:companyId/design-guide-builder",
-      linkLabel: "Open Design Engine →",
+      linkLabel: "Open Design →",
     },
     {
       item_key: "create-github-repo-from-template",
@@ -136,23 +136,32 @@ export const PREDEFINED_ITEMS = {
       item_key: "clone-repo-and-add-design-guide",
       title: "Clone the repo and add the Design Guide",
       description:
-        "Open a new Cursor project for that folder. Tell the agent to git clone the GitHub URL into the folder root — clone into the folder itself, not a subfolder. Once the clone is done, drag Design Guide.md into the local root, then commit and push.",
+        "Open a new Cursor project for that folder. Tell the agent to git clone the GitHub URL into the folder root (not a subfolder). Replace site/Design Guide.md with the file you downloaded — same name, inside the site/ folder, not the repo root. Run npm run build to confirm it passes, then commit and push.",
       prompts: [],
     },
     {
       item_key: "follow-narrative-composer",
-      title: "Follow Narrative Composer",
+      title: "Write the site content in ChatGPT",
       description:
-        "Go to Narrative Composer and follow the steps there, including the prompt.",
+        "Open Narrative Composer, copy the ChatGPT prompt, attach company-data.md and send. Save the full response.",
       prompts: [],
       linkTo: "/company/:companyId/site-content-builder",
       linkLabel: "Open Narrative Composer →",
     },
     {
       item_key: "paste-site-content-into-cursor",
-      title: "Paste the ChatGPT response into Cursor",
+      title: "Implement the content in Cursor",
       description:
-        "Once ChatGPT is done, paste the entire response into Cursor. This includes the Design Guide.md build. Make sure Design Guide.md is in the repo root.",
+        "Open Implement content, copy the Cursor prompt, paste it into Cursor with ChatGPT's full response below it. Wait for a clean build and the report.",
+      prompts: [],
+      linkTo: "/company/:companyId/site-content-build",
+      linkLabel: "Open Implement content →",
+    },
+    {
+      item_key: "review-and-remove-pages",
+      title: "Review pages and clean up",
+      description:
+        "Run the site locally and read every page. Delete pages you don't want: remove site/src/content/pages/<page>.yaml and its link from NAV or the footer in site/src/config/site.ts. Never remove Articles, Privacy or Terms. Replace testimonial placeholders with real quotes or delete the Testimonials page. Have Privacy and Terms reviewed. Resolve every [GAP] line. For each image brief, generate or source the image, save it in site/src/assets/, and add its path as src next to the brief in the page YAML. Build, commit and push.",
       prompts: [],
     },
     {
@@ -341,12 +350,12 @@ export const PREDEFINED_ITEMS = {
   "site-activation": [
     {
       item_key: "build-site-content-from-chatgpt",
-      title: "Open Site Content Builder",
+      title: "Write and implement the site content",
       description:
-        "Go to Site Content Builder in TNV. Download company markdown, run the ChatGPT site-content prompt, then paste the spec into Cursor to build the pages.",
+        "Open Narrative Composer, copy the ChatGPT prompt, attach company-data.md and send. Save the full response. Then open Implement content, copy the Cursor prompt, and paste it into Cursor with ChatGPT's full response below it. Wait for a clean build and the report.",
       prompts: [],
       linkTo: "/company/:companyId/site-content-builder",
-      linkLabel: "Open Site Content Builder →",
+      linkLabel: "Open Narrative Composer →",
     },
     {
       item_key: "set-publish-destination",
