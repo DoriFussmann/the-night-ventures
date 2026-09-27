@@ -35,3 +35,6 @@ dist-ssr
 
 # Local SERP cache for external-link search
 .cache
+
+# Supabase CLI cache
+supabase/.temp/
