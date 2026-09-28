@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict'
 import { parseArticleMarkdown } from '../lib/wire-internal-links/plan.js'
 import { parseFrontmatter, splitFrontmatter } from '../lib/frontmatter.js'
+import { serializeArticleMarkdown } from '../src/pages/tools/articleGeneration/serializeArticleMarkdown.js'
 
 let passed = 0
 const check = (name, fn) => {
@@ -93,6 +94,65 @@ check('no frontmatter fence: ok:false, body preserved', () => {
   const s = splitFrontmatter('Just a body.')
   assert.equal(s.ok, false)
   assert.equal(s.body, 'Just a body.')
+})
+
+const SERIAL_BASE = {
+  title: 'Title',
+  description: 'A description',
+  slug: 'title',
+  date: '2026-01-15',
+  updatedDate: '2026-02-01',
+  category: 'Fundraising',
+  pillarKeyword: 'fundraising',
+  articleType: 'flex',
+  targetKeyword: 'seed round',
+  tags: ['raise'],
+  imageAlt: 'alt text',
+  keywords: ['seed round'],
+  faqs: [{ question: 'What is a seed round?', answer: 'The first priced round.' }],
+}
+
+const EMPTY_EXTERNAL_MARKDOWN = `---
+title: Title
+description: A description
+slug: title
+date: "2026-01-15"
+updatedDate: "2026-02-01"
+author: null
+category: Fundraising
+pillarKeyword: fundraising
+articleType: flex
+targetKeyword: seed round
+tags:
+  - raise
+imageAlt: alt text
+keywords:
+  - seed round
+draft: true
+internalLinks: []
+externalLinks: []
+faqs:
+  - question: "What is a seed round?"
+    answer: The first priced round.
+---
+
+Body text.
+`
+
+check('empty externalLinks serializes byte-identically to the previous line', () => {
+  assert.equal(serializeArticleMarkdown({ ...SERIAL_BASE, externalLinks: [] }, 'Body text.'), EMPTY_EXTERNAL_MARKDOWN)
+  assert.equal(serializeArticleMarkdown(SERIAL_BASE, 'Body text.'), EMPTY_EXTERNAL_MARKDOWN)
+})
+
+check('non-empty externalLinks round-trip through parseFrontmatter', () => {
+  const links = [
+    { label: 'SEC guidance', url: 'https://sec.gov/x', addedAt: '2026-09-28', kind: 'author-source' },
+  ]
+  const md = serializeArticleMarkdown({ ...SERIAL_BASE, externalLinks: links }, 'Body text.')
+  assert.equal(md.includes('externalLinks: []'), false)
+  const parsed = parseFrontmatter(md)
+  assert.equal(parsed.ok, true)
+  assert.deepEqual(parsed.data.externalLinks, links)
 })
 
 console.log(`\nAll ${passed} frontmatter assertions passed.`)

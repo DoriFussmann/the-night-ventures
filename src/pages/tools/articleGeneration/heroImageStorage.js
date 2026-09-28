@@ -65,6 +65,7 @@ export async function persistGeneratedHeroImage({ companyId, slug, b64 }) {
 
 export async function finishHeroImage({ companyId, slug, cropped }) {
   let storagePath = null;
+  let storageError = null;
   try {
     storagePath = await persistGeneratedHeroImage({
       companyId,
@@ -73,12 +74,14 @@ export async function finishHeroImage({ companyId, slug, cropped }) {
     });
   } catch (err) {
     console.error("Hero image storage failed:", err);
+    storageError = err?.message || "Hero image storage failed";
   }
   return {
     status: "done",
     result: cropped,
     error: null,
     storagePath,
+    storageError,
   };
 }
 

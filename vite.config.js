@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { defineConfig, loadEnv } from 'vite'
+import { ACTION_ROUTES } from './lib/actionRoutes.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -48,49 +49,12 @@ function localApiPlugin() {
             return
           }
 
-          // Keep public /api/scan-live-articles, /api/publish-to-site,
-          // /api/wire-internal-links, /api/propose-external-links,
-          // /api/check-links, /api/article-updates, and
-          // /api/company-data-import without extra Vercel functions.
-          if (name === 'scan-live-articles') {
+          // Public /api routes that share api/check-article-update.js.
+          const action = ACTION_ROUTES[name]
+          if (action) {
             name = 'check-article-update'
             const parsed = new URL(url, 'http://localhost')
-            parsed.searchParams.set('action', 'scan-live')
-            req.url = `/api/check-article-update${parsed.search}`
-          } else if (name === 'publish-to-site') {
-            name = 'check-article-update'
-            const parsed = new URL(url, 'http://localhost')
-            parsed.searchParams.set('action', 'publish-to-site')
-            req.url = `/api/check-article-update${parsed.search}`
-          } else if (name === 'wire-internal-links') {
-            name = 'check-article-update'
-            const parsed = new URL(url, 'http://localhost')
-            parsed.searchParams.set('action', 'wire-internal-links')
-            req.url = `/api/check-article-update${parsed.search}`
-          } else if (name === 'propose-external-links') {
-            name = 'check-article-update'
-            const parsed = new URL(url, 'http://localhost')
-            parsed.searchParams.set('action', 'propose-external-links')
-            req.url = `/api/check-article-update${parsed.search}`
-          } else if (name === 'check-links') {
-            name = 'check-article-update'
-            const parsed = new URL(url, 'http://localhost')
-            parsed.searchParams.set('action', 'check-links')
-            req.url = `/api/check-article-update${parsed.search}`
-          } else if (name === 'article-updates') {
-            name = 'check-article-update'
-            const parsed = new URL(url, 'http://localhost')
-            parsed.searchParams.set('action', 'article-updates')
-            req.url = `/api/check-article-update${parsed.search}`
-          } else if (name === 'company-data-import') {
-            name = 'check-article-update'
-            const parsed = new URL(url, 'http://localhost')
-            parsed.searchParams.set('action', 'company-data-import')
-            req.url = `/api/check-article-update${parsed.search}`
-          } else if (name === 'audit-summary') {
-            name = 'check-article-update'
-            const parsed = new URL(url, 'http://localhost')
-            parsed.searchParams.set('action', 'audit-summary')
+            parsed.searchParams.set('action', action)
             req.url = `/api/check-article-update${parsed.search}`
           }
 

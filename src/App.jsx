@@ -30,6 +30,7 @@ import SystemMap from '@/pages/tools/SystemMap';
 import CoreVersion from '@/pages/tools/CoreVersion';
 import EmailCampaigns from '@/pages/tools/EmailCampaigns';
 import Integrations from '@/pages/tools/Integrations';
+import ArticleCompose from '@/pages/tools/ArticleCompose';
 
 function RedirectToClusterGeneration() {
   const { companyId } = useParams();
@@ -58,6 +59,14 @@ const AuthenticatedApp = () => {
           <Route path="/company/:companyId/seo-ai-advisor" element={<SeoAiAdvisor />} />
           <Route path="/company/:companyId/external-audit-snapshot" element={<ExternalAuditSnapshot />} />
           <Route path="/company/:companyId/article-generation" element={<ClusterGeneration />} />
+          <Route
+            path="/company/:companyId/article-modify"
+            element={<ArticleCompose key="modify" mode="modify" />}
+          />
+          <Route
+            path="/company/:companyId/article-idea"
+            element={<ArticleCompose key="idea" mode="idea" />}
+          />
           <Route
             path="/company/:companyId/articles-automation"
             element={<RedirectToClusterGeneration />}

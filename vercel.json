@@ -43,6 +43,10 @@
       "source": "/api/integrations",
       "destination": "/api/check-article-update?action=integrations"
     },
+    {
+      "source": "/api/suggest-target-keyword",
+      "destination": "/api/check-article-update?action=suggest-target-keyword"
+    },
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]

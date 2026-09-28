@@ -1,7 +1,13 @@
 import Anthropic from '@anthropic-ai/sdk'
 import {
+  countMainBodyWords,
+  modifyMainBodyBounds,
+} from '../lib/generate-article/mainBodyWords.js'
+import {
   GENERATE_ARTICLE_MODEL,
+  buildModifyPrompt,
   buildUserPrompt,
+  mergeAllowedBrands,
   normalizeArticleSpec,
   normalizeBatchContext,
   normalizeCompetitors,
@@ -14,6 +20,28 @@ export const config = {
   maxDuration: 300,
 }
 
+function resolveMode(value) {
+  if (value == null || String(value).trim() === '') return 'spec'
+  const mode = String(value).trim()
+  return ARTICLE_MODES.has(mode) ? mode : ''
+}
+
+function countWords(text) {
+  const trimmed = String(text || '').trim()
+  if (!trimmed) return 0
+  return trimmed.split(/\s+/).length
+}
+
+function normalizeUserLinks(value) {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => ({
+      url: item.url == null ? '' : String(item.url),
+      anchor: item.anchor == null ? '' : String(item.anchor),
+    }))
+}
+
 function json(res, status, body) {
   res.statusCode = status
   res.setHeader('Content-Type', 'application/json')
@@ -21,6 +49,9 @@ function json(res, status, body) {
 }
 
 const MODEL = GENERATE_ARTICLE_MODEL
+const ARTICLE_MODES = new Set(['spec', 'idea', 'modify'])
+const SOURCE_ARTICLE_MAX_CHARS = 40000
+const SOURCE_ARTICLE_MIN_WORDS = 300
 // Long articles + web-search narration need headroom; embedding body in JSON
 // previously truncated around 8k.
 const MAX_TOKENS = 16000
@@ -330,7 +361,7 @@ function isAuthorizedCompetitorMention(mentioned, authorizedNames) {
 function validateGeneratedArticle(
   frontmatter,
   body,
-  { competitors = [], competitorsMentioned } = {}
+  { competitors = [], competitorsMentioned, length } = {}
 ) {
   const errors = []
   const fm = frontmatter && typeof frontmatter === 'object' ? frontmatter : {}
@@ -419,6 +450,17 @@ function validateGeneratedArticle(
     if (!isAuthorizedCompetitorMention(name, authorized)) {
       errors.push(
         `Unauthorized competitor named: "${name}". Only these are allowed: ${authorizedLabel}. Remove or genericize this reference.`
+      )
+    }
+  }
+
+  const minWords = Number(length?.min)
+  const maxWords = Number(length?.max)
+  if (Number.isFinite(minWords) && Number.isFinite(maxWords)) {
+    const mainBodyWords = countMainBodyWords(bodyText)
+    if (mainBodyWords < minWords || mainBodyWords > maxWords) {
+      errors.push(
+        `Main body is ${mainBodyWords} words; it must be between ${minWords} and ${maxWords}. Cut/expand while preserving the author's wording.`
       )
     }
   }
@@ -975,6 +1017,7 @@ export {
   isStructuralBlock,
   normalizeWhereThingsStandSources,
   countKeyTakeawayBullets,
+  validateGeneratedArticle,
 }
 
 export default async function handler(req, res) {
@@ -997,14 +1040,42 @@ export default async function handler(req, res) {
     }
 
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {}
+    const mode = resolveMode(body.mode)
+    if (!mode) {
+      return json(res, 400, { error: "mode must be 'spec', 'idea', or 'modify'" })
+    }
+
     const abstract = String(body.abstract || '').trim()
     const shortDescription = String(body.shortDescription || '').trim()
     const audience = String(body.audience || '').trim()
-    const competitors = normalizeCompetitors(body.competitors)
+    let competitors = normalizeCompetitors(body.competitors)
     const pillarKeyword = String(body.pillarKeyword || '').trim()
     const supportingKeyword = String(body.supportingKeyword || '').trim()
     const batchContext = normalizeBatchContext(body.batchContext)
     const article = normalizeArticleSpec(body.article)
+    let sourceArticle = ''
+    let expand = false
+    let userLinks = null
+
+    if (mode === 'idea' || mode === 'modify') {
+      competitors = mergeAllowedBrands(competitors, body.allowedBrands)
+      userLinks = normalizeUserLinks(body.userLinks)
+    }
+    if (mode === 'modify') {
+      if (typeof body.sourceArticle !== 'string') {
+        return json(res, 400, { error: 'sourceArticle must be a markdown string' })
+      }
+      if (body.sourceArticle.length > SOURCE_ARTICLE_MAX_CHARS) {
+        return json(res, 400, { error: 'sourceArticle exceeds 40000 characters' })
+      }
+      if (countWords(body.sourceArticle) < SOURCE_ARTICLE_MIN_WORDS) {
+        return json(res, 400, {
+          error: 'sourceArticle must contain at least 300 words',
+        })
+      }
+      sourceArticle = body.sourceArticle
+      expand = body.expand === true
+    }
 
     if (!article.title && !article.targetKeyword) {
       return json(res, 400, { error: 'article title or targetKeyword is required' })
@@ -1013,7 +1084,7 @@ export default async function handler(req, res) {
       return json(res, 400, { error: 'pillarKeyword is required' })
     }
 
-    const prompt = buildUserPrompt({
+    const promptInput = {
       abstract,
       shortDescription,
       competitors,
@@ -1022,7 +1093,19 @@ export default async function handler(req, res) {
       pillarKeyword,
       supportingKeyword,
       batchContext,
-    })
+    }
+    const lengthBounds =
+      mode === 'modify'
+        ? modifyMainBodyBounds({
+            sourceArticle,
+            expand,
+            wordCount: article.wordCount,
+          })
+        : null
+    const prompt =
+      mode === 'modify'
+        ? buildModifyPrompt({ ...promptInput, sourceArticle, expand })
+        : buildUserPrompt(promptInput)
 
     const anthropic = new Anthropic({ apiKey })
     let activeMessage = await callAnthropic(anthropic, [
@@ -1073,6 +1156,9 @@ export default async function handler(req, res) {
       competitors,
       // Read from raw model frontmatter before coerce strips working fields.
       competitorsMentioned: parsed?.frontmatter?.competitorsMentioned,
+      ...(lengthBounds
+        ? { length: { min: lengthBounds.min, max: lengthBounds.max } }
+        : {}),
     })
     let whereThingsStandSources = extractWhereThingsStandSources(parsed.frontmatter)
     // coerceFrontmatter whitelists schema fields only — competitorsMentioned is
@@ -1154,7 +1240,15 @@ export default async function handler(req, res) {
       frontmatter,
       body: articleBody,
       whereThingsStandSources,
+      mode,
       ...(lengthAdjusted ? { lengthAdjusted: true } : {}),
+      ...(userLinks ? { userLinks } : {}),
+      ...(mode === 'modify'
+        ? {
+            mainBodyWordCount: countMainBodyWords(articleBody),
+            sourceWordCount: lengthBounds.sourceWordCount,
+          }
+        : {}),
     })
   } catch (err) {
     console.error('generate-article error:', err)

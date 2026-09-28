@@ -243,6 +243,213 @@ export async function updateCoverageDrafted({
   return result;
 }
 
+function newPlannedArticleId() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `art_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+/**
+ * Add one planned article to a supporting keyword when generation did not
+ * match an existing coverage entry. Status is drafted after frontmatter merge.
+ */
+export async function appendPlannedArticle({
+  companyId,
+  pillarKeyword,
+  supportingKeyword,
+  article,
+}) {
+  if (!companyId) throw new Error("Missing companyId");
+
+  const { data, error } = await supabase
+    .from("content_coverage")
+    .select("pillars")
+    .eq("company_id", companyId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message || "Failed to load content coverage");
+  }
+
+  const pillars = Array.isArray(data?.pillars)
+    ? data.pillars.map((p) => ({ ...p }))
+    : [];
+  const pillar = findPillar(pillars, pillarKeyword);
+  if (!pillar) {
+    throw new Error(
+      `No coverage pillar matched “${pillarKeyword || "(empty)"}”.`
+    );
+  }
+  const supporting = findSupporting(pillar, supportingKeyword);
+  if (!supporting) {
+    throw new Error(
+      `No coverage supporting keyword matched “${supportingKeyword}”.`
+    );
+  }
+
+  const fm =
+    article?.frontmatter && typeof article.frontmatter === "object"
+      ? article.frontmatter
+      : {};
+  const now = new Date().toISOString();
+  const keyMessages = (Array.isArray(article?.keyMessages) ? article.keyMessages : [])
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+  const base = {
+    id: newPlannedArticleId(),
+    title: String(article?.title || fm.title || "").trim(),
+    targetKeyword: stripNoVolumeTag(article?.targetKeyword || ""),
+    type: article?.type || "flex",
+    status: "planned",
+    searchIntent: article?.searchIntent ?? "",
+    keyMessages,
+    wordCount: Number(article?.wordCount) || 0,
+    internalLinks: Array.isArray(article?.internalLinks)
+      ? article.internalLinks.map((item) => String(item || "").trim()).filter(Boolean)
+      : [],
+    ctaAngle: article?.ctaAngle ?? "",
+    updatedAt: now,
+  };
+  const entry = mergeFrontmatterFields(base, fm);
+
+  const planned = Array.isArray(supporting.plannedArticles)
+    ? [...supporting.plannedArticles]
+    : [];
+  planned.push(entry);
+  supporting.plannedArticles = planned;
+  pillar.supporting = (pillar.supporting || []).map((s) =>
+    s.slug === supporting.slug || norm(s.keyword) === norm(supporting.keyword)
+      ? supporting
+      : s
+  );
+
+  const nextPillars = pillars.map((p) =>
+    p.slug === pillar.slug || norm(p.keyword) === norm(pillar.keyword)
+      ? pillar
+      : p
+  );
+
+  const { error: upsertError } = await supabase.from("content_coverage").upsert(
+    {
+      company_id: companyId,
+      pillars: nextPillars,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "company_id" }
+  );
+
+  if (upsertError) {
+    throw new Error(upsertError.message || "Failed to update content coverage");
+  }
+
+  return entry;
+}
+
+function entrySlug(item) {
+  return String(item?.slug || "").trim();
+}
+
+/**
+ * Place one composed article in coverage. A plannedArticles entry belongs to
+ * one article: merge only when it has no slug yet, or its slug is this
+ * article's slug. Any other match gets a new entry.
+ */
+export async function upsertComposedCoverage({
+  companyId,
+  pillarKeyword,
+  supportingKeyword,
+  article,
+}) {
+  if (!companyId) throw new Error("Missing companyId");
+
+  const { data, error } = await supabase
+    .from("content_coverage")
+    .select("pillars")
+    .eq("company_id", companyId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message || "Failed to load content coverage");
+  }
+
+  const pillars = Array.isArray(data?.pillars)
+    ? data.pillars.map((p) => ({ ...p }))
+    : [];
+  const pillar = findPillar(pillars, pillarKeyword);
+  if (!pillar) {
+    throw new Error(
+      `No coverage pillar matched “${pillarKeyword || "(empty)"}”.`
+    );
+  }
+  const supporting = findSupporting(pillar, supportingKeyword);
+  if (!supporting) {
+    throw new Error(
+      `No coverage supporting keyword matched “${supportingKeyword}”.`
+    );
+  }
+
+  const fm =
+    article?.frontmatter && typeof article.frontmatter === "object"
+      ? article.frontmatter
+      : {};
+  const slug = String(fm.slug || "").trim();
+  const planned = Array.isArray(supporting.plannedArticles)
+    ? [...supporting.plannedArticles]
+    : [];
+
+  let index = slug
+    ? planned.findIndex((item) => entrySlug(item) === slug)
+    : -1;
+  if (index === -1) {
+    index = planned.findIndex(
+      (item) =>
+        !entrySlug(item) &&
+        articleMatches(item, {
+          targetKeyword: article?.targetKeyword,
+          title: article?.title || fm.title,
+        })
+    );
+  }
+
+  if (index === -1) {
+    return appendPlannedArticle({
+      companyId,
+      pillarKeyword,
+      supportingKeyword,
+      article,
+    });
+  }
+
+  planned[index] = mergeFrontmatterFields(planned[index], fm);
+  supporting.plannedArticles = planned;
+  pillar.supporting = (pillar.supporting || []).map((s) =>
+    s.slug === supporting.slug || norm(s.keyword) === norm(supporting.keyword)
+      ? supporting
+      : s
+  );
+  const nextPillars = pillars.map((p) =>
+    p.slug === pillar.slug || norm(p.keyword) === norm(pillar.keyword)
+      ? pillar
+      : p
+  );
+
+  const { error: upsertError } = await supabase.from("content_coverage").upsert(
+    {
+      company_id: companyId,
+      pillars: nextPillars,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "company_id" }
+  );
+
+  if (upsertError) {
+    throw new Error(upsertError.message || "Failed to update content coverage");
+  }
+
+  return planned[index];
+}
+
 /**
  * Mark matched coverage articles as published after a successful site commit.
  *
@@ -387,4 +594,135 @@ export async function updateCoveragePublished({
     result.warning = `${unmatched} article${unmatched === 1 ? "" : "s"} could not be marked published in coverage.`;
   }
   return result;
+}
+
+async function loadCoveragePillars(companyId) {
+  const { data, error } = await supabase
+    .from("content_coverage")
+    .select("pillars")
+    .eq("company_id", companyId)
+    .maybeSingle();
+  if (error) {
+    throw new Error(error.message || "Failed to load content coverage");
+  }
+  return Array.isArray(data?.pillars) ? data.pillars.map((p) => ({ ...p })) : [];
+}
+
+async function saveCoveragePillars(companyId, pillars) {
+  const now = new Date().toISOString();
+  const { error } = await supabase.from("content_coverage").upsert(
+    {
+      company_id: companyId,
+      pillars,
+      updated_at: now,
+    },
+    { onConflict: "company_id" }
+  );
+  if (error) {
+    throw new Error(error.message || "Failed to update content coverage");
+  }
+}
+
+function replacePlannedBySlug(pillars, pillarKeyword, supportingKeyword, matchSlug, replace) {
+  const slug = String(matchSlug || "").trim();
+  const pillar = findPillar(pillars, pillarKeyword);
+  if (!pillar) {
+    return { pillars, warning: `No coverage pillar matched “${pillarKeyword || "(empty)"}”.` };
+  }
+  const supporting = findSupporting(pillar, supportingKeyword);
+  if (!supporting) {
+    return {
+      pillars,
+      warning: `No coverage supporting keyword matched “${supportingKeyword}”.`,
+    };
+  }
+  const planned = Array.isArray(supporting.plannedArticles)
+    ? [...supporting.plannedArticles]
+    : [];
+  const index = planned.findIndex((item) => entrySlug(item) === slug);
+  if (index === -1) {
+    return { pillars, warning: `No coverage entry with slug “${slug}”.` };
+  }
+  planned[index] = replace(planned[index]);
+  supporting.plannedArticles = planned;
+  pillar.supporting = (pillar.supporting || []).map((item) =>
+    item.slug === supporting.slug || norm(item.keyword) === norm(supporting.keyword)
+      ? supporting
+      : item
+  );
+  const nextPillars = pillars.map((item) =>
+    item.slug === pillar.slug || norm(item.keyword) === norm(pillar.keyword)
+      ? pillar
+      : item
+  );
+  return { pillars: nextPillars, updated: true };
+}
+
+/**
+ * Refresh the planned article that already belongs to this draft, matched by slug.
+ * A slug edit updates that same entry. It does not append another one.
+ */
+export async function syncComposedCoverageBySlug({
+  companyId,
+  pillarKeyword,
+  supportingKeyword,
+  matchSlug,
+  frontmatter,
+  wordCount,
+}) {
+  const pillars = await loadCoveragePillars(companyId);
+  const replaced = replacePlannedBySlug(
+    pillars,
+    pillarKeyword,
+    supportingKeyword,
+    matchSlug,
+    (existing) => {
+      const next = mergeFrontmatterFields(existing, frontmatter);
+      if (wordCount != null && Number.isFinite(Number(wordCount))) {
+        next.wordCount = Number(wordCount) || 0;
+      }
+      return next;
+    }
+  );
+  if (!replaced.updated) {
+    return { updated: false, warning: replaced.warning || "" };
+  }
+  await saveCoveragePillars(companyId, replaced.pillars);
+  return { updated: true };
+}
+
+/**
+ * Mark one composed article published by its slug.
+ * Never matches on target keyword or title, so two drafts that share a
+ * keyword stay independent. updateCoveragePublished is unchanged for Cluster.
+ */
+export async function markComposedCoveragePublished({
+  companyId,
+  pillarKeyword,
+  supportingKeyword,
+  slug,
+  publishedUrl,
+}) {
+  const pillars = await loadCoveragePillars(companyId);
+  const now = new Date().toISOString();
+  const url = String(publishedUrl || "").trim();
+  const replaced = replacePlannedBySlug(
+    pillars,
+    pillarKeyword,
+    supportingKeyword,
+    slug,
+    (existing) => ({
+      ...existing,
+      status: "published",
+      publishedAt: now,
+      updatedAt: now,
+      draft: false,
+      ...(url ? { publishedUrl: url } : {}),
+    })
+  );
+  if (!replaced.updated) {
+    return { updated: false, warning: replaced.warning || "" };
+  }
+  await saveCoveragePillars(companyId, replaced.pillars);
+  return { updated: true };
 }

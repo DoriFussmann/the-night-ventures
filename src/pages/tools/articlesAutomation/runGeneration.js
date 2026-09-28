@@ -6,11 +6,10 @@ import { saveGeneratedArticles } from "../articleGeneration/saveGeneratedArticle
 import { finishHeroImage } from "../articleGeneration/heroImageStorage";
 import { downloadArticlesZip } from "../articleGeneration/downloadZip";
 import {
-  getImage,
-  imageSrcFromResult,
-} from "../aiImage/generateImageClient";
-import { getImageryContext } from "@/lib/design/getImageryContext";
-import { cropImageTo16x9 } from "../aiImage/cropImage";
+  generateAndCropArticleImage,
+  generateOneArticle,
+  loadCompanyPositioning,
+} from "../articleGeneration/singleArticle";
 
 function skippedImageState() {
   return { status: "skipped", result: null, error: null };
@@ -18,17 +17,6 @@ function skippedImageState() {
 
 function pendingImageState() {
   return { status: "pending", result: null, error: null };
-}
-
-function normalizeCompetitors(value) {
-  if (!Array.isArray(value)) return [];
-  return value
-    .filter((item) => item && typeof item === "object")
-    .map((item) => ({
-      name: String(item.name || "").trim(),
-      url: String(item.url || "").trim(),
-    }))
-    .filter((item) => item.name || item.url);
 }
 
 function normalizeSources(value) {
@@ -40,138 +28,6 @@ function normalizeSources(value) {
       note: String(item.note || "").trim(),
     }))
     .filter((item) => item.url || item.note);
-}
-
-function buildArticleImagePrompt(article, frontmatter) {
-  const title = String(frontmatter?.title || article?.title || "").trim();
-  const description = String(frontmatter?.description || "").trim();
-  const type = String(article?.type || "").trim();
-  const searchIntent = String(article?.searchIntent || "").trim();
-
-  const typeHint =
-    type === "howto"
-      ? "practical how-to / process atmosphere"
-      : type === "comparison"
-        ? "balanced comparison / decision-making atmosphere"
-        : type === "faq"
-          ? "clarity and answers / approachable guidance atmosphere"
-          : type === "comprehensive"
-            ? "authoritative overview / landmark resource atmosphere"
-            : "editorial thought-leadership atmosphere";
-
-  const parts = [
-    "Photorealistic blog hero image, wide landscape composition, no text, no letters, no watermarks, no logos.",
-    "No people, no humans, no faces, no figures, no body parts, no silhouettes of people.",
-    title ? `Topic: ${title}.` : "",
-    description ? `Mood and subject: ${description}` : "",
-    searchIntent ? `Reader intent: ${searchIntent}.` : "",
-    `Visual tone: ${typeHint}.`,
-    "Show a single cohesive scene that evokes the article's subject through environments, objects, materials, or symbolic still life — not a collage or UI mockup.",
-  ];
-
-  return parts.filter(Boolean).join(" ");
-}
-
-async function loadCompanyPositioning(companyId) {
-  const { data, error } = await supabase
-    .from("company_profiles")
-    .select(
-      "abstract, short_description, competitors, target_audience, design_guide_raw"
-    )
-    .eq("company_id", companyId)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(error.message || "Failed to load company profile");
-  }
-
-  return {
-    abstract: data?.abstract || "",
-    shortDescription: data?.short_description || "",
-    competitors: normalizeCompetitors(data?.competitors),
-    audience: String(data?.target_audience || "").trim(),
-    imageryContext: getImageryContext(data?.design_guide_raw),
-  };
-}
-
-async function generateOneArticle({
-  positioning,
-  article,
-  pillarKeyword,
-  supportingKeyword,
-  batchContext,
-}) {
-  const res = await fetch("/api/generate-article", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      abstract: positioning.abstract,
-      shortDescription: positioning.shortDescription,
-      competitors: positioning.competitors,
-      audience: positioning.audience,
-      pillarKeyword,
-      supportingKeyword: supportingKeyword || undefined,
-      batchContext,
-      article: {
-        title: article.title,
-        targetKeyword: article.targetKeyword,
-        type: article.type,
-        searchIntent: article.searchIntent,
-        wordCount: article.wordCount,
-        ctaAngle: article.ctaAngle,
-        keyMessages: article.keyMessages,
-        expertInput: article.expertInput || "",
-      },
-    }),
-  });
-
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const details = Array.isArray(data.validationErrors)
-      ? data.validationErrors.join("; ")
-      : "";
-    const message = data.error || `Generation failed (${res.status})`;
-    const err = new Error(details ? `${message}: ${details}` : message);
-    err.validationErrors = data.validationErrors || [];
-    throw err;
-  }
-
-  return data;
-}
-
-async function generateAndCropArticleImage({
-  article,
-  frontmatter,
-  styleContext,
-  excludeIds,
-}) {
-  const prompt = buildArticleImagePrompt(article, frontmatter);
-  const raw = await getImage({
-    prompt,
-    size: "1536x1024",
-    styleContext: styleContext || "",
-    stock: {
-      title: frontmatter?.title || article?.title || "",
-      description: frontmatter?.description || "",
-      keyword: article?.targetKeyword || "",
-      articleType: article?.type || "",
-      excludeIds,
-    },
-  });
-  const src = imageSrcFromResult(raw);
-  if (!src) {
-    throw new Error("No image returned");
-  }
-  const cropped = await cropImageTo16x9(src);
-  return {
-    cropped,
-    meta: {
-      source: raw.source,
-      sourceId: raw.sourceId,
-      attribution: raw.attribution,
-      trail: raw.trail,
-    },
-  };
 }
 
 function buildBatchContextEntry(frontmatter, article) {

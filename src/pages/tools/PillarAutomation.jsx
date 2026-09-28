@@ -602,6 +602,7 @@ export default function PillarAutomation() {
         companyId,
         pillarKeyword: pillar?.pillarKeyword || "",
         supportingKeyword: "",
+        source: "pillar",
         articles: successJobs.map((job) => {
           const article = plannedRef.current[job.index] || {};
           return {
@@ -881,6 +882,7 @@ export default function PillarAutomation() {
         companyId,
         pillarKeyword: pillar.pillarKeyword,
         supportingKeyword: "",
+        source: "pillar",
         articles: successJobs.map((job) => {
           const a = planned[job.index] || {};
           return {

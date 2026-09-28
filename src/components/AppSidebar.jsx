@@ -7,6 +7,8 @@ import {
   Palette,
   LayoutTemplate,
   PenLine,
+  FileEdit,
+  Lightbulb,
   BookOpen,
   Mail,
   Image,
@@ -348,6 +350,8 @@ export default function AppSidebar({ user }) {
   const generationItems = [
     { label: "Pillar", path: `/company/${activeCompanyId}/pillar-automation`, icon: Layers, status: "Done" },
     { label: "Cluster", path: `/company/${activeCompanyId}/article-generation`, icon: PenLine, status: "Done" },
+    { label: "Article Modify", path: `/company/${activeCompanyId}/article-modify`, icon: FileEdit, status: "Done" },
+    { label: "Article Idea", path: `/company/${activeCompanyId}/article-idea`, icon: Lightbulb, status: "Done" },
   ];
 
   const buildNav = [

@@ -1,4 +1,5 @@
-import { stripNoVolumeTag } from "./stripNoVolumeTag";
+import { renderExternalLinksYaml } from "../../../../lib/wire-internal-links/externalLinksYaml.js";
+import { stripNoVolumeTag } from "./stripNoVolumeTag.js";
 
 function yamlEscape(value) {
   const text = String(value ?? "");
@@ -66,7 +67,12 @@ export function serializeArticleMarkdown(frontmatter, body, options = {}) {
 
   lines.push(`draft: ${draft ? "true" : "false"}`);
   lines.push("internalLinks: []");
-  lines.push("externalLinks: []");
+  const externalLinks = Array.isArray(fm.externalLinks) ? fm.externalLinks : [];
+  lines.push(
+    externalLinks.length > 0
+      ? renderExternalLinksYaml(externalLinks)
+      : "externalLinks: []"
+  );
 
   lines.push("faqs:");
   for (const faq of faqs) {

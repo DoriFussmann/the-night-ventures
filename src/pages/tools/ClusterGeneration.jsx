@@ -511,6 +511,7 @@ export default function ClusterGeneration() {
         companyId,
         pillarKeyword: cluster?.pillarKeyword || "",
         supportingKeyword: cluster?.clusterKeyword || "",
+        source: "cluster",
         articles: readyJobs.map((job) => {
           const article = plannedRef.current[job.index] || {};
           return {
@@ -842,6 +843,7 @@ export default function ClusterGeneration() {
         companyId,
         pillarKeyword: cluster.pillarKeyword,
         supportingKeyword: cluster.clusterKeyword,
+        source: "cluster",
         articles: successJobs.map((job) => {
           const article = planned[job.index] || {};
           return {

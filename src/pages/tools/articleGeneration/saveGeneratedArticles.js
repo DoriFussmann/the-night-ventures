@@ -26,6 +26,26 @@ function asFaqArray(value) {
     .filter((item) => item.question || item.answer);
 }
 
+function asExternalLinks(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (item && typeof item === "object") {
+        const url = String(item.url || "").trim();
+        if (!url) return null;
+        return {
+          label: String(item.label || url).trim(),
+          url,
+          addedAt: String(item.addedAt || "").trim(),
+          kind: String(item.kind || "").trim(),
+        };
+      }
+      const text = String(item ?? "").trim();
+      return text || null;
+    })
+    .filter(Boolean);
+}
+
 function asSourceArray(value) {
   if (!Array.isArray(value)) return [];
   return value
@@ -48,6 +68,7 @@ export function buildGeneratedArticleRow({
   whereThingsStandSources,
   heroStoragePath,
   heroSource,
+  source,
   status = "drafted",
 }) {
   const fm = frontmatter && typeof frontmatter === "object" ? frontmatter : {};
@@ -77,7 +98,7 @@ export function buildGeneratedArticleRow({
     keywords: asStringArray(fm.keywords).map(stripNoVolumeTag).filter(Boolean),
     draft: fm.draft !== false,
     internal_links: asStringArray(fm.internalLinks),
-    external_links: asStringArray(fm.externalLinks),
+    external_links: asExternalLinks(fm.externalLinks),
     faqs: asFaqArray(fm.faqs),
     body: String(body || ""),
     where_things_stand_sources: asSourceArray(whereThingsStandSources),
@@ -86,6 +107,7 @@ export function buildGeneratedArticleRow({
   const storedHero = String(heroStoragePath || "").trim();
   if (storedHero) row.hero_storage_path = storedHero;
   if (heroSource != null) row.hero_source = heroSource;
+  if (source != null) row.source = source;
   return row;
 }
 
@@ -95,6 +117,7 @@ export function buildGeneratedArticleRow({
  * @param {string} args.companyId
  * @param {string} args.pillarKeyword
  * @param {string} [args.supportingKeyword]
+ * @param {string} [args.source] pillar | cluster | modify | idea
  * @param {Array<{
  *   type?: string,
  *   targetKeyword?: string,
@@ -110,6 +133,7 @@ export async function saveGeneratedArticles({
   pillarKeyword,
   supportingKeyword,
   articles,
+  source,
 }) {
   if (!companyId) {
     return { saved: [], error: new Error("Missing companyId") };
@@ -132,6 +156,7 @@ export async function saveGeneratedArticles({
         whereThingsStandSources: article.whereThingsStandSources,
         heroStoragePath: article.heroStoragePath || article.image?.storagePath,
         heroSource: article.heroSource,
+        source: article.source != null ? article.source : source,
         status: "drafted",
       })
     );

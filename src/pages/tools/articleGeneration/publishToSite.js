@@ -125,6 +125,7 @@ export function generatedArticleToPublishItem(row, options = {}) {
       supportingKeyword: row?.supporting_keyword,
       articleType: row?.type,
       targetKeyword: row?.target_keyword,
+      externalLinks: Array.isArray(row?.external_links) ? row.external_links : [],
     },
     body: row?.body,
     heroStoragePath: row?.hero_storage_path || null,
