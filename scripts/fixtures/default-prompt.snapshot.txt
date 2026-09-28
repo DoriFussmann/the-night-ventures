@@ -1,0 +1,93 @@
+Company positioning:
+Abstract: Rupert helps startup founders raise capital.
+Short Description: Expert-managed investor outreach.
+
+KNOWN COMPETITORS (use ONLY these as the competitor set — do not research, invent, or add other competitors):
+- AngelList: https://www.angellist.com
+If the article discusses or compares alternatives/other products, you may describe them generically (e.g. "other prompted journals" or "mass-market alternatives") WITHOUT naming a specific brand, UNLESS that brand is in the known competitors list above. Never name a brand, company, or product that is not in this list.
+
+Article plan spec:
+{
+  "title": "How to Find Investors",
+  "targetKeyword": "how to find investors",
+  "type": "comprehensive",
+  "searchIntent": "Founders want a practical playbook.",
+  "wordCount": 1800,
+  "ctaAngle": "Use expert-managed outreach when volume becomes the bottleneck.",
+  "keyMessages": [
+    "Target before you pitch.",
+    "Keep a living list."
+  ],
+  "expertInput": "Warm intros beat cold email.",
+  "pillarKeyword": "how to find investors",
+  "supportingKeyword": "angel investors"
+}
+
+EXPERT INPUT (lead key message — give it spotlight, but do not make the article only about this):
+The editor provided first-hand expert perspective below. Treat it as the top key message: give it prominent coverage and let it shape the article's distinctive angle (typically as the opening thesis or first fully developed argument). Continue to cover every other keyMessage in the spec with real substance — this input is a primary thread, not the whole article. Integrate it as the author's own informed view; do not label a section "Expert Input" or quote it as an attributed aside.
+Warm intros beat cold email.
+
+Batch context so far (sibling articles already generated in this run — for tonal coherence only; do NOT invent internal links to them):
+[
+  {
+    "title": "Seed Round Checklist",
+    "slug": "seed-round-checklist",
+    "type": "howto",
+    "targetKeyword": "seed round checklist",
+    "oneLinerSummary": "A short checklist."
+  }
+]
+
+CONTENT CONTRACT CONSTRAINTS (enforce exactly):
+- title: MUST be between 55 and 60 characters total (count every character including spaces and punctuation). Aim for 57-58 to leave safety margin. Before finalizing, count the characters in your title.
+- description: MUST be between 140 and 160 characters total (count every character including spaces and punctuation). Aim for 148-152 to leave safety margin. Before finalizing, count the characters in your description. Must be a genuine meta description (not a restated title).
+- slug: kebab-case, derived from the target keyword, url-safe
+- tags: exactly 4-6 strings, mix of broad category terms and the specific target keyword
+- imageAlt: minimum 10 characters, genuinely descriptive of a plausible hero image for this article (even though the real image is added manually later)
+- keywords: optional in your JSON (server overwrites from targetKeyword / supportingKeyword / pillarKeyword).
+- whereThingsStandSources: array of { url, note } for web-search sources actually used in the Where Things Stand paragraph (empty array if none).
+- competitorsMentioned: array of every specific brand/company/product name mentioned anywhere in the article body (not generic category references). List every specific brand or company name mentioned in the body, even ones from the KNOWN COMPETITORS list. If none were mentioned, return an empty array.
+- faqs: array of 2-4 { question, answer } objects, genuinely useful, distinct from the body content, not filler
+
+Audience: Startup founders raising a seed round.
+
+Write the complete article body and all synthesized frontmatter fields for the spec above.
+
+BODY REQUIREMENTS:
+- Use the provided keyMessages as the article's argument spine — expand, evidence, and structure them into flowing prose with proper H2/H3 markdown headings; do not simply restate them as a list.
+- If Expert Input is present (non-empty) in the spec, treat it as the lead key message: give it spotlight and let it shape the article's distinctive angle, typically as the opening thesis or the first fully developed argument. Continue to cover every other keyMessage with real substance — Expert Input is a primary thread, not the whole article. Integrate it as the author's own informed view; do not label a section "Expert Input" or quote it as an attributed aside. If Expert Input is blank or omitted, ignore this rule and use only the listed keyMessages.
+- Target the specified wordCount (+/- 10%).
+- Land the ctaAngle naturally within the final 2-3 paragraphs — it must read as genuine, earned advice, never as an ad.
+- Do NOT include a 'Where Things Stand' or 'Key Takeaways' section inline in your normal flow — add each as its own section after the main body, described below.
+- Do NOT invent internal links, external links, author names, or images — these are handled separately. Do not write placeholder link text or images into the body.
+- When incorporating facts, statistics, or claims found via web search, integrate them fully into the surrounding paragraph's sentence flow — never place a search-derived fact as an isolated single-sentence line separated from its paragraph by blank lines. Every sentence must belong to a paragraph of at least 2-3 sentences. Before finalizing the body, scan for and merge any orphaned single-sentence lines into their adjacent paragraph.
+
+WHERE THINGS STAND SECTION (mandatory, comes after the main body, before Key Takeaways):
+- Search the web for genuine news, data, or developments related to this article's topic from the past 45 days.
+- Write one grounded paragraph (100-150 words) synthesizing what you find. If you find nothing substantive from the past 45 days, write a brief paragraph noting the topic is stable with no major recent developments, rather than fabricating news.
+- This section is entirely search-derived: integrate every fact, statistic, or claim fully into the paragraph's sentence flow — never place a search-derived fact as an isolated single-sentence line separated by blank lines. The Where Things Stand content must be one cohesive paragraph of at least 2-3 sentences (preferably more), not a stack of orphaned one-liners. Before finalizing, scan for and merge any orphaned single-sentence lines into that paragraph.
+- Do not name specific publications or outlets by name (e.g. "The Wall Street Journal reported...") unless you can also provide the source URL. Instead attribute generically ("recent reporting indicates...", "data from Q2 2026 shows..."). Separately from the body, include a new JSON field whereThingsStandSources: an array of { url, note } for any web-search sources actually used in that paragraph, so they can be manually added to externalLinks later.
+- Wrap this section exactly like this in the markdown body:
+## Where Things Stand
+<!-- WHERE-THINGS-STAND:START -->
+<the paragraph>
+<!-- WHERE-THINGS-STAND:END -->
+
+KEY TAKEAWAYS SECTION (mandatory on every article — never omit, never make conditional):
+- After Where Things Stand, add a "## Key Takeaways" heading with 3–5 concise bullet points that summarize the article's main points.
+- Each bullet is one tight takeaway (a complete thought, not a fragment or a restated H2 title).
+- Place this section after Where Things Stand and before any closing note. Do not put FAQs in the body — FAQs belong only in the frontmatter faqs array, which the template renders after the body.
+- Use this exact heading text:
+## Key Takeaways
+- First takeaway
+- Second takeaway
+- Third takeaway
+
+FRONTMATTER: Generate title, description, slug, tags, imageAlt, faqs per the constraints above. keywords may be omitted or left empty — the server overwrites them. Also set: date and updatedDate to today's date (ISO format), category to the pillar keyword name, draft to true, author to null, internalLinks to an empty array, externalLinks to an empty array, image/image2/image3 to null. Include whereThingsStandSources as an array of { url, note } for sources used in the Where Things Stand paragraph (empty array if none). Include competitorsMentioned: an array of every specific brand, company, or product name named anywhere in the article body (not generic category references). List every specific brand or company name mentioned in the body, even ones from the KNOWN COMPETITORS list. If none were mentioned, return an empty array.
+
+OUTPUT FORMAT (mandatory — do not wrap in markdown fences, do not write any preamble or closing note):
+<<<FRONTMATTER>>>
+{ "title", "description", "slug", "date", "updatedDate", "category", "tags": [], "imageAlt", "keywords": [], "faqs": [{"question","answer"}], "draft": true, "author": null, "internalLinks": [], "externalLinks": [], "image": null, "image2": null, "image3": null, "whereThingsStandSources": [{"url","note"}], "competitorsMentioned": [] }
+<<<BODY>>>
+<full markdown body as plain text with real newlines, including Where Things Stand and the Key Takeaways section>
+<<<END>>>
