@@ -1,0 +1,28 @@
+# Weekly check that every SEO data endpoint the Advisor relies on still
+# answers in the shape lib/seo-advisor/registry.js expects.
+# Needs repo secrets: SEMRUSH_API_KEY, DATAFORSEO_LOGIN, DATAFORSEO_PASSWORD, MOZ_API_TOKEN.
+name: SEO Advisor contracts
+on:
+  schedule:
+    - cron: '0 7 * * 1' # Mondays 07:00 UTC
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'lib/seo-advisor/registry.js'
+      - 'lib/seo-advisor/providers/**'
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: node scripts/check-seo-advisor-contracts.mjs
+        env:
+          SEMRUSH_API_KEY: ${{ secrets.SEMRUSH_API_KEY }}
+          DATAFORSEO_LOGIN: ${{ secrets.DATAFORSEO_LOGIN }}
+          DATAFORSEO_PASSWORD: ${{ secrets.DATAFORSEO_PASSWORD }}
+          MOZ_API_TOKEN: ${{ secrets.MOZ_API_TOKEN }}

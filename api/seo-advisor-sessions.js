@@ -6,6 +6,7 @@ import {
 } from '../lib/seo-advisor/auth.js'
 import { healthSnapshot } from '../lib/seo-advisor/tools.js'
 import { loadCoverageState, serializeCoverageState } from '../lib/seo-advisor/pillars.js'
+import { getLiveHealth } from '../lib/seo-advisor/liveHealth.js'
 
 export default async function handler(req, res) {
   if (handleOptions(req, res, 'GET, POST, PATCH, DELETE, OPTIONS')) return
@@ -24,6 +25,12 @@ export default async function handler(req, res) {
       const url = new URL(req.url, 'http://localhost')
       const companyId = String(url.searchParams.get('companyId') || '').trim()
       const sessionId = String(url.searchParams.get('sessionId') || '').trim()
+
+      // Live API health for the Advisor intro. Not company-scoped.
+      if (url.searchParams.get('health') === '1') {
+        const data = await getLiveHealth({ force: url.searchParams.get('force') === '1' })
+        return json(res, 200, data)
+      }
 
       if (!companyId) return json(res, 400, { error: 'companyId is required' })
 

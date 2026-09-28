@@ -11,6 +11,7 @@
     "typecheck": "tsc -p ./jsconfig.json",
     "preview": "vite preview",
     "check:system-doc": "bash scripts/check-system-doc-stale.sh",
+    "check:seo-contracts": "node scripts/check-seo-advisor-contracts.mjs",
     "cleanup:branches": "node scripts/cleanup-merged-updates-branches.mjs"
   },
   "dependencies": {

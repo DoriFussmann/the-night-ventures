@@ -9,15 +9,16 @@ import {
   loadCompanyContext,
   buildSystemPrompt,
   messagesFromRows,
+  normalizeMode,
 } from '../lib/seo-advisor/context.js'
 import { findCoveragePillar } from '../lib/seo-advisor/pillars.js'
 import {
   TOOL_DEFINITIONS,
   executeTool,
-  providerLabelForTool,
   MAX_TOOL_CALLS_PER_TURN,
   healthSnapshot,
 } from '../lib/seo-advisor/tools.js'
+import { extractMetrics, mergeMetrics } from '../lib/seo-advisor/registry.js'
 
 const MODEL = 'claude-sonnet-4-6'
 const MAX_TOKENS = 8192
@@ -134,7 +135,7 @@ export default async function handler(req, res) {
   const companyId = String(body.companyId || '').trim()
   const userMessage = String(body.message || '').trim()
   const sessionIdIn = body.sessionId ? String(body.sessionId).trim() : null
-  const mode = String(body.mode || '').trim()
+  const mode = normalizeMode(body.mode)
   const pillarSlug = String(body.pillarSlug || '').trim()
 
   if (!companyId) return json(res, 400, { error: 'companyId is required' })
@@ -175,26 +176,38 @@ export default async function handler(req, res) {
     const system = buildSystemPrompt({ ...ctx, mode, focusPillar })
     let messages = messagesFromRows(historyRows)
 
+    // Every keyword metric fetched in this session, so proposal cards show
+    // only numbers an API actually returned.
+    const metricsIndex = new Map()
+    for (const row of historyRows) {
+      if (row.role !== 'tool') continue
+      const c = row.content || {}
+      if (Array.isArray(c.endpoint_results)) {
+        for (const r of c.endpoint_results) mergeMetrics(metricsIndex, extractMetrics(r.name, r.result))
+      } else if (c.name) {
+        mergeMetrics(metricsIndex, extractMetrics(c.name, c.content)) // legacy rows
+      }
+    }
+
     let toolCallsThisTurn = 0
     let finalAssistantBlocks = []
     let streamedText = ''
+
+    const emit = (event, data) => {
+      if (!closed) sseWrite(res, event, data)
+    }
 
     const toolContext = {
       supabase,
       companyId,
       sessionId: session.id,
-      onInsight: (insight) => {
-        if (!closed) sseWrite(res, 'insight', insight)
-      },
-      onAudienceProposal: (payload) => {
-        if (!closed) sseWrite(res, 'audience_proposal', payload)
-      },
-      onPillarsProposal: (payload) => {
-        if (!closed) sseWrite(res, 'pillars_proposal', payload)
-      },
-      onClustersProposal: (payload) => {
-        if (!closed) sseWrite(res, 'clusters_proposal', payload)
-      },
+      anthropic,
+      metricsIndex,
+      coveragePillars: ctx.coveragePillars,
+      focusPillar,
+      proposalsThisTurn: 0,
+      emit,
+      onInsight: (insight) => emit('insight', insight),
     }
 
     while (!closed) {
@@ -212,112 +225,71 @@ export default async function handler(req, res) {
         sseWrite(res, 'text_delta', { text })
       })
 
-      stream.on('streamEvent', (event) => {
-        if (closed || event.type !== 'content_block_start') return
-        const b = event.content_block
-        if (b?.type !== 'tool_use') return
-        const provider = providerLabelForTool(b.name)
-        if (provider) {
-          sseWrite(res, 'tool_start', {
-            id: b.id,
-            name: b.name,
-            provider,
-          })
-        }
-      })
-
       const finalMessage = await stream.finalMessage()
       const blocks = finalMessage.content || []
       finalAssistantBlocks = blocks
 
       await insertMessage(supabase, session.id, 'assistant', blocks)
 
-      const stopReason = finalMessage.stop_reason
       const toolUses = blocks.filter((b) => b.type === 'tool_use')
-
-      if (stopReason !== 'tool_use' || toolUses.length === 0) {
-        break
-      }
+      if (finalMessage.stop_reason !== 'tool_use' || toolUses.length === 0) break
 
       const remaining = Math.max(0, MAX_TOOL_CALLS_PER_TURN - toolCallsThisTurn)
       const toRun = toolUses.slice(0, remaining)
       const skipped = toolUses.slice(remaining)
       const toolResults = []
 
-      if (skipped.length > 0 && !closed) {
-        sseWrite(res, 'status', {
-          message:
-            'Tool call limit reached for this turn; answering with available data.',
+      if (skipped.length > 0) {
+        emit('status', {
+          message: 'Tool call limit reached for this turn; answering with available data.',
         })
       }
 
       for (const toolUse of toRun) {
         toolCallsThisTurn += 1
-        const provider = providerLabelForTool(toolUse.name)
+        if (toolUse.name === 'request_data') {
+          emit('router_start', { id: toolUse.id, question: toolUse.input?.question || '' })
+        }
+
         let result
         try {
           result = await executeTool(toolUse.name, toolUse.input, toolContext)
         } catch (err) {
-          result = {
-            available: false,
-            reason: err?.message || 'Tool execution failed',
-          }
+          result = { available: false, reason: err?.message || 'Tool execution failed' }
         }
 
-        if (!closed && provider) {
-          sseWrite(res, 'tool_end', {
-            id: toolUse.id,
-            name: toolUse.name,
-            provider,
-            ok: result?.available !== false && !(result?.saved === false),
-          })
-        }
-
-        if (
-          !closed &&
-          toolUse.name !== 'save_insight' &&
-          toolUse.name !== 'propose_audience' &&
-          toolUse.name !== 'propose_pillars' &&
-          toolUse.name !== 'propose_clusters' &&
-          result
-        ) {
-          sseWrite(res, 'tool_data', {
-            id: toolUse.id,
-            name: toolUse.name,
-            provider,
-            result,
-          })
-        }
-
+        let forModel = result
         const stored = {
           type: 'tool_result',
           tool_use_id: toolUse.id,
           name: toolUse.name,
           content: result,
         }
+        if (result && typeof result === 'object' && '__forAdvisor' in result) {
+          forModel = result.__forAdvisor
+          stored.content = result.__forAdvisor
+          stored.endpoint_results = result.__endpointResults
+          stored.calls = result.__calls
+          emit('router_end', {
+            id: toolUse.id,
+            question: toolUse.input?.question || '',
+            calls: result.__calls,
+            note: result.__forAdvisor?.note,
+          })
+        }
+
         await insertMessage(supabase, session.id, 'tool', stored)
         toolResults.push({
           type: 'tool_result',
           tool_use_id: toolUse.id,
-          content: JSON.stringify(result),
+          content: typeof forModel === 'string' ? forModel : JSON.stringify(forModel),
         })
       }
 
       for (const toolUse of skipped) {
         const result = {
           available: false,
-          reason: 'Skipped: max 6 tool calls per turn',
-        }
-        if (!closed) {
-          const provider = providerLabelForTool(toolUse.name)
-          if (provider) {
-            sseWrite(res, 'tool_end', {
-              id: toolUse.id,
-              name: toolUse.name,
-              provider,
-              ok: false,
-            })
-          }
+          reason: `Skipped: max ${MAX_TOOL_CALLS_PER_TURN} tool calls per turn`,
         }
         await insertMessage(supabase, session.id, 'tool', {
           type: 'tool_result',

@@ -1,108 +1,72 @@
 export const PROMPTS = [
   {
-    id: 'seo_approach',
-    title: 'SEO Approach',
-    desc: 'Discuss the overall SEO approach and lock a plain-language audience.',
-    badge: 'Tool 1',
-    mode: 'seo_approach',
-    fields: [],
-    template: () =>
-      `Grab everything you know about this company from Company Intelligence and let's discuss the SEO approach. Use live data tools when they help. If a tool returns empty, unavailable, or errors, say so plainly — never invent metrics. When we agree, give a short approach brief and propose a 3-paragraph audience description (no keywords). Editing or removing a saved audience is done in Company Data, not here.`,
-  },
-  {
-    id: 'general_research',
-    title: 'General SEO Research',
-    desc: 'Open-ended discovery for a topic — landscape, demand, and where the wins are.',
+    id: 'ideation',
+    title: 'Idea check',
+    desc: 'Is there something here? Demand, trend, competition, path, verdict.',
+    badge: '1',
+    mode: 'ideation',
     fields: [
       {
         key: 'seed_topic',
-        label: 'Seed topic',
+        label: 'Topic or idea',
         ci: false,
         type: 'input',
-        placeholder: 'e.g. email marketing',
+        placeholder: 'e.g. going off-grid, growing a beard, first marathon',
       },
-      { key: 'domain', label: 'Domain', ci: true, type: 'input' },
-      { key: 'market', label: 'Target market', ci: true, type: 'input' },
-      { key: 'language', label: 'Language', ci: true, type: 'input' },
-      { key: 'goal', label: 'Business goal', ci: true, type: 'textarea' },
     ],
     template: (v) =>
-      `Run general SEO research for the topic ${v.seed_topic || '(topic)'} on ${v.domain || '(domain)'}, targeting ${v.market || 'United States'} in ${v.language || 'English'}.
-
-Goal: ${v.goal || '(not set)'}
-
-Map the demand landscape, classify search intent, and surface the highest-opportunity keywords we should build around. Flag anything that overlaps our existing pillars.`,
+      `Idea check: ${v.seed_topic || '(topic)'}.\n\nIs there something here? Give me demand, trend, what we're up against, a clear path in, and a go / cautious / pass verdict.`,
   },
   {
-    id: 'pillar_advisory',
-    title: 'Pillar Advisory',
-    desc: 'Land 4–8 high-volume pillar keywords from the target audience.',
-    badge: 'Tool 2',
-    mode: 'pillar_advisory',
-    requiresAudience: true,
+    id: 'core_keywords',
+    title: 'Core keywords',
+    desc: 'Lock 5–7 pillar keywords, one at a time. Approve each with a button.',
+    badge: '2',
+    mode: 'core_keywords',
     fields: [
       {
-        key: 'target_audience',
-        label: 'Target audience',
-        ci: true,
-        type: 'textarea',
-        readOnly: true,
+        key: 'seed_topic',
+        label: 'Space we are building in',
+        ci: false,
+        type: 'input',
+        placeholder: 'e.g. off-grid living',
       },
       {
         key: 'existing_pillars',
-        label: 'Existing pillars',
+        label: 'Already approved',
         ci: true,
         type: 'textarea',
         readOnly: true,
       },
     ],
     template: (v) =>
-      `Using this company's target audience and Company Intelligence, help us land 4–8 pillar keywords. High search volume is the priority; high competition is acceptable. Pull live volume and difficulty. If a tool returns empty, unavailable, or errors, say so plainly — never invent volumes or difficulty. Saves are add-only; editing or removing pillars is done in Company Data.
-
-Target audience:
-${v.target_audience || '(not set)'}
-
-Existing pillars (locked ones already have content and cannot be removed or renamed):
-${v.existing_pillars || '(none saved)'}`,
+      `Let's pick core keywords${v.seed_topic ? ` for ${v.seed_topic}` : ''}. Target 5–7. Propose them one at a time.${v.existing_pillars ? `\n\nAlready approved:\n${v.existing_pillars}` : ''}`,
   },
   {
-    id: 'cluster_advisory',
-    title: 'Cluster Advisory',
-    desc: 'Find 3–5 supporting keywords under one saved pillar.',
-    badge: 'Tool 3',
-    mode: 'cluster_advisory',
-    requiresMinPillars: 4,
+    id: 'clusters',
+    title: 'Clusters',
+    desc: 'Up to 5 cluster keywords per core keyword. Pick a core below.',
+    badge: '3',
+    mode: 'clusters',
+    requiresMinPillars: 1,
     fields: [
       {
-        key: 'target_audience',
-        label: 'Target audience',
-        ci: true,
-        type: 'textarea',
-        readOnly: true,
-      },
-      {
         key: 'parent_pillar',
-        label: 'Chosen pillar',
+        label: 'Core keyword',
         ci: true,
         type: 'input',
         readOnly: true,
       },
       {
         key: 'existing_supporting',
-        label: 'Existing supporting keywords',
+        label: 'Clusters already approved',
         ci: true,
         type: 'textarea',
         readOnly: true,
       },
     ],
     template: (v) =>
-      `Focus only on the pillar “${v.parent_pillar || '(pick a pillar)'}”. Using the target audience and Company Intelligence, find 3–5 strong supporting keywords for this pillar. Pull live volume and difficulty. If a tool returns empty, unavailable, or errors, say so plainly — never invent volumes or difficulty. Do not re-suggest keywords already under it. Saves are add-only; editing or removing clusters is done in Company Data.
-
-Target audience:
-${v.target_audience || '(not set)'}
-
-Existing supporting keywords (locked ones already have content and cannot be removed or renamed):
-${v.existing_supporting || '(none yet)'}`,
+      `Clusters for "${v.parent_pillar || '(pick a core keyword)'}". Target 5. Propose them one at a time.${v.existing_supporting ? `\n\nAlready approved:\n${v.existing_supporting}` : ''}`,
   },
 ]
 
@@ -149,6 +113,10 @@ export function defaultPromptValues(prompt, ci) {
 }
 
 export const KEYWORD_STAR_TOOLS = new Set([
+  'dataforseo_keyword_suggestions',
+  'dataforseo_related_keywords',
+  'dataforseo_keyword_difficulty',
+  'semrush_keyword_difficulty',
   'semrush_keyword_research',
   'semrush_organic_research',
   'dataforseo_keyword_data',
@@ -158,6 +126,7 @@ export const KEYWORD_STAR_TOOLS = new Set([
 export const NUMERIC_SORT_COLUMNS = new Set([
   'searchVolume',
   'keywordDifficulty',
+  'kd',
   'traffic',
   'position',
   'cpc',

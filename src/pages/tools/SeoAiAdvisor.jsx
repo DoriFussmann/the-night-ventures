@@ -39,6 +39,7 @@ import { cn } from '@/lib/utils'
 import {
   deleteSession,
   getComposerFields,
+  getLiveHealth,
   getSession,
   listSessions,
   messagesToUi,
@@ -61,6 +62,12 @@ import DataPanel from './seoAdvisor/DataPanel'
 import PromptComposer from './seoAdvisor/PromptComposer'
 import Shortlist from './seoAdvisor/Shortlist'
 import PushToCiModal from './seoAdvisor/PushToCiModal'
+import {
+  ApiHealthIntro,
+  IdeationVerdictCard,
+  KeywordProposalCard,
+  RouterTrace,
+} from './seoAdvisor/AdvisorCards'
 
 function formatSessionLabel(session) {
   if (session?.title) return session.title
@@ -121,56 +128,33 @@ function ToolStatusBar({ activeTools }) {
 }
 
 const ADVISOR_STEPS = [
-  {
-    mode: 'seo_approach',
-    label: 'SEO Approach',
-    lockedHint: '',
-  },
-  {
-    mode: 'pillar_advisory',
-    label: 'Pillars',
-    lockedHint: 'Complete SEO Approach (audience) first.',
-  },
-  {
-    mode: 'cluster_advisory',
-    label: 'Clusters',
-    lockedHint: 'Add at least 4 pillars first.',
-  },
+  { mode: 'ideation', label: 'Idea check' },
+  { mode: 'core_keywords', label: 'Core keywords' },
+  { mode: 'clusters', label: 'Clusters', lockedHint: 'Approve a core keyword first' },
 ]
 
-function stepStatus(mode, { hasAudience, pillarCount, hasCluster }) {
-  if (mode === 'seo_approach') return hasAudience ? 'done' : 'available'
-  if (mode === 'pillar_advisory') {
-    if (!hasAudience) return 'locked'
-    return pillarCount >= 4 ? 'done' : 'available'
+function stepMeta(mode, { pillarCount, clusterCount }) {
+  if (mode === 'ideation') return { status: 'available', note: '' }
+  if (mode === 'core_keywords') {
+    return {
+      status: pillarCount >= 5 ? 'done' : 'available',
+      note: `${pillarCount}/5–7`,
+    }
   }
-  if (mode === 'cluster_advisory') {
-    if (pillarCount < 4) return 'locked'
-    return hasCluster ? 'done' : 'available'
+  if (pillarCount < 1) return { status: 'locked', note: 'approve a core keyword first' }
+  const target = pillarCount * 5
+  return {
+    status: clusterCount >= target ? 'done' : 'available',
+    note: `${clusterCount}/${target}`,
   }
-  return 'locked'
 }
 
-function AdvisorStepper({
-  activeMode,
-  hasAudience,
-  pillarCount = 0,
-  hasCluster = false,
-  disabled,
-  onSelect,
-}) {
+function AdvisorStepper({ activeMode, pillarCount = 0, clusterCount = 0, disabled, onSelect }) {
   return (
     <div className="border-b border-border px-4 py-2">
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
-        Advisor
-      </p>
-      <ol className="mt-1.5 flex flex-wrap items-center gap-1.5">
+      <ol className="flex flex-wrap items-center gap-1.5">
         {ADVISOR_STEPS.map((step, index) => {
-          const status = stepStatus(step.mode, {
-            hasAudience,
-            pillarCount,
-            hasCluster,
-          })
+          const { status, note } = stepMeta(step.mode, { pillarCount, clusterCount })
           const active = activeMode === step.mode
           const clickable = status !== 'locked' && !disabled
           return (
@@ -185,25 +169,19 @@ function AdvisorStepper({
                 disabled={!clickable}
                 title={status === 'locked' ? step.lockedHint : undefined}
                 onClick={() => onSelect(step.mode)}
+                aria-current={active ? 'step' : undefined}
                 className={cn(
-                  'rounded-md border px-2 py-1 text-[11px] transition-colors',
+                  'rounded-md border px-2 py-1 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
                   status === 'locked' &&
                     'cursor-not-allowed border-dashed border-border text-muted-foreground',
-                  status === 'available' &&
-                    'border-border bg-card text-foreground hover:bg-accent/60',
+                  status === 'available' && 'border-border bg-card text-foreground hover:bg-accent/60',
                   status === 'done' &&
                     'border-emerald-500/40 bg-emerald-500/10 text-foreground hover:bg-emerald-500/15',
-                  active && 'ring-1 ring-foreground/30'
+                  active && 'ring-1 ring-foreground/40'
                 )}
               >
-                {step.label}
-                <span className="ml-1 text-[10px] text-muted-foreground">
-                  {status === 'locked'
-                    ? `· ${step.lockedHint}`
-                    : status === 'done'
-                      ? '· done'
-                      : '· available'}
-                </span>
+                {index + 1}. {step.label}
+                {note && <span className="ml-1 text-[10px] text-muted-foreground">{note}</span>}
               </button>
             </li>
           )
@@ -492,11 +470,11 @@ function ClusterPillarPicker({ pillars = [], selectedSlug, disabled, onSelect })
   return (
     <div className="space-y-1.5 border-t border-border px-2 py-2">
       <p className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
-        Work on a pillar
+        Core keyword to cluster
       </p>
       {pillars.length === 0 ? (
         <p className="px-1 py-2 text-xs text-muted-foreground">
-          Save at least 4 pillars first.
+          Approve a core keyword first.
         </p>
       ) : (
         <ul className="space-y-1">
@@ -525,7 +503,7 @@ function ClusterPillarPicker({ pillars = [], selectedSlug, disabled, onSelect })
                     {pillar.keyword}
                   </span>
                   <span className="shrink-0 text-[10px] text-muted-foreground">
-                    {supporting.length} supporting
+                    {supporting.length}/5
                   </span>
                 </button>
               </li>
@@ -710,7 +688,7 @@ function PromptCards({ onPick, disabled, hasAudience, pillarCount = 0 }) {
         Prompts
       </p>
       {PROMPTS.map((prompt) => {
-        const needsAudience = Boolean(prompt.requiresAudience && !hasAudience)
+        const needsAudience = false
         const needsPillars = Boolean(
           prompt.requiresMinPillars && pillarCount < prompt.requiresMinPillars
         )
@@ -733,7 +711,7 @@ function PromptCards({ onPick, disabled, hasAudience, pillarCount = 0 }) {
               {needsAudience
                 ? 'Complete SEO Approach (audience) first.'
                 : needsPillars
-                  ? 'Add at least 4 pillars first.'
+                  ? 'Approve a core keyword first.'
                   : prompt.desc}
             </p>
           </button>
@@ -811,7 +789,11 @@ export default function SeoAiAdvisor() {
   const [activeTools, setActiveTools] = useState([])
   const [insightBusyId, setInsightBusyId] = useState(null)
   const [providerHealth, setProviderHealth] = useState(null)
-  const [advisorMode, setAdvisorMode] = useState('seo_approach')
+  const [advisorMode, setAdvisorMode] = useState('ideation')
+  const [health, setHealth] = useState(null)
+  const [healthLoading, setHealthLoading] = useState(false)
+  const [healthError, setHealthError] = useState('')
+  const currentAsstIdRef = useRef(null)
   const [focusPillar, setFocusPillar] = useState(null)
   const chatScrollRef = useRef(null)
   const abortRef = useRef(null)
@@ -830,6 +812,22 @@ export default function SeoAiAdvisor() {
       return next || prev
     })
   }, [ciFields])
+
+  const loadHealth = useCallback(async (force = false) => {
+    setHealthLoading(true)
+    setHealthError('')
+    try {
+      setHealth(await getLiveHealth({ force }))
+    } catch (err) {
+      setHealthError(err.message || 'Health check failed')
+    } finally {
+      setHealthLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadHealth()
+  }, [loadHealth])
 
   const refreshSessions = useCallback(async () => {
     if (!companyId) return
@@ -923,11 +921,13 @@ export default function SeoAiAdvisor() {
     setError('')
   }
 
-  async function handleSend(overrideText) {
+  async function handleSend(overrideText, opts = {}) {
     const text = String(overrideText ?? input).trim()
     if (!text || !companyId || sending) return
-    if (advisorMode === 'cluster_advisory' && !focusPillar?.slug) {
-      setError('Pick a pillar first.')
+    const mode = opts.mode ?? advisorMode
+    const pillar = opts.pillar ?? focusPillar
+    if (mode === 'clusters' && !pillar?.slug) {
+      setError('Pick a core keyword first.')
       return
     }
 
@@ -938,6 +938,7 @@ export default function SeoAiAdvisor() {
 
     const tempUserId = `local-user-${Date.now()}`
     const tempAsstId = `local-asst-${Date.now()}`
+    currentAsstIdRef.current = tempAsstId
     setMessages((prev) => [
       ...prev,
       { id: tempUserId, role: 'user', text },
@@ -947,14 +948,36 @@ export default function SeoAiAdvisor() {
     const controller = new AbortController()
     abortRef.current = controller
 
+    // Text after a data call or card goes into a fresh bubble below it.
+    const appendText = (chunk) => {
+      setMessages((prev) => {
+        const id = currentAsstIdRef.current
+        if (id && prev.some((m) => m.id === id)) {
+          return prev.map((m) => (m.id === id ? { ...m, text: (m.text || '') + chunk } : m))
+        }
+        const nextId = `local-asst-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+        currentAsstIdRef.current = nextId
+        return [...prev, { id: nextId, role: 'assistant', text: chunk, streaming: true }]
+      })
+    }
+    const breakBubble = () => {
+      currentAsstIdRef.current = null
+    }
+    const updateOpenRouter = (fn) =>
+      setMessages((prev) => {
+        const idx = [...prev].reverse().findIndex((m) => m.role === 'router' && !m.done)
+        if (idx === -1) return prev
+        const at = prev.length - 1 - idx
+        return prev.map((m, i) => (i === at ? fn(m) : m))
+      })
+
     try {
       await streamChat({
         companyId,
         sessionId,
         message: text,
-        mode: advisorMode,
-        pillarSlug:
-          advisorMode === 'cluster_advisory' ? focusPillar?.slug : undefined,
+        mode,
+        pillarSlug: mode === 'clusters' ? pillar?.slug : undefined,
         signal: controller.signal,
         onEvent: (event, data) => {
           if (event === 'session') {
@@ -968,78 +991,61 @@ export default function SeoAiAdvisor() {
               prev.map((s) => (s.id === sid ? { ...s, title: data.title } : s))
             )
           } else if (event === 'text_delta') {
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === tempAsstId
-                  ? { ...m, text: (m.text || '') + (data.text || '') }
-                  : m
-              )
-            )
+            appendText(data.text || '')
+          } else if (event === 'router_start') {
+            breakBubble()
+            setMessages((prev) => [
+              ...prev,
+              { id: `router-${data.id}`, role: 'router', question: data.question, endpoints: [], done: false },
+            ])
+          } else if (event === 'router_end') {
+            updateOpenRouter((m) => ({ ...m, done: true, calls: data.calls || [] }))
           } else if (event === 'tool_start') {
             setActiveTools((prev) => [
               ...prev.filter((t) => t.id !== data.id),
               { id: data.id, name: data.name, provider: data.provider },
             ])
+            updateOpenRouter((m) => ({
+              ...m,
+              endpoints: [
+                ...(m.endpoints || []),
+                { id: data.id, name: data.name, label: data.label, provider: data.provider, state: 'running' },
+              ],
+            }))
           } else if (event === 'tool_end') {
             setActiveTools((prev) => prev.filter((t) => t.id !== data.id))
+            updateOpenRouter((m) => ({
+              ...m,
+              endpoints: (m.endpoints || []).map((e) =>
+                e.id === data.id ? { ...e, state: data.ok ? 'ok' : 'fail' } : e
+              ),
+            }))
           } else if (event === 'tool_data') {
-            const card = toolResultToDataCard(data.name, data.result, {
-              id: data.id,
-            })
+            const card = toolResultToDataCard(data.name, data.result, { id: data.id })
             if (card) {
-              setDataCards((prev) => {
-                if (prev.some((c) => c.id === card.id)) return prev
-                return [...prev, card]
-              })
+              setDataCards((prev) => (prev.some((c) => c.id === card.id) ? prev : [...prev, card]))
             }
-          } else if (event === 'audience_proposal') {
+          } else if (event === 'ideation_verdict') {
+            breakBubble()
             setMessages((prev) => [
               ...prev,
-              {
-                id: `audience-${Date.now()}`,
-                role: 'audience_proposal',
-                brief: data.brief || '',
-                audience_text: data.audience_text || '',
-                confirmed: false,
-              },
+              { id: `verdict-${Date.now()}`, role: 'ideation_verdict', ...data },
             ])
-          } else if (event === 'pillars_proposal') {
+          } else if (event === 'keyword_proposal') {
+            breakBubble()
             setMessages((prev) => [
               ...prev,
-              {
-                id: `pillars-${Date.now()}`,
-                role: 'pillars_proposal',
-                rationale: data.rationale || '',
-                pillars: Array.isArray(data.pillars) ? data.pillars : [],
-                confirmed: false,
-              },
-            ])
-          } else if (event === 'clusters_proposal') {
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: `clusters-${Date.now()}`,
-                role: 'clusters_proposal',
-                pillar_slug: data.pillar_slug || '',
-                pillar_keyword: data.pillar_keyword || '',
-                rationale: data.rationale || '',
-                clusters: Array.isArray(data.clusters) ? data.clusters : [],
-                confirmed: false,
-              },
+              { id: `kw-${Date.now()}`, role: 'keyword_proposal', status: 'pending', ...data },
             ])
           } else if (event === 'insight') {
-            setInsights((prev) => {
-              if (prev.some((i) => i.id === data.id)) return prev
-              return [...prev, data]
-            })
+            setInsights((prev) => (prev.some((i) => i.id === data.id) ? prev : [...prev, data]))
           } else if (event === 'error') {
             setError(data.error || 'Chat error')
           } else if (event === 'done') {
-            if (data.providerHealth) setProviderHealth(data.providerHealth)
             setMessages((prev) =>
-              prev.map((m) =>
-                m.id === tempAsstId ? { ...m, streaming: false } : m
-              )
+              prev
+                .map((m) => (m.streaming ? { ...m, streaming: false } : m))
+                .filter((m) => m.role !== 'assistant' || (m.text || '').trim())
             )
           }
         },
@@ -1049,14 +1055,111 @@ export default function SeoAiAdvisor() {
       if (err.name !== 'AbortError') {
         setError(err.message || 'Chat failed')
         setMessages((prev) =>
-          prev.filter((m) => m.id !== tempAsstId || (m.text && m.text.trim()))
+          prev.filter((m) => m.role !== 'assistant' || !m.streaming || (m.text && m.text.trim()))
         )
       }
     } finally {
       setActiveTools([])
       setSending(false)
       abortRef.current = null
+      currentAsstIdRef.current = null
     }
+  }
+
+  async function refreshCi() {
+    try {
+      const fields = await getComposerFields(companyId)
+      setCiFields(fields)
+      return fields
+    } catch {
+      return null
+    }
+  }
+
+  function setProposalStatus(card, status) {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.role === 'keyword_proposal' && m.id === card.id ? { ...m, status } : m
+      )
+    )
+  }
+
+  async function handleApproveKeyword(card) {
+    try {
+      if (card.kind === 'core') {
+        const data = await savePillars({
+          companyId,
+          pillars: [
+            { keyword: card.keyword, search_volume: card.search_volume, difficulty: card.difficulty },
+          ],
+        })
+        setProposalStatus(card, 'approved')
+        await refreshCi()
+        const n = data.count ?? (card.approvedCount || 0) + 1
+        toast({ title: `Core keyword saved (${n})` })
+        if (n >= 7) {
+          toast({ title: 'Core set complete', description: 'Move to Clusters when ready.' })
+          return
+        }
+        const next =
+          n >= 5
+            ? `Approved “${card.keyword}” (${n} of 5–7). Propose another only if there is a clearly distinct, strong one; otherwise say the core set is done.`
+            : `Approved “${card.keyword}” (${n} of 5–7). Next one.`
+        await handleSend(next, { mode: 'core_keywords' })
+        return
+      }
+
+      const data = await saveClusters({
+        companyId,
+        pillarSlug: card.core_slug,
+        clusters: [
+          { keyword: card.keyword, search_volume: card.search_volume, difficulty: card.difficulty },
+        ],
+      })
+      setProposalStatus(card, 'approved')
+      const fields = await refreshCi()
+      const pillar =
+        (fields?.pillars || []).find((p) => p.slug === card.core_slug) || focusPillar
+      if (pillar) setFocusPillar(pillar)
+      const n = data.supportingCount ?? (card.approvedCount || 0) + 1
+      toast({ title: `Cluster saved for ${card.core_keyword} (${n}/5)` })
+      if (n >= 5) {
+        const nextCore = (fields?.pillars || [])
+          .filter((p) => (p.supporting || []).length < 5)
+          .sort((a, b) => (a.supporting || []).length - (b.supporting || []).length)[0]
+        toast({
+          title: `${card.core_keyword} has 5 clusters`,
+          description: nextCore ? `Next up: ${nextCore.keyword}` : 'Every core keyword has 5 clusters.',
+        })
+        return
+      }
+      await handleSend(`Approved “${card.keyword}” (${n} of 5 for ${card.core_keyword}). Next one.`, {
+        mode: 'clusters',
+        pillar,
+      })
+    } catch (err) {
+      setError(err.message || 'Failed to save keyword')
+    }
+  }
+
+  async function handleSkipKeyword(card) {
+    setProposalStatus(card, 'skipped')
+    const pillar =
+      card.kind === 'cluster'
+        ? coveragePillars.find((p) => p.slug === card.core_slug) || focusPillar
+        : undefined
+    await handleSend(`Skip “${card.keyword}”. Propose a different one.`, {
+      mode: card.kind === 'core' ? 'core_keywords' : 'clusters',
+      pillar,
+    })
+  }
+
+  async function handleVerdictContinue(card) {
+    setAdvisorMode('core_keywords')
+    await handleSend(
+      `Let's pick core keywords for ${card.topic}. Target 5–7, one at a time.`,
+      { mode: 'core_keywords' }
+    )
   }
 
   async function handleSaveAudience({ audience_text, override }) {
@@ -1272,25 +1375,19 @@ export default function SeoAiAdvisor() {
     toast({ title: 'Saved' })
   }
 
-  const deadProviders = providerHealth
-    ? Object.entries(providerHealth)
-        .filter(([, v]) => v?.ok === false)
-        .map(([k]) => k)
-    : []
-
   const coveragePillars = Array.isArray(ciFields?.pillars) ? ciFields.pillars : []
   const pillarCount = coveragePillars.length
   const hasAudience = Boolean(String(ciFields?.target_audience || '').trim())
-  const hasCluster = coveragePillars.some(
-    (pillar) =>
-      Array.isArray(pillar?.supporting) && pillar.supporting.length > 0
+  const clusterCount = coveragePillars.reduce(
+    (n, pillar) => n + (Array.isArray(pillar?.supporting) ? pillar.supporting.length : 0),
+    0
   )
-  const clusterPrompt = PROMPTS.find((prompt) => prompt.id === 'cluster_advisory')
+  const clusterPrompt = PROMPTS.find((prompt) => prompt.id === 'clusters')
 
   function handlePickPrompt(prompt) {
     setAdvisorMode(prompt.mode || '')
     setComposerPrompt(prompt)
-    if (prompt.id === 'cluster_advisory') {
+    if (prompt.id === 'clusters') {
       if (focusPillar) setComposerOpen(true)
       return
     }
@@ -1305,7 +1402,7 @@ export default function SeoAiAdvisor() {
 
   function handlePickClusterPillar(pillar) {
     setFocusPillar(pillar)
-    setAdvisorMode('cluster_advisory')
+    setAdvisorMode('clusters')
     setComposerPrompt(clusterPrompt)
     setComposerOpen(true)
   }
@@ -1340,10 +1437,34 @@ export default function SeoAiAdvisor() {
             {messages.length === 0 && !sending && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Bot className="h-4 w-4" />
-                Pick a prompt on the left, or type your own.
+                Ask anything, or start with an idea check: “what do you think about a site on going off-grid?”
               </div>
             )}
             {messages.map((m) => {
+              if (m.role === 'router') {
+                return <RouterTrace key={m.id} item={m} />
+              }
+              if (m.role === 'ideation_verdict') {
+                return (
+                  <IdeationVerdictCard
+                    key={m.id}
+                    card={m}
+                    disabled={sending}
+                    onContinue={handleVerdictContinue}
+                  />
+                )
+              }
+              if (m.role === 'keyword_proposal') {
+                return (
+                  <KeywordProposalCard
+                    key={m.id}
+                    card={m}
+                    disabled={sending}
+                    onApprove={handleApproveKeyword}
+                    onSkip={handleSkipKeyword}
+                  />
+                )
+              }
               if (m.role === 'audience_proposal') {
                 return (
                   <AudienceProposalCard
@@ -1414,7 +1535,13 @@ export default function SeoAiAdvisor() {
           <Textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask about pillars, competitors, traffic, or technical SEO…"
+            placeholder={
+              advisorMode === 'clusters'
+                ? `Clusters for ${focusPillar?.keyword || 'a core keyword'}…`
+                : advisorMode === 'core_keywords'
+                  ? 'Core keywords: ask for the next one, or steer…'
+                  : 'What do you think about a site on…'
+            }
             className="min-h-[72px] flex-1 resize-none text-sm"
             disabled={sending}
             onKeyDown={(e) => {
@@ -1501,8 +1628,7 @@ export default function SeoAiAdvisor() {
             SEO AI Advisor
           </h1>
           <p className="text-xs text-muted-foreground">
-            Company-scoped research chat with Semrush, DataForSEO, and Moz
-            {sessionSpend > 0 ? ` · ~${sessionSpend} credits this topic` : ''}
+            Ask anything. When numbers would sharpen the answer, a data agent fetches them from Semrush, DataForSEO and Moz.
           </p>
         </div>
         <Button
@@ -1516,11 +1642,17 @@ export default function SeoAiAdvisor() {
         </Button>
       </header>
 
+      <ApiHealthIntro
+        health={health}
+        loading={healthLoading}
+        error={healthError}
+        onRecheck={() => loadHealth(true)}
+      />
+
       <AdvisorStepper
         activeMode={advisorMode}
-        hasAudience={hasAudience}
         pillarCount={pillarCount}
-        hasCluster={hasCluster}
+        clusterCount={clusterCount}
         disabled={sending}
         onSelect={handleSelectStep}
       />
@@ -1531,12 +1663,6 @@ export default function SeoAiAdvisor() {
         </div>
       )}
 
-      {deadProviders.length > 0 && (
-        <div className="border-b border-amber-500/30 bg-amber-500/5 px-4 py-1.5 text-[11px] text-amber-900">
-          Provider degraded: {deadProviders.join(', ')} (last call failed — chat
-          will skip or mark unavailable)
-        </div>
-      )}
 
       <div className="hidden min-h-0 flex-1 overflow-hidden lg:flex">
         <ResizablePanelGroup direction="horizontal">
@@ -1550,7 +1676,7 @@ export default function SeoAiAdvisor() {
                     pillarCount={pillarCount}
                     onPick={handlePickPrompt}
                   />
-                  {advisorMode === 'cluster_advisory' && (
+                  {advisorMode === 'clusters' && (
                     <ClusterPillarPicker
                       pillars={coveragePillars}
                       selectedSlug={focusPillar?.slug || ''}
@@ -1610,7 +1736,7 @@ export default function SeoAiAdvisor() {
           pillarCount={pillarCount}
           onPick={handlePickPrompt}
         />
-        {advisorMode === 'cluster_advisory' && (
+        {advisorMode === 'clusters' && (
           <ClusterPillarPicker
             pillars={coveragePillars}
             selectedSlug={focusPillar?.slug || ''}
@@ -1645,6 +1771,10 @@ export default function SeoAiAdvisor() {
           onOpen={openSession}
         />
       </div>
+
+      <footer className="shrink-0 border-t border-border px-4 py-1 text-[11px] text-muted-foreground">
+        How this works, and how the endpoint map stays current: <code>docs/SEO_ADVISOR.md</code>
+      </footer>
 
       <PromptComposer
         prompt={composerPrompt}

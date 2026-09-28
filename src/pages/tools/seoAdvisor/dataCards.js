@@ -12,6 +12,10 @@ const TOOL_TITLES = {
   moz_domain_metrics: 'Domain metrics',
   moz_keyword_metrics: 'Keyword metrics',
   moz_link_data: 'Linking domains',
+  dataforseo_keyword_suggestions: 'Keyword ideas',
+  dataforseo_related_keywords: 'Related keywords',
+  dataforseo_keyword_difficulty: 'Keyword difficulty',
+  semrush_keyword_difficulty: 'Keyword difficulty',
 }
 
 function providerFromTool(name) {
@@ -62,7 +66,7 @@ function rowsFromArray(items, columnOrder) {
  */
 export function toolResultToDataCard(toolName, result, { id, createdAt } = {}) {
   if (!result || typeof result !== 'object') return null
-  if (toolName === 'save_insight') return null
+  if (!String(toolName || '').match(/^(semrush|dataforseo|moz)_/)) return null
   if (result.available === false) {
     return {
       id: id || `${toolName}-${Date.now()}`,
@@ -240,6 +244,16 @@ export function dataCardsFromMessages(messages) {
   for (const row of messages || []) {
     if (row.role !== 'tool') continue
     const content = row.content || {}
+    if (Array.isArray(content.endpoint_results)) {
+      for (const r of content.endpoint_results) {
+        const card = toolResultToDataCard(r.name, r.result, {
+          id: `${row.id}-${r.id}`,
+          createdAt: row.created_at,
+        })
+        if (card) cards.push(card)
+      }
+      continue
+    }
     const toolName = content.name || content.tool_name
     const result = content.content ?? content
     const card = toolResultToDataCard(toolName, result, {
@@ -278,19 +292,8 @@ export function shortlistItemFromRow(card, row) {
   const search_volume = parseFormattedNumber(
     row.searchVolume ?? row.search_volume ?? row.volume
   )
-  let difficulty = parseFormattedNumber(
-    row.keywordDifficulty ?? row.difficulty
-  )
-  if (difficulty == null) {
-    const competitionIndex = parseFormattedNumber(row.competitionIndex)
-    if (competitionIndex != null) difficulty = competitionIndex
-    else {
-      const competition = parseFormattedNumber(row.competition)
-      if (competition != null) {
-        difficulty = competition <= 1 ? Math.round(competition * 100) : competition
-      }
-    }
-  }
+  // Organic KD only. Ads competition / competitionIndex is a different metric.
+  const difficulty = parseFormattedNumber(row.keywordDifficulty ?? row.difficulty)
   const intent = row.intent ? String(row.intent) : undefined
   return {
     keyword,

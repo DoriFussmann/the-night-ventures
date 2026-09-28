@@ -118,10 +118,112 @@ export async function streamChat({
   }
 }
 
+export async function getLiveHealth({ force = false } = {}) {
+  const headers = await authHeaders()
+  const res = await fetch(
+    `/api/seo-advisor-sessions?health=1${force ? '&force=1' : ''}`,
+    { headers }
+  )
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || 'Failed to check APIs')
+  return data
+}
+
+const CARD_TOOLS = new Set([
+  'ideation_verdict',
+  'propose_core_keyword',
+  'propose_cluster_keyword',
+])
+
 /** Convert stored messages into UI chat bubbles (text + tool markers). */
 export function messagesToUi(rows, opts = {}) {
   const ui = []
-  for (const row of rows || []) {
+  const list = rows || []
+  const toolRows = new Map()
+  for (const row of list) {
+    if (row.role === 'tool' && row.content?.tool_use_id) {
+      toolRows.set(row.content.tool_use_id, row.content)
+    }
+  }
+  const savedCore = new Set(
+    (opts.pillars || []).map((p) => slugifyKeyword(p.slug || p.keyword))
+  )
+  const savedCluster = (coreSlug, kw) => {
+    const pillar = (opts.pillars || []).find(
+      (p) => slugifyKeyword(p.slug || p.keyword) === slugifyKeyword(coreSlug)
+    )
+    return (pillar?.supporting || []).some(
+      (s) => slugifyKeyword(s.slug || s.keyword) === slugifyKeyword(kw)
+    )
+  }
+  const laterUserIndex = (i) =>
+    list.findIndex((r, j) => j > i && r.role === 'user')
+
+  for (let i = 0; i < list.length; i += 1) {
+    const row = list[i]
+    if (row.role === 'tool' && row.content?.name === 'request_data') {
+      const c = row.content
+      ui.push({
+        id: `${row.id}-router`,
+        role: 'router',
+        question: c.content?.question || '',
+        calls: Array.isArray(c.calls) ? c.calls : [],
+        done: true,
+      })
+      continue
+    }
+    if (row.role === 'assistant' && Array.isArray(row.content)) {
+      const text = row.content
+        .filter((b) => b.type === 'text' && b.text)
+        .map((b) => b.text)
+        .join('\n')
+      if (text) ui.push({ id: row.id, role: 'assistant', text })
+      for (const b of row.content) {
+        if (b.type !== 'tool_use' || !CARD_TOOLS.has(b.name)) continue
+        const result = toolRows.get(b.id)?.content
+        const card = result && typeof result === 'object' ? result.card : null
+        if (!card) continue
+        if (b.name === 'ideation_verdict') {
+          ui.push({ id: `${row.id}-${b.id}`, role: 'ideation_verdict', ...card })
+          continue
+        }
+        const saved =
+          card.kind === 'core'
+            ? savedCore.has(slugifyKeyword(card.keyword))
+            : savedCluster(card.core_slug || card.core_keyword, card.keyword)
+        const decided = laterUserIndex(i) !== -1
+        ui.push({
+          id: `${row.id}-${b.id}`,
+          role: 'keyword_proposal',
+          ...card,
+          status: saved ? 'approved' : decided ? 'skipped' : 'pending',
+        })
+      }
+      // Legacy v2 proposals fall through to the old mapper below.
+      if (
+        !row.content.some(
+          (b) =>
+            b.type === 'tool_use' &&
+            ['propose_audience', 'propose_pillars', 'propose_clusters'].includes(b.name)
+        )
+      ) {
+        continue
+      }
+      ui.push(...legacyAssistantToUi(row, opts))
+      continue
+    }
+    ui.push(...legacyRowToUi(row, opts))
+  }
+  return ui
+}
+
+function legacyAssistantToUi(row, opts) {
+  return legacyRowToUi(row, opts).filter((m) => m.role !== 'assistant')
+}
+
+function legacyRowToUi(rowIn, opts = {}) {
+  const ui = []
+  for (const row of [rowIn]) {
     if (row.role === 'user') {
       const text =
         typeof row.content === 'string'
