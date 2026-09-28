@@ -10,16 +10,16 @@ const ALLOWED = new Set([
 const DROP_WITH_CONTENT = new Set(["SCRIPT", "STYLE", "IFRAME", "OBJECT", "EMBED", "HEAD", "TITLE", "META", "LINK"]);
 // Inline styles SmartLead's editor uses for bold/italic/underline.
 const STYLE_KEEP = /^(font-weight|font-style|text-decoration|text-align)$/i;
-const VAR_RE = /\{\{\s*[a-zA-Z0-9_]+\s*\}\}/g;
+const VAR_RE = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g;
 
-function cleanNode(node, doc) {
+function cleanNode(node, doc, opts) {
   for (const child of [...node.childNodes]) {
     if (child.nodeType === 8) {
       child.remove(); // comment
       continue;
     }
     if (child.nodeType === 3) {
-      highlightVars(child, doc);
+      highlightVars(child, doc, opts);
       continue;
     }
     if (child.nodeType !== 1) {
@@ -31,7 +31,7 @@ function cleanNode(node, doc) {
       child.remove();
       continue;
     }
-    cleanNode(child, doc);
+    cleanNode(child, doc, opts);
     if (!ALLOWED.has(tag)) {
       child.replaceWith(...child.childNodes); // unwrap, keep text
       continue;
@@ -59,7 +59,9 @@ function cleanNode(node, doc) {
   }
 }
 
-function highlightVars(textNode, doc) {
+// Without opts.resolve: wrap {{vars}} for highlighting. With it: substitute
+// the lead's value, or mark the variable as missing.
+function highlightVars(textNode, doc, opts) {
   const text = textNode.nodeValue;
   if (!VAR_RE.test(text)) return;
   VAR_RE.lastIndex = 0;
@@ -67,17 +69,24 @@ function highlightVars(textNode, doc) {
   let last = 0;
   for (const m of text.matchAll(VAR_RE)) {
     if (m.index > last) frag.append(text.slice(last, m.index));
-    const mark = doc.createElement("span");
-    mark.setAttribute("data-var", "");
-    mark.textContent = m[0];
-    frag.append(mark);
+    const value = opts?.resolve ? opts.resolve(m[1]) : null;
+    if (value) {
+      frag.append(value);
+    } else {
+      const mark = doc.createElement("span");
+      mark.setAttribute(opts?.resolve ? "data-missing" : "data-var", "");
+      mark.textContent = opts?.resolve ? `[${m[1]}]` : m[0];
+      frag.append(mark);
+    }
     last = m.index + m[0].length;
   }
   if (last < text.length) frag.append(text.slice(last));
   textNode.replaceWith(frag);
 }
 
-export function toSafeHtml(html) {
+// opts.resolve(name) → value merges a lead into the copy (preview / test).
+// opts.forEmail → inline styles instead of classes (email clients).
+export function toSafeHtml(html, opts = {}) {
   const raw = String(html || "");
   if (!raw.trim()) return "";
   // Plain text (no tags): keep line breaks.
@@ -86,11 +95,16 @@ export function toSafeHtml(html) {
     : raw.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>");
   const doc = new DOMParser().parseFromString(`<div>${source}</div>`, "text/html");
   const root = doc.body.firstElementChild;
-  cleanNode(root, doc);
-  // Highlight markers are added after attribute cleaning, so re-apply the class.
+  cleanNode(root, doc, opts);
+  // Markers are added after attribute cleaning, so apply classes/styles here.
   for (const el of root.querySelectorAll("[data-var]")) {
     el.removeAttribute("data-var");
     el.setAttribute("class", "tnv-var");
+  }
+  for (const el of root.querySelectorAll("[data-missing]")) {
+    el.removeAttribute("data-missing");
+    if (opts.forEmail) el.setAttribute("style", "background:#fee2e2;color:#991b1b;padding:0 2px");
+    else el.setAttribute("class", "tnv-missing");
   }
   return root.innerHTML;
 }

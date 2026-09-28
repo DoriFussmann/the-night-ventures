@@ -70,3 +70,51 @@ export function leadsMissingVariables(sequences, leads) {
     .filter(Boolean);
   return (leads || []).filter((l) => fields.some((f) => !String(l[f] ?? "").trim()));
 }
+
+// ---- Preview helpers -------------------------------------------------------
+
+export const SAMPLE_LEAD = {
+  first_name: "Jane",
+  last_name: "Doe",
+  email: "jane@acme.com",
+  job_title: "Head of Operations",
+  headline: "Operations leader at Acme",
+  company_name: "Acme Inc",
+  company_domain: "acme.com",
+  company_industry: "Software",
+  company_employee_count: "51-200",
+  company_revenue: "$10M-$50M",
+  company_state: "California",
+  linkedin_url: "linkedin.com/in/janedoe",
+};
+
+// Value a {{variable}} resolves to for this lead ("" when missing/unknown).
+export function resolveVar(name, lead) {
+  const field = VARIABLE_MAP[String(name).toLowerCase()];
+  return field ? String(lead?.[field] ?? "").trim() : "";
+}
+
+// Plain-text merge (subjects). Missing values become "[name]".
+export function renderText(text, lead) {
+  return String(text || "").replace(VAR_RE, (_, name) => resolveVar(name, lead) || `[${name}]`);
+}
+
+// SmartLead campaign lead → the cleaned-lead shape used everywhere else.
+export function fromSmartleadLead(row) {
+  const l = row?.lead || row || {};
+  const cf = l.custom_fields || {};
+  return {
+    first_name: l.first_name || "",
+    last_name: l.last_name || "",
+    email: l.email || "",
+    company_name: l.company_name || "",
+    company_domain: l.company_url || l.website || "",
+    linkedin_url: l.linkedin_profile || "",
+    company_state: l.location || "",
+    job_title: cf.job_title || "",
+    headline: cf.headline || "",
+    company_industry: cf.industry || "",
+    company_employee_count: cf.company_size || "",
+    company_revenue: cf.company_revenue || "",
+  };
+}

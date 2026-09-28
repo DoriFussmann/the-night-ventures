@@ -90,7 +90,7 @@ export default function EmailCampaigns() {
         <Overview companyId={companyId} overview={overview} onChanged={loadOverview} />
         <Analytics companyId={companyId} allTime={overview.analytics} />
         <Replies companyId={companyId} />
-        <SequenceCopy sequences={overview.sequences} />
+        <SequenceCopy companyId={companyId} sequences={overview.sequences} />
         <LeadImport
           companyId={companyId}
           sequences={overview.sequences}
