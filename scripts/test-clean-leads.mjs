@@ -57,7 +57,7 @@ check("cleanLeads drops no-email rows and de-dupes by email", () => {
     { FIRST_NAME: "A2", BUSINESS_EMAIL: "A@X.com" }, // dup (case-insensitive)
     { FIRST_NAME: "B", PERSONAL_VERIFIED_EMAILS: "b@gmail.com" },
     { FIRST_NAME: "C" }, // no email
-  ]);
+  ], { includePersonal: true });
   assert.equal(leads.length, 2);
   assert.equal(stats.input, 4);
   assert.equal(stats.kept, 2);
@@ -65,6 +65,16 @@ check("cleanLeads drops no-email rows and de-dupes by email", () => {
   assert.equal(stats.dropped_no_email, 1);
   assert.equal(stats.business, 1);
   assert.equal(stats.personal, 1);
+});
+
+check("personal-only leads are dropped by default", () => {
+  const { leads, stats } = cleanLeads([
+    { BUSINESS_EMAIL: "a@x.com" },
+    { PERSONAL_VERIFIED_EMAILS: "b@gmail.com" },
+  ]);
+  assert.equal(leads.length, 1);
+  assert.equal(stats.dropped_personal, 1);
+  assert.equal(stats.personal, 0);
 });
 
 check("toSmartleadLead maps to SmartLead shape with custom_fields", () => {

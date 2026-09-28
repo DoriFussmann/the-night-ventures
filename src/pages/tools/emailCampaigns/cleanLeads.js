@@ -59,10 +59,12 @@ export function cleanLead(row) {
 
 // rows: array of objects. Returns { leads, stats }.
 // Drops rows with no usable email; de-dupes by email (case-insensitive).
-export function cleanLeads(rows) {
+// Personal-only leads (no business email) are dropped unless includePersonal.
+export function cleanLeads(rows, { includePersonal = false } = {}) {
   const seen = new Set();
   const leads = [];
   let droppedNoEmail = 0;
+  let droppedPersonal = 0;
   let duplicatesRemoved = 0;
   let business = 0;
   let personal = 0;
@@ -71,6 +73,10 @@ export function cleanLeads(rows) {
     const c = cleanLead(row);
     if (!c.email) {
       droppedNoEmail += 1;
+      continue;
+    }
+    if (c.email_type === "personal" && !includePersonal) {
+      droppedPersonal += 1;
       continue;
     }
     if (seen.has(c.email)) {
@@ -89,6 +95,7 @@ export function cleanLeads(rows) {
       input: (rows || []).length,
       kept: leads.length,
       dropped_no_email: droppedNoEmail,
+      dropped_personal: droppedPersonal,
       duplicates_removed: duplicatesRemoved,
       business,
       personal,
@@ -104,6 +111,7 @@ export function toSmartleadLead(c) {
     last_name: c.last_name,
     company_name: c.company_name,
     company_url: c.company_domain,
+    website: c.company_domain,
     linkedin_profile: c.linkedin_url,
     location: c.company_state,
     custom_fields: {

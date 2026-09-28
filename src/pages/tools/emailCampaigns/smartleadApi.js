@@ -10,18 +10,19 @@ async function authHeaders() {
   };
 }
 
-// Read-only SmartLead call. resource is one of:
-// 'campaigns' | 'campaign' | 'sequences' | 'leads' | 'analytics' | 'email-accounts'
-export async function smartlead(resource, { campaignId, offset, limit } = {}) {
+// SmartLead call scoped to a company. The server resolves the campaign ID from
+// the company record — the client never sends one. `payload` is passed through
+// as-is (leads, offset, status, days, …).
+export async function smartlead(resource, companyId, payload = {}) {
   const headers = await authHeaders();
   const res = await fetch("/api/check-article-update?action=smartlead", {
     method: "POST",
     headers,
-    body: JSON.stringify({ resource, campaignId, offset, limit }),
+    body: JSON.stringify({ ...payload, resource, companyId }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data.ok === false) {
-    throw new Error(data.error || "SmartLead request failed");
+    throw new Error(data.error || `SmartLead request failed (${res.status})`);
   }
   return data.data;
 }

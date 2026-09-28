@@ -72,6 +72,14 @@ function NavItem({ item }) {
       <Icon className="w-3.5 h-3.5 shrink-0" />
       <span className="min-w-0 flex-1 truncate leading-tight">{item.label}</span>
       {item.status ? <StatusTag status={item.status} /> : null}
+      {item.count ? (
+        <span
+          className="shrink-0 rounded-full bg-sky-600 px-1.5 text-[10px] font-semibold leading-4 text-white tabular-nums"
+          title={`${item.count} unread repl${item.count === 1 ? "y" : "ies"}`}
+        >
+          {item.count}
+        </span>
+      ) : null}
     </Link>
   );
 }
@@ -324,6 +332,7 @@ export default function AppSidebar({ user }) {
   const { companyId: routeCompanyId } = useParams();
   const [companyName, setCompanyName] = useState("");
   const [emailEnabled, setEmailEnabled] = useState(false);
+  const [unreadReplies, setUnreadReplies] = useState(0);
 
   useEffect(() => {
     if (routeCompanyId) {
@@ -407,6 +416,31 @@ export default function AppSidebar({ user }) {
     };
   }, [activeCompanyId]);
 
+  // Unread campaign replies → badge on the Email Campaigns nav item.
+  useEffect(() => {
+    if (!activeCompanyId || !emailEnabled) {
+      setUnreadReplies(0);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      const { count, error } = await supabase
+        .from("email_replies")
+        .select("id", { count: "exact", head: true })
+        .eq("company_id", activeCompanyId)
+        .is("read_at", null);
+      if (!cancelled && !error) setUnreadReplies(count || 0);
+    };
+    load();
+    const timer = setInterval(load, 60000);
+    window.addEventListener("email-replies-read", load);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      window.removeEventListener("email-replies-read", load);
+    };
+  }, [activeCompanyId, emailEnabled]);
+
   const handleLogout = () => {
     logout("/login");
   };
@@ -484,6 +518,7 @@ export default function AppSidebar({ user }) {
                     label: "Email Campaigns",
                     path: `/company/${activeCompanyId}/email-campaigns`,
                     icon: Mail,
+                    count: unreadReplies,
                   }}
                 />
               )}
