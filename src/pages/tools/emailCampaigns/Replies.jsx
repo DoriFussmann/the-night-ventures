@@ -83,6 +83,8 @@ export default function Replies({ companyId }) {
 
   return (
     <Section
+      collapsible
+      defaultOpen={false}
       title={
         <span className="flex items-center gap-2">
           Replies

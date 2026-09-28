@@ -4,12 +4,14 @@ import Papa from "papaparse";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { smartlead } from "./smartleadApi";
 import { cleanLeads, OUTPUT_FIELDS } from "./cleanLeads";
 import { leadsMissingVariables, validateCopy } from "./validateCopy";
 import { ErrorLine, Loading, Section, num } from "./ui";
 
+const DEFAULT_MAX_PUSH = 500;
 const PUSH_CHUNK = 2000; // leads per server call (server batches 400 to SmartLead)
 
 // Upload → clean → check (DNC, already pushed, copy variables) → push.
@@ -23,6 +25,7 @@ export default function LeadImport({ companyId, sequences, currentLeadCount, onD
   const [checking, setChecking] = useState(false);
   const [blocked, setBlocked] = useState(null); // { dnc:Set, existing:Set }
   const [mode, setMode] = useState("replace");
+  const [maxPush, setMaxPush] = useState(String(DEFAULT_MAX_PUSH));
   const [skipIncomplete, setSkipIncomplete] = useState(true);
   const [ackUnsupported, setAckUnsupported] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -76,8 +79,12 @@ export default function LeadImport({ companyId, sequences, currentLeadCount, onD
     const validation = validateCopy(sequences, fresh);
     const incomplete = leadsMissingVariables(sequences, fresh);
     const incompleteSet = new Set(incomplete.map((l) => l.email));
-    const final = skipIncomplete ? fresh.filter((l) => !incompleteSet.has(l.email)) : fresh;
+    const eligible = skipIncomplete ? fresh.filter((l) => !incompleteSet.has(l.email)) : fresh;
+    const cap = Math.max(1, Math.floor(Number(maxPush)) || DEFAULT_MAX_PUSH);
+    const final = eligible.slice(0, cap);
     return {
+      eligibleCount: eligible.length,
+      heldBack: eligible.length - final.length,
       stats: cleaned.stats,
       dncCount: cleaned.leads.length - afterDnc.length,
       existingCount: afterDnc.length - fresh.length,
@@ -86,7 +93,7 @@ export default function LeadImport({ companyId, sequences, currentLeadCount, onD
       unsupported: validation.variables.filter((v) => !v.supported),
       final,
     };
-  }, [rows, blocked, includePersonal, sequences, skipIncomplete]);
+  }, [rows, blocked, includePersonal, sequences, skipIncomplete, maxPush]);
 
   const canPush =
     prepared && prepared.final.length > 0 && (!prepared.unsupported.length || ackUnsupported) && !progress;
@@ -198,11 +205,29 @@ export default function LeadImport({ companyId, sequences, currentLeadCount, onD
                 {skipIncomplete && (
                   <tr className="text-muted-foreground"><td>− missing copy variables</td><td>{prepared.incompleteCount}</td></tr>
                 )}
-                <tr className="border-t border-border font-semibold"><td className="pt-1">Ready to push</td><td className="pt-1">{prepared.final.length}</td></tr>
+                <tr className="border-t border-border"><td className="pt-1">Eligible</td><td className="pt-1">{prepared.eligibleCount}</td></tr>
+                {prepared.heldBack > 0 && (
+                  <tr className="text-muted-foreground"><td>− over the push limit</td><td>{prepared.heldBack}</td></tr>
+                )}
+                <tr className="font-semibold"><td>Will push</td><td>{prepared.final.length}</td></tr>
               </tbody>
             </table>
 
-            <div className="flex flex-wrap gap-x-6 gap-y-2">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="max_push" className="text-sm font-normal">Push at most</Label>
+                <Input
+                  id="max_push"
+                  type="number"
+                  min={1}
+                  step={50}
+                  value={maxPush}
+                  onChange={(e) => setMaxPush(e.target.value)}
+                  onBlur={() => setMaxPush(String(Math.max(1, Math.floor(Number(maxPush)) || DEFAULT_MAX_PUSH)))}
+                  className="h-8 w-24"
+                />
+                <span className="text-sm text-muted-foreground">leads</span>
+              </div>
               <div className="flex items-center gap-2">
                 <Switch id="incl_personal" checked={includePersonal} onCheckedChange={setIncludePersonal} />
                 <Label htmlFor="incl_personal" className="text-sm font-normal">Include personal emails</Label>
@@ -235,6 +260,13 @@ export default function LeadImport({ companyId, sequences, currentLeadCount, onD
                   </label>
                 )}
               </div>
+            )}
+
+            {prepared.heldBack > 0 && (
+              <p className="text-xs text-muted-foreground">
+                The first {prepared.final.length.toLocaleString()} in file order are pushed. The other{" "}
+                {prepared.heldBack.toLocaleString()} aren't recorded, so re-uploading the same file later pushes the next batch.
+              </p>
             )}
 
             <details className="rounded-md border border-border">

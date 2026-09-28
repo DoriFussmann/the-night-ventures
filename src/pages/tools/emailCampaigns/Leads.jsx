@@ -146,6 +146,8 @@ export default function Leads({ companyId, refreshKey }) {
   const [tab, setTab] = useState("campaign");
   return (
     <Section
+      collapsible
+      defaultOpen={false}
       title="Leads"
       description={
         tab === "campaign"

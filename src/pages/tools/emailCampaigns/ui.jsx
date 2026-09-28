@@ -1,17 +1,39 @@
-import React from "react";
-import { AlertTriangle, Loader2 } from "lucide-react";
+import React, { useState } from "react";
+import { AlertTriangle, ChevronRight, Loader2 } from "lucide-react";
 
-export function Section({ title, description, actions, children, id }) {
+// collapsible: header toggles the body. Children stay mounted while closed so
+// sections keep their data (e.g. the unread count in the Replies title).
+export function Section({ title, description, actions, children, id, collapsible = false, defaultOpen = true }) {
+  const [open, setOpen] = useState(collapsible ? defaultOpen : true);
+  const heading = (
+    <div className="min-w-0 space-y-0.5">
+      <h2 className="flex items-center gap-1.5 text-sm font-semibold">
+        {collapsible && (
+          <ChevronRight className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} />
+        )}
+        {title}
+      </h2>
+      {description && <p className={`text-xs text-muted-foreground ${collapsible ? "pl-[22px]" : ""}`}>{description}</p>}
+    </div>
+  );
   return (
     <section id={id} className="rounded-lg border border-border bg-card">
-      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3">
-        <div className="min-w-0 space-y-0.5">
-          <h2 className="text-sm font-semibold">{title}</h2>
-          {description && <p className="text-xs text-muted-foreground">{description}</p>}
-        </div>
-        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      <header className={`flex flex-wrap items-start justify-between gap-3 px-4 py-3 ${open ? "border-b border-border" : ""}`}>
+        {collapsible ? (
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            className="min-w-0 flex-1 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {heading}
+          </button>
+        ) : (
+          heading
+        )}
+        {actions && open && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
       </header>
-      <div className="px-4 py-4">{children}</div>
+      <div className={`px-4 py-4 ${open ? "" : "hidden"}`}>{children}</div>
     </section>
   );
 }

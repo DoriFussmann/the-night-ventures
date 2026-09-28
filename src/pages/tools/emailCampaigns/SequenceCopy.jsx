@@ -1,5 +1,6 @@
 import React from "react";
-import { Section, stripHtml } from "./ui";
+import { Section } from "./ui";
+import { toSafeHtml } from "./richText";
 import { extractVariables, sequenceSteps } from "./validateCopy";
 
 function Highlighted({ text }) {
@@ -15,6 +16,18 @@ function Highlighted({ text }) {
   );
 }
 
+// Email-like rendering of the sanitized HTML: lists, bold, links, spacing.
+const EMAIL_BODY_CLASS = [
+  "max-w-[70ch] text-sm leading-relaxed text-foreground/90",
+  "[&_p]:my-2 [&_div]:min-h-[1em] [&_p:first-child]:mt-0",
+  "[&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5",
+  "[&_b]:font-semibold [&_strong]:font-semibold [&_i]:italic [&_em]:italic [&_u]:underline",
+  "[&_a]:text-primary [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground",
+  "[&_h1]:text-base [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_hr]:my-3 [&_hr]:border-border",
+  "[&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_table]:my-2 [&_table]:border-collapse",
+  "[&_.tnv-var]:rounded [&_.tnv-var]:bg-sky-50 [&_.tnv-var]:px-0.5 [&_.tnv-var]:font-mono [&_.tnv-var]:text-[0.85em] [&_.tnv-var]:text-sky-800",
+].join(" ");
+
 function Email({ subject, body, label }) {
   return (
     <div className="space-y-1.5">
@@ -22,9 +35,11 @@ function Email({ subject, body, label }) {
       <p className="text-sm font-medium">
         {subject ? <Highlighted text={subject} /> : <span className="text-muted-foreground">(same thread — no subject)</span>}
       </p>
-      <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
-        <Highlighted text={stripHtml(body) || "(empty body)"} />
-      </p>
+      {String(body || "").trim() ? (
+        <div className={EMAIL_BODY_CLASS} dangerouslySetInnerHTML={{ __html: toSafeHtml(body) }} />
+      ) : (
+        <p className="text-sm text-muted-foreground">(empty body)</p>
+      )}
     </div>
   );
 }
@@ -36,6 +51,8 @@ export default function SequenceCopy({ sequences }) {
 
   return (
     <Section
+      collapsible
+      defaultOpen={false}
       title="Sequence & copy"
       description={
         vars.length
