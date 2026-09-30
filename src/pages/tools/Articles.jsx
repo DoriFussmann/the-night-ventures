@@ -1,11 +1,12 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { Download, ExternalLink, Loader2, Radar, Search, Upload } from "lucide-react";
+import { Download, ExternalLink, Loader2, Radar, Search, Square, Upload, Wand2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { scanLiveArticles } from "./articles/scanLiveApi";
 import FaceliftPanel from "./articles/FaceliftPanel";
 import ArticleCmsDialog from "./articles/ArticleCmsDialog";
+import { isLibraryDraft, publishDrafts } from "./articles/publishDrafts";
 import { Input } from "@/components/ui/input";
 import {
   AlertDialog,
@@ -81,6 +82,28 @@ const STATUS_COLORS = {
   drafted: "bg-orange-50 text-orange-700 border-orange-200",
   published: "bg-emerald-50 text-emerald-700 border-emerald-200",
 };
+
+const BULK_PHASE_LABELS = {
+  checking: "Checking",
+  image: "Generating image",
+  publishing: "Publishing",
+  done: "Done",
+};
+
+const OUTCOME_COLORS = {
+  published: "text-emerald-700",
+  skipped: "text-amber-700",
+  failed: "text-red-700",
+};
+
+function countOutcome(results, outcome) {
+  return results.filter((r) => r.outcome === outcome).length;
+}
+
+// Mirrors StatusBadge: anything not "published" displays (and filters) as drafted.
+function articleStatusKey(article) {
+  return article?.status === "published" ? "published" : "drafted";
+}
 
 function isPillarArticle(article) {
   return !String(article?.supporting_keyword || "").trim();
@@ -270,6 +293,13 @@ export default function Articles() {
   const [pillarFilter, setPillarFilter] = useState("all");
   const [keywordRoleFilter, setKeywordRoleFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  const [bulkRunning, setBulkRunning] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState(null);
+  const [bulkResults, setBulkResults] = useState(null);
+  const [bulkError, setBulkError] = useState("");
+  const bulkStopRef = useRef(false);
 
   const [scanLoading, setScanLoading] = useState(false);
   const [scanError, setScanError] = useState("");
@@ -399,12 +429,23 @@ export default function Articles() {
       if (typeFilter !== "all" && articleTypeKey(article) !== typeFilter) {
         return false;
       }
+      if (statusFilter !== "all" && articleStatusKey(article) !== statusFilter) {
+        return false;
+      }
       if (!q) return true;
       const title = String(article.title || "").toLowerCase();
       const target = String(article.target_keyword || "").toLowerCase();
       return title.includes(q) || target.includes(q);
     });
-  }, [displayArticles, debouncedSearch, pillarFilter, keywordRoleFilter, typeFilter, slugFilter]);
+  }, [
+    displayArticles,
+    debouncedSearch,
+    pillarFilter,
+    keywordRoleFilter,
+    typeFilter,
+    statusFilter,
+    slugFilter,
+  ]);
 
   const selected = useMemo(
     () => articles.find((article) => article.id === selectedId) || null,
@@ -522,6 +563,58 @@ export default function Articles() {
 
   const destinationMapped = isPublishDestinationMapped(publishDestination);
 
+  const draftsInView = useMemo(
+    () => filtered.filter(isLibraryDraft),
+    [filtered]
+  );
+
+  const upsertArticleRow = (row) => {
+    if (!row?.id) return;
+    setArticles((prev) =>
+      prev.map((item) => (item.id === row.id ? { ...item, ...row } : item))
+    );
+  };
+
+  const publishDraftsInView = async () => {
+    if (bulkRunning || draftsInView.length === 0 || !destinationMapped) return;
+    const ok = window.confirm(
+      `Publish ${draftsInView.length} drafted article(s) to ${publishDestination.owner}/${publishDestination.repo}?\n\n` +
+        "For each one: check title, description, slug and body (skipped if any are missing), " +
+        "generate a hero image if there isn't one, then publish. Runs one at a time — keep this tab open."
+    );
+    if (!ok) return;
+
+    // Library data, not the live-scan overlay.
+    const byId = new Map(articles.map((a) => [a.id, a]));
+    const rows = draftsInView.map((a) => byId.get(a.id)).filter(Boolean);
+
+    bulkStopRef.current = false;
+    setBulkRunning(true);
+    setBulkError("");
+    setBulkResults([]);
+    setBulkProgress(null);
+    try {
+      await publishDrafts({
+        companyId,
+        destination: publishDestination,
+        rows,
+        shouldStop: () => bulkStopRef.current,
+        onRowUpdated: upsertArticleRow,
+        onItem: (update) => {
+          setBulkProgress(update);
+          if (update.phase === "done") {
+            setBulkResults((prev) => [...(prev || []), update]);
+          }
+        },
+      });
+    } catch (err) {
+      setBulkError(err?.message || "Bulk publish failed");
+    } finally {
+      setBulkRunning(false);
+      setBulkProgress(null);
+    }
+  };
+
   const publishFilteredToSite = async () => {
     if (publishing || filtered.length === 0 || !destinationMapped) return;
     const ok = window.confirm(
@@ -565,6 +658,7 @@ export default function Articles() {
     pillarFilter !== "all" ||
     keywordRoleFilter !== "all" ||
     typeFilter !== "all" ||
+    statusFilter !== "all" ||
     Boolean(slugFilter);
 
   return (
@@ -698,6 +792,20 @@ export default function Articles() {
             ))}
           </SelectContent>
         </Select>
+        <Select
+          value={statusFilter}
+          onValueChange={setStatusFilter}
+          disabled={!hasAnyArticles}
+        >
+          <SelectTrigger className="w-full sm:w-[150px] h-9">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            <SelectItem value="drafted">Drafted</SelectItem>
+            <SelectItem value="published">Published</SelectItem>
+          </SelectContent>
+        </Select>
         <Button
           type="button"
           variant="outline"
@@ -739,6 +847,82 @@ export default function Articles() {
           )}
         </Button>
       </div>
+      {draftsInView.length > 0 || bulkRunning || bulkResults ? (
+        <div className="rounded-lg border border-border px-3 py-3 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              className="h-9"
+              disabled={
+                bulkRunning ||
+                publishing ||
+                loading ||
+                draftsInView.length === 0 ||
+                !destinationMapped
+              }
+              onClick={publishDraftsInView}
+            >
+              {bulkRunning ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <Wand2 className="h-3.5 w-3.5 mr-1.5" />
+              )}
+              {bulkRunning
+                ? "Publishing drafts…"
+                : `Fix & publish drafts (${draftsInView.length})`}
+            </Button>
+            {bulkRunning ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9"
+                onClick={() => {
+                  bulkStopRef.current = true;
+                }}
+              >
+                <Square className="h-3.5 w-3.5 mr-1.5" />
+                Stop after current
+              </Button>
+            ) : null}
+            <span className="text-xs text-muted-foreground">
+              Drafts in the current view. Adds a hero image where missing, then publishes.
+            </span>
+          </div>
+          {bulkProgress ? (
+            <p className="text-sm text-muted-foreground">
+              {bulkProgress.index + 1}/{bulkProgress.total} ·{" "}
+              {BULK_PHASE_LABELS[bulkProgress.phase] || "Working"}:{" "}
+              <span className="text-foreground">{bulkProgress.title}</span>
+            </p>
+          ) : null}
+          {bulkError ? (
+            <p className="text-sm text-destructive">{bulkError}</p>
+          ) : null}
+          {bulkResults && bulkResults.length > 0 ? (
+            <div className="space-y-1">
+              <p className="text-xs text-muted-foreground">
+                {countOutcome(bulkResults, "published")} published ·{" "}
+                {countOutcome(bulkResults, "skipped")} skipped ·{" "}
+                {countOutcome(bulkResults, "failed")} failed ·{" "}
+                {bulkResults.filter((r) => r.imageGenerated).length} images generated
+              </p>
+              <ul className="text-xs space-y-0.5 max-h-48 overflow-y-auto">
+                {bulkResults.map((r) => (
+                  <li key={r.id} className="flex gap-2">
+                    <span className={`shrink-0 font-medium ${OUTCOME_COLORS[r.outcome] || ""}`}>
+                      {r.outcome}
+                    </span>
+                    <span className="truncate text-foreground">{r.title}</span>
+                    <span className="text-muted-foreground">— {r.message}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {publishDestination && !destinationMapped && hasLibraryArticles && (
         <p className="text-sm text-muted-foreground">
           No destination repo set for this company.
@@ -1017,12 +1201,7 @@ export default function Articles() {
           if (!next) setSelectedId(null);
         }}
         onDelete={() => selected && setDeleteId(selected.id)}
-        onUpdated={(row) => {
-          if (!row?.id) return;
-          setArticles((prev) =>
-            prev.map((item) => (item.id === row.id ? { ...item, ...row } : item))
-          );
-        }}
+        onUpdated={upsertArticleRow}
         badges={
           selected ? (
             <>

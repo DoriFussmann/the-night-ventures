@@ -106,7 +106,10 @@ export async function commitLibraryArticle({
       tokenKey: destination.tokenKey,
       branch: DEFAULT_PUBLISH_BRANCH,
     },
-    { onProgress }
+    // The library row is the source of truth: a draft already committed to the
+    // site (draft: true) must be replaceable, otherwise Publish is skipped as
+    // "already exists".
+    { onProgress, overwrite: true }
   );
 
   if (!result.ok) {

@@ -175,7 +175,8 @@ function pushAll(target, items) {
  *
  * @param {Array<{ frontmatter: object, body?: string, markdown?: string, image?: { b64_json?: string } | { status?: string, result?: { b64_json?: string } } | null }>} articles
  * @param {{ companyId: string, owner: string, repo: string, tokenKey: string, branch?: string }} destination
- * @param {{ onProgress?: (progress: { phase: "commit" | "merge", current: number, total: number, filename?: string | null }) => void }} [options]
+ * @param {{ onProgress?: (progress: { phase: "commit" | "merge", current: number, total: number, filename?: string | null }) => void, overwrite?: boolean }} [options]
+ *   overwrite: replace an existing article file on the site (library CMS commits only).
  */
 export async function publishArticlesToSite(articles, destination, options = {}) {
   const onProgress =
@@ -228,6 +229,7 @@ export async function publishArticlesToSite(articles, destination, options = {})
     repo,
     github_token_key: tokenKey,
     branch,
+    ...(options.overwrite === true ? { overwrite: true } : {}),
   };
 
   const total = list.length;
