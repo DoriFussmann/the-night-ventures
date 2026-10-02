@@ -110,15 +110,6 @@ export const PREDEFINED_ITEMS = {
       linkLabel: "Open Company Intelligence →",
     },
     {
-      item_key: "pick-design",
-      title: "Pick your design",
-      description:
-        "Open Design, pick one of the 6 templates, optionally set your brand color and wordmark, click Save, then Download Design Guide.md.",
-      prompts: [],
-      linkTo: "/company/:companyId/design-guide-builder",
-      linkLabel: "Open Design →",
-    },
-    {
       item_key: "create-github-repo-from-template",
       title: "Create a GitHub repo from the SEO Blueprint template",
       description:
@@ -134,9 +125,9 @@ export const PREDEFINED_ITEMS = {
     },
     {
       item_key: "clone-repo-and-add-design-guide",
-      title: "Clone the repo and add the Design Guide",
+      title: "Clone the repo",
       description:
-        "Open a new Cursor project for that folder. Tell the agent to git clone the GitHub URL into the folder root (not a subfolder). Replace site/Design Guide.md with the file you downloaded — same name, inside the site/ folder, not the repo root. Run npm run build to confirm it passes, then commit and push.",
+        "Open a new Cursor project for that folder. Tell the agent to git clone the GitHub URL into the folder root (not a subfolder). Leave site/Design Guide.md as it is for now — the design is applied after the content. Run npm run build to confirm it passes, then commit and push.",
       prompts: [],
     },
     {
@@ -156,6 +147,24 @@ export const PREDEFINED_ITEMS = {
       prompts: [],
       linkTo: "/company/:companyId/site-content-build",
       linkLabel: "Open Implement content →",
+    },
+    {
+      item_key: "pick-design",
+      title: "Pick your design and generate the guide",
+      description:
+        "Open Design. Pick one of the 6 directions, optionally tick Force Inter and/or Force no bold, set the brand accent and wordmark if needed, and check the preview. Click Generate design guide. Download DESIGN_GUIDE.md and copy the Cursor prompt.",
+      prompts: [],
+      linkTo: "/company/:companyId/design-guide-builder",
+      linkLabel: "Open Design →",
+    },
+    {
+      item_key: "apply-design-in-cursor",
+      title: "Apply the design in Cursor",
+      description:
+        "Drag DESIGN_GUIDE.md into the repository root (next to the site/ folder, not inside it). Paste the Cursor prompt from Design into Cursor and send. Wait for a clean npm run build and the report, check the site at mobile and desktop width, then commit and push.",
+      prompts: [],
+      linkTo: "/company/:companyId/design-guide-builder",
+      linkLabel: "Open Design →",
     },
     {
       item_key: "review-and-remove-pages",

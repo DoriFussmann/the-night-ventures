@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
+import { Copy, Download } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { applyBrand, defaultWordmark } from "@/lib/design/applyBrand";
 import { buildDesignGuide } from "@/lib/design/buildDesignGuide";
+import { buildCursorPrompt } from "@/lib/design/buildCursorPrompt";
+import { GUIDE_FILENAME } from "@/lib/design/contract";
 import { normalizeHex } from "@/lib/design/contrast";
-import { TEMPLATES, getTemplate } from "@/lib/design/templates";
+import { previewFamily } from "@/lib/design/fonts";
+import { LEGACY_TEMPLATE_IDS, TEMPLATES, getTemplate } from "@/lib/design/templates";
 import DesignPreview from "./DesignPreview";
 
 function downloadMarkdown(filename, content) {
@@ -22,12 +27,44 @@ function downloadMarkdown(filename, content) {
   URL.revokeObjectURL(url);
 }
 
+function CopyButton({ text, label = "Copy" }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Copy failed:", err);
+    }
+  };
+  return (
+    <Button type="button" variant="outline" size="sm" onClick={handleCopy} disabled={!text}>
+      <Copy className="h-3.5 w-3.5" />
+      {copied ? "Copied" : label}
+    </Button>
+  );
+}
+
+function OverrideToggle({ id, checked, onChange, title, hint }) {
+  return (
+    <div className="flex items-start gap-2">
+      <Checkbox id={id} checked={checked} onCheckedChange={(value) => onChange(value === true)} className="mt-0.5" />
+      <div>
+        <Label htmlFor={id} className="cursor-pointer text-sm text-foreground">
+          {title}
+        </Label>
+        <p className="text-xs text-muted-foreground">{hint}</p>
+      </div>
+    </div>
+  );
+}
+
 export default function DesignGuideBuilder() {
   const { companyId } = useParams();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [savedMessage, setSavedMessage] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [productName, setProductName] = useState("");
   const [profileId, setProfileId] = useState(null);
@@ -35,8 +72,11 @@ export default function DesignGuideBuilder() {
   const [accentDraft, setAccentDraft] = useState("");
   const [wordmarkPrimary, setWordmarkPrimary] = useState("");
   const [wordmarkAccent, setWordmarkAccent] = useState("");
+  const [forceInter, setForceInter] = useState(false);
+  const [forceNoBold, setForceNoBold] = useState(false);
   const [legacyGuide, setLegacyGuide] = useState(false);
   const [viewport, setViewport] = useState("desktop");
+  const [generated, setGenerated] = useState(null);
 
   const load = useCallback(async () => {
     if (!companyId) return;
@@ -48,7 +88,7 @@ export default function DesignGuideBuilder() {
       supabase
         .from("company_profiles")
         .select(
-          "id, product_name, design_template, brand_accent, wordmark_primary, wordmark_accent, design_guide_raw"
+          "id, product_name, design_template, brand_accent, wordmark_primary, wordmark_accent, design_guide_raw, force_inter, force_no_bold"
         )
         .eq("company_id", companyId)
         .maybeSingle(),
@@ -70,13 +110,18 @@ export default function DesignGuideBuilder() {
     const product = profile?.product_name || "";
     const storedTemplate = getTemplate(profile?.design_template) ? profile.design_template : null;
     const storedAccent = normalizeHex(profile?.brand_accent) || "";
+    const hasLegacy =
+      LEGACY_TEMPLATE_IDS.includes(profile?.design_template) ||
+      (!storedTemplate && Boolean(String(profile?.design_guide_raw || "").trim()));
 
     setCompanyName(name);
     setProductName(product);
     setProfileId(profile?.id || null);
     setTemplateId(storedTemplate);
-    setAccentDraft(storedAccent);
-    setLegacyGuide(!storedTemplate && Boolean(String(profile?.design_guide_raw || "").trim()));
+    setAccentDraft(storedTemplate ? storedAccent : "");
+    setForceInter(Boolean(profile?.force_inter));
+    setForceNoBold(Boolean(profile?.force_no_bold));
+    setLegacyGuide(hasLegacy && !storedTemplate);
 
     if (profile?.wordmark_primary == null && profile?.wordmark_accent == null) {
       const split = defaultWordmark(product || name);
@@ -99,9 +144,7 @@ export default function DesignGuideBuilder() {
   const accentOverridden = Boolean(
     template && normalizedAccent && normalizedAccent !== template.colors.accent
   );
-  const displayedAccent = accentOverridden
-    ? normalizedAccent
-    : template?.colors.accent || "#000000";
+  const displayedAccent = accentOverridden ? normalizedAccent : template?.colors.accent || "#000000";
 
   const brand = useMemo(() => {
     if (!templateId) return null;
@@ -114,10 +157,17 @@ export default function DesignGuideBuilder() {
       accent: invalid ? accentDraft : overridden ? normalized : null,
       wordmarkPrimary,
       wordmarkAccent,
+      forceInter,
+      forceNoBold,
     });
-  }, [templateId, accentDraft, wordmarkPrimary, wordmarkAccent]);
+  }, [templateId, accentDraft, wordmarkPrimary, wordmarkAccent, forceInter, forceNoBold]);
 
   const brandName = productName.trim() || companyName.trim() || "Brand";
+
+  // Any change after generating makes the outputs stale.
+  useEffect(() => {
+    setGenerated(null);
+  }, [templateId, accentDraft, wordmarkPrimary, wordmarkAccent, forceInter, forceNoBold]);
 
   const selectTemplate = (id) => {
     const next = getTemplate(id);
@@ -133,20 +183,18 @@ export default function DesignGuideBuilder() {
     setError("");
   };
 
-  const guideMarkdown = brand
-    ? buildDesignGuide(brand.tokens, { brandName })
-    : "";
-
-  const handleSave = async () => {
+  const handleGenerate = async () => {
     if (!companyId || saving) return;
     if (!template || !brand) {
-      setError("Pick a template before saving.");
+      setError("Pick a design first.");
       return;
     }
 
+    const guide = buildDesignGuide(brand.tokens, { brandName });
+    const prompt = buildCursorPrompt(brand.tokens);
+
     setSaving(true);
     setError("");
-    setSavedMessage("");
 
     const payload = {
       company_id: companyId,
@@ -154,7 +202,9 @@ export default function DesignGuideBuilder() {
       brand_accent: accentOverridden ? displayedAccent : null,
       wordmark_primary: wordmarkPrimary.trim(),
       wordmark_accent: wordmarkAccent.trim(),
-      design_guide_raw: guideMarkdown,
+      force_inter: forceInter,
+      force_no_bold: forceNoBold,
+      design_guide_raw: guide,
       updated_at: new Date().toISOString(),
     };
     if (profileId) payload.id = profileId;
@@ -165,25 +215,15 @@ export default function DesignGuideBuilder() {
       .select("id")
       .single();
 
+    setSaving(false);
     if (upsertError) {
       setError(upsertError.message || "Failed to save design");
-      setSaving(false);
       return;
     }
 
     setProfileId(data?.id || profileId);
     setLegacyGuide(false);
-    setSaving(false);
-    setSavedMessage("Saved");
-    window.setTimeout(() => setSavedMessage(""), 2500);
-  };
-
-  const handleDownload = () => {
-    if (!guideMarkdown) {
-      setError("Pick a template before downloading.");
-      return;
-    }
-    downloadMarkdown("Design Guide.md", guideMarkdown);
+    setGenerated({ guide, prompt });
   };
 
   if (loading) {
@@ -195,21 +235,20 @@ export default function DesignGuideBuilder() {
       <div>
         <h1 className="text-lg font-medium text-foreground">Design</h1>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          {companyName
-            ? `Pick a template for ${companyName}. The preview uses the same tokens as the guide.`
-            : "Pick a template. The preview uses the same tokens as the guide."}
+          {companyName ? `Pick a design direction for ${companyName}. ` : "Pick a design direction. "}
+          Generate creates {GUIDE_FILENAME} and the Cursor prompt that applies it.
         </p>
       </div>
 
-      {legacyGuide && !templateId && (
+      {legacyGuide && (
         <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-foreground">
-          Legacy guide — pick a template to replace it
+          This company has a design from the previous template set. Pick a direction and generate to replace it.
         </p>
       )}
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
-      <div className="grid items-start gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
+      <div className="grid items-start gap-6 xl:grid-cols-[400px_minmax(0,1fr)]">
         <div className="space-y-5">
           <div className="grid grid-cols-2 gap-2">
             {TEMPLATES.map((item) => {
@@ -233,20 +272,41 @@ export default function DesignGuideBuilder() {
                     </span>
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">{item.tagline}</p>
+                  <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                    {previewFamily(item.type.display.family)}
+                    {item.type.display.family !== item.type.body.family
+                      ? ` + ${previewFamily(item.type.body.family)}`
+                      : ""}
+                  </p>
                   <div className="mt-2 flex gap-1.5" aria-hidden="true">
-                    {[item.colors.bg, item.colors.fg, item.colors.accent, item.colors.highlight].map(
-                      (hex) => (
-                        <span
-                          key={hex}
-                          className="h-4 w-4 rounded-full border border-black/10"
-                          style={{ background: hex }}
-                        />
-                      )
-                    )}
+                    {[item.colors.bg, item.colors.fg, item.colors.accent, item.colors.band].map((hex, index) => (
+                      <span
+                        key={`${hex}-${index}`}
+                        className="h-4 w-4 rounded-full border border-black/10"
+                        style={{ background: hex }}
+                      />
+                    ))}
                   </div>
                 </button>
               );
             })}
+          </div>
+
+          <div className="space-y-3 rounded-lg border border-border p-3">
+            <OverrideToggle
+              id="force-inter"
+              checked={forceInter}
+              onChange={setForceInter}
+              title="Force Inter"
+              hint="Replace the direction's fonts with Inter everywhere."
+            />
+            <OverrideToggle
+              id="force-no-bold"
+              checked={forceNoBold}
+              onChange={setForceNoBold}
+              title="Force no bold"
+              hint="Cap every weight at 500 — headings, buttons, labels, bold text."
+            />
           </div>
 
           <div className="space-y-2">
@@ -275,7 +335,7 @@ export default function DesignGuideBuilder() {
                 disabled={!template || !accentOverridden}
                 onClick={() => setAccentDraft("")}
               >
-                Reset to template
+                Reset
               </Button>
             </div>
             {(brand?.warnings || []).map((warning) => (
@@ -304,18 +364,40 @@ export default function DesignGuideBuilder() {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" onClick={handleSave} disabled={saving || !template}>
-              {saving ? "Saving..." : "Save"}
-            </Button>
-            <Button type="button" variant="secondary" onClick={handleDownload} disabled={!template}>
-              Download Design Guide.md
-            </Button>
-            {savedMessage && <span className="text-sm text-muted-foreground">{savedMessage}</span>}
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Place it at <code className="font-mono text-xs">site/Design Guide.md</code> in your repo, replacing the placeholder.
-          </p>
+          <Button type="button" className="w-full" onClick={handleGenerate} disabled={saving || !template}>
+            {saving ? "Generating..." : "Generate design guide"}
+          </Button>
+
+          {generated && (
+            <div className="space-y-4 rounded-lg border border-border p-3">
+              <div className="space-y-1.5">
+                <p className="text-sm text-foreground">1. Add the guide to the site repo</p>
+                <p className="text-xs text-muted-foreground">
+                  Download and drag it into the repository root (next to the site/ folder). Keep the name {GUIDE_FILENAME}.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => downloadMarkdown(GUIDE_FILENAME, generated.guide)}
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Download {GUIDE_FILENAME}
+                  </Button>
+                  <CopyButton text={generated.guide} label="Copy contents" />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm text-foreground">2. Paste this prompt into Cursor</p>
+                  <CopyButton text={generated.prompt} />
+                </div>
+                <pre className="max-h-72 overflow-auto rounded-md border border-border bg-muted/40 p-3 text-xs whitespace-pre-wrap break-words text-foreground/90">
+                  {generated.prompt}
+                </pre>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="space-y-3">
@@ -337,7 +419,13 @@ export default function DesignGuideBuilder() {
               Mobile
             </Button>
           </div>
-          <div className={viewport === "mobile" ? "mx-auto w-[390px] max-w-full overflow-hidden rounded-lg border border-border" : "overflow-hidden rounded-lg border border-border"}>
+          <div
+            className={
+              viewport === "mobile"
+                ? "mx-auto w-[390px] max-w-full overflow-hidden rounded-lg border border-border"
+                : "overflow-hidden rounded-lg border border-border"
+            }
+          >
             <DesignPreview tokens={brand?.tokens || null} viewport={viewport} />
           </div>
         </div>

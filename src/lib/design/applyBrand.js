@@ -4,6 +4,8 @@ import {
   lightenHex,
   normalizeHex,
 } from "./contrast.js";
+import { CONTRAST_PAIRS, NO_BOLD_MAX } from "./contract.js";
+import { fontSpec } from "./fonts.js";
 
 const MIN_CONTRAST = 4.5;
 
@@ -20,14 +22,45 @@ export function defaultWordmark(productName) {
   };
 }
 
-function contrastWarning(label, ratio) {
-  return `${label} contrast is ${ratio.toFixed(2)}:1, below 4.5:1.`;
+const PAIR_LABEL = {
+  "accentInk/bg": "Accent text on background",
+  "accentInk/surface": "Accent text on surface",
+  "accentFg/accent": "Button text on accent",
+};
+
+/** Pick a text-safe version of `color` for `background`, stepping darker or lighter. */
+function inkFor(color, background, dark) {
+  let ink = color;
+  for (let step = 0; step < 20; step += 1) {
+    const ratio = contrastRatio(ink, background);
+    if (ratio != null && ratio >= MIN_CONTRAST) return ink;
+    ink = dark ? lightenHex(ink, 0.08) : darkenHex(ink, 0.08);
+  }
+  return ink;
+}
+
+/** Force Inter and/or cap weights. Mutates and returns tokens. */
+export function applyOverrides(tokens, overrides = {}) {
+  const forceInter = Boolean(overrides.forceInter);
+  const forceNoBold = Boolean(overrides.forceNoBold);
+  tokens.overrides = { forceInter, forceNoBold };
+  if (forceInter) {
+    tokens.type.display = fontSpec("inter");
+    tokens.type.body = fontSpec("inter");
+  }
+  if (forceNoBold) {
+    for (const key of ["headingWeight", "uiWeight", "strongWeight"]) {
+      tokens.type[key] = Math.min(Number(tokens.type[key]) || 400, NO_BOLD_MAX);
+    }
+    tokens.type.bodyWeight = Math.min(Number(tokens.type.bodyWeight) || 400, 400);
+  }
+  return tokens;
 }
 
 /**
- * Copy a template and apply an optional accent override plus wordmark.
- * Returns `{ tokens, warnings }`. Warnings fire when accent/bg or
- * accent/surface is under 4.5:1.
+ * Copy a template, apply an optional accent override, the wordmark and the two
+ * overrides. Returns `{ tokens, warnings }`; warnings list every contract pair
+ * under 4.5:1.
  */
 export function applyBrand(template, options = {}) {
   if (!template || typeof template !== "object") {
@@ -46,14 +79,21 @@ export function applyBrand(template, options = {}) {
     } else {
       const dark = tokens.mode === "dark";
       tokens.colors.accent = accent;
-      tokens.colors.focus = accent;
       tokens.colors.accentHover = dark
         ? lightenHex(accent, 0.12)
         : darkenHex(accent, 0.12);
       const onWhite = contrastRatio(accent, "#FFFFFF");
+      const onFg = contrastRatio(accent, tokens.colors.fg);
       const onBg = contrastRatio(accent, tokens.colors.bg);
-      tokens.colors.accentFg =
-        onWhite >= onBg ? "#FFFFFF" : normalizeHex(tokens.colors.bg);
+      if (dark) {
+        tokens.colors.accentFg = normalizeHex(tokens.colors.bg);
+      } else {
+        tokens.colors.accentFg =
+          onWhite >= Math.max(onFg ?? 0, onBg ?? 0) ? "#FFFFFF" : normalizeHex(tokens.colors.fg);
+      }
+      tokens.colors.accentInk = inkFor(accent, tokens.colors.bg, dark);
+      tokens.colors.focus =
+        (contrastRatio(accent, tokens.colors.bg) ?? 0) >= 3 ? accent : tokens.colors.accentInk;
     }
   }
 
@@ -64,22 +104,21 @@ export function applyBrand(template, options = {}) {
     tokens.brand.wordmarkPrimary = split.wordmarkPrimary;
     tokens.brand.wordmarkAccent = split.wordmarkAccent;
   } else if (primaryGiven || accentWordGiven) {
-    if (primaryGiven) {
-      tokens.brand.wordmarkPrimary = String(options.wordmarkPrimary);
-    }
-    if (accentWordGiven) {
-      tokens.brand.wordmarkAccent = String(options.wordmarkAccent);
-    }
+    if (primaryGiven) tokens.brand.wordmarkPrimary = String(options.wordmarkPrimary);
+    if (accentWordGiven) tokens.brand.wordmarkAccent = String(options.wordmarkAccent);
   }
 
-  const accent = tokens.colors?.accent;
-  const onBackground = contrastRatio(accent, tokens.colors?.bg);
-  const onSurface = contrastRatio(accent, tokens.colors?.surface);
-  if (onBackground != null && onBackground < MIN_CONTRAST) {
-    warnings.push(contrastWarning("Accent on background", onBackground));
-  }
-  if (onSurface != null && onSurface < MIN_CONTRAST) {
-    warnings.push(contrastWarning("Accent on surface", onSurface));
+  applyOverrides(tokens, {
+    forceInter: options.forceInter,
+    forceNoBold: options.forceNoBold,
+  });
+
+  for (const [fgKey, bgKey] of CONTRAST_PAIRS) {
+    const ratio = contrastRatio(tokens.colors?.[fgKey], tokens.colors?.[bgKey]);
+    if (ratio != null && ratio < MIN_CONTRAST) {
+      const label = PAIR_LABEL[`${fgKey}/${bgKey}`] || `${fgKey} on ${bgKey}`;
+      warnings.push(`${label} contrast is ${ratio.toFixed(2)}:1, below 4.5:1.`);
+    }
   }
 
   return { tokens, warnings };

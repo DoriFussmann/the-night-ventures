@@ -1,6 +1,26 @@
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { DENSITY_PX, typeScale } from "@/lib/design/scale";
+import { previewFamily, previewFontsHref } from "@/lib/design/fonts";
+
+const FONT_LINK_ID = "tnv-design-preview-fonts";
+
+/** Load every preview face once (Google Fonts). The site itself self-hosts via fontsource. */
+function useDesignFonts() {
+  useEffect(() => {
+    if (typeof document === "undefined" || document.getElementById(FONT_LINK_ID)) return;
+    const link = document.createElement("link");
+    link.id = FONT_LINK_ID;
+    link.rel = "stylesheet";
+    link.href = previewFontsHref();
+    document.head.appendChild(link);
+  }, []);
+}
+
+function fontStack(font) {
+  if (!font) return "Inter, sans-serif";
+  return `"${previewFamily(font.family)}", ${font.fallback}`;
+}
 
 function aspectCss(value) {
   const match = String(value || "").match(/(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)/);
@@ -57,6 +77,14 @@ function cssVars(tokens, viewport) {
     "--footer-bg": colors.footerBg,
     "--footer-fg": colors.footerFg,
     "--focus": colors.focus,
+    "--accent-ink": colors.accentInk || colors.accent,
+    "--on-image": colors.onImage || "#FFFFFF",
+    "--font-display": fontStack(tokens.type.display),
+    "--font-body": fontStack(tokens.type.body),
+    "--ui-weight": tokens.type.uiWeight ?? 600,
+    "--strong-weight": tokens.type.strongWeight ?? 600,
+    "--heading-transform": tokens.type.headingCase === "uppercase" ? "uppercase" : "none",
+    "--eyebrow-tracking": tokens.type.eyebrow === "uppercase" ? tokens.type.eyebrowTracking || "0.12em" : "0",
     "--body": sizes.body,
     "--lead": sizes.lead,
     "--h1": mobile ? sizes.h1Mobile : sizes.h1,
@@ -79,9 +107,14 @@ function cssVars(tokens, viewport) {
 }
 
 const PREVIEW_CSS = `
+.tnv-design-preview,
+.tnv-design-preview * {
+  font-weight: var(--body-weight) !important;
+  letter-spacing: normal;
+  font-synthesis-weight: none;
+}
 .tnv-design-preview {
-  font-family: Inter, sans-serif;
-  font-weight: var(--body-weight);
+  font-family: var(--font-body);
   font-size: var(--body);
   line-height: 1.65;
   color: var(--fg);
@@ -93,8 +126,9 @@ const PREVIEW_CSS = `
 .tnv-design-preview h1,
 .tnv-design-preview h2,
 .tnv-design-preview h3 {
-  font-family: Inter, sans-serif;
-  font-weight: var(--heading-weight);
+  font-family: var(--font-display);
+  font-weight: var(--heading-weight) !important;
+  text-transform: var(--heading-transform);
   letter-spacing: var(--heading-tracking);
   line-height: var(--heading-leading);
   margin: 0;
@@ -107,7 +141,9 @@ const PREVIEW_CSS = `
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
-.tnv-design-preview a { color: var(--accent); text-decoration: none; }
+.tnv-design-preview a { color: var(--accent-ink); text-decoration: none; }
+.tnv-design-preview strong,
+.tnv-design-preview b { font-weight: var(--strong-weight) !important; }
 .tnv-design-preview a:hover { text-decoration: underline; }
 .tnv-design-preview .wrap {
   width: min(100%, var(--container));
@@ -144,14 +180,15 @@ const PREVIEW_CSS = `
 }
 .tnv-design-preview[data-header="band"] .site-header { border-bottom: none; }
 .tnv-design-preview .wordmark {
+  font-family: var(--font-display);
   font-size: 1.05rem;
-  font-weight: var(--heading-weight);
+  font-weight: var(--heading-weight) !important;
   letter-spacing: var(--heading-tracking);
   color: var(--header-fg);
   text-decoration: none;
 }
 .tnv-design-preview .wordmark:hover { text-decoration: none; }
-.tnv-design-preview .wordmark-accent { color: var(--accent); }
+.tnv-design-preview .wordmark-accent { color: var(--accent-ink); }
 .tnv-design-preview .nav {
   display: flex;
   align-items: center;
@@ -160,6 +197,7 @@ const PREVIEW_CSS = `
 .tnv-design-preview .nav-link {
   color: var(--header-fg);
   font-size: 0.95rem;
+  font-weight: var(--ui-weight) !important;
   text-decoration: none;
 }
 .tnv-design-preview .nav-link:hover { text-decoration: underline; }
@@ -174,6 +212,7 @@ const PREVIEW_CSS = `
   border: 1px solid transparent;
   font: inherit;
   font-size: 0.95rem;
+  font-weight: var(--ui-weight) !important;
   line-height: 1;
   text-decoration: none;
   cursor: pointer;
@@ -191,7 +230,7 @@ const PREVIEW_CSS = `
 }
 .tnv-design-preview[data-button="outline"] .btn-primary {
   background: transparent;
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 .tnv-design-preview[data-button="outline"] .btn-primary:hover {
   background: var(--accent);
@@ -209,13 +248,34 @@ const PREVIEW_CSS = `
   border-color: var(--band-fg);
 }
 .tnv-design-preview .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
-.tnv-design-preview .eyebrow { margin: 0 0 12px; }
+.tnv-design-preview .eyebrow {
+  margin: 0 0 12px;
+  font-weight: var(--ui-weight) !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
 .tnv-design-preview[data-eyebrow="uppercase"] .eyebrow {
   font-size: 0.78rem;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: var(--accent);
+  letter-spacing: var(--eyebrow-tracking);
+  color: var(--accent-ink);
 }
+.tnv-design-preview[data-eyebrow-mark="dot"] .eyebrow::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+.tnv-design-preview[data-eyebrow-mark="rule"] .eyebrow::before {
+  content: "";
+  width: 40px;
+  height: 1px;
+  margin-right: 4px;
+  background: var(--accent);
+}
+.tnv-design-preview[data-eyebrow-mark="slashes"] .eyebrow::before { content: "//"; }
 .tnv-design-preview[data-eyebrow="sentence"] .eyebrow {
   font-size: 0.95rem;
   letter-spacing: 0;
@@ -370,8 +430,9 @@ const PREVIEW_CSS = `
 }
 .tnv-design-preview .stat strong {
   display: block;
+  font-family: var(--font-display);
   font-size: var(--h2);
-  font-weight: var(--heading-weight);
+  font-weight: var(--heading-weight) !important;
   letter-spacing: var(--heading-tracking);
   line-height: var(--heading-leading);
 }
@@ -390,7 +451,7 @@ const PREVIEW_CSS = `
   color: inherit;
   border: none;
   font: inherit;
-  font-weight: var(--heading-weight);
+  font-weight: var(--ui-weight) !important;
   cursor: pointer;
 }
 .tnv-design-preview .faq-item p { padding: 0 16px 14px; color: var(--muted); }
@@ -415,6 +476,138 @@ const PREVIEW_CSS = `
   align-items: center;
 }
 .tnv-design-preview .site-footer nav { display: flex; gap: 16px; }
+/* --- contract v3 additions --- */
+.tnv-design-preview[data-hero="photo"] .hero {
+  min-height: 560px;
+  display: flex;
+  align-items: center;
+  color: var(--on-image);
+  --hero-ink: var(--on-image);
+  overflow: hidden;
+}
+.tnv-design-preview[data-hero="photo"] .hero-grid {
+  grid-template-columns: 1fr;
+  width: 100%;
+}
+.tnv-design-preview[data-hero="photo"] .hero-copy {
+  position: relative;
+  z-index: 2;
+  max-width: 48rem;
+  margin: 0 auto;
+  text-align: center;
+}
+.tnv-design-preview[data-hero="photo"] .hero-copy .lead { margin-inline: auto; color: color-mix(in srgb, var(--on-image) 85%, transparent); }
+.tnv-design-preview[data-hero="photo"] .hero-copy .actions { justify-content: center; }
+.tnv-design-preview[data-hero="photo"] .hero .eyebrow { color: var(--highlight); }
+.tnv-design-preview[data-hero="photo"] .hero .btn-secondary { color: var(--on-image); border-color: var(--on-image); }
+.tnv-design-preview[data-hero="photo"] .hero-media {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+.tnv-design-preview[data-hero="photo"] .hero-media .carousel,
+.tnv-design-preview[data-hero="photo"] .hero-media .frame,
+.tnv-design-preview[data-hero="photo"] .hero-media .slides { height: 100%; aspect-ratio: auto; }
+.tnv-design-preview[data-hero="photo"] .hero-media .slide {
+  border-radius: 0;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--highlight) 35%, var(--band)) 0%, var(--band) 55%, color-mix(in srgb, var(--band) 70%, #000) 100%);
+  color: var(--on-image);
+}
+.tnv-design-preview[data-hero="photo"] .hero-media .slide p { display: none; }
+.tnv-design-preview[data-hero="photo"] .hero-media .carousel-controls {
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
+  z-index: 3;
+  margin: 0;
+}
+.tnv-design-preview[data-hero="photo"] .hero-media .slides::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+.tnv-design-preview[data-hero-overlay="dark"] .hero-media .slides::after {
+  background: linear-gradient(to bottom, rgb(0 0 0 / 0.4), rgb(0 0 0 / 0.2), rgb(0 0 0 / 0.6));
+}
+.tnv-design-preview[data-hero-overlay="fade"] .hero-media .slides::after {
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--fg) 30%, transparent), color-mix(in srgb, var(--fg) 20%, transparent) 55%, var(--bg));
+}
+.tnv-design-preview[data-hero-overlay="vignette"] .hero-media .slides::after {
+  background:
+    radial-gradient(ellipse at center, transparent 35%, color-mix(in srgb, var(--bg) 95%, transparent) 100%),
+    color-mix(in srgb, var(--bg) 25%, transparent);
+}
+.tnv-design-preview[data-texture="scanline"] .hero .texture,
+.tnv-design-preview[data-texture="scanline"] .cta .texture,
+.tnv-design-preview[data-texture="scanline"] .card-media::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(0deg, transparent 0, transparent 3px, color-mix(in srgb, var(--accent) 6%, transparent) 3px, color-mix(in srgb, var(--accent) 6%, transparent) 4px);
+}
+.tnv-design-preview .hero .texture { z-index: 1; }
+.tnv-design-preview .card { overflow: hidden; }
+.tnv-design-preview .card-media {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  margin: -20px -20px 16px;
+  overflow: hidden;
+}
+.tnv-design-preview .card-media span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(150deg, color-mix(in srgb, var(--highlight) 30%, var(--surface-alt)), var(--surface-alt) 60%, color-mix(in srgb, var(--fg) 12%, var(--surface-alt)));
+  filter: var(--image-filter);
+}
+.tnv-design-preview .card h3 { font-size: calc(var(--h3) * 0.8); }
+.tnv-design-preview .card { transition: transform 300ms ease, box-shadow 300ms ease; }
+.tnv-design-preview .card-media span { transition: transform 700ms ease-out, filter 800ms ease; }
+.tnv-design-preview[data-hover="zoom"] .card:hover .card-media span { transform: scale(1.05); }
+.tnv-design-preview[data-hover="lift"] .card:hover { transform: translateY(-4px); }
+.tnv-design-preview[data-hover="zoom"] .card:hover,
+.tnv-design-preview[data-hover="lift"] .card:hover {
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--fg) 10%, transparent), 0 8px 24px color-mix(in srgb, var(--fg) 12%, transparent);
+}
+.tnv-design-preview[data-hover="jelly"] .card { transition: transform 500ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+.tnv-design-preview[data-hover="jelly"] .card:hover { transform: scale(1.03) rotate(-0.5deg); }
+.tnv-design-preview[data-hover="glitch"] .card:hover {
+  animation: tnv-glitch 300ms steps(2) 1;
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.tnv-design-preview[data-hover="brighten"] .card-media span { filter: var(--image-filter) brightness(0.85); }
+.tnv-design-preview[data-hover="brighten"] .card:hover .card-media span { filter: var(--image-filter) brightness(1); }
+@keyframes tnv-glitch {
+  0% { transform: translate(0); }
+  25% { transform: translate(-1px, 1px); filter: hue-rotate(15deg); }
+  50% { transform: translate(1px, -1px); }
+  75% { transform: translate(-1px, -1px); filter: hue-rotate(-15deg); }
+  100% { transform: translate(0); }
+}
+.tnv-design-preview .team-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-top: 24px;
+}
+.tnv-design-preview .portrait {
+  aspect-ratio: 1 / 1;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--highlight) 30%, var(--surface-alt)), var(--surface-alt));
+  filter: var(--image-filter);
+}
+.tnv-design-preview[data-portrait="rounded"] .portrait { border-radius: var(--radius-lg); }
+.tnv-design-preview[data-portrait="circle"] .portrait { border-radius: 999px; }
+.tnv-design-preview[data-portrait="square"] .portrait { border-radius: 0; }
+.tnv-design-preview[data-portrait="blob"] .portrait { border-radius: 40% 60% 55% 45% / 55% 45% 60% 40%; }
+.tnv-design-preview .team-grid p { margin-top: 8px; font-size: 0.85rem; }
+@media (prefers-reduced-motion: reduce) {
+  .tnv-design-preview .card,
+  .tnv-design-preview .card-media span { transition: none !important; animation: none !important; transform: none !important; }
+}
+.tnv-design-preview[data-viewport="mobile"] .team-grid { grid-template-columns: repeat(2, 1fr); }
 .tnv-design-preview[data-viewport="mobile"] .hero-grid,
 .tnv-design-preview[data-viewport="mobile"] .feature-grid,
 .tnv-design-preview[data-viewport="mobile"] .card-grid,
@@ -427,15 +620,20 @@ const PREVIEW_CSS = `
 
 function Reveal({ id, index, shown, motionTokens, reduced, className, children }) {
   const style = reduced ? "none" : motionTokens.style;
-  const hidden =
-    style === "rise" ? { opacity: 0, y: 24 } : style === "fade" ? { opacity: 0, y: 0 } : { opacity: 1, y: 0 };
+  const HIDDEN = {
+    rise: { opacity: 0, y: 24, scale: 1, filter: "blur(0px)" },
+    fade: { opacity: 0, y: 0, scale: 1, filter: "blur(0px)" },
+    blur: { opacity: 0, y: 0, scale: 1, filter: "blur(8px)" },
+    spring: { opacity: 0, y: 24, scale: 0.97, filter: "blur(0px)" },
+  };
+  const hidden = HIDDEN[style] || { opacity: 1, y: 0, scale: 1, filter: "blur(0px)" };
   const visible = shown || style === "none";
   return (
     <motion.div
       data-reveal-id={id}
       className={className}
       initial={false}
-      animate={visible ? { opacity: 1, y: 0 } : hidden}
+      animate={visible ? { opacity: 1, y: 0, scale: 1, filter: "blur(0px)" } : hidden}
       transition={{
         duration: style === "none" ? 0 : motionTokens.duration / 1000,
         ease: motionEase(motionTokens.easing),
@@ -565,6 +763,7 @@ function FaqList() {
 }
 
 function PreviewFrame({ tokens, viewport }) {
+  useDesignFonts();
   const rootRef = useRef(null);
   const [reduced, setReduced] = useState(false);
   const [revealed, setRevealed] = useState({});
@@ -626,6 +825,10 @@ function PreviewFrame({ tokens, viewport }) {
         className="tnv-design-preview"
         data-header={tokens.variants.header}
         data-hero={tokens.variants.hero}
+        data-hero-overlay={tokens.variants.heroOverlay || "none"}
+        data-hover={tokens.variants.hover || "zoom"}
+        data-portrait={tokens.variants.portrait || "rounded"}
+        data-eyebrow-mark={tokens.variants.eyebrowMark || "none"}
         data-card={tokens.variants.card}
         data-rhythm={tokens.variants.rhythm}
         data-texture={tokens.variants.texture}
@@ -654,18 +857,18 @@ function PreviewFrame({ tokens, viewport }) {
           <section className="section hero" id="top">
             <div className="texture" aria-hidden="true" />
             <div className="wrap hero-grid">
-              <Reveal id="hero-copy" index={0} shown={show("hero-copy")} motionTokens={tokens.motion} reduced={reduced}>
+              <Reveal id="hero-copy" index={0} shown={show("hero-copy")} motionTokens={tokens.motion} reduced={reduced} className="hero-copy">
                 <p className="eyebrow">{tokens.tagline}</p>
                 <h1>{primary || "A clearer offer"}{accent ? ` ${accent}` : ""}</h1>
                 <p className="lead" style={{ marginTop: 16 }}>
-                  A split hero with one promise, a short supporting line, and two actions. The carousel on the right carries the imagery direction.
+                  One promise, a short supporting line, and two actions. The imagery follows the direction's brief.
                 </p>
                 <div className="actions">
                   <a className="btn btn-primary" href="#contact">Get started</a>
                   <a className="btn btn-secondary" href="#services">Learn more</a>
                 </div>
               </Reveal>
-              <Reveal id="hero-media" index={1} shown={show("hero-media")} motionTokens={tokens.motion} reduced={reduced}>
+              <Reveal id="hero-media" index={1} shown={show("hero-media")} motionTokens={tokens.motion} reduced={reduced} className="hero-media">
                 <Carousel tokens={tokens} reduced={reduced} />
               </Reveal>
             </div>
@@ -683,7 +886,7 @@ function PreviewFrame({ tokens, viewport }) {
               <Reveal id="feature-list" index={1} shown={show("feature-list")} motionTokens={tokens.motion} reduced={reduced}>
                 <ul className="highlights">
                   <li><span className="mark" aria-hidden="true" /><span>A single accent, used for actions and links.</span></li>
-                  <li><span className="mark" aria-hidden="true" /><span>Type set only in Inter, at the template scale.</span></li>
+                  <li><span className="mark" aria-hidden="true" /><span>Display and body type from the direction, at its scale.</span></li>
                   <li><span className="mark" aria-hidden="true" /><span>Imagery that follows the direction and the avoid list.</span></li>
                 </ul>
               </Reveal>
@@ -706,10 +909,35 @@ function PreviewFrame({ tokens, viewport }) {
                     reduced={reduced}
                     className="card"
                   >
+                    <div className="card-media" aria-hidden="true"><span /></div>
                     <h3>{title}</h3>
                     <p className="muted" style={{ marginTop: 8 }}>
-                      A short card in the {tokens.variants.card} variant, radius {tokens.shape.radius}.
+                      A {tokens.variants.card} card with {tokens.variants.hover} hover. <strong>Bold text</strong> follows the strong weight.
                     </p>
+                  </Reveal>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          <section className="section" id="team">
+            <div className="wrap">
+              <Reveal id="team-title" index={0} shown={show("team-title")} motionTokens={tokens.motion} reduced={reduced}>
+                <p className="eyebrow">The team</p>
+                <h2>People behind it</h2>
+              </Reveal>
+              <div className="team-grid">
+                {["Founder", "Strategy", "Design", "Delivery"].map((role, teamIndex) => (
+                  <Reveal
+                    key={role}
+                    id={`team-${teamIndex}`}
+                    index={teamIndex}
+                    shown={show(`team-${teamIndex}`)}
+                    motionTokens={tokens.motion}
+                    reduced={reduced}
+                  >
+                    <div className="portrait" aria-hidden="true" />
+                    <p className="muted">{role}</p>
                   </Reveal>
                 ))}
               </div>
@@ -789,7 +1017,7 @@ export default function DesignPreview({ tokens, viewport = "desktop" }) {
   if (!tokens) {
     return (
       <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-border text-sm text-muted-foreground">
-        Pick a template to preview it.
+        Pick a design direction to preview it.
       </div>
     );
   }
