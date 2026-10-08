@@ -13,6 +13,7 @@ import {
   runAuditPanel,
   normalizeSnapshotResults,
 } from '../lib/audit-snapshot/runPanel.js'
+import { handleAudit, auditAction } from '../lib/audit/handler.js'
 
 export const config = { maxDuration: 300 }
 
@@ -29,6 +30,9 @@ function shapeSnapshot(row) {
 }
 
 export default async function handler(req, res) {
+  // New Audit tool (audit.* actions). The legacy snapshot actions below are removed in Zip B.
+  if (auditAction(req).startsWith('audit.')) return handleAudit(req, res)
+
   if (handleOptions(req, res, 'GET, POST, OPTIONS')) return
 
   res.setHeader('Access-Control-Allow-Origin', '*')

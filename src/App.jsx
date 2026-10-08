@@ -26,6 +26,7 @@ import AiImageGenerator from '@/pages/tools/AiImageGenerator';
 import SiteBuildFlow from '@/pages/tools/SiteBuildFlow';
 import SeoAiAdvisor from '@/pages/tools/SeoAiAdvisor';
 import ExternalAuditSnapshot from '@/pages/tools/ExternalAuditSnapshot';
+import Audit from '@/pages/tools/Audit';
 import SystemMap from '@/pages/tools/SystemMap';
 import CoreVersion from '@/pages/tools/CoreVersion';
 import EmailCampaigns from '@/pages/tools/EmailCampaigns';
@@ -58,6 +59,7 @@ const AuthenticatedApp = () => {
           <Route path="/company/:companyId/site-content-builder" element={<SiteContentBuilder />} />
           <Route path="/company/:companyId/seo-ai-advisor" element={<SeoAiAdvisor />} />
           <Route path="/company/:companyId/external-audit-snapshot" element={<ExternalAuditSnapshot />} />
+          <Route path="/company/:companyId/audit" element={<Audit />} />
           <Route path="/company/:companyId/article-generation" element={<ClusterGeneration />} />
           <Route
             path="/company/:companyId/article-modify"
