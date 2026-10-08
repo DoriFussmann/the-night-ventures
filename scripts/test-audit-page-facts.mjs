@@ -212,6 +212,8 @@ test('buildCrawlIssues: core checks', () => {
   assert.equal(metrics.htmlPages, 8)
   assert.equal(metrics.nonIndexablePages, 1)
   assert.equal(new Set(issues.map((i) => i.fingerprint)).size, issues.length, 'fingerprints unique')
+  const noHint = issues.filter((i) => !i.fix_hint).map((i) => i.check_id)
+  assert.deepEqual(noHint, [], `every crawl issue has a fix hint (missing: ${noHint})`)
 })
 
 test('buildCrawlIssues: orphan + unknown fields stay silent', () => {
@@ -261,6 +263,8 @@ test('buildSchemaIssues: article, author, org, dates, faq', () => {
   assert.equal(metrics.pagesChecked, 4)
   assert.equal(metrics.pagesFailed, 1)
   assert.equal(metrics.articlePages, 3)
+  const noHint = issues.filter((i) => !i.fix_hint).map((i) => i.check_id)
+  assert.deepEqual(noHint, [], `every schema issue has a fix hint (missing: ${noHint})`)
 })
 
 console.log(`\n${passed} audit page-facts tests passed`)
