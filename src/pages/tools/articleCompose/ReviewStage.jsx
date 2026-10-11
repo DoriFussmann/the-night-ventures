@@ -127,6 +127,15 @@ export default function ReviewStage({
         />
       </FieldMeter>
 
+      <FieldMeter label="H1 (optional)" htmlFor="compose-review-h1" value={fm.h1} min={0} max={70} error={errors.h1}>
+        <Input
+          id="compose-review-h1"
+          value={fm.h1 || ""}
+          placeholder="On-page headline, 20–70 chars, different from the title. Leave empty to derive it."
+          onChange={(event) => patchFrontmatter({ h1: event.target.value })}
+        />
+      </FieldMeter>
+
       <FieldMeter
         label="Description"
         htmlFor="compose-review-description"

@@ -111,6 +111,7 @@ export function generatedArticleToPublishItem(row, options = {}) {
   return {
     frontmatter: {
       title: row?.title,
+      h1: row?.h1,
       description: row?.description,
       slug: row?.slug,
       date: row?.date,

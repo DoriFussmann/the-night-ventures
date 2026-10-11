@@ -16,6 +16,15 @@ import { stripNoVolumeTag } from '../lib/stripNoVolumeTag.js'
 import { slugify } from '../lib/slugify.js'
 import { demoteBodyH1 } from '../lib/demoteBodyH1.js'
 
+// Mirrors seo-core's H1 rules (lib/h1.ts): 20-70 chars and not the title.
+export function cleanH1(value, title) {
+  const h1 = String(value || '').replace(/\s+/g, ' ').trim()
+  const norm = (text) => String(text || '').replace(/\s+/g, ' ').trim().toLowerCase()
+  if (h1.length < 20 || h1.length > 70) return null
+  if (norm(h1) === norm(title)) return null
+  return h1
+}
+
 export const config = {
   maxDuration: 300,
 }
@@ -926,8 +935,9 @@ function coerceFrontmatter(
   const effectiveTarget = isPillar ? pillar : target
   const enforcedSlug = slugify(effectiveTarget) || String(fm.slug || '').trim()
 
+  const title = String(fm.title || '').trim()
   const frontmatter = {
-    title: String(fm.title || '').trim(),
+    title,
     description: String(fm.description || '').trim(),
     slug: enforcedSlug,
     date: String(fm.date || '').trim() || today,
@@ -952,6 +962,11 @@ function coerceFrontmatter(
     image2: null,
     image3: null,
   }
+
+  // h1 is soft: an unusable value is dropped (never retried) and seo-core
+  // derives one from the title at build time.
+  const h1 = cleanH1(fm.h1, title)
+  if (h1) frontmatter.h1 = h1
 
   // Pillar hub articles have no supporting keyword — omit rather than empty string.
   if (supporting) {
@@ -981,7 +996,7 @@ function buildParseRecoveryMessage() {
     'Your previous response could not be parsed. Do not apologize or explain.',
     'Resend the COMPLETE article now using this exact delimiter format (no markdown fences, no preamble):',
     `${FM_START}`,
-    '{ "title": "...", "description": "...", "slug": "...", "date": "YYYY-MM-DD", "updatedDate": "YYYY-MM-DD", "category": "...", "tags": [], "imageAlt": "...", "keywords": [], "faqs": [{"question":"...","answer":"..."}], "draft": true, "author": null, "internalLinks": [], "externalLinks": [], "image": null, "image2": null, "image3": null, "whereThingsStandSources": [{"url":"...","note":"..."}], "competitorsMentioned": [] }',
+    '{ "title": "...", "h1": "...", "description": "...", "slug": "...", "date": "YYYY-MM-DD", "updatedDate": "YYYY-MM-DD", "category": "...", "tags": [], "imageAlt": "...", "keywords": [], "faqs": [{"question":"...","answer":"..."}], "draft": true, "author": null, "internalLinks": [], "externalLinks": [], "image": null, "image2": null, "image3": null, "whereThingsStandSources": [{"url":"...","note":"..."}], "competitorsMentioned": [] }',
     `${BODY_START}`,
     '<full markdown body including Where Things Stand markers and ## Key Takeaways with 3–5 bullets>',
     `${BODY_END}`,

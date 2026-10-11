@@ -6,6 +6,7 @@ import {
   compareSemver,
   extractCoreVersion,
   parseSemver,
+  MAX_VERIFIED_CORE,
 } from '../lib/contract/coreContract.js'
 import { checkProjectContract } from '../lib/contract/projectContract.js'
 
@@ -50,7 +51,8 @@ await check('current fleet 0.1.0..0.6.0 compatible', () => {
   }
 })
 await check('newer minor within major runs but is flagged', () => {
-  const c = classifyCoreCompat('0.7.0')
+  const v = parseSemver(MAX_VERIFIED_CORE)
+  const c = classifyCoreCompat(`${v.major}.${v.minor + 1}.0`)
   assert.equal(c.compatible, true)
   assert.equal(c.severity, 'minor_ahead')
 })

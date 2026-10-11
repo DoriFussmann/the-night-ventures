@@ -30,6 +30,12 @@ export function reviewFieldErrors(frontmatter, body) {
   if (title.length < 55 || title.length > 60) {
     errors.title = `Title must be 55–60 characters (currently ${title.length}).`;
   }
+  const h1 = String(fm.h1 || "").trim();
+  if (h1 && (h1.length < 20 || h1.length > 70)) {
+    errors.h1 = `H1 must be 20–70 characters (currently ${h1.length}), or leave it empty to derive it from the title.`;
+  } else if (h1 && h1.toLowerCase() === title.trim().toLowerCase()) {
+    errors.h1 = "H1 must differ from the title, or leave it empty to derive it from the title.";
+  }
   if (description.length < 140 || description.length > 160) {
     errors.description = `Description must be 140–160 characters (currently ${description.length}).`;
   }

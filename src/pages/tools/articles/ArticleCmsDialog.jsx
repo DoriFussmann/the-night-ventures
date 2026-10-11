@@ -52,6 +52,7 @@ function bodyForReader(body) {
 function formFromArticle(article) {
   return {
     title: article?.title || "",
+    h1: article?.h1 || "",
     description: article?.description || "",
     category: article?.category || "",
     image_alt: article?.image_alt || "",
@@ -258,6 +259,12 @@ export default function ArticleCmsDialog({
                       placeholder="Title"
                       disabled={busy}
                     />
+                    <Input
+                      value={form?.h1 || ""}
+                      onChange={(e) => updateField("h1", e.target.value)}
+                      placeholder="H1 (optional, 20–70 chars, different from the title; empty = derived)"
+                      disabled={busy}
+                    />
                     <Textarea
                       value={form?.description || ""}
                       onChange={(e) => updateField("description", e.target.value)}
@@ -271,6 +278,9 @@ export default function ArticleCmsDialog({
                     <DialogTitle className="text-xl leading-snug font-semibold tracking-tight">
                       {article.title || "(untitled)"}
                     </DialogTitle>
+                    {article.h1 && (
+                      <p className="text-xs text-muted-foreground">H1: {article.h1}</p>
+                    )}
                     {article.description && (
                       <DialogDescription className="text-sm leading-relaxed text-muted-foreground">
                         {article.description}

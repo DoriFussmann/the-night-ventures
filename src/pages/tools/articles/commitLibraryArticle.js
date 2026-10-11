@@ -23,6 +23,7 @@ export function applyArticleForm(article, form) {
   return {
     ...article,
     title: String(form?.title || "").trim(),
+    h1: String(form?.h1 || "").trim() || null,
     description: String(form?.description || "").trim(),
     category: String(form?.category || "").trim(),
     image_alt: String(form?.image_alt || "").trim(),
@@ -70,6 +71,7 @@ export async function commitLibraryArticle({
   const asDraft = mode === "save" && article.status !== "published";
   const contentPatch = {
     title: next.title,
+    h1: next.h1 ?? null,
     description: next.description,
     category: next.category,
     image_alt: next.image_alt,

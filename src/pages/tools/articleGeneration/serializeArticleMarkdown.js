@@ -37,6 +37,10 @@ export function serializeArticleMarkdown(frontmatter, body, options = {}) {
 
   const lines = ["---"];
   lines.push(`title: ${yamlEscape(fm.title || "")}`);
+  const h1 = String(fm.h1 || "").trim();
+  if (h1) {
+    lines.push(`h1: ${yamlEscape(h1)}`);
+  }
   lines.push(`description: ${yamlEscape(fm.description || "")}`);
   lines.push(`slug: ${String(fm.slug || "").trim()}`);
   lines.push(`date: ${yamlEscape(String(fm.date || "").trim())}`);

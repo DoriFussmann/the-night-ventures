@@ -18,6 +18,7 @@ const DRAFT_COLUMNS = [
   "target_keyword",
   "status",
   "title",
+  "h1",
   "description",
   "slug",
   "date",
@@ -54,6 +55,7 @@ export async function loadComposeDraft({ companyId, id }) {
 export function frontmatterFromRow(row) {
   return {
     title: row?.title || "",
+    h1: row?.h1 || "",
     description: row?.description || "",
     slug: row?.slug || "",
     date: row?.date || null,

@@ -87,6 +87,7 @@ export function buildGeneratedArticleRow({
     target_keyword: stripNoVolumeTag(targetKeyword),
     status: status === "published" ? "published" : "drafted",
     title: String(fm.title || "").trim(),
+    h1: String(fm.h1 || "").trim() || null,
     description: String(fm.description || "").trim(),
     slug,
     date: fm.date != null ? String(fm.date) : null,
