@@ -14,7 +14,7 @@ import {
   Image,
   Sparkles,
   MessageSquareText,
-  Camera,
+  ClipboardCheck,
   Layers,
   LogOut,
   ArrowLeft,
@@ -506,9 +506,9 @@ export default function AppSidebar({ user }) {
               <NavDropdown label="Generation" icon={Layers} items={generationItems} />
               <NavItem
                 item={{
-                  label: "Analytics",
-                  path: `/company/${activeCompanyId}/external-audit-snapshot`,
-                  icon: Camera,
+                  label: "Audit",
+                  path: `/company/${activeCompanyId}/audit`,
+                  icon: ClipboardCheck,
                   status: "Partial",
                 }}
               />
