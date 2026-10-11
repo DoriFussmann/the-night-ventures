@@ -290,6 +290,13 @@ export default function CoreVersion() {
                 <VersionPill label="Latest" value={status.latest} />
               </div>
 
+              {status.lockMismatch && (
+                <p className="text-sm text-amber-700">
+                  package.json asks for v{status.declared}, but the lockfile installs v{status.locked}.
+                  The live site runs v{status.locked}. Updating fixes both files together.
+                </p>
+              )}
+
               {!status.updateAvailable && status.current && (
                 <div className="flex items-center gap-2 text-sm text-emerald-600">
                   <CheckCircle2 className="h-4 w-4" /> Up to date.

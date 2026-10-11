@@ -1,7 +1,7 @@
 // Tests for the seo-core version panel engine (build step 6a).
 // Run: node scripts/test-core-version.mjs
 import assert from 'node:assert/strict'
-import { bumpCorePin, parseCorePin, pickLatestTag, planCoreUpdate } from '../lib/core-version/plan.js'
+import { bumpCoreLock, bumpCorePin, parseCorePin, pickLatestTag, planCoreUpdate, readLockedCore } from '../lib/core-version/plan.js'
 import { buildStatus, applyUpdate } from '../lib/core-version/handler.js'
 
 let passed = 0
@@ -72,7 +72,7 @@ const dest = { owner: 'DoriFussmann', repo: 'album-amicorum', targetBranch: 'mai
 
 // files: { "<repo path>": "<file contents>" }. Missing path => 404 (like GitHub).
 function makeOcto({ files, tags }) {
-  const calls = { commits: 0, merges: 0, committedContent: null, committedPaths: [] }
+  const calls = { commits: 0, merges: 0, committedContent: null, committedPaths: [], committedByPath: {} }
   return {
     calls,
     repos: {
@@ -96,6 +96,7 @@ function makeOcto({ files, tags }) {
       createRef: async () => ({ data: {} }),
       createBlob: async ({ content }) => {
         calls.committedContent = content
+        calls.committedBlobs = [...(calls.committedBlobs || []), content]
         return { data: { sha: 'BLOBSHA' } }
       },
       createTree: async ({ tree }) => {
@@ -174,6 +175,120 @@ await check('apply: workspace monorepo — commits the bump to site/package.json
   assert.equal(r.body.updatedTo, '0.4.0')
   assert.deepEqual(octo.calls.committedPaths, ['site/package.json'])
   assert.ok(octo.calls.committedContent.includes('#v0.4.0'))
+})
+
+// --- lockfile: the version that is actually installed -----------------------
+const OLD_SHA = '0f0928fe419758eb5edeb8d7882ff87a60be9dc2'
+const NEW_SHA = '3e4bb1165d3ab7880a397296b67eb39479538854'
+// Shape of a real npm-workspaces lockfile (abridged): seo-core installed at an
+// old commit while site/package.json already asks for a newer tag.
+const lockAt = (version, sha, spec) => `{
+  "name": "proj",
+  "lockfileVersion": 3,
+  "requires": true,
+  "packages": {
+    "": {
+      "name": "proj",
+      "workspaces": [
+        "site"
+      ]
+    },
+    "node_modules/seo-core": {
+      "version": "${version}",
+      "resolved": "git+ssh://git@github.com/DoriFussmann/seo-core.git#${sha}",
+      "dependencies": {
+        "astro": "^5.12.0"
+      }
+    },
+    "site": {
+      "dependencies": {
+        "seo-core": "github:DoriFussmann/seo-core#v${spec}"
+      }
+    }
+  }
+}
+`
+const tagsWithSha = [
+  { name: 'v0.8.1', commit: { sha: 'aaaaaaa' } },
+  { name: 'v0.9.0', commit: { sha: NEW_SHA } },
+]
+
+await check('pickLatestTag: carries the tag commit sha', () => {
+  assert.equal(pickLatestTag(tagsWithSha).sha, NEW_SHA)
+})
+
+await check('readLockedCore: reads installed version, not the declared one', () => {
+  assert.equal(readLockedCore(lockAt('0.3.0', OLD_SHA, '0.8.1')).version, '0.3.0')
+  assert.equal(readLockedCore('{"packages":{}}'), null)
+  assert.equal(readLockedCore('not json'), null)
+})
+
+await check('bumpCoreLock: moves version, commit, and workspace spec only', () => {
+  const before = lockAt('0.3.0', OLD_SHA, '0.8.1')
+  const r = bumpCoreLock(before, { version: '0.9.0', sha: NEW_SHA })
+  assert.equal(r.error, null)
+  assert.equal(r.content, lockAt('0.9.0', NEW_SHA, '0.9.0'))
+  const changed = before.split('\n').filter((line, i) => line !== r.content.split('\n')[i])
+  assert.equal(changed.length, 3)
+})
+
+await check('bumpCoreLock: refuses without a tag commit sha', () => {
+  const r = bumpCoreLock(lockAt('0.3.0', OLD_SHA, '0.8.1'), { version: '0.9.0', sha: null })
+  assert.equal(r.changed, false)
+  assert.match(r.error, /sha/)
+})
+
+const lockedRepo = (declared, locked, sha) => ({
+  'package.json': rootWorkspacePkg,
+  'site/package.json': pkgAt(declared),
+  'package-lock.json': lockAt(locked, sha, declared),
+})
+
+await check('status: current is the LOCKED version; mismatch is flagged', async () => {
+  const octo = makeOcto({ files: lockedRepo('0.8.1', '0.3.0', OLD_SHA), tags: tagsWithSha })
+  const s = await buildStatus(octo, dest)
+  assert.equal(s.current, '0.3.0')
+  assert.equal(s.declared, '0.8.1')
+  assert.equal(s.locked, '0.3.0')
+  assert.equal(s.lockMismatch, true)
+  assert.equal(s.updateAvailable, true)
+})
+
+await check('apply: commits package.json AND lockfile together', async () => {
+  const octo = makeOcto({ files: lockedRepo('0.8.1', '0.3.0', OLD_SHA), tags: tagsWithSha })
+  const r = await applyUpdate(octo, dest)
+  assert.equal(r.status, 200)
+  assert.equal(r.body.ok, true)
+  assert.deepEqual(octo.calls.committedPaths, ['site/package.json', 'package-lock.json'])
+  const [pkgOut, lockOut] = octo.calls.committedBlobs
+  assert.ok(pkgOut.includes('#v0.9.0'))
+  assert.equal(lockOut, lockAt('0.9.0', NEW_SHA, '0.9.0'))
+})
+
+await check('apply: package.json already bumped but lock stuck -> fixes the lock', async () => {
+  const octo = makeOcto({ files: lockedRepo('0.9.0', '0.3.0', OLD_SHA), tags: tagsWithSha })
+  const r = await applyUpdate(octo, dest)
+  assert.equal(r.status, 200)
+  assert.equal(r.body.ok, true)
+  assert.deepEqual(octo.calls.committedPaths, ['package-lock.json'])
+})
+
+await check('apply: tag without commit sha -> refuses, no commit', async () => {
+  const octo = makeOcto({
+    files: lockedRepo('0.8.1', '0.3.0', OLD_SHA),
+    tags: [{ name: 'v0.8.1' }, { name: 'v0.9.0' }],
+  })
+  const r = await applyUpdate(octo, dest)
+  assert.equal(r.status, 422)
+  assert.equal(r.body.code, 'lockfile_update_failed')
+  assert.equal(octo.calls.commits, 0)
+})
+
+await check('apply: lock already correct and pin current -> up-to-date', async () => {
+  const octo = makeOcto({ files: lockedRepo('0.9.0', '0.9.0', NEW_SHA), tags: tagsWithSha })
+  const r = await applyUpdate(octo, dest)
+  assert.equal(r.body.reason, 'up-to-date')
+  assert.equal(octo.calls.commits, 0)
 })
 
 console.log(`\nAll ${passed} core-version assertions passed.`)
