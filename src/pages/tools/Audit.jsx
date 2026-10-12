@@ -26,6 +26,14 @@ const METRIC_LABELS = {
     ['articlePages', 'Article pages'],
     ['articlesWithSchema', 'Articles with Article schema'],
   ],
+  clusters: [
+    ['clusterCount', 'Clusters'],
+    ['pillarsPublished', 'Pillars published'],
+    ['articleCount', 'Supporting articles'],
+    ['pillarLinkCoverage', 'Pillar → article links %'],
+    ['backLinkCoverage', 'Article → pillar links %'],
+    ['pagesChecked', 'Pages checked'],
+  ],
   speed: [
     ['homePerformance', 'Home · mobile perf'],
     ['pillarPerformance', 'Pillar · mobile perf'],
@@ -103,6 +111,49 @@ function SpeedPages({ pages }) {
                   <td className={TD}>{p.labCls != null ? Number(p.labCls).toFixed(2) : '—'}</td>
                 </>
               )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/** One row per cluster. @param {{ rows: any[] }} props */
+function ClusterTable({ rows }) {
+  if (!rows?.length) return null
+  return (
+    <div className="overflow-x-auto rounded-md border border-border">
+      <table className="w-full text-xs">
+        <thead className="bg-muted/40">
+          <tr>
+            <th className={TH}>Pillar</th>
+            <th className={TH}>Pillar page</th>
+            <th className={TH}>Articles</th>
+            <th className={TH} title="Supporting articles the pillar links to">Pillar → articles</th>
+            <th className={TH} title="Articles that link back to the pillar">Articles → pillar</th>
+            <th className={TH} title="Articles linking to at least one sibling (clusters of 3+)">Sibling links</th>
+            <th className={TH}>Unpublished planned</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.id} className="border-t border-border">
+              <td className={`${TD} font-medium`}>{r.keyword}</td>
+              <td className={`${TD} max-w-[16rem] truncate`}>
+                {r.pillarUrl ? (
+                  <a href={r.pillarUrl} target="_blank" rel="noreferrer" className="hover:underline" title={r.pillarUrl}>
+                    {shortPath(r.pillarUrl)}
+                  </a>
+                ) : (
+                  <span className="text-red-600 dark:text-red-400">Not published</span>
+                )}
+              </td>
+              <td className={TD}>{r.articles}</td>
+              <td className={TD}>{r.pillarLinksOut ?? '—'}</td>
+              <td className={TD}>{r.linksBack ?? '—'}</td>
+              <td className={TD}>{r.siblingLinked ?? '—'}</td>
+              <td className={TD}>{r.plannedUnpublished || '—'}</td>
             </tr>
           ))}
         </tbody>
@@ -236,6 +287,7 @@ function CategoryDetail({ categoryId, entry, pendingAccept, onToggleAccepted }) 
         </div>
       ) : null}
 
+      {categoryId === 'clusters' ? <ClusterTable rows={metrics.clusters} /> : null}
       {categoryId === 'speed' ? <SpeedPages pages={metrics.pages} /> : null}
       {categoryId === 'authority' ? <AuthorityCompetitors metrics={metrics} /> : null}
 
