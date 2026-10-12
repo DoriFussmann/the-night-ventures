@@ -26,6 +26,141 @@ const METRIC_LABELS = {
     ['articlePages', 'Article pages'],
     ['articlesWithSchema', 'Articles with Article schema'],
   ],
+  speed: [
+    ['homePerformance', 'Home · mobile perf'],
+    ['pillarPerformance', 'Pillar · mobile perf'],
+    ['articlePerformance', 'Article · mobile perf'],
+    ['fieldLcp', 'Real-user LCP (p75)'],
+    ['fieldInp', 'Real-user INP (p75)'],
+    ['fieldCls', 'Real-user CLS (p75)'],
+  ],
+  authority: [
+    ['domainAuthority', 'Domain Authority'],
+    ['competitorMedianDa', 'Competitor median DA'],
+    ['linkingRootDomains', 'Linking root domains'],
+    ['competitorMedianRoots', 'Competitor median roots'],
+    ['spamScore', 'Spam Score %'],
+    ['pageAuthority', 'Home Page Authority'],
+  ],
+}
+
+const TH = 'px-3 py-1.5 text-left text-[11px] font-medium text-muted-foreground'
+const TD = 'px-3 py-1.5 tabular-nums'
+
+/** @param {number | null | undefined} score */
+function perfClass(score) {
+  if (typeof score !== 'number') return ''
+  if (score >= 90) return 'text-emerald-600 dark:text-emerald-400'
+  if (score >= 50) return 'text-amber-600 dark:text-amber-400'
+  return 'text-red-600 dark:text-red-400'
+}
+
+/** @param {string} url */
+function shortPath(url) {
+  try {
+    return new URL(url).pathname || '/'
+  } catch {
+    return url
+  }
+}
+
+/** Per-template PageSpeed results. @param {{ pages: any[] }} props */
+function SpeedPages({ pages }) {
+  if (!pages?.length) return null
+  return (
+    <div className="overflow-x-auto rounded-md border border-border">
+      <table className="w-full text-xs">
+        <thead className="bg-muted/40">
+          <tr>
+            <th className={TH}>Template</th>
+            <th className={TH}>Page</th>
+            <th className={TH}>Perf</th>
+            <th className={TH}>SEO</th>
+            <th className={TH}>A11y</th>
+            <th className={TH}>Lab LCP</th>
+            <th className={TH}>Lab CLS</th>
+          </tr>
+        </thead>
+        <tbody>
+          {pages.map((p) => (
+            <tr key={p.url} className="border-t border-border">
+              <td className={`${TD} capitalize`}>{p.kind}</td>
+              <td className={`${TD} max-w-[18rem] truncate`}>
+                <a href={p.url} target="_blank" rel="noreferrer" className="hover:underline" title={p.url}>
+                  {shortPath(p.url)}
+                </a>
+              </td>
+              {p.error ? (
+                <td colSpan={5} className={`${TD} text-red-600 dark:text-red-400`}>
+                  {p.error}
+                </td>
+              ) : (
+                <>
+                  <td className={cn(TD, 'font-semibold', perfClass(p.performance))}>{p.performance ?? '—'}</td>
+                  <td className={TD}>{p.seo ?? '—'}</td>
+                  <td className={TD}>{p.accessibility ?? '—'}</td>
+                  <td className={TD}>{p.labLcpMs != null ? `${(p.labLcpMs / 1000).toFixed(1)} s` : '—'}</td>
+                  <td className={TD}>{p.labCls != null ? Number(p.labCls).toFixed(2) : '—'}</td>
+                </>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/** Site vs competitors (Moz). @param {{ metrics: any }} props */
+function AuthorityCompetitors({ metrics }) {
+  const competitors = metrics?.competitors || []
+  if (!competitors.length) return null
+  const rows = [
+    {
+      key: '__site',
+      name: 'You',
+      domain: metrics.target,
+      domainAuthority: metrics.domainAuthority,
+      linkingRootDomains: metrics.linkingRootDomains,
+      spamScore: metrics.spamScore,
+      self: true,
+    },
+    ...competitors.map((c) => ({ ...c, key: c.domain })),
+  ]
+  return (
+    <div className="overflow-x-auto rounded-md border border-border">
+      <table className="w-full text-xs">
+        <thead className="bg-muted/40">
+          <tr>
+            <th className={TH}>Site</th>
+            <th className={TH}>Domain</th>
+            <th className={TH}>DA</th>
+            <th className={TH}>Linking roots</th>
+            <th className={TH}>Spam %</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.key} className={cn('border-t border-border', r.self && 'bg-accent/40 font-medium')}>
+              <td className={TD}>{r.name}</td>
+              <td className={`${TD} text-muted-foreground`}>{r.domain || '—'}</td>
+              {r.error ? (
+                <td colSpan={3} className={`${TD} text-muted-foreground`}>
+                  {r.error}
+                </td>
+              ) : (
+                <>
+                  <td className={TD}>{r.domainAuthority ?? '—'}</td>
+                  <td className={TD}>{r.linkingRootDomains?.toLocaleString?.() ?? '—'}</td>
+                  <td className={TD}>{r.spamScore ?? '—'}</td>
+                </>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
 }
 
 /** @param {{ entry: any }} props */
@@ -35,6 +170,9 @@ function RunNotes({ entry }) {
   if (metrics.crawlStopReason === 'limit_exceeded') notes.push('Crawl stopped at the 150-page cap.')
   if (metrics.urlsCapped) notes.push(`Checked the first 150 of ${metrics.urlsFound} URLs found.`)
   if (metrics.pagesFailed) notes.push(`${metrics.pagesFailed} page(s) could not be fetched.`)
+  if (entry.latest?.category === 'speed' && metrics.hasFieldData === false) {
+    notes.push('No real-user (CrUX) data for this site yet — speed findings are from lab runs only.')
+  }
   for (const warning of metrics.warnings || []) notes.push(warning)
   if (!notes.length) return null
   return (
@@ -97,6 +235,9 @@ function CategoryDetail({ categoryId, entry, pendingAccept, onToggleAccepted }) 
             ))}
         </div>
       ) : null}
+
+      {categoryId === 'speed' ? <SpeedPages pages={metrics.pages} /> : null}
+      {categoryId === 'authority' ? <AuthorityCompetitors metrics={metrics} /> : null}
 
       <RunNotes entry={entry} />
 
