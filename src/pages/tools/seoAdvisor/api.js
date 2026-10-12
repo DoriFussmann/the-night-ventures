@@ -1,5 +1,4 @@
 import { supabase } from '@/lib/supabase'
-import { slugifyKeyword } from '../../../../lib/seo-advisor/pillars.js'
 
 async function authHeaders() {
   const { data } = await supabase.auth.getSession()
@@ -11,72 +10,75 @@ async function authHeaders() {
   }
 }
 
-export async function listSessions(companyId) {
+async function request(url, { method = 'GET', body, errorLabel } = {}) {
   const headers = await authHeaders()
-  const res = await fetch(
-    `/api/seo-advisor-sessions?companyId=${encodeURIComponent(companyId)}`,
-    { headers }
-  )
+  const res = await fetch(url, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  })
   const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data.error || 'Failed to load sessions')
+  if (!res.ok) {
+    const err = new Error(data.error || `${errorLabel || 'Request failed'} (${res.status})`)
+    err.status = res.status
+    err.code = data.code
+    throw err
+  }
   return data
 }
 
-export async function getSession(companyId, sessionId) {
-  const headers = await authHeaders()
-  const res = await fetch(
+/* ---------------- Sessions ---------------- */
+
+export function listSessions(companyId) {
+  return request(`/api/seo-advisor-sessions?companyId=${encodeURIComponent(companyId)}`, {
+    errorLabel: 'Failed to load chats',
+  })
+}
+
+export function getSession(companyId, sessionId) {
+  return request(
     `/api/seo-advisor-sessions?companyId=${encodeURIComponent(companyId)}&sessionId=${encodeURIComponent(sessionId)}`,
-    { headers }
+    { errorLabel: 'Failed to load chat' }
   )
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data.error || 'Failed to load session')
-  return data
 }
 
-export async function createSession(companyId) {
-  const headers = await authHeaders()
-  const res = await fetch('/api/seo-advisor-sessions', {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ companyId }),
+export function deleteSession({ companyId, sessionId }) {
+  return request('/api/seo-advisor-sessions', {
+    method: 'DELETE',
+    body: { companyId, sessionId },
+    errorLabel: 'Failed to delete chat',
   })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data.error || 'Failed to create session')
-  return data
 }
 
-export async function patchInsight({ companyId, insightId, action, status }) {
-  const headers = await authHeaders()
-  const res = await fetch('/api/seo-advisor-insights', {
-    method: 'PATCH',
-    headers,
-    body: JSON.stringify({ companyId, insightId, action, status }),
+/* ---------------- Keyword tree (content_coverage) ---------------- */
+
+export function getKeywordTree(companyId) {
+  return request(`/api/seo-advisor-keywords?companyId=${encodeURIComponent(companyId)}`, {
+    errorLabel: 'Failed to load keywords',
   })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data.error || 'Failed to update insight')
-  return data
 }
 
 /**
- * Stream a chat turn. Calls onEvent(eventName, data) for each SSE event.
+ * @param action add_core | add_supporting | remove_core | remove_supporting | replace_tree
+ * @returns {Promise<{ pillars: object[], keptLocked?: string[], skipped?: string[] }>}
  */
-export async function streamChat({
-  companyId,
-  sessionId,
-  message,
-  mode,
-  pillarSlug,
-  onEvent,
-  signal,
-}) {
+export function keywordAction(companyId, action, payload = {}) {
+  return request('/api/seo-advisor-keywords', {
+    method: 'POST',
+    body: { companyId, action, ...payload },
+    errorLabel: 'Keyword update failed',
+  })
+}
+
+/* ---------------- Chat ---------------- */
+
+/** Stream a chat turn. Calls onEvent(eventName, data) for each SSE event. */
+export async function streamChat({ companyId, sessionId, message, market, language, onEvent, signal }) {
   const headers = await authHeaders()
-  const payload = { companyId, sessionId, message }
-  if (mode) payload.mode = mode
-  if (pillarSlug) payload.pillarSlug = pillarSlug
   const res = await fetch('/api/seo-advisor-chat', {
     method: 'POST',
     headers,
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ companyId, sessionId, message, market, language }),
     signal,
   })
 
@@ -100,263 +102,20 @@ export async function streamChat({
     while ((sep = buffer.indexOf('\n\n')) !== -1) {
       const chunk = buffer.slice(0, sep)
       buffer = buffer.slice(sep + 2)
-      const lines = chunk.split('\n')
       let event = 'message'
       const dataLines = []
-      for (const line of lines) {
+      for (const line of chunk.split('\n')) {
         if (line.startsWith('event:')) event = line.slice(6).trim()
         else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim())
       }
       if (dataLines.length === 0) continue
       try {
-        const data = JSON.parse(dataLines.join('\n'))
-        onEvent?.(event, data)
+        onEvent?.(event, JSON.parse(dataLines.join('\n')))
       } catch {
-        // ignore malformed
+        // ignore malformed event
       }
     }
   }
 }
 
-/** Convert stored messages into UI chat bubbles (text + tool markers). */
-export function messagesToUi(rows, opts = {}) {
-  const ui = []
-  for (const row of rows || []) {
-    if (row.role === 'user') {
-      const text =
-        typeof row.content === 'string'
-          ? row.content
-          : row.content?.text != null
-            ? String(row.content.text)
-            : Array.isArray(row.content)
-              ? row.content
-                  .filter((b) => b.type === 'text')
-                  .map((b) => b.text)
-                  .join('\n')
-              : ''
-      if (text) ui.push({ id: row.id, role: 'user', text })
-      continue
-    }
-    if (row.role === 'assistant') {
-      const blocks = Array.isArray(row.content) ? row.content : []
-      const text = blocks
-        .filter((b) => b.type === 'text' && b.text)
-        .map((b) => b.text)
-        .join('\n')
-      const tools = blocks
-        .filter((b) => b.type === 'tool_use')
-        .map((b) => ({ name: b.name, id: b.id, input: b.input }))
-      if (text || tools.length) {
-        ui.push({
-          id: row.id,
-          role: 'assistant',
-          text: text || '',
-          tools: tools.filter(
-            (t) =>
-              t.name !== 'propose_audience' &&
-              t.name !== 'propose_pillars' &&
-              t.name !== 'propose_clusters'
-          ),
-        })
-      }
-      const audience = tools.find((t) => t.name === 'propose_audience')
-      if (audience) {
-        const audienceText = String(audience.input?.audience_text || '').trim()
-        const current = String(opts.targetAudience || '').trim()
-        ui.push({
-          id: `${row.id}-audience`,
-          role: 'audience_proposal',
-          brief: String(audience.input?.brief || ''),
-          audience_text: audienceText,
-          confirmed: Boolean(current && audienceText && current === audienceText),
-        })
-      }
-      const pillarsTool = tools.find((t) => t.name === 'propose_pillars')
-      if (pillarsTool) {
-        const pillars = Array.isArray(pillarsTool.input?.pillars)
-          ? pillarsTool.input.pillars
-          : []
-        const savedSlugs = new Set(
-          (opts.pillars || []).map((item) =>
-            slugifyKeyword(item.slug || item.keyword)
-          )
-        )
-        const confirmed =
-          pillars.length > 0 &&
-          pillars.every((item) =>
-            savedSlugs.has(slugifyKeyword(item.keyword))
-          )
-        ui.push({
-          id: `${row.id}-pillars`,
-          role: 'pillars_proposal',
-          rationale: String(pillarsTool.input?.rationale || ''),
-          pillars,
-          confirmed,
-        })
-      }
-      const clustersTool = tools.find((t) => t.name === 'propose_clusters')
-      if (clustersTool) {
-        const clusters = Array.isArray(clustersTool.input?.clusters)
-          ? clustersTool.input.clusters
-          : []
-        const pillarSlug = slugifyKeyword(
-          clustersTool.input?.pillar_slug || clustersTool.input?.pillar_keyword
-        )
-        const pillar = (opts.pillars || []).find(
-          (item) => slugifyKeyword(item.slug || item.keyword) === pillarSlug
-        )
-        const savedSlugs = new Set(
-          (pillar?.supporting || []).map((item) =>
-            slugifyKeyword(item.slug || item.keyword)
-          )
-        )
-        const confirmed =
-          clusters.length > 0 &&
-          clusters.every((item) =>
-            savedSlugs.has(slugifyKeyword(item.keyword))
-          )
-        ui.push({
-          id: `${row.id}-clusters`,
-          role: 'clusters_proposal',
-          pillar_slug: String(clustersTool.input?.pillar_slug || ''),
-          pillar_keyword: String(clustersTool.input?.pillar_keyword || ''),
-          rationale: String(clustersTool.input?.rationale || ''),
-          clusters,
-          confirmed,
-        })
-      }
-    }
-  }
-
-  return ui
-}
-
-export async function getComposerFields(companyId) {
-  const headers = await authHeaders()
-  const res = await fetch(
-    `/api/seo-advisor-sessions?companyId=${encodeURIComponent(companyId)}&composer=1`,
-    { headers }
-  )
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data.error || 'Failed to load company fields')
-  return data
-}
-
-export async function saveSessionShortlist({ companyId, sessionId, shortlist }) {
-  const headers = await authHeaders()
-  const res = await fetch('/api/seo-advisor-sessions', {
-    method: 'PATCH',
-    headers,
-    body: JSON.stringify({ companyId, sessionId, shortlist }),
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data.error || 'Failed to save shortlist')
-  return data
-}
-
-export async function deleteSession({ companyId, sessionId }) {
-  const headers = await authHeaders()
-  const res = await fetch('/api/seo-advisor-sessions', {
-    method: 'DELETE',
-    headers,
-    body: JSON.stringify({ companyId, sessionId }),
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data.error || 'Failed to clear topic')
-  return data
-}
-
-export async function getCoveragePillars(companyId) {
-  const headers = await authHeaders()
-  const res = await fetch(
-    `/api/seo-advisor-sessions?companyId=${encodeURIComponent(companyId)}&pillars=1`,
-    { headers }
-  )
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data.error || 'Failed to load pillars')
-  return data
-}
-
-export async function saveClusters({ companyId, pillarSlug, clusters }) {
-  const headers = await authHeaders()
-  const res = await fetch('/api/seo-advisor-insights', {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      companyId,
-      action: 'save_clusters',
-      pillarSlug,
-      clusters,
-    }),
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data.error || 'Failed to save clusters')
-  return data
-}
-
-export async function savePillars({ companyId, pillars }) {
-  const headers = await authHeaders()
-  const res = await fetch('/api/seo-advisor-insights', {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      companyId,
-      action: 'save_pillars',
-      pillars,
-    }),
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data.error || 'Failed to save pillars')
-  return data
-}
-
-export async function saveAudience({ companyId, audience_text, override }) {
-  const headers = await authHeaders()
-  const res = await fetch('/api/seo-advisor-insights', {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      companyId,
-      action: 'save_audience',
-      audience_text,
-      override: Boolean(override),
-    }),
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data.error || 'Failed to save audience')
-  return data
-}
-
-export async function saveShortlistInsight({ companyId, sessionId, items, title }) {
-  const headers = await authHeaders()
-  const res = await fetch('/api/seo-advisor-insights', {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      companyId,
-      sessionId,
-      action: 'save_shortlist',
-      items,
-      title,
-    }),
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data.error || 'Failed to save insight')
-  return data
-}
-
-export async function pushKeywords({ companyId, items }) {
-  const headers = await authHeaders()
-  const res = await fetch('/api/seo-advisor-insights', {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      companyId,
-      action: 'push_keywords',
-      items,
-    }),
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data.error || 'Failed to push keywords')
-  return data
-}
+export { messagesToUi } from './history.js'

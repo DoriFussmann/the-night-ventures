@@ -1,5 +1,5 @@
 /**
- * Self-test for SEO AI Advisor data loop (auth → chat SSE → tools → insights → reload).
+ * Self-test for SEO Advisor data loop (auth → chat SSE → tools → keyword recommendations → reload).
  * Usage: node scripts/test-seo-advisor.mjs
  */
 import fs from 'node:fs'
@@ -175,7 +175,7 @@ async function main() {
 
   const base = process.env.SEO_ADVISOR_TEST_BASE || 'http://localhost:5173'
   const message =
-    "Based on this company's business and the space we're in, identify 2-3 pillar topics we should build around. Pull real keyword/search demand data if tools are available. Save at least one insight with save_insight."
+    "Based on Company Intelligence, which 2 Core keywords should we own? Pull real search volume and difficulty, then recommend your strongest pick with recommend_keyword."
 
   console.log(`→ POST ${base}/api/seo-advisor-chat …`)
   const res = await fetch(`${base}/api/seo-advisor-chat`, {
@@ -199,7 +199,7 @@ async function main() {
   let sessionId = null
   let toolStarts = 0
   let toolEnds = 0
-  let insights = 0
+  let recommendations = 0
   let textLen = 0
   let done = null
 
@@ -222,7 +222,7 @@ async function main() {
       if (event === 'session') sessionId = data.id
       if (event === 'tool_start') toolStarts += 1
       if (event === 'tool_end') toolEnds += 1
-      if (event === 'insight') insights += 1
+      if (event === 'recommendation') recommendations += 1
       if (event === 'text_delta') textLen += (data.text || '').length
       if (event === 'done') done = data
       if (event === 'error') console.error('SSE error:', data)
@@ -233,7 +233,7 @@ async function main() {
     sessionId,
     toolStarts,
     toolEnds,
-    insights,
+    recommendations,
     textLen,
     done,
   })
@@ -259,8 +259,7 @@ async function main() {
     process.exit(1)
   }
   const msgCount = reloadData.messages?.length || 0
-  const insightCount = reloadData.insights?.length || 0
-  console.log(`✓ Reloaded session: ${msgCount} messages, ${insightCount} insights`)
+  console.log(`✓ Reloaded session: ${msgCount} messages`)
 
   if (msgCount < 2) {
     console.error('✗ Expected persisted messages')
@@ -274,10 +273,10 @@ async function main() {
   }
   console.log('✓ Tool results persisted in chat_messages')
 
-  if (insights < 1 && insightCount < 1) {
-    console.warn('○ No insight saved this turn (model may have skipped save_insight)')
+  if (recommendations < 1) {
+    console.warn('○ No keyword recommendation this turn (model may have held back)')
   } else {
-    console.log('✓ Insight saved and reloadable')
+    console.log(`✓ ${recommendations} keyword recommendation card(s) streamed`)
   }
 
   const realProviderData = dfs.available || sm.available

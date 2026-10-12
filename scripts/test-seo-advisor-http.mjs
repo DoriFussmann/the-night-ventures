@@ -76,7 +76,7 @@ const res = await fetch(`${base}/api/seo-advisor-chat`, {
   body: JSON.stringify({
     companyId: company.id,
     message:
-      "Based on this company's business, suggest 2 pillar topics. Use tools for keyword demand if available, and call save_insight once.",
+      "Which Core keyword should this company own first? Check volume and difficulty, then recommend it with recommend_keyword.",
   }),
 })
 
@@ -88,7 +88,7 @@ if (!res.ok) {
 
 let sessionId = null
 let toolStarts = 0
-let insights = 0
+let recommendations = 0
 let textLen = 0
 let buffer = ''
 const reader = res.body.getReader()
@@ -111,14 +111,14 @@ while (true) {
     const payload = JSON.parse(dataLines.join('\n'))
     if (event === 'session') sessionId = payload.id
     if (event === 'tool_start') toolStarts += 1
-    if (event === 'insight') insights += 1
+    if (event === 'recommendation') recommendations += 1
     if (event === 'text_delta') textLen += (payload.text || '').length
     if (event === 'error') console.error('sse error', payload)
     if (event === 'done') console.log('done', payload)
   }
 }
 
-console.log({ sessionId, toolStarts, insights, textLen })
+console.log({ sessionId, toolStarts, recommendations, textLen })
 if (!sessionId || toolStarts < 1) process.exit(1)
 
 const reload = await fetch(
@@ -128,7 +128,6 @@ const reload = await fetch(
 const reloadData = await reload.json()
 console.log('reload', reload.status, {
   messages: reloadData.messages?.length,
-  insights: reloadData.insights?.length,
   toolMsgs: reloadData.messages?.filter((m) => m.role === 'tool').length,
 })
 if (!reload.ok || (reloadData.messages?.length || 0) < 2) process.exit(1)

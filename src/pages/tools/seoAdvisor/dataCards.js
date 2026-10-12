@@ -1,11 +1,14 @@
-/** Turn normalized provider tool results into table-ready data cards. */
+/** Turn normalized provider tool results into small tables for the chat. */
 
 const TOOL_TITLES = {
   semrush_domain_overview: 'Domain overview',
   semrush_keyword_research: 'Keyword research',
   semrush_organic_research: 'Organic keywords',
   semrush_competitors_research: 'Organic competitors',
-  dataforseo_keyword_data: 'Keyword volumes',
+  dataforseo_keyword_volume: 'Keyword volumes',
+  dataforseo_keyword_difficulty: 'Keyword difficulty',
+  dataforseo_keyword_ideas: 'Keyword ideas',
+  dataforseo_related_keywords: 'Related keywords',
   dataforseo_serp_results: 'SERP results',
   dataforseo_backlinks_summary: 'Backlinks summary',
   dataforseo_onpage_audit: 'On-page audit',
@@ -62,7 +65,6 @@ function rowsFromArray(items, columnOrder) {
  */
 export function toolResultToDataCard(toolName, result, { id, createdAt } = {}) {
   if (!result || typeof result !== 'object') return null
-  if (toolName === 'save_insight') return null
   if (result.available === false) {
     return {
       id: id || `${toolName}-${Date.now()}`,
@@ -136,7 +138,25 @@ export function toolResultToDataCard(toolName, result, { id, createdAt } = {}) {
       rows = table.rows
       break
     }
-    case 'dataforseo_keyword_data': {
+    case 'dataforseo_keyword_difficulty': {
+      const table = rowsFromArray(result.keywords, ['keyword', 'keywordDifficulty'])
+      columns = table.columns
+      rows = table.rows
+      break
+    }
+    case 'dataforseo_keyword_ideas':
+    case 'dataforseo_related_keywords': {
+      const table = rowsFromArray(result.keywords, [
+        'keyword',
+        'searchVolume',
+        'competitionIndex',
+        'cpc',
+      ])
+      columns = table.columns
+      rows = table.rows
+      break
+    }
+    case 'dataforseo_keyword_volume': {
       const table = rowsFromArray(result.keywords, [
         'keyword',
         'searchVolume',
@@ -231,73 +251,6 @@ export function toolResultToDataCard(toolName, result, { id, createdAt } = {}) {
     rows,
     available: true,
     createdAt: createdAt || new Date().toISOString(),
-  }
-}
-
-/** Rebuild data cards from persisted chat_messages tool rows. */
-export function dataCardsFromMessages(messages) {
-  const cards = []
-  for (const row of messages || []) {
-    if (row.role !== 'tool') continue
-    const content = row.content || {}
-    const toolName = content.name || content.tool_name
-    const result = content.content ?? content
-    const card = toolResultToDataCard(toolName, result, {
-      id: row.id,
-      createdAt: row.created_at,
-    })
-    if (card) cards.push(card)
-  }
-  return cards
-}
-
-export function rowsToCsv(columns, rows) {
-  const escape = (v) => {
-    const s = String(v ?? '')
-    if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`
-    return s
-  }
-  const header = columns.map(escape).join(',')
-  const body = rows.map((r) => columns.map((c) => escape(r[c])).join(',')).join('\n')
-  return `${header}\n${body}`
-}
-
-export function parseFormattedNumber(value) {
-  if (value == null || value === '' || value === '—') return null
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  const cleaned = String(value).replace(/[^0-9.-]/g, '')
-  if (!cleaned) return null
-  const n = Number(cleaned)
-  return Number.isFinite(n) ? n : null
-}
-
-export function shortlistItemFromRow(card, row) {
-  if (!row) return null
-  const keyword = String(row.keyword || row.term || '').trim()
-  if (!keyword || keyword === '—') return null
-  const search_volume = parseFormattedNumber(
-    row.searchVolume ?? row.search_volume ?? row.volume
-  )
-  let difficulty = parseFormattedNumber(
-    row.keywordDifficulty ?? row.difficulty
-  )
-  if (difficulty == null) {
-    const competitionIndex = parseFormattedNumber(row.competitionIndex)
-    if (competitionIndex != null) difficulty = competitionIndex
-    else {
-      const competition = parseFormattedNumber(row.competition)
-      if (competition != null) {
-        difficulty = competition <= 1 ? Math.round(competition * 100) : competition
-      }
-    }
-  }
-  const intent = row.intent ? String(row.intent) : undefined
-  return {
-    keyword,
-    search_volume,
-    difficulty,
-    intent,
-    source: card?.provider || undefined,
   }
 }
 

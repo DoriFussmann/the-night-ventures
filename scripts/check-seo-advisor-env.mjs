@@ -73,12 +73,12 @@ if (serviceRoleLooksValid(serviceKey)) {
   const admin = createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
-  for (const table of ['chat_sessions', 'chat_messages', 'insights', 'company_industries']) {
+  for (const table of ['chat_sessions', 'chat_messages', 'content_coverage', 'company_industries']) {
     const { error } = await admin.from(table).select('*').limit(1)
     console.log(`${table}: ${error ? error.message : 'ok'}`)
   }
-  const { error: patchErr } = await admin.from('insights').select('profile_patch').limit(1)
-  console.log(`insights.profile_patch: ${patchErr ? patchErr.message : 'ok'}`)
+  const { error: marketErr } = await admin.from('chat_sessions').select('market, language').limit(1)
+  console.log(`chat_sessions.market/language (059): ${marketErr ? marketErr.message : 'ok'}`)
 } else {
   console.log('Service role still placeholder — skipping schema check via service role')
   console.log('Tables are fine if SQL Editor ran 018+019 successfully.')

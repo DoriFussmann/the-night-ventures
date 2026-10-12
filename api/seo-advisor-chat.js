@@ -1,16 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk'
-import {
-  requireAuth,
-  handleOptions,
-  parseBody,
-  json,
-} from '../lib/seo-advisor/auth.js'
+import { requireAuth, handleOptions, parseBody, json } from '../lib/seo-advisor/auth.js'
 import {
   loadCompanyContext,
   buildSystemPrompt,
   messagesFromRows,
 } from '../lib/seo-advisor/context.js'
-import { findCoveragePillar } from '../lib/seo-advisor/pillars.js'
 import {
   TOOL_DEFINITIONS,
   executeTool,
@@ -18,9 +12,16 @@ import {
   MAX_TOOL_CALLS_PER_TURN,
   healthSnapshot,
 } from '../lib/seo-advisor/tools.js'
+import { researchLocale } from '../lib/seo-advisor/markets.js'
 
-const MODEL = 'claude-sonnet-4-6'
+const MODEL = process.env.SEO_ADVISOR_MODEL || 'claude-sonnet-5-5'
+const TITLE_MODEL = process.env.SEO_ADVISOR_TITLE_MODEL || 'claude-haiku-5-5'
 const MAX_TOKENS = 8192
+
+// Tool definitions never change, so cache them with a breakpoint on the last one.
+const CACHED_TOOLS = TOOL_DEFINITIONS.map((tool, i) =>
+  i === TOOL_DEFINITIONS.length - 1 ? { ...tool, cache_control: { type: 'ephemeral' } } : tool
+)
 
 function sseWrite(res, event, data) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
@@ -34,27 +35,70 @@ function extractText(contentBlocks) {
     .join('')
 }
 
-async function ensureSession(supabase, companyId, sessionId) {
-  if (sessionId) {
-    const { data, error } = await supabase
+/** Copy messages with a cache breakpoint on the final block only. */
+function withCacheBreakpoint(messages) {
+  if (messages.length === 0) return messages
+  const out = messages.slice(0, -1)
+  const last = messages[messages.length - 1]
+  const content =
+    typeof last.content === 'string' ? [{ type: 'text', text: last.content }] : [...last.content]
+  const tail = content[content.length - 1]
+  content[content.length - 1] = { ...tail, cache_control: { type: 'ephemeral' } }
+  out.push({ ...last, content })
+  return out
+}
+
+const SESSION_COLUMNS = 'id, company_id, title, market, language'
+
+async function selectSession(supabase, sessionId) {
+  const first = await supabase
+    .from('chat_sessions')
+    .select(SESSION_COLUMNS)
+    .eq('id', sessionId)
+    .maybeSingle()
+  if (!first.error) return first.data
+  if (/market|language|column/i.test(first.error.message || '')) {
+    const retry = await supabase
       .from('chat_sessions')
       .select('id, company_id, title')
       .eq('id', sessionId)
       .maybeSingle()
-    if (error) throw error
+    if (retry.error) throw retry.error
+    return retry.data
+  }
+  throw first.error
+}
+
+async function ensureSession(supabase, companyId, sessionId, locale) {
+  if (sessionId) {
+    const data = await selectSession(supabase, sessionId)
     if (!data || data.company_id !== companyId) {
       const err = new Error('Session not found for this company')
       err.statusCode = 404
       throw err
     }
+    if (data.market !== locale.market || data.language !== locale.language) {
+      const { error } = await supabase
+        .from('chat_sessions')
+        .update({ market: locale.market, language: locale.language })
+        .eq('id', sessionId)
+      if (error) console.error('Failed to store session market:', error.message)
+    }
     return data
   }
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('chat_sessions')
-    .insert({ company_id: companyId, title: null })
+    .insert({ company_id: companyId, title: null, market: locale.market, language: locale.language })
     .select('id, company_id, title')
     .single()
+  if (error && /market|language|column/i.test(error.message || '')) {
+    ;({ data, error } = await supabase
+      .from('chat_sessions')
+      .insert({ company_id: companyId, title: null })
+      .select('id, company_id, title')
+      .single())
+  }
   if (error) throw error
   return data
 }
@@ -70,44 +114,28 @@ async function loadHistory(supabase, sessionId) {
 }
 
 async function insertMessage(supabase, sessionId, role, content) {
-  const { data, error } = await supabase
-    .from('chat_messages')
-    .insert({ session_id: sessionId, role, content })
-    .select('id, role, content, created_at')
-    .single()
+  const { error } = await supabase.from('chat_messages').insert({ session_id: sessionId, role, content })
   if (error) throw error
-  return data
-}
-
-async function touchSession(supabase, sessionId) {
-  await supabase
-    .from('chat_sessions')
-    .update({ updated_at: new Date().toISOString() })
-    .eq('id', sessionId)
 }
 
 async function maybeTitleSession(anthropic, supabase, session, userText, assistantText) {
-  if (session.title) return session.title
+  if (session.title) return null
   try {
     const msg = await anthropic.messages.create({
-      model: MODEL,
+      model: TITLE_MODEL,
       max_tokens: 40,
       messages: [
         {
           role: 'user',
-          content: `Write a short chat session title (max 6 words, no quotes) for this exchange:\nUser: ${userText.slice(0, 400)}\nAssistant: ${assistantText.slice(0, 400)}`,
+          content: `Write a short chat title (max 6 words, no quotes, no trailing punctuation) for this SEO keyword discussion:\nUser: ${userText.slice(0, 400)}\nAssistant: ${assistantText.slice(0, 400)}`,
         },
       ],
     })
     const title = extractText(msg.content)
-      .replace(/^["']|["']$/g, '')
-      .trim()
+      .replace(/^["'\s]+|["'\s.]+$/g, '')
       .slice(0, 80)
     if (!title) return null
-    await supabase
-      .from('chat_sessions')
-      .update({ title, updated_at: new Date().toISOString() })
-      .eq('id', session.id)
+    await supabase.from('chat_sessions').update({ title }).eq('id', session.id)
     return title
   } catch (err) {
     console.error('title generation failed:', err)
@@ -117,10 +145,7 @@ async function maybeTitleSession(anthropic, supabase, session, userText, assista
 
 export default async function handler(req, res) {
   if (handleOptions(req, res, 'POST, OPTIONS')) return
-
-  if (req.method !== 'POST') {
-    return json(res, 405, { error: 'Method not allowed' })
-  }
+  if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' })
 
   let auth
   try {
@@ -134,13 +159,10 @@ export default async function handler(req, res) {
   const companyId = String(body.companyId || '').trim()
   const userMessage = String(body.message || '').trim()
   const sessionIdIn = body.sessionId ? String(body.sessionId).trim() : null
-  const mode = String(body.mode || '').trim()
-  const pillarSlug = String(body.pillarSlug || '').trim()
+  const locale = researchLocale(String(body.market || ''), String(body.language || ''))
 
   if (!companyId) return json(res, 400, { error: 'companyId is required' })
-  if (!userMessage) {
-    return json(res, 400, { error: 'message is required' })
-  }
+  if (!userMessage) return json(res, 400, { error: 'message is required' })
 
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
@@ -159,177 +181,123 @@ export default async function handler(req, res) {
   req.on('close', () => {
     closed = true
   })
+  const send = (event, data) => {
+    if (!closed) sseWrite(res, event, data)
+  }
 
   try {
     const ctx = await loadCompanyContext(supabase, companyId)
-    const session = await ensureSession(supabase, companyId, sessionIdIn)
-    sseWrite(res, 'session', { id: session.id, title: session.title })
+    const session = await ensureSession(supabase, companyId, sessionIdIn, locale)
+    send('session', { id: session.id, title: session.title })
 
-    await insertMessage(supabase, session.id, 'user', {
-      type: 'text',
-      text: userMessage,
-    })
+    await insertMessage(supabase, session.id, 'user', { type: 'text', text: userMessage })
 
     const historyRows = await loadHistory(supabase, session.id)
-    const focusPillar = findCoveragePillar(ctx.coveragePillars, pillarSlug)
-    const system = buildSystemPrompt({ ...ctx, mode, focusPillar })
-    let messages = messagesFromRows(historyRows)
-
-    let toolCallsThisTurn = 0
-    let finalAssistantBlocks = []
-    let streamedText = ''
+    const system = [
+      {
+        type: 'text',
+        text: buildSystemPrompt({ ...ctx, locale }),
+        cache_control: { type: 'ephemeral' },
+      },
+    ]
+    const messages = messagesFromRows(historyRows)
 
     const toolContext = {
-      supabase,
-      companyId,
-      sessionId: session.id,
-      onInsight: (insight) => {
-        if (!closed) sseWrite(res, 'insight', insight)
-      },
-      onAudienceProposal: (payload) => {
-        if (!closed) sseWrite(res, 'audience_proposal', payload)
-      },
-      onPillarsProposal: (payload) => {
-        if (!closed) sseWrite(res, 'pillars_proposal', payload)
-      },
-      onClustersProposal: (payload) => {
-        if (!closed) sseWrite(res, 'clusters_proposal', payload)
-      },
+      locale,
+      pillars: ctx.pillars,
+      onRecommendation: null,
     }
+
+    let toolCalls = 0
+    let assistantText = ''
 
     while (!closed) {
       const stream = anthropic.messages.stream({
         model: MODEL,
         max_tokens: MAX_TOKENS,
         system,
-        tools: TOOL_DEFINITIONS,
-        messages,
+        tools: CACHED_TOOLS,
+        messages: withCacheBreakpoint(messages),
       })
 
       stream.on('text', (text) => {
-        if (closed) return
-        streamedText += text
-        sseWrite(res, 'text_delta', { text })
-      })
-
-      stream.on('streamEvent', (event) => {
-        if (closed || event.type !== 'content_block_start') return
-        const b = event.content_block
-        if (b?.type !== 'tool_use') return
-        const provider = providerLabelForTool(b.name)
-        if (provider) {
-          sseWrite(res, 'tool_start', {
-            id: b.id,
-            name: b.name,
-            provider,
-          })
-        }
+        assistantText += text
+        send('text_delta', { text })
       })
 
       const finalMessage = await stream.finalMessage()
       const blocks = finalMessage.content || []
-      finalAssistantBlocks = blocks
-
       await insertMessage(supabase, session.id, 'assistant', blocks)
 
-      const stopReason = finalMessage.stop_reason
       const toolUses = blocks.filter((b) => b.type === 'tool_use')
-
-      if (stopReason !== 'tool_use' || toolUses.length === 0) {
+      if (finalMessage.stop_reason !== 'tool_use' || toolUses.length === 0) {
+        if (finalMessage.stop_reason === 'max_tokens') {
+          send('status', { message: 'The reply hit the length limit and was cut short.' })
+        }
         break
       }
 
-      const remaining = Math.max(0, MAX_TOOL_CALLS_PER_TURN - toolCallsThisTurn)
+      const remaining = Math.max(0, MAX_TOOL_CALLS_PER_TURN - toolCalls)
       const toRun = toolUses.slice(0, remaining)
       const skipped = toolUses.slice(remaining)
-      const toolResults = []
+      toolCalls += toRun.length
 
-      if (skipped.length > 0 && !closed) {
-        sseWrite(res, 'status', {
-          message:
-            'Tool call limit reached for this turn; answering with available data.',
-        })
-      }
-
-      for (const toolUse of toRun) {
-        toolCallsThisTurn += 1
-        const provider = providerLabelForTool(toolUse.name)
-        let result
-        try {
-          result = await executeTool(toolUse.name, toolUse.input, toolContext)
-        } catch (err) {
-          result = {
-            available: false,
-            reason: err?.message || 'Tool execution failed',
-          }
-        }
-
-        if (!closed && provider) {
-          sseWrite(res, 'tool_end', {
-            id: toolUse.id,
-            name: toolUse.name,
-            provider,
-            ok: result?.available !== false && !(result?.saved === false),
-          })
-        }
-
-        if (
-          !closed &&
-          toolUse.name !== 'save_insight' &&
-          toolUse.name !== 'propose_audience' &&
-          toolUse.name !== 'propose_pillars' &&
-          toolUse.name !== 'propose_clusters' &&
-          result
-        ) {
-          sseWrite(res, 'tool_data', {
-            id: toolUse.id,
-            name: toolUse.name,
-            provider,
-            result,
-          })
-        }
-
-        const stored = {
-          type: 'tool_result',
-          tool_use_id: toolUse.id,
-          name: toolUse.name,
-          content: result,
-        }
-        await insertMessage(supabase, session.id, 'tool', stored)
-        toolResults.push({
-          type: 'tool_result',
-          tool_use_id: toolUse.id,
-          content: JSON.stringify(result),
-        })
-      }
-
-      for (const toolUse of skipped) {
-        const result = {
-          available: false,
-          reason: 'Skipped: max 6 tool calls per turn',
-        }
-        if (!closed) {
+      const outcomes = await Promise.all(
+        toRun.map(async (toolUse) => {
           const provider = providerLabelForTool(toolUse.name)
           if (provider) {
-            sseWrite(res, 'tool_end', {
+            send('tool_start', { id: toolUse.id, name: toolUse.name, provider, input: toolUse.input })
+          }
+          let result
+          try {
+            result = await executeTool(toolUse.name, toolUse.input, {
+              ...toolContext,
+              onRecommendation: (card) => send('recommendation', { id: toolUse.id, ...card }),
+            })
+          } catch (err) {
+            result = { available: false, reason: err?.message || 'Tool execution failed' }
+          }
+          if (provider) {
+            send('tool_end', {
               id: toolUse.id,
               name: toolUse.name,
               provider,
-              ok: false,
+              ok: result?.available !== false,
+              result,
             })
           }
+          return { toolUse, result, isError: false }
+        })
+      )
+
+      if (skipped.length > 0) {
+        send('status', { message: 'Tool limit reached for this message; answering with the data so far.' })
+        for (const toolUse of skipped) {
+          outcomes.push({
+            toolUse,
+            result: {
+              available: false,
+              reason: `Skipped: max ${MAX_TOOL_CALLS_PER_TURN} tool calls per message. Answer with the data you have.`,
+            },
+            isError: true,
+          })
         }
+      }
+
+      const toolResults = []
+      for (const { toolUse, result, isError } of outcomes) {
         await insertMessage(supabase, session.id, 'tool', {
           type: 'tool_result',
           tool_use_id: toolUse.id,
           name: toolUse.name,
           content: result,
+          ...(isError ? { is_error: true } : {}),
         })
         toolResults.push({
           type: 'tool_result',
           tool_use_id: toolUse.id,
           content: JSON.stringify(result),
-          is_error: true,
+          ...(isError ? { is_error: true } : {}),
         })
       }
 
@@ -337,38 +305,20 @@ export default async function handler(req, res) {
       messages.push({ role: 'user', content: toolResults })
     }
 
-    const assistantText =
-      streamedText || extractText(finalAssistantBlocks) || ''
-    const title = await maybeTitleSession(
-      anthropic,
-      supabase,
-      session,
-      userMessage,
-      assistantText
-    )
-    if (title && !closed) {
-      sseWrite(res, 'title', { title })
-    }
+    const title = await maybeTitleSession(anthropic, supabase, session, userMessage, assistantText)
+    if (title) send('title', { title })
 
-    await touchSession(supabase, session.id)
+    await supabase
+      .from('chat_sessions')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', session.id)
 
-    if (!closed) {
-      sseWrite(res, 'done', {
-        sessionId: session.id,
-        toolCalls: toolCallsThisTurn,
-        providerHealth: healthSnapshot(),
-      })
-    }
+    send('done', { sessionId: session.id, toolCalls, providerHealth: healthSnapshot() })
     res.end()
   } catch (err) {
     console.error('seo-advisor-chat error:', err)
-    if (!res.headersSent) {
-      return json(res, err.statusCode || 500, {
-        error: err.message || 'Unexpected server error',
-      })
-    }
     try {
-      sseWrite(res, 'error', { error: err.message || 'Unexpected server error' })
+      send('error', { error: err.message || 'Unexpected server error' })
       res.end()
     } catch {
       // ignore

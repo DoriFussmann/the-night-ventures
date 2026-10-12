@@ -7,6 +7,7 @@ import {
   ChevronDown,
   Copy,
   Loader2,
+  Lock,
   Trash2,
   Upload,
   X,
@@ -64,6 +65,8 @@ import {
   mergeParsedCompanyFields,
 } from "./companyData/dataPoints";
 import IntelligenceBrief from "./companyData/IntelligenceBrief";
+import { getKeywordTree, keywordAction } from "./seoAdvisor/api";
+import { slugifyKeyword } from "../../../lib/seo-advisor/pillars.js";
 import {
   EMPTY_INTELLIGENCE_TEXT,
   allBriefPoints,
@@ -225,6 +228,41 @@ function normalizePillarKeywords(value, { minCount = 0 } = {}) {
   while (items.length < minCount) items.push(emptyPillar());
   return items;
 }
+
+/** content_coverage tree (Core → Supporting) → the form's pillar rows. */
+function pillarsFromTree(tree) {
+  return (Array.isArray(tree) ? tree : []).map((pillar) => ({
+    keyword: pillar.keyword || "",
+    supporting: normalizeStringList(
+      (pillar.supporting || []).map((item) => item.keyword || ""),
+      0
+    ),
+  }));
+}
+
+/** Pillar rows → payload for the keyword store (empties dropped). */
+function pillarsForSave(value) {
+  return normalizePillarKeywords(value)
+    .map((pillar) => ({
+      keyword: pillar.keyword.trim(),
+      supporting: pillar.supporting.map((item) => item.trim()).filter(Boolean),
+    }))
+    .filter((pillar) => pillar.keyword);
+}
+
+function locksFromTree(tree) {
+  const cores = new Set();
+  const supporting = new Set();
+  for (const pillar of Array.isArray(tree) ? tree : []) {
+    if (pillar.locked) cores.add(pillar.slug);
+    for (const item of pillar.supporting || []) {
+      if (item.locked) supporting.add(`${pillar.slug}/${item.slug}`);
+    }
+  }
+  return { cores, supporting };
+}
+
+const NO_LOCKS = { cores: new Set(), supporting: new Set() };
 
 function countFilled(list) {
   return list.filter((value) => String(value || "").trim()).length;
@@ -406,6 +444,10 @@ export default function CompanyData() {
   /** Active panel modal: 'target' | 'pillars' | 'competitors' | 'publish-destination' | ... | `custom:${id}` */
   const [openPanel, setOpenPanel] = useState(null);
   const [openPillars, setOpenPillars] = useState({});
+  // Pillar keywords live in content_coverage (the keyword store), not on the profile.
+  const [keywordLocks, setKeywordLocks] = useState(NO_LOCKS);
+  const [keywordsLoadError, setKeywordsLoadError] = useState("");
+  const keywordsBaselineRef = useRef(null);
   const [socialShopsFilled, setSocialShopsFilled] = useState(false);
   const [connectionsFilled, setConnectionsFilled] = useState(false);
   const [missingOpen, setMissingOpen] = useState(false);
@@ -429,6 +471,7 @@ export default function CompanyData() {
       industriesResult,
       companyIndustriesResult,
       socialAccountsResult,
+      keywordTreeResult,
     ] = await Promise.all([
       supabase.from("companies").select("name, github_owner, github_repo, github_token_key, email_campaigns_enabled, email_campaigns_provider, email_campaigns_campaign_id").eq("id", companyId).maybeSingle(),
       supabase
@@ -462,6 +505,10 @@ export default function CompanyData() {
         .from("social_accounts")
         .select("id", { count: "exact", head: true })
         .eq("company_id", companyId),
+      getKeywordTree(companyId).then(
+        (data) => ({ data, error: null }),
+        (err) => ({ data: null, error: err })
+      ),
     ]);
 
     if (companyResult.error) {
@@ -542,6 +589,27 @@ export default function CompanyData() {
       setFields(EMPTY_PROFILE);
       setCustomValues({});
       setConnectionsFilled(false);
+    }
+
+    if (keywordTreeResult.error) {
+      console.error("Failed to load keyword tree:", keywordTreeResult.error);
+      keywordsBaselineRef.current = null;
+      setKeywordLocks(NO_LOCKS);
+      setKeywordsLoadError(
+        keywordTreeResult.error.message || "Failed to load pillar keywords"
+      );
+    } else {
+      const tree = keywordTreeResult.data?.pillars || [];
+      const rows = pillarsFromTree(tree);
+      keywordsBaselineRef.current = JSON.stringify(pillarsForSave(rows));
+      setKeywordLocks(locksFromTree(tree));
+      setKeywordsLoadError("");
+      setFields((prev) => ({
+        ...prev,
+        core_keywords: normalizePillarKeywords(rows, {
+          minCount: rows.length > 0 ? 0 : DEFAULT_PILLAR_COUNT,
+        }),
+      }));
     }
 
     if (socialAccountsResult.error) {
@@ -1172,7 +1240,6 @@ export default function CompanyData() {
       scope_boundaries: (currentFields.scope_boundaries || "").trim() || null,
       brand_feel: (currentFields.brand_feel || "").trim() || null,
       brand_voice: (currentFields.brand_voice || "").trim() || null,
-      core_keywords: normalizePillarKeywords(currentFields.core_keywords),
       competitors,
       services,
       team_members,
@@ -1220,6 +1287,53 @@ export default function CompanyData() {
       setError(upsertError.message || "Failed to save");
       setSaving(false);
       return false;
+    }
+
+    // Pillar keywords → content_coverage (single source of truth).
+    const pillarPayload = pillarsForSave(currentFields.core_keywords);
+    const pillarJson = JSON.stringify(pillarPayload);
+    if (keywordsBaselineRef.current !== null && pillarJson !== keywordsBaselineRef.current) {
+      try {
+        const result = await keywordAction(companyId, "replace_tree", {
+          pillars: pillarPayload,
+          expected: JSON.parse(keywordsBaselineRef.current),
+        });
+        const tree = result.pillars || [];
+        const rows = pillarsFromTree(tree);
+        keywordsBaselineRef.current = JSON.stringify(pillarsForSave(rows));
+        setKeywordLocks(locksFromTree(tree));
+        setFields((prev) => ({
+          ...prev,
+          core_keywords: normalizePillarKeywords(rows, {
+            minCount: rows.length > 0 ? 0 : DEFAULT_PILLAR_COUNT,
+          }),
+        }));
+        const kept = result.keptLocked || [];
+        const skipped = result.skipped || [];
+        if (kept.length > 0 || skipped.length > 0) {
+          setError(
+            [
+              kept.length > 0
+                ? `Kept ${kept.join(", ")} — these keywords have articles and can’t be removed.`
+                : "",
+              skipped.length > 0
+                ? `Skipped duplicates: ${skipped.join(", ")}.`
+                : "",
+            ]
+              .filter(Boolean)
+              .join(" ")
+          );
+        }
+      } catch (keywordError) {
+        console.error("Failed to save pillar keywords:", keywordError);
+        setError(keywordError.message || "Failed to save pillar keywords");
+        setSaving(false);
+        return false;
+      }
+    } else if (keywordsBaselineRef.current === null && pillarPayload.length > 0) {
+      setError(
+        `Pillar keywords were not saved: ${keywordsLoadError || "they failed to load"}. Reload and try again.`
+      );
     }
 
     const { error: deleteIndustriesError } = await supabase
@@ -2321,14 +2435,24 @@ export default function CompanyData() {
           <DialogHeader className="shrink-0 space-y-1 border-b border-border px-6 py-4 pr-12 text-left">
             <DialogTitle>Pillar Keywords ({pillarTotal})</DialogTitle>
             <DialogDescription>
-              Core pillar keywords and their supporting keywords.
+              Core pillar keywords and their supporting keywords. Shared with the SEO
+              Advisor and the content pipeline; locked keywords already have articles.
             </DialogDescription>
+            {keywordsLoadError && (
+              <p className="text-xs text-destructive">
+                Couldn’t load the saved keywords ({keywordsLoadError}). Changes here won’t be
+                saved until they load.
+              </p>
+            )}
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-4">
             {pillars.map((pillar, index) => {
               const isOpen = Boolean(openPillars[index]);
               const left = supportingLeft(pillar);
               const supportingCount = pillar.supporting.length;
+              const pillarSlug = slugifyKeyword(pillar.keyword);
+              const pillarLocked =
+                Boolean(pillar.keyword.trim()) && keywordLocks.cores.has(pillarSlug);
 
               return (
                 <Collapsible
@@ -2361,7 +2485,19 @@ export default function CompanyData() {
                       onChange={(e) => updatePillarKeyword(index, e.target.value)}
                       placeholder="Pillar keyword"
                       className="flex-1"
+                      disabled={pillarLocked}
+                      title={
+                        pillarLocked
+                          ? "Has articles or planned articles — can’t be renamed or removed"
+                          : undefined
+                      }
                     />
+                    {pillarLocked && (
+                      <Lock
+                        className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                        aria-label="Locked: has content"
+                      />
+                    )}
                     <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
                       {left} left
                     </span>
@@ -2389,8 +2525,9 @@ export default function CompanyData() {
                       <button
                         type="button"
                         onClick={() => removePillarKeyword(index)}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-destructive"
-                        title="Delete pillar"
+                        disabled={pillarLocked}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-destructive disabled:pointer-events-none disabled:opacity-30"
+                        title={pillarLocked ? "Has content — can’t be removed" : "Delete pillar"}
                         aria-label="Delete pillar keyword"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -2405,21 +2542,41 @@ export default function CompanyData() {
                       </Label>
                     </div>
                     <div className="space-y-2">
-                      {pillar.supporting.map((keyword, supportingIndex) => (
-                        <Input
-                          key={supportingIndex}
-                          id={`supporting_keyword_${index + 1}_${supportingIndex + 1}`}
-                          value={keyword}
-                          onChange={(e) =>
-                            updateSupportingKeyword(
-                              index,
-                              supportingIndex,
-                              e.target.value
-                            )
-                          }
-                          placeholder="Supporting keyword"
-                        />
-                      ))}
+                      {pillar.supporting.map((keyword, supportingIndex) => {
+                        const supportingLocked =
+                          Boolean(keyword.trim()) &&
+                          keywordLocks.supporting.has(
+                            `${pillarSlug}/${slugifyKeyword(keyword)}`
+                          );
+                        return (
+                          <div key={supportingIndex} className="flex items-center gap-2">
+                            <Input
+                              id={`supporting_keyword_${index + 1}_${supportingIndex + 1}`}
+                              value={keyword}
+                              onChange={(e) =>
+                                updateSupportingKeyword(
+                                  index,
+                                  supportingIndex,
+                                  e.target.value
+                                )
+                              }
+                              placeholder="Supporting keyword"
+                              disabled={supportingLocked}
+                              title={
+                                supportingLocked
+                                  ? "Has articles or planned articles — can’t be renamed or removed"
+                                  : undefined
+                              }
+                            />
+                            {supportingLocked && (
+                              <Lock
+                                className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                                aria-label="Locked: has content"
+                              />
+                            )}
+                          </div>
+                        );
+                      })}
                       <Button
                         type="button"
                         variant="outline"
