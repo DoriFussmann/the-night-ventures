@@ -32,6 +32,7 @@ import CoreVersion from '@/pages/tools/CoreVersion';
 import EmailCampaigns from '@/pages/tools/EmailCampaigns';
 import Integrations from '@/pages/tools/Integrations';
 import ArticleCompose from '@/pages/tools/ArticleCompose';
+import Analytics from '@/pages/tools/Analytics';
 
 function RedirectToClusterGeneration() {
   const { companyId } = useParams();
@@ -74,6 +75,7 @@ const AuthenticatedApp = () => {
             element={<RedirectToClusterGeneration />}
           />
           <Route path="/company/:companyId/articles" element={<Articles />} />
+          <Route path="/company/:companyId/analytics" element={<Analytics />} />
           <Route path="/company/:companyId/pillar-automation" element={<PillarAutomation />} />
           <Route path="/company/:companyId/cluster-image-generator" element={<ClusterImageGenerator />} />
           <Route path="/company/:companyId/image-generator" element={<AiImageGenerator />} />

@@ -14,6 +14,7 @@ import {
   normalizeSnapshotResults,
 } from '../lib/audit-snapshot/runPanel.js'
 import { handleAudit, auditAction } from '../lib/audit/handler.js'
+import { handleAnalytics, analyticsAction, isCronRequest } from '../lib/analytics/handler.js'
 
 export const config = { maxDuration: 300 }
 
@@ -30,6 +31,9 @@ function shapeSnapshot(row) {
 }
 
 export default async function handler(req, res) {
+  // Analytics tool (analytics.* actions) and its daily Vercel cron.
+  if (analyticsAction(req) || isCronRequest(req)) return handleAnalytics(req, res)
+
   // New Audit tool (audit.* actions). The legacy snapshot actions below are removed in Zip B.
   if (auditAction(req).startsWith('audit.')) return handleAudit(req, res)
 
