@@ -19,6 +19,7 @@ import {
   SlugTakenError,
 } from "./articleCompose/draftRecord";
 import { isReviewValid } from "./articleCompose/reviewValidation";
+import { analyticsPrefill } from "./articleCompose/analyticsPrefill";
 import {
   composeReducer,
   ideaInputErrors,
@@ -42,6 +43,10 @@ export default function ArticleCompose({ mode }) {
   const { companyId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const draftParam = searchParams.get("draft") || "";
+  const targetParam = searchParams.get("target") || "";
+  const pageParam = searchParams.get("page") || "";
+  const [analyticsNote, setAnalyticsNote] = useState(null);
+  const prefillDone = useRef(false);
   const { pillars, loading, error } = useCoverage(companyId);
   const [state, dispatch] = useReducer(composeReducer, initialComposeState);
   const [elapsed, setElapsed] = useState(0);
@@ -108,6 +113,34 @@ export default function ArticleCompose({ mode }) {
       cancelled = true;
     };
   }, [companyId, draftParam]);
+
+  useEffect(() => {
+    if (!companyId || draftParam || prefillDone.current) return undefined;
+    if (!targetParam && !pageParam) return undefined;
+    prefillDone.current = true;
+    const page = pageParam;
+    const target = targetParam;
+    // Not cancelled on param change: the params are cleared below on purpose.
+    analyticsPrefill({ companyId, mode, target, page })
+      .then(({ patch, libraryMatch }) => {
+        dispatch({ type: "patch", patch });
+        setAnalyticsNote({ page, libraryMatch, error: "" });
+      })
+      .catch((err) => {
+        if (target) dispatch({ type: "patch", patch: { targetKeyword: target.slice(0, 200) } });
+        setAnalyticsNote({ page, libraryMatch: false, error: err?.message || "Could not load the article" });
+      });
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("target");
+        next.delete("page");
+        return next;
+      },
+      { replace: true }
+    );
+    return undefined;
+  }, [companyId, draftParam, mode, pageParam, setSearchParams, targetParam]);
 
   function rememberDraft(id) {
     skipLoad.current = id;
@@ -273,6 +306,31 @@ export default function ArticleCompose({ mode }) {
         </p>
       )}
       {state.resumeError && <p className="text-sm text-destructive">{state.resumeError}</p>}
+
+      {analyticsNote && state.stage === "input" && (
+        <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-100">
+          <p>
+            From Analytics
+            {analyticsNote.page ? (
+              <>
+                {": "}
+                <a href={analyticsNote.page} target="_blank" rel="noreferrer" className="break-all underline">
+                  {analyticsNote.page}
+                </a>
+              </>
+            ) : null}
+          </p>
+          <p className="text-xs opacity-80">
+            {analyticsNote.error
+              ? analyticsNote.error
+              : !isIdea && analyticsNote.page
+                ? analyticsNote.libraryMatch
+                  ? "Loaded the article from your library. Check the targeting, then adjust."
+                  : "Not in your library — paste or drop the current article below."
+                : "Target keyword filled in. Set the pillar and cluster to continue."}
+          </p>
+        </div>
+      )}
 
       <TargetingSection
         mode={mode}

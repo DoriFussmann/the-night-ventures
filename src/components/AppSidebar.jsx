@@ -25,6 +25,7 @@ import {
   PlugZap,
   Settings,
   TriangleAlert,
+  ChartLine,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -501,6 +502,13 @@ export default function AppSidebar({ user }) {
                   path: `/company/${activeCompanyId}/articles`,
                   icon: BookOpen,
                   status: "Done",
+                }}
+              />
+              <NavItem
+                item={{
+                  label: "Analytics",
+                  path: `/company/${activeCompanyId}/analytics`,
+                  icon: ChartLine,
                 }}
               />
               <NavDropdown label="Generation" icon={Layers} items={generationItems} />

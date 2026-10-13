@@ -58,6 +58,9 @@ npx vercel dev
    | `IMAGE_STOCK_ORDER` | Stock provider order, default `unsplash,shutterstock`. OpenAI is always the final fallback |
    | `IMAGE_STOCK_MIN_SCORE` | Judge acceptance threshold 0–10, default `7` |
    | `GOOGLE_PAGESPEED_API_KEY` | Google PageSpeed Insights API (External Audit Snapshot) |
+   | `GOOGLE_SERVICE_ACCOUNT_JSON` | Analytics: service account (raw JSON or base64) that reads Search Console + GA4 |
+   | `BING_WEBMASTER_API_KEY` | Analytics: Bing Webmaster Tools API key |
+   | `CRON_SECRET` | Analytics: secret Vercel sends to the daily refresh cron (`vercel.json` → `crons`) |
    | `RESEND_API_KEY` | From Resend dashboard |
    | `RESEND_FROM_EMAIL` | Verified sender (or Resend onboarding address for tests) |
    | `INQUIRY_TO_EMAIL` | Default `dori@thenightventures.com` |
