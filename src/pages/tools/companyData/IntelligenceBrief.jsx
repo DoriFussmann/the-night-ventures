@@ -335,7 +335,7 @@ export default function IntelligenceBrief({
                   Operations
                 </p>
                 <h2 className="text-sm font-medium text-foreground">
-                  SEO, publishing & leftover data
+                  Pillar keywords, publishing & leftover data
                 </h2>
               </div>
               <ChevronDown
@@ -349,8 +349,8 @@ export default function IntelligenceBrief({
         <CollapsibleContent>
           <div className="border-t border-border px-4 py-4">
             <p className="mb-3 text-xs text-muted-foreground">
-              Specialized fields stay available here so SEO, publishing, and
-              existing leftover copy are not lost. They are not part of the
+              Pillar keywords and their supporting keywords live here, along
+              with publishing and leftover fields. They are not part of the
               core brief.
             </p>
             <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-3">

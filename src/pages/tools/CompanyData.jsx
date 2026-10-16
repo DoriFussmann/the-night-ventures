@@ -288,10 +288,19 @@ function normalizeCompetitors(value) {
   });
 }
 
-function isLooseHttpUrl(value) {
+function coerceLooseHttpUrl(value) {
   const url = String(value || "").trim();
-  if (!url) return true;
-  return /^https?:\/\//i.test(url);
+  if (!url || /^https?:\/\//i.test(url)) return url;
+  if (/^(www\.)?[\w.-]+\.[a-z]{2,}([/:?#].*)?$/i.test(url)) {
+    return `https://${url}`;
+  }
+  return url;
+}
+
+function missingIntelligenceColumn(message) {
+  const text = String(message || "");
+  if (!/schema cache|does not exist|could not find the/i.test(text)) return false;
+  return Object.keys(EMPTY_INTELLIGENCE_TEXT).some((key) => text.includes(key));
 }
 
 const PROFILE_SELECT_BASE =
@@ -448,6 +457,8 @@ export default function CompanyData() {
   const [keywordLocks, setKeywordLocks] = useState(NO_LOCKS);
   const [keywordsLoadError, setKeywordsLoadError] = useState("");
   const keywordsBaselineRef = useRef(null);
+  const keywordSaveNoteRef = useRef("");
+  const saveChainRef = useRef(Promise.resolve());
   const [socialShopsFilled, setSocialShopsFilled] = useState(false);
   const [connectionsFilled, setConnectionsFilled] = useState(false);
   const [missingOpen, setMissingOpen] = useState(false);
@@ -782,6 +793,19 @@ export default function CompanyData() {
 
   const setPillarOpen = (index, open) => {
     setOpenPillars((prev) => ({ ...prev, [index]: open }));
+  };
+
+  const openPillarsPanel = () => {
+    setOpenPillars((prev) => {
+      const next = { ...prev };
+      normalizePillarKeywords(fields.core_keywords).forEach((pillar, index) => {
+        if (next[index] == null && countFilled(pillar.supporting) > 0) {
+          next[index] = true;
+        }
+      });
+      return next;
+    });
+    setOpenPanel("pillars");
   };
 
   const updateCustomValue = (name, value) => {
@@ -1158,9 +1182,26 @@ export default function CompanyData() {
     }
   };
 
-  /** Persist profile to Supabase. Returns true on success. */
-  const persistProfile = async (overrides = {}) => {
-    if (!companyId || saving) return false;
+  /**
+   * Persist profile to Supabase. Returns true when the brief itself was saved.
+   * Saves run one at a time so an in-flight save cannot overwrite a newer one
+   * or silently drop the import.
+   */
+  const persistProfile = (overrides = {}) => {
+    const run = () => persistProfileNow(overrides);
+    const task = saveChainRef.current.then(run, run);
+    saveChainRef.current = task.then(
+      () => undefined,
+      () => undefined
+    );
+    return task;
+  };
+
+  const persistProfileNow = async (overrides = {}) => {
+    if (!companyId) {
+      setError("Open a company before saving the brief.");
+      return false;
+    }
 
     const currentFields = overrides.fields ?? fields;
     const currentCustomValues = overrides.customValues ?? customValues;
@@ -1169,43 +1210,51 @@ export default function CompanyData() {
     setSaving(true);
     setSavedMessage("");
     setError("");
+    keywordSaveNoteRef.current = "";
+
+    try {
+      return await persistProfileBody({
+        overrides,
+        currentFields,
+        currentCustomValues,
+        currentIndustryIds,
+      });
+    } catch (err) {
+      console.error("Failed to save company profile:", err);
+      setError(err?.message || "Failed to save");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const persistProfileBody = async ({
+    overrides,
+    currentFields,
+    currentCustomValues,
+    currentIndustryIds,
+  }) => {
 
     const competitors = normalizeCompetitors(currentFields.competitors)
       .map((item) => ({
         name: item.name.trim(),
-        url: item.url.trim(),
+        url: coerceLooseHttpUrl(item.url.trim()),
       }))
       .filter((item) => item.name || item.url);
 
-    for (const competitor of competitors) {
-      if (!isLooseHttpUrl(competitor.url)) {
-        setError("Competitor URLs must start with http:// or https://");
-        setSaving(false);
-        return false;
-      }
-    }
-
     const services = trimServicesForSave(currentFields.services);
-    const team_members = trimTeamMembersForSave(currentFields.team_members);
-    const social_links = trimSocialLinksForSave(currentFields.social_links);
-
-    for (const member of team_members) {
-      for (const url of member.same_as || []) {
-        if (!isLooseHttpUrl(url)) {
-          setError("Team sameAs URLs must start with http:// or https://");
-          setSaving(false);
-          return false;
-        }
-      }
-    }
-
-    for (const link of social_links) {
-      if (!isLooseHttpUrl(link.url)) {
-        setError("Social link URLs must start with http:// or https://");
-        setSaving(false);
-        return false;
-      }
-    }
+    const team_members = trimTeamMembersForSave(currentFields.team_members).map(
+      (member) => ({
+        ...member,
+        same_as: (member.same_as || []).map((url) => coerceLooseHttpUrl(url)),
+      })
+    );
+    const social_links = trimSocialLinksForSave(currentFields.social_links).map(
+      (link) => ({
+        ...link,
+        url: coerceLooseHttpUrl(link.url),
+      })
+    );
 
     const custom_fields = {};
     for (const def of customFieldDefs) {
@@ -1260,14 +1309,15 @@ export default function CompanyData() {
       .select("id")
       .single();
 
-    if (
-      upsertError &&
-      /legal_name|founded_date|column/i.test(upsertError.message || "")
-    ) {
+    if (upsertError && missingIntelligenceColumn(upsertError.message)) {
       const fallback = { ...payload };
+      const preserved = { ...(fallback.custom_fields || {}) };
       for (const key of Object.keys(EMPTY_INTELLIGENCE_TEXT)) {
+        const value = fallback[key];
+        if (value) preserved[key] = value;
         delete fallback[key];
       }
+      fallback.custom_fields = preserved;
       const retry = await supabase
         .from("company_profiles")
         .upsert(fallback, { onConflict: "company_id" })
@@ -1277,7 +1327,7 @@ export default function CompanyData() {
       upsertError = retry.error;
       if (!upsertError) {
         setError(
-          "Saved existing fields. Run the Company Intelligence migration to store the new brief fields."
+          "Saved the brief into leftover fields. Run the Company Intelligence migration so these fields have their own columns."
         );
       }
     }
@@ -1290,6 +1340,22 @@ export default function CompanyData() {
     }
 
     // Pillar keywords → content_coverage (single source of truth).
+    if (keywordsBaselineRef.current === null) {
+      try {
+        const data = await getKeywordTree(companyId);
+        const tree = data?.pillars || [];
+        const rows = pillarsFromTree(tree);
+        keywordsBaselineRef.current = JSON.stringify(pillarsForSave(rows));
+        setKeywordLocks(locksFromTree(tree));
+        setKeywordsLoadError("");
+      } catch (keywordLoadError) {
+        console.error("Failed to reload keyword tree:", keywordLoadError);
+        setKeywordsLoadError(
+          keywordLoadError?.message || "Failed to load pillar keywords"
+        );
+      }
+    }
+
     const pillarPayload = pillarsForSave(currentFields.core_keywords);
     const pillarJson = JSON.stringify(pillarPayload);
     if (keywordsBaselineRef.current !== null && pillarJson !== keywordsBaselineRef.current) {
@@ -1311,29 +1377,29 @@ export default function CompanyData() {
         const kept = result.keptLocked || [];
         const skipped = result.skipped || [];
         if (kept.length > 0 || skipped.length > 0) {
-          setError(
-            [
-              kept.length > 0
-                ? `Kept ${kept.join(", ")} — these keywords have articles and can’t be removed.`
-                : "",
-              skipped.length > 0
-                ? `Skipped duplicates: ${skipped.join(", ")}.`
-                : "",
-            ]
-              .filter(Boolean)
-              .join(" ")
-          );
+          const note = [
+            kept.length > 0
+              ? `Kept ${kept.join(", ")} — these keywords have articles and can’t be removed.`
+              : "",
+            skipped.length > 0
+              ? `Skipped duplicates: ${skipped.join(", ")}.`
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" ");
+          keywordSaveNoteRef.current = note;
+          setError(note);
         }
       } catch (keywordError) {
         console.error("Failed to save pillar keywords:", keywordError);
-        setError(keywordError.message || "Failed to save pillar keywords");
-        setSaving(false);
-        return false;
+        const note = keywordError.message || "Failed to save pillar keywords";
+        keywordSaveNoteRef.current = note;
+        setError(note);
       }
     } else if (keywordsBaselineRef.current === null && pillarPayload.length > 0) {
-      setError(
-        `Pillar keywords were not saved: ${keywordsLoadError || "they failed to load"}. Reload and try again.`
-      );
+      const note = `Pillar keywords were not saved: ${keywordsLoadError || "they failed to load"}. Reload and try again.`;
+      keywordSaveNoteRef.current = note;
+      setError(note);
     }
 
     const { error: deleteIndustriesError } = await supabase
@@ -1384,18 +1450,16 @@ export default function CompanyData() {
       .eq("id", companyId);
 
     if (companyUpdateError) {
-      console.error("Failed to save GitHub destination:", companyUpdateError);
+      console.error("Failed to save company record:", companyUpdateError);
       setError(
-        companyUpdateError.message || "Failed to save GitHub destination"
+        companyUpdateError.message ||
+          "The brief was saved, but the company name and publish destination were not."
       );
-      setSaving(false);
-      return false;
     }
 
     setGithubTokenKey((prev) => prev.trim().toUpperCase());
-    setSaving(false);
     if (!overrides.skipSavedMessage) {
-      setSavedMessage("Saved");
+      setSavedMessage(keywordSaveNoteRef.current ? "Brief saved" : "Saved");
       window.setTimeout(() => setSavedMessage(""), 2500);
     }
     return true;
@@ -1505,6 +1569,7 @@ export default function CompanyData() {
       skipped: merged.skipped,
       notInFile: merged.notInFile,
       stillMissing: afterPoints.filter((point) => !point.filled).map((point) => point.label),
+      keywordWarning: keywordSaveNoteRef.current,
     });
     return true;
   };
@@ -1820,10 +1885,13 @@ export default function CompanyData() {
     if (point?.section) {
       setOpenGroups((prev) => ({ ...prev, [point.section]: true }));
     }
+    if (id === "pillars") {
+      openPillarsPanel();
+      return;
+    }
     if (
       id === "product_name" ||
       id === "category" ||
-      id === "pillars" ||
       id === "location_markets" ||
       id === "contact_email"
     ) {
@@ -1897,9 +1965,14 @@ export default function CompanyData() {
             Canonical brief of the business. Nothing here is required.
           </p>
         </div>
-        <p className="text-sm text-muted-foreground">
-          {completedCount} / {brief.total} brief fields
-        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="button" variant="outline" size="sm" onClick={openPillarsPanel}>
+            Pillar keywords ({pillarTotal})
+          </Button>
+          <p className="text-sm text-muted-foreground">
+            {completedCount} / {brief.total} brief fields
+          </p>
+        </div>
       </div>
 
       {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
@@ -1967,7 +2040,7 @@ export default function CompanyData() {
                 (pillar) =>
                   pillar.keyword.trim() || countFilled(pillar.supporting) > 0
               ),
-              onClick: () => setOpenPanel("pillars"),
+              onClick: openPillarsPanel,
             },
             {
               id: "social-shops",
@@ -2003,7 +2076,7 @@ export default function CompanyData() {
         />
 
         <div className="flex flex-wrap items-center gap-3">
-          <Button type="submit" disabled={saving}>
+          <Button type="submit" disabled={saving || importBusy}>
             {saving ? "Saving..." : "Save brief"}
           </Button>
           <Button type="button" variant="secondary" onClick={handleDownloadMarkdown}>
@@ -2150,6 +2223,9 @@ export default function CompanyData() {
             ) : (
               <p className="mt-2 text-muted-foreground">All fields completed.</p>
             )}
+            {importResult.keywordWarning ? (
+              <p className="mt-2 text-destructive">{importResult.keywordWarning}</p>
+            ) : null}
           </div>
         )}
       </div>
@@ -2435,8 +2511,9 @@ export default function CompanyData() {
           <DialogHeader className="shrink-0 space-y-1 border-b border-border px-6 py-4 pr-12 text-left">
             <DialogTitle>Pillar Keywords ({pillarTotal})</DialogTitle>
             <DialogDescription>
-              Core pillar keywords and their supporting keywords. Shared with the SEO
-              Advisor and the content pipeline; locked keywords already have articles.
+              Core pillar keywords are the rows. Supporting keywords are listed under
+              each pillar. Shared with the SEO Advisor and the content pipeline;
+              locked keywords already have articles.
             </DialogDescription>
             {keywordsLoadError && (
               <p className="text-xs text-destructive">
