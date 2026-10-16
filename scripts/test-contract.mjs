@@ -56,8 +56,12 @@ await check('newer minor within major runs but is flagged', () => {
   assert.equal(c.compatible, true)
   assert.equal(c.severity, 'minor_ahead')
 })
-await check('breaking major is refused', () => {
-  const c = classifyCoreCompat('1.0.0')
+await check('seo-core 1.x is supported', () => {
+  assert.equal(classifyCoreCompat('1.0.0').compatible, true)
+  assert.equal(classifyCoreCompat('1.0.0').severity, 'ok')
+})
+await check('breaking major beyond 1.x is refused', () => {
+  const c = classifyCoreCompat('2.0.0')
   assert.equal(c.compatible, false)
   assert.equal(c.severity, 'major_ahead')
 })
@@ -88,12 +92,17 @@ await check('guard allows a supported project', async () => {
   assert.equal(r.ok, true)
   assert.equal(r.version, '0.4.0')
 })
-await check('guard refuses a breaking-major project with 409 + structured body', async () => {
+await check('guard allows a seo-core 1.0.0 project', async () => {
   const r = await checkProjectContract(mockOcto({ dependencies: { 'seo-core': 'github:X/seo-core#v1.0.0' } }), dest)
+  assert.equal(r.ok, true)
+  assert.equal(r.version, '1.0.0')
+})
+await check('guard refuses a breaking-major project with 409 + structured body', async () => {
+  const r = await checkProjectContract(mockOcto({ dependencies: { 'seo-core': 'github:X/seo-core#v2.0.0' } }), dest)
   assert.equal(r.ok, false)
   assert.equal(r.status, 409)
   assert.equal(r.body.code, 'incompatible_core_version')
-  assert.equal(r.body.contract.detected, '1.0.0')
+  assert.equal(r.body.contract.detected, '2.0.0')
   assert.equal(r.body.contract.severity, 'major_ahead')
 })
 await check('guard refuses a project with no core dependency', async () => {

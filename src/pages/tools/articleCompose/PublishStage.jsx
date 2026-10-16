@@ -15,6 +15,7 @@ export default function PublishStage({ companyId, state, dispatch, onSlugConflic
   const [destination, setDestination] = useState(null);
   const [destError, setDestError] = useState("");
   const [publishing, setPublishing] = useState(false);
+  const [overlapMessage, setOverlapMessage] = useState("");
   const sawWire = useRef(false);
 
   useEffect(() => {
@@ -34,9 +35,10 @@ export default function PublishStage({ companyId, state, dispatch, onSlugConflic
   const mapped = isPublishDestinationMapped(destination);
   const alreadyPublished = state.status === "published" && !state.publishDone;
 
-  async function onPublish() {
+  async function onPublish({ allowOverlap = false } = {}) {
     if (publishing) return;
     setPublishing(true);
+    setOverlapMessage("");
     dispatch({
       type: "patch",
       patch: { publishError: "", publishProgress: "Publishing…", publishDone: false },
@@ -47,6 +49,7 @@ export default function PublishStage({ companyId, state, dispatch, onSlugConflic
       const result = await publishSingleArticle({
         companyId,
         row,
+        allowOverlap,
         onProgress: (progress) => {
           dispatch({
             type: "patch",
@@ -104,6 +107,11 @@ export default function PublishStage({ companyId, state, dispatch, onSlugConflic
         onSlugConflict?.();
         return;
       }
+      if (reason === "keyword_overlap") {
+        setOverlapMessage(err?.message || "This article's keywords overlap a live article.");
+        dispatch({ type: "patch", patch: { publishError: "", publishProgress: "" } });
+        return;
+      }
       if (reason === "missing_hero" || /hero image/i.test(String(err?.message || ""))) {
         dispatch({
           type: "patch",
@@ -156,7 +164,7 @@ export default function PublishStage({ companyId, state, dispatch, onSlugConflic
   return (
     <div className="space-y-4">
       {!state.publishDone && (
-        <Button type="button" disabled={publishing || !mapped} onClick={onPublish}>
+        <Button type="button" disabled={publishing || !mapped} onClick={() => onPublish()}>
           {publishing && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
           Publish
         </Button>
@@ -167,12 +175,28 @@ export default function PublishStage({ companyId, state, dispatch, onSlugConflic
           {state.publishProgress}
         </p>
       )}
+      {overlapMessage && !state.publishDone && (
+        <div className="space-y-2">
+          <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+            {overlapMessage}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={publishing}
+            onClick={() => onPublish({ allowOverlap: true })}
+          >
+            Publish anyway
+          </Button>
+        </div>
+      )}
       {state.publishError && (
         <div className="space-y-2">
           <p className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
             {state.publishError}
           </p>
-          <Button type="button" variant="outline" size="sm" disabled={publishing} onClick={onPublish}>
+          <Button type="button" variant="outline" size="sm" disabled={publishing} onClick={() => onPublish()}>
             Retry
           </Button>
         </div>

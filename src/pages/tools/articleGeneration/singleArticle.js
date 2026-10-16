@@ -184,7 +184,7 @@ export async function generateHeroForArticle({
   };
 }
 
-export async function publishSingleArticle({ companyId, row, onProgress }) {
+export async function publishSingleArticle({ companyId, row, onProgress, allowOverlap = false }) {
   if (!String(row?.hero_storage_path || "").trim()) {
     throw new Error(
       "No hero image saved for this article — generate the image before publishing."
@@ -200,11 +200,10 @@ export async function publishSingleArticle({ companyId, row, onProgress }) {
     branch: DEFAULT_PUBLISH_BRANCH,
   };
   const item = generatedArticleToPublishItem(row);
-  const result = await publishArticlesToSite(
-    [item],
-    destination,
-    onProgress ? { onProgress } : {}
-  );
+  const result = await publishArticlesToSite([item], destination, {
+    ...(onProgress ? { onProgress } : {}),
+    ...(allowOverlap ? { allowOverlap: true } : {}),
+  });
 
   const skipped = Array.isArray(result?.skipped) ? result.skipped : [];
   const errors = Array.isArray(result?.errors) ? result.errors : [];
@@ -212,7 +211,7 @@ export async function publishSingleArticle({ companyId, row, onProgress }) {
   if (failure) {
     const reason = String(failure.reason || "").trim();
     const message = String(failure.message || "Publish failed").trim();
-    const err = new Error(reason ? `${reason}: ${message}` : message);
+    const err = new Error(reason && reason !== "keyword_overlap" ? `${reason}: ${message}` : message);
     if (reason) err.reason = reason;
     throw err;
   }
