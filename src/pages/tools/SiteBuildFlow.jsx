@@ -1,19 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ChevronDown, Copy, Download, Loader2 } from "lucide-react";
+import { ChevronDown, Copy, Download, Loader2, Pencil } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import {
-  STAGES,
-  PREDEFINED_ITEMS,
-  STATUS_META,
-  nextStatus,
-  resolveItemLink,
-} from "./siteBuildFlow/seedData";
+import { STATUS_META, nextStatus } from "./siteBuildFlow/seedData";
+import { loadTemplate, templateItemLink } from "./siteBuildFlow/template";
+import TemplateEditor from "./siteBuildFlow/TemplateEditor";
 import {
   SITE_BUILD_FLOW_MARKDOWN_FILENAME,
   buildSiteBuildFlowMarkdown,
@@ -134,7 +130,9 @@ export default function SiteBuildFlow() {
   const { companyId } = useParams();
   const [savedState, setSavedState] = useState(null);
   const [draftState, setDraftState] = useState(null);
-  const [activeStageKey, setActiveStageKey] = useState(STAGES[0].stage_key);
+  const [template, setTemplate] = useState([]);
+  const [editingTemplate, setEditingTemplate] = useState(false);
+  const [activeStageKey, setActiveStageKey] = useState("");
   const [expandedItemKey, setExpandedItemKey] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -145,6 +143,17 @@ export default function SiteBuildFlow() {
 
     setLoading(true);
     setError("");
+
+    // Phases and items every company is synced to (see siteBuildFlow/template.js).
+    const { template: currentTemplate } = await loadTemplate();
+    const templateStages = currentTemplate.map((stage, index) => ({
+      stage_key: stage.stage_key,
+      name: stage.name,
+      order_index: index,
+    }));
+    const templateItems = Object.fromEntries(
+      currentTemplate.map((stage) => [stage.stage_key, stage.items])
+    );
 
     const [stagesResult, itemsResult] = await Promise.all([
       supabase
@@ -175,7 +184,7 @@ export default function SiteBuildFlow() {
     let stageSyncError = "";
 
     if (stages.length === 0 && items.length === 0) {
-      const stageRows = STAGES.map((stage) => ({
+      const stageRows = templateStages.map((stage) => ({
         company_id: companyId,
         stage_key: stage.stage_key,
         order_index: stage.order_index,
@@ -183,8 +192,8 @@ export default function SiteBuildFlow() {
       }));
 
       const itemRows = [];
-      for (const stage of STAGES) {
-        const predefined = PREDEFINED_ITEMS[stage.stage_key] || [];
+      for (const stage of templateStages) {
+        const predefined = templateItems[stage.stage_key] || [];
         predefined.forEach((entry, index) => {
           itemRows.push({
             company_id: companyId,
@@ -229,7 +238,7 @@ export default function SiteBuildFlow() {
     } else {
       // Insert any stages/items added after the initial seed, and realign order.
       const existingStageKeys = new Set(stages.map((s) => s.stage_key));
-      const missingStageRows = STAGES.filter(
+      const missingStageRows = templateStages.filter(
         (stage) => !existingStageKeys.has(stage.stage_key)
       ).map((stage) => ({
         company_id: companyId,
@@ -255,7 +264,7 @@ export default function SiteBuildFlow() {
 
       const persistedStageKeys = new Set(stages.map((stage) => stage.stage_key));
 
-      const orderByKey = new Map(STAGES.map((s) => [s.stage_key, s.order_index]));
+      const orderByKey = new Map(templateStages.map((s) => [s.stage_key, s.order_index]));
       const stageOrderUpdates = stages.filter(
         (stage) =>
           orderByKey.has(stage.stage_key) &&
@@ -290,12 +299,12 @@ export default function SiteBuildFlow() {
         );
       }
 
-      const allowedStageKeys = new Set(STAGES.map((stage) => stage.stage_key));
+      const allowedStageKeys = new Set(templateStages.map((stage) => stage.stage_key));
       const allowedKeysByStage = new Map(
-        STAGES.map((stage) => [
+        templateStages.map((stage) => [
           stage.stage_key,
           new Set(
-            (PREDEFINED_ITEMS[stage.stage_key] || []).map((entry) => entry.item_key)
+            (templateItems[stage.stage_key] || []).map((entry) => entry.item_key)
           ),
         ])
       );
@@ -347,9 +356,9 @@ export default function SiteBuildFlow() {
       const promptUpdates = [];
       const metaUpdates = [];
 
-      for (const stage of STAGES) {
+      for (const stage of templateStages) {
         if (!persistedStageKeys.has(stage.stage_key)) continue;
-        const predefined = PREDEFINED_ITEMS[stage.stage_key] || [];
+        const predefined = templateItems[stage.stage_key] || [];
         const byKey = new Map(
           items
             .filter((i) => i.stage_key === stage.stage_key)
@@ -536,15 +545,18 @@ export default function SiteBuildFlow() {
     if (stageSyncError) {
       setError(
         stageSyncError.includes("stage_key_check")
-          ? "Seed Articles Content could not be saved yet. Apply supabase/migrations/050_setup_flow_seed_articles.sql in the Supabase SQL editor, then reload."
+          ? "A new phase could not be saved yet. Apply supabase/migrations/062_setup_flow_template.sql in the Supabase SQL editor, then reload."
           : stageSyncError
       );
     }
 
     const next = { stages, items };
+    setTemplate(currentTemplate);
     setSavedState(cloneState(next));
     setDraftState(cloneState(next));
-    setActiveStageKey(STAGES[0].stage_key);
+    setActiveStageKey((prev) =>
+      templateStages.some((stage) => stage.stage_key === prev) ? prev : templateStages[0]?.stage_key || ""
+    );
     setExpandedItemKey(null);
     setLoading(false);
   }, [companyId]);
@@ -561,8 +573,10 @@ export default function SiteBuildFlow() {
   );
 
   const activeStage = useMemo(
-    () => STAGES.find((s) => s.stage_key === activeStageKey) || STAGES[0],
-    [activeStageKey]
+    () =>
+      template.find((s) => s.stage_key === activeStageKey) ||
+      template[0] || { stage_key: "", name: "" },
+    [template, activeStageKey]
   );
 
   const draftStagesByKey = useMemo(() => {
@@ -645,7 +659,7 @@ export default function SiteBuildFlow() {
 
   const handleDownloadMarkdown = () => {
     if (!draftState) return;
-    const markdown = buildSiteBuildFlowMarkdown(STAGES, draftState.items || []);
+    const markdown = buildSiteBuildFlowMarkdown(template, draftState.items || []);
     downloadMarkdown(SITE_BUILD_FLOW_MARKDOWN_FILENAME, markdown);
   };
 
@@ -724,6 +738,19 @@ export default function SiteBuildFlow() {
     );
   }
 
+  if (editingTemplate) {
+    return (
+      <TemplateEditor
+        template={template}
+        onCancel={() => setEditingTemplate(false)}
+        onSaved={async () => {
+          setEditingTemplate(false);
+          await loadAndSeed();
+        }}
+      />
+    );
+  }
+
   if (!draftState) {
     return (
       <div>
@@ -758,6 +785,17 @@ export default function SiteBuildFlow() {
                 Unsaved changes
               </span>
             )}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setEditingTemplate(true)}
+              disabled={isDirty || saving || loading}
+              title={isDirty ? "Save or discard this company's changes first" : undefined}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Edit checklist
+            </Button>
             <Button
               type="button"
               variant="outline"
@@ -816,7 +854,7 @@ export default function SiteBuildFlow() {
           <p className="text-[11px] uppercase tracking-[0.08em] font-medium text-muted-foreground">
             Stages
           </p>
-          {STAGES.map((stage) => {
+          {template.map((stage) => {
             const stageRow = draftStagesByKey[stage.stage_key];
             const status = stageRow?.status || "open";
             const stageItems = (draftState.items || []).filter(
@@ -891,7 +929,8 @@ export default function SiteBuildFlow() {
             activeItems.map((item) => {
               const expanded = expandedItemKey === item.item_key;
               const noteId = `setup-flow-note-${item.item_key}`;
-              const itemLink = resolveItemLink(
+              const itemLink = templateItemLink(
+                template,
                 item.stage_key,
                 item.item_key,
                 companyId
