@@ -176,8 +176,10 @@ function pushAll(target, items) {
  *
  * @param {Array<{ frontmatter: object, body?: string, markdown?: string, image?: { b64_json?: string } | { status?: string, result?: { b64_json?: string } } | null }>} articles
  * @param {{ companyId: string, owner: string, repo: string, tokenKey: string, branch?: string }} destination
- * @param {{ onProgress?: (progress: { phase: "commit" | "merge", current: number, total: number, filename?: string | null }) => void, overwrite?: boolean }} [options]
+ * @param {{ onProgress?: (progress: { phase: "commit" | "merge", current: number, total: number, filename?: string | null }) => void, overwrite?: boolean, allowOverlap?: boolean }} [options]
  *   overwrite: replace an existing article file on the site (library CMS commits only).
+ *   allowOverlap: publish even when the article's keywords overlap a live article
+ *   (the server skips it with reason "keyword_overlap" otherwise).
  */
 export async function publishArticlesToSite(articles, destination, options = {}) {
   const onProgress =
@@ -231,6 +233,7 @@ export async function publishArticlesToSite(articles, destination, options = {})
     github_token_key: tokenKey,
     branch,
     ...(options.overwrite === true ? { overwrite: true } : {}),
+    ...(options.allowOverlap === true ? { allowOverlap: true } : {}),
   };
 
   const total = list.length;

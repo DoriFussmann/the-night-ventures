@@ -509,7 +509,7 @@ export const PREDEFINED_ITEMS = {
       item_key: "submit-sitemap-google-search-console",
       title: "Submit sitemap to Google Search Console",
       description:
-        "In Search Console, go to Sitemaps, submit sitemap-index.xml (e.g. https://yourdomain.com/sitemap-index.xml). Confirm it shows 'Success' status and a discovered URL count roughly matching your published page count.",
+        "In Search Console, go to Sitemaps, submit sitemap.xml (e.g. https://yourdomain.com/sitemap.xml). Confirm it shows 'Success' status and a discovered URL count roughly matching your published page count.",
       prompts: [],
     },
     {
@@ -523,7 +523,7 @@ export const PREDEFINED_ITEMS = {
       item_key: "submit-sitemap-bing-webmaster-tools",
       title: "Submit sitemap to Bing Webmaster Tools",
       description:
-        "In Bing Webmaster Tools, submit the same sitemap-index.xml URL. If you imported from Search Console, check whether the sitemap carried over automatically — if not, add it manually.",
+        "In Bing Webmaster Tools, submit the same sitemap.xml URL. If you imported from Search Console, check whether the sitemap carried over automatically — if not, add it manually.",
       prompts: [],
     },
     {
@@ -649,7 +649,7 @@ export const PREDEFINED_ITEMS = {
       item_key: "confirm-sitemap-inclusion",
       title: "Confirm sitemap inclusion",
       description:
-        "Check that every published article appears in sitemap-index.xml with a sensible lastmod date.",
+        "Check that every published article appears in sitemap.xml with a sensible lastmod date.",
       prompts: [],
     },
     {

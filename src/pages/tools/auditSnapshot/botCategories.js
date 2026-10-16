@@ -16,6 +16,8 @@ const AI_MATCHERS = [
   'oai-searchbot',
   'chatgpt',
   'claudebot',
+  'claude-searchbot',
+  'claude-user',
   'claude-web',
   'anthropic',
   'perplexity',

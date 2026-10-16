@@ -93,6 +93,10 @@ export default function TargetingSection({
         companyId,
         pillars,
         targetKeyword: keyword,
+        pillarKeyword: state.pillarKeyword,
+        supportingKeyword: state.clusterKeyword,
+        articleType: state.articleType,
+        excludeId: state.draftId,
       });
       if (checkToken.current !== token) return;
       dispatch({
@@ -252,11 +256,15 @@ export default function TargetingSection({
         )}
         {state.cannibalization.length > 0 && (
           <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 space-y-1">
-            <p className="font-medium">This target keyword is already in use.</p>
+            <p className="font-medium">
+              {state.cannibalization.some((match) => match.blocking)
+                ? "This keyword overlaps an existing article. Publishing will ask you to confirm."
+                : "This keyword is close to an existing article."}
+            </p>
             <ul className="space-y-1">
               {state.cannibalization.map((match, index) => (
-                <li key={`${match.where}-${match.title}-${index}`}>
-                  {match.title} · {match.status} · {match.where}
+                <li key={`${match.where}-${match.slug || match.title}-${index}`}>
+                  {match.title} · {match.status} · {match.where} — {match.message}
                 </li>
               ))}
             </ul>
