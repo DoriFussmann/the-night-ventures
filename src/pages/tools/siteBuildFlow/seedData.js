@@ -174,6 +174,13 @@ export const PREDEFINED_ITEMS = {
       prompts: [],
     },
     {
+      item_key: "replace-brand-assets",
+      title: "Replace the logo, social image and brand profiles",
+      description:
+        "Replace three template placeholders. (1) site/public/logo.png: the brand logo as PNG, JPEG or WebP, square, at least 112×112px. Search engines show it for the brand, and the build fails on an SVG, a favicon or anything smaller. (2) site/public/og-default.png: a 1200×675 branded image, shown when a page is shared and has no image of its own. (3) SAME_AS in site/src/config/site.ts: the brand's official profiles (LinkedIn company page, Crunchbase, X). The build warns while it is empty. Run npm run build, then commit and push.",
+      prompts: [],
+    },
+    {
       item_key: "set-publish-destination",
       title: "Set Publish Destination",
       description: PUBLISH_DESTINATION_INSTRUCTIONS,
@@ -185,7 +192,7 @@ export const PREDEFINED_ITEMS = {
       item_key: "update-core-version",
       title: "Update Core Version",
       description:
-        "Go to Admin → Core Version, wait for the scan on the live deployed site, and update the version.",
+        "Go to Admin → Core Version, wait for the scan on the live deployed site, and update the version. One-click updates cover minor versions only. A major version (for example 0.x → 1.0) shows as 'Migration required' and needs a Cursor patch for this site first.",
       prompts: [],
       linkTo: "/company/:companyId/core-version",
       linkLabel: "Open Core Version →",
@@ -269,7 +276,7 @@ export const PREDEFINED_ITEMS = {
       item_key: "create-vercel-project",
       title: "Create Vercel project",
       description:
-        "Go to Vercel, Add New > Project. It should auto-detect the pushed repo.",
+        "Go to Vercel, Add New > Project. It should auto-detect the pushed repo. In the project's Settings, set Node.js Version to 24.x (the template requires Node 24).",
       prompts: [],
     },
     {
@@ -502,7 +509,7 @@ export const PREDEFINED_ITEMS = {
       item_key: "verify-google-search-console",
       title: "Verify Google Search Console",
       description:
-        "Add and verify a Domain property in Google Search Console for your live domain.",
+        "Add and verify a Domain property in Google Search Console for your live domain (verified through DNS). If you use a URL-prefix property with the HTML tag method instead, put the tag's token in Vercel → Settings → Environment Variables as PUBLIC_SEARCH_CONSOLE_VERIFICATION (Production), redeploy, then click Verify.",
       prompts: [],
     },
     {
@@ -530,7 +537,7 @@ export const PREDEFINED_ITEMS = {
       item_key: "install-analytics",
       title: "Install Analytics",
       description:
-        "Install your analytics tool of choice and confirm it's receiving real traffic data.",
+        "For Google Analytics 4: create a web data stream for the live domain, copy its measurement ID (G-…), add it in Vercel → Settings → Environment Variables as PUBLIC_ANALYTICS_ID (Production) and redeploy. The template adds the tag to every page. Confirm visits appear in GA4 Realtime. For another tool, install it and confirm it receives real traffic.",
       prompts: [],
     },
     {
