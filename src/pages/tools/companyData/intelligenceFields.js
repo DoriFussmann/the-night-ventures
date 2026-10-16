@@ -69,7 +69,12 @@ function customValueByNames(customValues, names) {
 /** Fill brief fields from leftover custom_fields when the column is still empty. */
 export function applyCustomFieldFallbacks(fields, customValues) {
   const next = { ...fields };
-  for (const [key, names] of Object.entries(CUSTOM_FALLBACKS)) {
+  const fallbacks = { ...CUSTOM_FALLBACKS };
+  for (const key of INTELLIGENCE_TEXT_KEYS) {
+    const names = fallbacks[key] || [];
+    fallbacks[key] = names.includes(key) ? names : [key, ...names];
+  }
+  for (const [key, names] of Object.entries(fallbacks)) {
     if (!textFilled(next[key])) {
       next[key] = customValueByNames(customValues, names);
     }
