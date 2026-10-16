@@ -1,4 +1,8 @@
-/** Predefined Site Build Flow stages and items (seeded per company on first load). */
+/**
+ * The original Site Build Flow checklist. It fills the editable template tables
+ * (migration 062_setup_flow_template.sql) and is used as-is until they exist.
+ * To change the checklist, use "Edit checklist" on the Site Build Flow page.
+ */
 
 export const STATUSES = ["open", "wip", "done"];
 
@@ -668,15 +672,3 @@ export const PREDEFINED_ITEMS = {
     },
   ],
 };
-
-export function resolveItemLink(stageKey, itemKey, companyId) {
-  if (!stageKey || !itemKey || !companyId) return null;
-  const entry = (PREDEFINED_ITEMS[stageKey] || []).find(
-    (item) => item.item_key === itemKey
-  );
-  if (!entry?.linkTo) return null;
-  return {
-    to: entry.linkTo.replaceAll(":companyId", companyId),
-    label: entry.linkLabel || "Open →",
-  };
-}
