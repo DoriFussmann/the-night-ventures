@@ -44,12 +44,17 @@ function MoveButtons({ index, count, onMove, label }) {
 }
 
 /**
- * Edits the checklist template shared by every company: phases and their
- * items (title, description), add / delete / reorder. Existing items keep
- * their prompts and links untouched.
+ * Edits the checklist template shared by every company, one phase at a time.
+ * Existing items keep their prompts and links untouched.
  */
-export default function TemplateEditor({ template, onCancel, onSaved }) {
+export default function TemplateEditor({ template, initialStageKey, onCancel, onSaved }) {
   const [draft, setDraft] = useState(() => structuredClone(template));
+  const [activeKey, setActiveKey] = useState(() => {
+    if (initialStageKey && template.some((stage) => stage.stage_key === initialStageKey)) {
+      return initialStageKey;
+    }
+    return template[0]?.stage_key || "";
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -74,14 +79,22 @@ export default function TemplateEditor({ template, onCancel, onSaved }) {
       )
     );
 
-  const addStage = () =>
-    setDraft((prev) => [...prev, { stage_key: newTemplateKey("phase", takenKeys), name: "", items: [] }]);
+  const addStage = () => {
+    const stage_key = newTemplateKey("phase", takenKeys);
+    setDraft((prev) => [...prev, { stage_key, name: "", items: [] }]);
+    setActiveKey(stage_key);
+  };
 
   const deleteStage = (stageIndex) => {
     const stage = draft[stageIndex];
     const label = stage.name.trim() || "this phase";
     if (!window.confirm(`Delete "${label}" and its ${stage.items.length} item(s) for every company?`)) return;
-    setDraft((prev) => prev.filter((_, i) => i !== stageIndex));
+    const next = draft.filter((_, i) => i !== stageIndex);
+    setDraft(next);
+    if (stage.stage_key === activeKey) {
+      const neighbor = next[Math.min(stageIndex, next.length - 1)];
+      setActiveKey(neighbor?.stage_key || "");
+    }
   };
 
   const addItem = (stageIndex) =>
@@ -129,14 +142,19 @@ export default function TemplateEditor({ template, onCancel, onSaved }) {
     }
   };
 
+  const stageIndex = draft.findIndex((stage) => stage.stage_key === activeKey);
+  const stage = stageIndex >= 0 ? draft[stageIndex] : null;
+
   return (
     <div className="flex min-h-[calc(100vh-3rem)] flex-col">
       <div className="sticky top-0 z-20 border-b border-border bg-background/95 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-xs text-foreground mb-0.5">Edit checklist</h1>
+            <h1 className="text-xs text-foreground mb-0.5">
+              {stage ? `Edit ${stage.name.trim() || "phase"}` : "Edit checklist"}
+            </h1>
             <p className="text-xs text-muted-foreground">
-              Changes apply to every company. Status and notes stay on items that are kept.
+              One phase at a time. Changes apply to every company. Status and notes stay on items that are kept.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -163,7 +181,36 @@ export default function TemplateEditor({ template, onCancel, onSaved }) {
       </div>
 
       <div className="space-y-4 pt-4">
-        {draft.map((stage, stageIndex) => (
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="min-w-[220px] flex-1 space-y-1.5">
+            <Label htmlFor="edit-phase" className="text-xs">
+              Phase
+            </Label>
+            <select
+              id="edit-phase"
+              value={stage?.stage_key || ""}
+              onChange={(event) => setActiveKey(event.target.value)}
+              disabled={draft.length === 0}
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {draft.length === 0 ? (
+                <option value="">No phases yet</option>
+              ) : (
+                draft.map((entry, index) => (
+                  <option key={entry.stage_key} value={entry.stage_key}>
+                    {index + 1}. {entry.name.trim() || "Untitled phase"}
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+          <Button type="button" variant="outline" onClick={addStage}>
+            <Plus className="h-4 w-4" />
+            Add phase
+          </Button>
+        </div>
+
+        {stage && (
           <section
             key={stage.stage_key}
             className="space-y-3 rounded-[14px] border border-border bg-card p-4"
@@ -172,7 +219,7 @@ export default function TemplateEditor({ template, onCancel, onSaved }) {
             <div className="flex flex-wrap items-end gap-2">
               <div className="min-w-[200px] flex-1 space-y-1.5">
                 <Label htmlFor={`phase-${stage.stage_key}`} className="text-xs">
-                  Phase {stageIndex + 1}
+                  Phase {stageIndex + 1} name
                 </Label>
                 <Input
                   id={`phase-${stage.stage_key}`}
@@ -266,12 +313,7 @@ export default function TemplateEditor({ template, onCancel, onSaved }) {
               Add item
             </Button>
           </section>
-        ))}
-
-        <Button type="button" variant="outline" onClick={addStage}>
-          <Plus className="h-4 w-4" />
-          Add phase
-        </Button>
+        )}
       </div>
     </div>
   );

@@ -131,7 +131,7 @@ export default function SiteBuildFlow() {
   const [savedState, setSavedState] = useState(null);
   const [draftState, setDraftState] = useState(null);
   const [template, setTemplate] = useState([]);
-  const [editingTemplate, setEditingTemplate] = useState(false);
+  const [editingStageKey, setEditingStageKey] = useState(null);
   const [activeStageKey, setActiveStageKey] = useState("");
   const [expandedItemKey, setExpandedItemKey] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -738,13 +738,14 @@ export default function SiteBuildFlow() {
     );
   }
 
-  if (editingTemplate) {
+  if (editingStageKey) {
     return (
       <TemplateEditor
         template={template}
-        onCancel={() => setEditingTemplate(false)}
+        initialStageKey={editingStageKey === "new" ? "" : editingStageKey}
+        onCancel={() => setEditingStageKey(null)}
         onSaved={async () => {
-          setEditingTemplate(false);
+          setEditingStageKey(null);
           await loadAndSeed();
         }}
       />
@@ -789,7 +790,7 @@ export default function SiteBuildFlow() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => setEditingTemplate(true)}
+              onClick={() => setEditingStageKey(activeStageKey || "new")}
               disabled={isDirty || saving || loading}
               title={isDirty ? "Save or discard this company's changes first" : undefined}
             >
@@ -901,18 +902,32 @@ export default function SiteBuildFlow() {
                   <p className="text-[11px] text-muted-foreground">
                     ({doneCount} of {stageItems.length} done)
                   </p>
-                  {stageItems.length > 0 && doneCount < stageItems.length && (
+                  <div className="flex shrink-0 items-center gap-2">
                     <button
                       type="button"
                       onClick={(event) => {
                         event.stopPropagation();
-                        markStageAllDone(stage.stage_key);
+                        setEditingStageKey(stage.stage_key);
                       }}
-                      className="shrink-0 text-[11px] font-medium text-foreground underline-offset-2 hover:underline"
+                      disabled={isDirty || saving || loading}
+                      title={isDirty ? "Save or discard this company's changes first" : "Edit this phase"}
+                      className="text-[11px] font-medium text-foreground underline-offset-2 hover:underline disabled:pointer-events-none disabled:opacity-40"
                     >
-                      Mark All Done
+                      Edit
                     </button>
-                  )}
+                    {stageItems.length > 0 && doneCount < stageItems.length && (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          markStageAllDone(stage.stage_key);
+                        }}
+                        className="text-[11px] font-medium text-foreground underline-offset-2 hover:underline"
+                      >
+                        Mark All Done
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             );

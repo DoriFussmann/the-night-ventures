@@ -12,7 +12,9 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -38,6 +40,29 @@ function lastCompanyId() {
   } catch {
     return "";
   }
+}
+
+const TASK_STATUSES = [
+  { id: "do", label: "Do" },
+  { id: "doing", label: "Doing" },
+  { id: "done", label: "Done" },
+  { id: "archived", label: "Archive" },
+];
+
+const TASKS_MIGRATION = "063_workspace_task_board.sql";
+
+function taskTitle(task) {
+  const name = String(task?.name || "").trim();
+  if (name) return name;
+  const first = String(task?.body || "").split(/\r?\n/, 1)[0].trim();
+  return first || "Untitled";
+}
+
+function taskDetails(task) {
+  const name = String(task?.name || "").trim();
+  const body = String(task?.body || "");
+  if (name) return body;
+  return body.split(/\r?\n/).slice(1).join("\n").trim();
 }
 
 function tableSetupError(err, fallback, table, migration) {
@@ -70,7 +95,7 @@ function WorkspaceTasksCard() {
         type="button"
         icon={CheckSquare}
         title="Tasks"
-        desc="View, add, edit, and remove workspace tasks."
+        desc="Do, Doing, Done, and Archive."
         onClick={() => setOpen(true)}
       />
       <WorkspaceTasksModal open={open} onOpenChange={setOpen} />
@@ -100,9 +125,11 @@ function WorkspaceTasksModal({ open, onOpenChange }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [name, setName] = useState("");
   const [body, setBody] = useState("");
   const [saving, setSaving] = useState(false);
-  const [editingId, setEditingId] = useState(null);
+  const [selectedId, setSelectedId] = useState(null);
+  const [editName, setEditName] = useState("");
   const [editBody, setEditBody] = useState("");
   const [busyId, setBusyId] = useState(null);
 
@@ -111,7 +138,7 @@ function WorkspaceTasksModal({ open, onOpenChange }) {
     setError("");
     const { data, error: fetchError } = await supabase
       .from("workspace_tasks")
-      .select("id, body, created_at")
+      .select("id, name, body, status, created_at")
       .order("created_at", { ascending: false });
 
     if (fetchError) {
@@ -121,7 +148,7 @@ function WorkspaceTasksModal({ open, onOpenChange }) {
           fetchError,
           "Failed to load tasks",
           "workspace_tasks",
-          "046_workspace_tasks.sql"
+          TASKS_MIGRATION
         )
       );
       setTasks([]);
@@ -134,22 +161,31 @@ function WorkspaceTasksModal({ open, onOpenChange }) {
   useEffect(() => {
     if (!open) return;
     setShowForm(false);
+    setName("");
     setBody("");
-    setEditingId(null);
-    setEditBody("");
+    setSelectedId(null);
     loadTasks();
   }, [open, loadTasks]);
 
+  const selected = tasks.find((task) => task.id === selectedId) || null;
+
+  const openTask = (task) => {
+    setSelectedId(task.id);
+    setEditName(taskTitle(task) === "Untitled" && !String(task.name || "").trim() ? "" : taskTitle(task));
+    setEditBody(taskDetails(task));
+    setShowForm(false);
+  };
+
   const handleAdd = async (e) => {
     e.preventDefault();
-    const trimmed = body.trim();
-    if (!trimmed || saving) return;
+    const trimmedName = name.trim();
+    if (!trimmedName || saving) return;
 
     setSaving(true);
     setError("");
     const { error: insertError } = await supabase
       .from("workspace_tasks")
-      .insert({ body: trimmed });
+      .insert({ name: trimmedName, body: body.trim(), status: "do" });
 
     if (insertError) {
       console.error("Failed to add workspace task:", insertError);
@@ -158,29 +194,30 @@ function WorkspaceTasksModal({ open, onOpenChange }) {
           insertError,
           "Failed to save task",
           "workspace_tasks",
-          "046_workspace_tasks.sql"
+          TASKS_MIGRATION
         )
       );
       setSaving(false);
       return;
     }
 
+    setName("");
     setBody("");
     setShowForm(false);
     setSaving(false);
     await loadTasks();
   };
 
-  const handleSaveEdit = async (id) => {
-    const trimmed = editBody.trim();
-    if (!trimmed || busyId) return;
+  const handleSaveEdit = async () => {
+    const trimmedName = editName.trim();
+    if (!selected || !trimmedName || busyId) return;
 
-    setBusyId(id);
+    setBusyId(selected.id);
     setError("");
     const { error: updateError } = await supabase
       .from("workspace_tasks")
-      .update({ body: trimmed })
-      .eq("id", id);
+      .update({ name: trimmedName, body: editBody.trim() })
+      .eq("id", selected.id);
 
     if (updateError) {
       console.error("Failed to update workspace task:", updateError);
@@ -189,27 +226,54 @@ function WorkspaceTasksModal({ open, onOpenChange }) {
           updateError,
           "Failed to update task",
           "workspace_tasks",
-          "046_workspace_tasks.sql"
+          TASKS_MIGRATION
         )
       );
       setBusyId(null);
       return;
     }
 
-    setEditingId(null);
-    setEditBody("");
     setBusyId(null);
     await loadTasks();
   };
 
-  const handleRemove = async (id) => {
-    if (busyId) return;
-    setBusyId(id);
+  const handleStatus = async (task, status) => {
+    if (!task || busyId) return;
+    setBusyId(task.id);
+    setError("");
+    setTasks((prev) => prev.map((item) => (item.id === task.id ? { ...item, status } : item)));
+    const { error: updateError } = await supabase
+      .from("workspace_tasks")
+      .update({ status })
+      .eq("id", task.id);
+
+    if (updateError) {
+      console.error("Failed to update workspace task status:", updateError);
+      setError(
+        tableSetupError(
+          updateError,
+          "Failed to update task",
+          "workspace_tasks",
+          TASKS_MIGRATION
+        )
+      );
+      setBusyId(null);
+      await loadTasks();
+      return;
+    }
+
+    setBusyId(null);
+  };
+
+  const handleRemove = async (task) => {
+    if (!task || busyId) return;
+    if (!window.confirm(`Delete "${taskTitle(task)}"? This cannot be undone.`)) return;
+    setBusyId(task.id);
     setError("");
     const { error: deleteError } = await supabase
       .from("workspace_tasks")
       .delete()
-      .eq("id", id);
+      .eq("id", task.id);
 
     if (deleteError) {
       console.error("Failed to delete workspace task:", deleteError);
@@ -218,143 +282,228 @@ function WorkspaceTasksModal({ open, onOpenChange }) {
           deleteError,
           "Failed to remove task",
           "workspace_tasks",
-          "046_workspace_tasks.sql"
+          TASKS_MIGRATION
         )
       );
       setBusyId(null);
       return;
     }
 
-    if (editingId === id) {
-      setEditingId(null);
-      setEditBody("");
-    }
+    if (selectedId === task.id) setSelectedId(null);
     setBusyId(null);
     await loadTasks();
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85vh] flex-col gap-4 overflow-hidden sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Tasks</DialogTitle>
-          <DialogDescription>
-            Workspace-wide notes. Add, edit, or remove anytime.
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="flex h-[88vh] max-h-[88vh] w-[calc(100%-2rem)] max-w-6xl flex-col gap-4 overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>Tasks</DialogTitle>
+            <DialogDescription>
+              Move a task across Do, Doing, Done, and Archive.
+            </DialogDescription>
+          </DialogHeader>
 
-        <div className="flex items-center justify-end">
-          <Button
-            type="button"
-            variant={showForm ? "outline" : "default"}
-            size="sm"
-            onClick={() => setShowForm((openForm) => !openForm)}
-          >
-            {showForm ? "Cancel" : "Add New"}
-          </Button>
-        </div>
-
-        {showForm && (
-          <form onSubmit={handleAdd} className="space-y-3 rounded-lg border border-border p-3">
-            <Textarea
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder="Write a task…"
-              rows={4}
-              autoFocus
-              required
-            />
-            <Button type="submit" size="sm" disabled={saving || !body.trim()}>
-              {saving ? "Saving..." : "Save"}
+          <div className="flex items-center justify-end">
+            <Button
+              type="button"
+              variant={showForm ? "outline" : "default"}
+              size="sm"
+              onClick={() => setShowForm((openForm) => !openForm)}
+            >
+              {showForm ? "Cancel" : "Add New"}
             </Button>
-          </form>
-        )}
+          </div>
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
-
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {loading ? (
-            <p className="text-sm text-muted-foreground">Loading tasks…</p>
-          ) : tasks.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No tasks yet.</p>
-          ) : (
-            <ul className="space-y-2">
-              {tasks.map((task) => (
-                <li
-                  key={task.id}
-                  className="rounded-lg border border-border bg-card/40 px-3 py-2.5"
-                >
-                  {editingId === task.id ? (
-                    <div className="space-y-2">
-                      <Textarea
-                        value={editBody}
-                        onChange={(e) => setEditBody(e.target.value)}
-                        rows={4}
-                        autoFocus
-                      />
-                      <div className="flex gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          disabled={busyId === task.id || !editBody.trim()}
-                          onClick={() => handleSaveEdit(task.id)}
-                        >
-                          {busyId === task.id ? "Saving..." : "Save"}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={busyId === task.id}
-                          onClick={() => {
-                            setEditingId(null);
-                            setEditBody("");
-                          }}
-                        >
-                          Cancel
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex items-start gap-2">
-                      <p className="min-w-0 flex-1 whitespace-pre-wrap text-sm text-foreground">
-                        {task.body}
-                      </p>
-                      <div className="flex shrink-0 gap-1">
-                        <Button
-                          type="button"
-                          size="icon"
-                          variant="ghost"
-                          disabled={busyId === task.id}
-                          onClick={() => {
-                            setEditingId(task.id);
-                            setEditBody(task.body);
-                            setShowForm(false);
-                          }}
-                          aria-label="Edit task"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          type="button"
-                          size="icon"
-                          variant="ghost"
-                          disabled={busyId === task.id}
-                          onClick={() => handleRemove(task.id)}
-                          aria-label="Remove task"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ul>
+          {showForm && (
+            <form onSubmit={handleAdd} className="grid gap-3 rounded-lg border border-border p-3 sm:grid-cols-[minmax(0,16rem)_1fr_auto] sm:items-start">
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Task name"
+                autoFocus
+                required
+              />
+              <Textarea
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                placeholder="Description"
+                rows={2}
+              />
+              <Button type="submit" size="sm" disabled={saving || !name.trim()}>
+                {saving ? "Saving..." : "Save"}
+              </Button>
+            </form>
           )}
-        </div>
-      </DialogContent>
-    </Dialog>
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
+
+          <div className="min-h-0 flex-1 overflow-x-auto">
+            {loading ? (
+              <p className="text-sm text-muted-foreground">Loading tasks…</p>
+            ) : (
+              <div className="grid h-full min-w-[720px] grid-cols-4 gap-3">
+                {TASK_STATUSES.map((column) => {
+                  const columnTasks = tasks.filter(
+                    (task) => (task.status || "do") === column.id
+                  );
+                  return (
+                    <section
+                      key={column.id}
+                      className="flex min-h-0 flex-col rounded-lg bg-muted/50"
+                    >
+                      <h3 className="px-3 py-2 text-xs font-medium text-foreground">
+                        {column.label}
+                        <span className="ml-2 text-muted-foreground">{columnTasks.length}</span>
+                      </h3>
+                      <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto px-2 pb-2">
+                        {columnTasks.length === 0 ? (
+                          <li className="px-1 text-xs text-muted-foreground">Nothing here.</li>
+                        ) : (
+                          columnTasks.map((task) => {
+                            const details = taskDetails(task);
+                            return (
+                              <li key={task.id}>
+                                <div className="flex items-start gap-2 rounded-md border border-border bg-card px-2.5 py-2">
+                                  <Checkbox
+                                    checked={(task.status || "do") === "done"}
+                                    disabled={busyId === task.id}
+                                    onCheckedChange={(checked) =>
+                                      handleStatus(task, checked ? "done" : "do")
+                                    }
+                                    aria-label={
+                                      (task.status || "do") === "done"
+                                        ? "Mark not done"
+                                        : "Mark done"
+                                    }
+                                    className="mt-0.5"
+                                  />
+                                  <button
+                                    type="button"
+                                    className="min-w-0 flex-1 text-left"
+                                    onClick={() => openTask(task)}
+                                  >
+                                    <p className="text-sm font-medium text-foreground">
+                                      {taskTitle(task)}
+                                    </p>
+                                    {details ? (
+                                      <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-xs text-muted-foreground">
+                                        {details}
+                                      </p>
+                                    ) : null}
+                                  </button>
+                                </div>
+                              </li>
+                            );
+                          })
+                        )}
+                      </ul>
+                    </section>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(selected)}
+        onOpenChange={(next) => {
+          if (!next) setSelectedId(null);
+        }}
+      >
+        <DialogContent className="flex max-h-[90vh] w-[calc(100%-2rem)] max-w-4xl flex-col gap-4 overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Task</DialogTitle>
+            <DialogDescription>
+              Name, description, and where it sits on the board.
+            </DialogDescription>
+          </DialogHeader>
+
+          {selected && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  checked={(selected.status || "do") === "done"}
+                  disabled={busyId === selected.id}
+                  onCheckedChange={(checked) =>
+                    handleStatus(selected, checked ? "done" : "do")
+                  }
+                  aria-label="Completed"
+                />
+                <Label className="text-sm">Completed</Label>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {TASK_STATUSES.map((column) => (
+                  <Button
+                    key={column.id}
+                    type="button"
+                    size="sm"
+                    variant={(selected.status || "do") === column.id ? "default" : "outline"}
+                    disabled={busyId === selected.id}
+                    onClick={() => handleStatus(selected, column.id)}
+                  >
+                    {column.label}
+                  </Button>
+                ))}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="task-name">Name</Label>
+                <Input
+                  id="task-name"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="task-description">Description</Label>
+                <Textarea
+                  id="task-description"
+                  value={editBody}
+                  onChange={(e) => setEditBody(e.target.value)}
+                  rows={12}
+                  className="min-h-48"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  disabled={busyId === selected.id}
+                  onClick={() => handleRemove(selected)}
+                >
+                  Delete
+                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSelectedId(null)}
+                  >
+                    Close
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={busyId === selected.id || !editName.trim()}
+                    onClick={handleSaveEdit}
+                  >
+                    {busyId === selected.id ? "Saving..." : "Save"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
