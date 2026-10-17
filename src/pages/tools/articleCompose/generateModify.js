@@ -1,7 +1,7 @@
 import { loadCompanyPositioning } from "../articleGeneration/singleArticle";
 import { todayIso } from "../../../../lib/wire-internal-links/externalLinksYaml.js";
 import { countMainBodyWords } from "../../../../lib/generate-article/mainBodyWords.js";
-import { countWords, parseAllowedBrands } from "./composeState";
+import { countWords, modifyKeywordOptions, parseAllowedBrands } from "./composeState";
 import { updateComposedDraftById } from "./draftRecord";
 import { saveComposedDraft } from "./saveComposedDraft";
 import { IdeaGenerationError } from "./generateIdea";
@@ -23,9 +23,18 @@ function authorSourceLinks(userLinks) {
     .filter(Boolean);
 }
 
-export async function generateModifyArticle({ companyId, state, existingDraftId = "" }) {
+export async function generateModifyArticle({
+  companyId,
+  state,
+  existingDraftId = "",
+  pillars = [],
+}) {
   const positioning = await loadCompanyPositioning(companyId);
   const targetKeyword = String(state.targetKeyword || "").trim();
+  const pillarKeyword = String(state.pillarKeyword || "").trim();
+  const clusterKeyword = String(state.clusterKeyword || "").trim();
+  const chosen = Boolean(pillarKeyword && clusterKeyword && targetKeyword);
+  const keywordOptions = chosen ? [] : modifyKeywordOptions(pillars);
   const expand = state.expandLength === true;
   const wordCount = expand
     ? Number(state.wordCount)
@@ -52,11 +61,12 @@ export async function generateModifyArticle({ companyId, state, existingDraftId 
       shortDescription: positioning.shortDescription,
       competitors: positioning.competitors,
       audience: positioning.audience,
-      pillarKeyword: state.pillarKeyword,
-      supportingKeyword: state.clusterKeyword,
+      pillarKeyword: chosen ? pillarKeyword : "",
+      supportingKeyword: chosen ? clusterKeyword : "",
+      keywordOptions,
       article: {
         title: "",
-        targetKeyword,
+        targetKeyword: chosen ? targetKeyword : "",
         type: state.articleType,
         searchIntent: "",
         wordCount,
@@ -88,13 +98,18 @@ export async function generateModifyArticle({ companyId, state, existingDraftId 
       Array.isArray(data.userLinks) ? data.userLinks : checkedLinks
     ),
   };
+  const assigned = data.assignment && typeof data.assignment === "object" ? data.assignment : {};
+  const savedPillar = String(assigned.pillarKeyword || pillarKeyword).trim();
+  const savedCluster = String(assigned.supportingKeyword || clusterKeyword).trim();
+  const savedTarget = String(assigned.targetKeyword || targetKeyword).trim();
+  const savedType = String(assigned.articleType || state.articleType).trim() || state.articleType;
   const saveInput = {
     companyId,
-    pillarKeyword: state.pillarKeyword,
-    supportingKeyword: state.clusterKeyword,
+    pillarKeyword: savedPillar,
+    supportingKeyword: savedCluster,
     source: "modify",
-    type: state.articleType,
-    targetKeyword,
+    type: savedType,
+    targetKeyword: savedTarget,
     frontmatter,
     body: data.body || "",
     whereThingsStandSources: Array.isArray(data.whereThingsStandSources)
@@ -123,6 +138,10 @@ export async function generateModifyArticle({ companyId, state, existingDraftId 
 
   return {
     draftId: String(saved.row.id),
+    pillarKeyword: savedPillar,
+    clusterKeyword: savedCluster,
+    targetKeyword: savedTarget,
+    articleType: savedType,
     frontmatter,
     body: data.body || "",
     whereThingsStandSources: Array.isArray(data.whereThingsStandSources)
