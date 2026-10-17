@@ -39,6 +39,10 @@ export default function TargetingSection({
   const locked = Boolean(disabled);
   const errors = targetingErrors(state, mode);
   const showWordCount = mode !== "modify" || state.expandLength;
+  const modifyAssigned = mode === "modify" && Boolean(state.pillarKeyword);
+  const typeLabel =
+    ARTICLE_TYPES.find((type) => type.value === state.articleType)?.label ||
+    state.articleType;
   const brands = parseAllowedBrands(state.allowedBrandsText);
   const checkToken = useRef(0);
   const selectedPillar =
@@ -120,7 +124,9 @@ export default function TargetingSection({
       <div>
         <h2 className="text-sm font-medium text-foreground">Targeting</h2>
         <p className="text-xs text-muted-foreground">
-          Pillar, cluster, and target keyword are required before the article can be created.
+          {mode === "modify"
+            ? "Pillar, cluster, target keyword, and article type are chosen from your keyword list when you adjust."
+            : "Pillar, cluster, and target keyword are required before the article can be created."}
         </p>
       </div>
 
@@ -136,6 +142,35 @@ export default function TargetingSection({
         </p>
       )}
 
+      {mode === "modify" && !modifyAssigned && (
+        <p className="text-sm text-muted-foreground">
+          Drop the article, then Adjust. The chosen pillar, cluster, target keyword, and article type show up here.
+        </p>
+      )}
+
+      {mode === "modify" && modifyAssigned && (
+        <dl className="grid gap-3 text-sm sm:grid-cols-2">
+          <div>
+            <dt className="text-xs text-muted-foreground">Pillar keyword</dt>
+            <dd>{state.pillarKeyword}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">Cluster keyword</dt>
+            <dd>{state.clusterKeyword || "—"}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">Target keyword</dt>
+            <dd>{state.targetKeyword || "—"}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">Article type</dt>
+            <dd>{typeLabel}</dd>
+          </div>
+        </dl>
+      )}
+
+      {mode !== "modify" && (
+      <>
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor="compose-pillar">Pillar keyword</Label>
@@ -294,7 +329,11 @@ export default function TargetingSection({
             </SelectContent>
           </Select>
         </div>
-        {showWordCount && (
+      </div>
+      </>
+      )}
+
+      {showWordCount && (
           <div className="space-y-1.5">
             <Label htmlFor="compose-words">Word count</Label>
             <Input
@@ -313,8 +352,7 @@ export default function TargetingSection({
             />
             <FieldError message={errors.wordCount} />
           </div>
-        )}
-      </div>
+      )}
 
       <div className="space-y-1.5">
         <Label htmlFor="compose-cta">CTA angle</Label>

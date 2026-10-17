@@ -123,6 +123,18 @@ export function isTargetingValid(state, mode = "idea") {
   return Object.keys(targetingErrors(state, mode)).length === 0;
 }
 
+/** Pillars that have at least one supporting keyword the modify prompt can choose. */
+export function modifyKeywordOptions(pillars) {
+  return (Array.isArray(pillars) ? pillars : [])
+    .map((pillar) => ({
+      keyword: String(pillar?.keyword || "").trim(),
+      supporting: (Array.isArray(pillar?.supporting) ? pillar.supporting : [])
+        .map((item) => String(item?.keyword || "").trim())
+        .filter(Boolean),
+    }))
+    .filter((pillar) => pillar.keyword && pillar.supporting.length > 0);
+}
+
 export const IDEA_TEXT_MIN = 200;
 export const IDEA_TEXT_MAX = 20000;
 export const KEY_POINT_MAX = 200;

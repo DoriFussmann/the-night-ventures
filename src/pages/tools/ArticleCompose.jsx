@@ -27,6 +27,7 @@ import {
   isIdeaInputValid,
   isModifyInputValid,
   isTargetingValid,
+  modifyKeywordOptions,
   modifyInputErrors,
   targetingErrors,
 } from "./articleCompose/composeState";
@@ -60,7 +61,10 @@ export default function ArticleCompose({ mode }) {
   };
   const targetingValid = isTargetingValid(state, mode);
   const inputValid = isIdea ? isIdeaInputValid(state) : isModifyInputValid(state);
-  const canCreate = targetingValid && inputValid && !state.generating;
+  const modifyOptions = modifyKeywordOptions(pillars);
+  const canCreate = isIdea
+    ? targetingValid && inputValid && !state.generating
+    : inputValid && modifyOptions.length > 0 && !loading && !state.generating;
   const reviewReady =
     Boolean(state.frontmatter) &&
     !state.dirty &&
@@ -163,7 +167,7 @@ export default function ArticleCompose({ mode }) {
       const existingDraftId = replace ? state.draftId : "";
       const result = isIdea
         ? await generateIdeaArticle({ companyId, state, existingDraftId })
-        : await generateModifyArticle({ companyId, state, existingDraftId });
+        : await generateModifyArticle({ companyId, state, existingDraftId, pillars });
       rememberDraft(result.draftId);
       dispatch({
         type: "patch",
@@ -171,6 +175,14 @@ export default function ArticleCompose({ mode }) {
           generating: false,
           stage: "review",
           draftId: result.draftId,
+          ...(isIdea
+            ? {}
+            : {
+                pillarKeyword: result.pillarKeyword || state.pillarKeyword,
+                clusterKeyword: result.clusterKeyword || state.clusterKeyword,
+                targetKeyword: result.targetKeyword || state.targetKeyword,
+                articleType: result.articleType || state.articleType,
+              }),
           savedSlug: result.frontmatter?.slug || "",
           frontmatter: result.frontmatter,
           body: result.body,
@@ -274,7 +286,7 @@ export default function ArticleCompose({ mode }) {
         <p className="text-sm text-muted-foreground">
           {isIdea
             ? "Turn a rough idea into a targeted article. Set the pillar, cluster, and keyword first."
-            : "Restructure an existing article around a pillar, cluster, and target keyword."}
+            : "Drop an article. Adjust reads it and assigns a pillar, cluster, target keyword, and article type."}
         </p>
       </div>
 
@@ -327,7 +339,7 @@ export default function ArticleCompose({ mode }) {
                 ? analyticsNote.libraryMatch
                   ? "Loaded the article from your library. Check the targeting, then adjust."
                   : "Not in your library — paste or drop the current article below."
-                : "Target keyword filled in. Set the pillar and cluster to continue."}
+                : "Drop the article and adjust. Pillar, cluster, and target keyword are chosen from your keyword list."}
           </p>
         </div>
       )}
@@ -425,7 +437,20 @@ export default function ArticleCompose({ mode }) {
             <p className="text-sm text-muted-foreground">{elapsed}s · Usually 1–3 minutes</p>
           )}
           {!state.generating && !canCreate && (
-            <p className="text-xs text-muted-foreground">{Object.values(errors).join(" ")}</p>
+            <p className="text-xs text-muted-foreground">
+              {(isIdea
+                ? Object.values(errors)
+                : [
+                    ...Object.values(inputErrors),
+                    loading ? "Loading keywords…" : "",
+                    !loading && modifyOptions.length === 0
+                      ? error || "Add pillar and supporting keywords in Company Intelligence first."
+                      : "",
+                  ]
+              )
+                .filter(Boolean)
+                .join(" ")}
+            </p>
           )}
         </div>
       )}

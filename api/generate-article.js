@@ -11,6 +11,8 @@ import {
   normalizeArticleSpec,
   normalizeBatchContext,
   normalizeCompetitors,
+  normalizeKeywordOptions,
+  resolveKeywordAssignment,
 } from '../lib/generate-article/prompt.js'
 import { stripNoVolumeTag } from '../lib/stripNoVolumeTag.js'
 import { slugify } from '../lib/slugify.js'
@@ -921,6 +923,48 @@ function processArticleBody(body) {
   return `${beforePart}\n${wtsBlock}${after}`
 }
 
+function interpretGeneratedArticle(parsed, context) {
+  const assignment = context.modelChoosesKeywords
+    ? resolveKeywordAssignment(parsed?.frontmatter, context.keywordOptions)
+    : null
+  const pillar = assignment?.ok ? assignment.pillarKeyword : context.pillarKeyword
+  const supporting = assignment?.ok ? assignment.supportingKeyword : context.supportingKeyword
+  const target = assignment?.ok ? assignment.targetKeyword : context.article.targetKeyword
+  const type = assignment?.ok ? assignment.articleType : context.article.type
+  const whereThingsStandSources = extractWhereThingsStandSources(parsed?.frontmatter)
+  const frontmatter = coerceFrontmatter(parsed?.frontmatter, {
+    pillarKeyword: pillar,
+    targetKeyword: target,
+    supportingKeyword: supporting,
+    articleType: type,
+  })
+  const articleBody = processArticleBody(String(parsed?.body || ''))
+  const validationErrors = [
+    ...(assignment && !assignment.ok ? assignment.errors : []),
+    ...(assignment && !assignment.ok
+      ? []
+      : validateGeneratedArticle(frontmatter, articleBody, {
+          competitors: context.competitors,
+          competitorsMentioned: parsed?.frontmatter?.competitorsMentioned,
+          ...(context.lengthBounds
+            ? { length: { min: context.lengthBounds.min, max: context.lengthBounds.max } }
+            : {}),
+        })),
+  ]
+  return {
+    whereThingsStandSources,
+    frontmatter,
+    articleBody,
+    validationErrors,
+    assignment: {
+      pillarKeyword: pillar,
+      supportingKeyword: supporting,
+      targetKeyword: target,
+      articleType: type,
+    },
+  }
+}
+
 function coerceFrontmatter(
   raw,
   { pillarKeyword, targetKeyword, supportingKeyword, articleType } = {}
@@ -1066,6 +1110,7 @@ export default async function handler(req, res) {
     let competitors = normalizeCompetitors(body.competitors)
     const pillarKeyword = String(body.pillarKeyword || '').trim()
     const supportingKeyword = String(body.supportingKeyword || '').trim()
+    const keywordOptions = normalizeKeywordOptions(body.keywordOptions)
     const batchContext = normalizeBatchContext(body.batchContext)
     const article = normalizeArticleSpec(body.article)
     let sourceArticle = ''
@@ -1092,10 +1137,15 @@ export default async function handler(req, res) {
       expand = body.expand === true
     }
 
-    if (!article.title && !article.targetKeyword) {
+    const modelChoosesKeywords =
+      mode === 'modify' &&
+      keywordOptions.length > 0 &&
+      !(pillarKeyword && supportingKeyword && article.targetKeyword)
+
+    if (!modelChoosesKeywords && !article.title && !article.targetKeyword) {
       return json(res, 400, { error: 'article title or targetKeyword is required' })
     }
-    if (!pillarKeyword) {
+    if (!modelChoosesKeywords && !pillarKeyword) {
       return json(res, 400, { error: 'pillarKeyword is required' })
     }
 
@@ -1119,7 +1169,12 @@ export default async function handler(req, res) {
         : null
     const prompt =
       mode === 'modify'
-        ? buildModifyPrompt({ ...promptInput, sourceArticle, expand })
+        ? buildModifyPrompt({
+            ...promptInput,
+            sourceArticle,
+            expand,
+            keywordOptions: modelChoosesKeywords ? keywordOptions : [],
+          })
         : buildUserPrompt(promptInput)
 
     const anthropic = new Anthropic({ apiKey })
@@ -1161,30 +1216,18 @@ export default async function handler(req, res) {
       }
     }
 
-    const coerceOpts = {
+    const interpretContext = {
+      modelChoosesKeywords,
+      keywordOptions,
       pillarKeyword,
-      targetKeyword: article.targetKeyword,
       supportingKeyword,
-      articleType: article.type,
-    }
-    const validationOpts = () => ({
+      article,
       competitors,
-      // Read from raw model frontmatter before coerce strips working fields.
-      competitorsMentioned: parsed?.frontmatter?.competitorsMentioned,
-      ...(lengthBounds
-        ? { length: { min: lengthBounds.min, max: lengthBounds.max } }
-        : {}),
-    })
-    let whereThingsStandSources = extractWhereThingsStandSources(parsed.frontmatter)
-    // coerceFrontmatter whitelists schema fields only — competitorsMentioned is
-    // intentionally omitted from the returned CMS frontmatter after validation.
-    let frontmatter = coerceFrontmatter(parsed.frontmatter, coerceOpts)
-    let articleBody = processArticleBody(String(parsed.body || ''))
-    let validationErrors = validateGeneratedArticle(
-      frontmatter,
-      articleBody,
-      validationOpts()
-    )
+      lengthBounds,
+    }
+    let interpreted = interpretGeneratedArticle(parsed, interpretContext)
+    let { whereThingsStandSources, frontmatter, articleBody, validationErrors, assignment } =
+      interpreted
     let lengthAdjusted = false
 
     // Up to 2 corrective retries (3 total generation attempts).
@@ -1210,14 +1253,9 @@ export default async function handler(req, res) {
 
       try {
         parsed = parseArticleFromContent(activeMessage?.content)
-        whereThingsStandSources = extractWhereThingsStandSources(parsed.frontmatter)
-        frontmatter = coerceFrontmatter(parsed.frontmatter, coerceOpts)
-        articleBody = processArticleBody(String(parsed.body || ''))
-        validationErrors = validateGeneratedArticle(
-          frontmatter,
-          articleBody,
-          validationOpts()
-        )
+        interpreted = interpretGeneratedArticle(parsed, interpretContext)
+        ;({ whereThingsStandSources, frontmatter, articleBody, validationErrors, assignment } =
+          interpreted)
       } catch (err) {
         console.error('generate-article corrective parse failed:', err)
         return json(res, 422, {
@@ -1228,19 +1266,21 @@ export default async function handler(req, res) {
     }
 
     // Deterministic title/description length fallback after all retries.
-    if (validationErrors.length > 0) {
+    if (validationErrors.length > 0 && !validationErrors.some((item) => /pillarKeyword|supportingKeyword|targetKeyword|articleType/.test(item))) {
       const fallback = applyLengthFallbacks(frontmatter, {
-        targetKeyword: article.targetKeyword,
-        category: frontmatter.category || pillarKeyword,
+        targetKeyword: assignment.targetKeyword || article.targetKeyword,
+        category: frontmatter.category || assignment.pillarKeyword || pillarKeyword,
       })
       if (fallback.changed) {
         frontmatter = fallback.frontmatter
         lengthAdjusted = true
-        validationErrors = validateGeneratedArticle(
-          frontmatter,
-          articleBody,
-          validationOpts()
-        )
+        validationErrors = validateGeneratedArticle(frontmatter, articleBody, {
+          competitors,
+          competitorsMentioned: parsed?.frontmatter?.competitorsMentioned,
+          ...(lengthBounds
+            ? { length: { min: lengthBounds.min, max: lengthBounds.max } }
+            : {}),
+        })
       }
     }
 
@@ -1262,6 +1302,7 @@ export default async function handler(req, res) {
         ? {
             mainBodyWordCount: countMainBodyWords(articleBody),
             sourceWordCount: lengthBounds.sourceWordCount,
+            assignment,
           }
         : {}),
     })
