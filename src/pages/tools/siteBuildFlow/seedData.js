@@ -356,7 +356,7 @@ export const PREDEFINED_ITEMS = {
       item_key: "confirm-default-author-on-site",
       title: "Set the real author on the site",
       description:
-        "Publishing stamps every article with author id 'dori-fussmann' (the current universal default). The Astro template FAILS the build if that author id doesn't exist in the site's team/author data. Confirm the destination site has a team member resolving to 'dori-fussmann' before publishing; if not, add it and rebuild.",
+        "The template ships a placeholder author (site/src/content/team/site-author.md) that fails the live build until it is replaced. Rename it to the author's slug (for example jane-doe.md), fill in name, role, bio and photo, and update author in the demo articles or delete them. When publishing, TNV uses the article's author if the site has that team member, otherwise the site's first team member.",
       prompts: [],
     },
     {
