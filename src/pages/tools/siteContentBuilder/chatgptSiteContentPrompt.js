@@ -53,7 +53,7 @@ GUARDRAILS
 - trust and stats: real names and numbers from company-data.md only; otherwise omit the section.
 - privacy: a complete standard draft tailored to the business: what data is collected (contact forms, analytics, cookies), why, third-party processors, retention, user rights, how to contact. terms: use of the site, intellectual property, disclaimers, limitation of liability, governing law as "[PLACEHOLDER: jurisdiction]". The first line of each body is "**Draft — review with legal counsel before publishing.**" Use the company name and contact email from company-data.md.
 - One H1 per page: only hero.h1 or page-header.h1. Markdown bodies use ## and ### only, never #.
-- meta_title 50–60 characters. meta_description 140–160 characters. Each page targets one clear search intent.
+- meta_title 50–60 characters (privacy and terms: at most 60). meta_description 140–160 characters. Each page targets one clear search intent.
 
 OUTPUT FORMAT — exactly this, nothing before or after.
 

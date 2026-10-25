@@ -16,6 +16,7 @@ import {
 import { getImageryContext } from "@/lib/design/getImageryContext";
 import { CURSOR_IMPLEMENT_PROMPT } from "./siteContentBuild/buildSiteContentPrompt";
 import { parsePlaceholders } from "./siteContentBuild/parsePlaceholders";
+import LengthCheck from "./siteContentBuild/LengthCheck";
 import {
   IMAGE_SIZES,
   downloadGeneratedImage,
@@ -205,6 +206,8 @@ export default function SiteContentBuild() {
       </div>
 
       <PromptBlock label="Cursor prompt" text={CURSOR_IMPLEMENT_PROMPT} />
+
+      <LengthCheck />
 
       <section className="space-y-4">
         <div>

@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   CheckSquare,
   ChevronDown,
+  Download,
   GitBranch,
   Lightbulb,
   Map,
@@ -11,6 +12,8 @@ import {
   Trash2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { buildDoTasksMarkdown } from "@/lib/doTasksMarkdown";
+import { downloadMarkdown } from "@/pages/tools/siteBuildFlow/buildFlowMarkdown";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -168,6 +171,14 @@ function WorkspaceTasksModal({ open, onOpenChange }) {
   }, [open, loadTasks]);
 
   const selected = tasks.find((task) => task.id === selectedId) || null;
+  const doTasks = tasks.filter((task) => (task.status || "do") === "do");
+
+  const handleDownloadDo = () => {
+    const { filename, content } = buildDoTasksMarkdown(
+      doTasks.map((task) => ({ name: taskTitle(task), details: taskDetails(task) }))
+    );
+    downloadMarkdown(filename, content);
+  };
 
   const openTask = (task) => {
     setSelectedId(task.id);
@@ -305,7 +316,18 @@ function WorkspaceTasksModal({ open, onOpenChange }) {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex items-center justify-end">
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleDownloadDo}
+              disabled={loading || doTasks.length === 0}
+              title={doTasks.length === 0 ? "No tasks in Do" : undefined}
+            >
+              <Download className="h-3.5 w-3.5" aria-hidden="true" />
+              Download Do (.md)
+            </Button>
             <Button
               type="button"
               variant={showForm ? "outline" : "default"}

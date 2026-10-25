@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Settings } from "lucide-react";
+import { Check, Loader2, Pencil, Settings, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,9 @@ export default function Companies() {
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editName, setEditName] = useState("");
+  const [renaming, setRenaming] = useState(false);
 
   const loadCompanies = useCallback(async () => {
     setLoading(true);
@@ -58,6 +61,55 @@ export default function Companies() {
     setShowForm(false);
     setSaving(false);
     await loadCompanies();
+  };
+
+  const startRename = (company) => {
+    setEditingId(company.id);
+    setEditName(company.name || "");
+    setError("");
+  };
+
+  const cancelRename = () => {
+    setEditingId(null);
+    setEditName("");
+  };
+
+  const handleRename = async (e) => {
+    e.preventDefault();
+    const trimmed = editName.trim();
+    const current = companies.find((company) => company.id === editingId);
+    if (!current || renaming) return;
+    if (!trimmed) {
+      setError("A company name can't be empty.");
+      return;
+    }
+    if (trimmed === current.name) {
+      cancelRename();
+      return;
+    }
+
+    setRenaming(true);
+    setError("");
+    const { error: updateError } = await supabase
+      .from("companies")
+      .update({ name: trimmed })
+      .eq("id", editingId);
+
+    if (updateError) {
+      console.error("Failed to rename company:", updateError);
+      setError(updateError.message || "Failed to rename company");
+      setRenaming(false);
+      return;
+    }
+
+    setCompanies((prev) =>
+      prev.map((company) =>
+        company.id === editingId ? { ...company, name: trimmed } : company
+      )
+    );
+    window.dispatchEvent(new Event("company-renamed"));
+    setRenaming(false);
+    cancelRename();
   };
 
   return (
@@ -124,12 +176,66 @@ export default function Companies() {
         <ul className="space-y-1.5">
           {companies.map((company) => (
             <li key={company.id}>
-              <Link
-                to={`/company/${company.id}/company-data`}
-                className="flex h-9 w-full items-center rounded-md border border-border px-3 text-sm text-foreground transition-colors hover:bg-muted/50"
-              >
-                {company.name}
-              </Link>
+              {editingId === company.id ? (
+                <form onSubmit={handleRename} className="flex items-center gap-1.5">
+                  <Input
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") cancelRename();
+                    }}
+                    aria-label={`New name for ${company.name}`}
+                    className="h-9"
+                    autoFocus
+                    disabled={renaming}
+                  />
+                  <Button
+                    type="submit"
+                    size="icon"
+                    className="shrink-0"
+                    disabled={renaming || !editName.trim()}
+                    aria-label="Save name"
+                  >
+                    {renaming ? (
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Check className="h-4 w-4" aria-hidden="true" />
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="outline"
+                    className="shrink-0"
+                    onClick={cancelRename}
+                    disabled={renaming}
+                    aria-label="Cancel rename"
+                  >
+                    <X className="h-4 w-4" aria-hidden="true" />
+                  </Button>
+                </form>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <Link
+                    to={`/company/${company.id}/company-data`}
+                    className="flex h-9 min-w-0 flex-1 items-center rounded-md border border-border px-3 text-sm text-foreground transition-colors hover:bg-muted/50"
+                  >
+                    <span className="truncate">{company.name}</span>
+                  </Link>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="shrink-0 text-muted-foreground"
+                    onClick={() => startRename(company)}
+                    disabled={editingId !== null}
+                    aria-label={`Rename ${company.name}`}
+                    title="Rename"
+                  >
+                    <Pencil className="h-4 w-4" aria-hidden="true" />
+                  </Button>
+                </div>
+              )}
             </li>
           ))}
         </ul>

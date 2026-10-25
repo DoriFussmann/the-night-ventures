@@ -412,8 +412,10 @@ export default function AppSidebar({ user }) {
     }
 
     loadCompany();
+    window.addEventListener("company-renamed", loadCompany);
     return () => {
       cancelled = true;
+      window.removeEventListener("company-renamed", loadCompany);
     };
   }, [activeCompanyId]);
 

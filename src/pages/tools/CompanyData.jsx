@@ -65,6 +65,13 @@ import {
   mergeParsedCompanyFields,
 } from "./companyData/dataPoints";
 import IntelligenceBrief from "./companyData/IntelligenceBrief";
+import PublishDestinationGuide from "./companyData/PublishDestinationGuide";
+import PublishDestinationCheck from "./companyData/PublishDestinationCheck";
+import {
+  ownerRepoIssue,
+  tokenEnvName,
+  tokenKeyIssue,
+} from "../../../lib/publish-destination/tokenKey.js";
 import { getKeywordTree, keywordAction } from "./seoAdvisor/api";
 import { slugifyKeyword } from "../../../lib/seo-advisor/pillars.js";
 import {
@@ -447,6 +454,10 @@ export default function CompanyData() {
   const [githubOwner, setGithubOwner] = useState("");
   const [githubRepo, setGithubRepo] = useState("");
   const [githubTokenKey, setGithubTokenKey] = useState("");
+  const ownerIssue = ownerRepoIssue("owner", githubOwner);
+  const repoIssue = ownerRepoIssue("repo", githubRepo);
+  const keyIssue = tokenKeyIssue(githubTokenKey);
+  const destinationIssue = ownerIssue || repoIssue || keyIssue;
   const [emailEnabled, setEmailEnabled] = useState(false);
   const [emailProvider, setEmailProvider] = useState("");
   const [emailCampaignId, setEmailCampaignId] = useState("");
@@ -1234,6 +1245,10 @@ export default function CompanyData() {
     currentCustomValues,
     currentIndustryIds,
   }) => {
+    if (destinationIssue) {
+      setError(`Publish Destination: ${destinationIssue}`);
+      return false;
+    }
 
     const competitors = normalizeCompetitors(currentFields.competitors)
       .map((item) => ({
@@ -1455,6 +1470,8 @@ export default function CompanyData() {
         companyUpdateError.message ||
           "The brief was saved, but the company name and publish destination were not."
       );
+    } else {
+      window.dispatchEvent(new Event("company-renamed"));
     }
 
     setGithubTokenKey((prev) => prev.trim().toUpperCase());
@@ -3003,12 +3020,14 @@ export default function CompanyData() {
           <DialogHeader className="shrink-0 space-y-1 border-b border-border px-6 py-4 pr-12 text-left">
             <DialogTitle>Publish Destination</DialogTitle>
             <DialogDescription>
-              GitHub repo this company publishes articles to. Token key is the
-              suffix of the server env var (HEYRUPERT looks up
-              GITHUB_TOKEN_HEYRUPERT).
+              The GitHub repo this company publishes to. The token itself lives
+              in TNV&apos;s Vercel settings; this dialog only stores its label.
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
+            <PublishDestinationGuide
+              defaultOpen={!githubOwner.trim() || !githubRepo.trim() || !githubTokenKey.trim()}
+            />
             <div className="space-y-2">
               <Label htmlFor="github_owner">GitHub owner</Label>
               <Input
@@ -3016,7 +3035,15 @@ export default function CompanyData() {
                 value={githubOwner}
                 onChange={(e) => setGithubOwner(e.target.value)}
                 placeholder="DoriFussmann"
+                aria-invalid={Boolean(ownerIssue)}
+                aria-describedby="github_owner_hint"
               />
+              <p
+                id="github_owner_hint"
+                className={ownerIssue ? "text-xs text-destructive" : "text-xs text-muted-foreground"}
+              >
+                {ownerIssue || "The name between github.com/ and the repo in the repo URL."}
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="github_repo">GitHub repo</Label>
@@ -3025,7 +3052,15 @@ export default function CompanyData() {
                 value={githubRepo}
                 onChange={(e) => setGithubRepo(e.target.value)}
                 placeholder="hey-rupert"
+                aria-invalid={Boolean(repoIssue)}
+                aria-describedby="github_repo_hint"
               />
+              <p
+                id="github_repo_hint"
+                className={repoIssue ? "text-xs text-destructive" : "text-xs text-muted-foreground"}
+              >
+                {repoIssue || "The repo name only."}
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="github_token_key">GitHub token key</Label>
@@ -3034,8 +3069,27 @@ export default function CompanyData() {
                 value={githubTokenKey}
                 onChange={(e) => setGithubTokenKey(e.target.value)}
                 placeholder="HEYRUPERT"
+                autoComplete="off"
+                spellCheck={false}
+                aria-invalid={Boolean(keyIssue)}
+                aria-describedby="github_token_key_hint"
               />
+              <p
+                id="github_token_key_hint"
+                className={keyIssue ? "text-xs text-destructive" : "text-xs text-muted-foreground"}
+              >
+                {keyIssue ||
+                  (githubTokenKey.trim()
+                    ? `TNV will read the token from ${tokenEnvName(githubTokenKey)} in Vercel.`
+                    : "The label only, for example HEYRUPERT. Never the github_pat_… token.")}
+              </p>
             </div>
+            <PublishDestinationCheck
+              owner={githubOwner}
+              repo={githubRepo}
+              tokenKey={githubTokenKey}
+              disabled={Boolean(destinationIssue)}
+            />
           </div>
           <DialogFooter className="shrink-0 gap-2 border-t border-border px-6 py-4 sm:justify-between">
             <Button
@@ -3052,6 +3106,7 @@ export default function CompanyData() {
               onClose={() => setOpenPanel(null)}
               onSave={saveAndClosePanel}
               saving={saving}
+              saveDisabled={Boolean(destinationIssue)}
             />
           </DialogFooter>
         </DialogContent>

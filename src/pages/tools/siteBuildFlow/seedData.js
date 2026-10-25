@@ -4,6 +4,8 @@
  * To change the checklist, use "Edit checklist" on the Site Build Flow page.
  */
 
+import { publishGuideText } from "../../../../lib/publish-destination/guide.js";
+
 export const STATUSES = ["open", "wip", "done"];
 
 export const STATUS_META = {
@@ -42,35 +44,9 @@ export const STAGES = [
 const FILL_FIELDS_PROMPT =
   "Help me fill the missing fields for the new company, based on what I have provided you with - ask me all the questions you need to complete the fields. Give me in each turn a summary % completion, how many done and how many we have left. Be thorough, precise and super professional. Available to download as .md file";
 
-const PUBLISH_DESTINATION_INSTRUCTIONS = `In Company Intelligence, open Publish Destination and add the 3 fields: GitHub owner, GitHub repo, and GitHub token key.
+const PUBLISH_DESTINATION_INSTRUCTIONS = `Open Company Data → Publish Destination. The guide at the top of that dialog walks through all three parts; Check Connection confirms each one before you save.
 
-Create the token on GitHub: avatar (top-right) → Settings → Developer settings (bottom of left sidebar) → Personal access tokens → Fine-grained tokens → Generate new token.
-
-Set:
-
-- Name: anything memorable (e.g. perfect-ai-publish) — this GitHub label is cosmetic; it does not have to match anything in the app.
-- Expiration: longest allowed. Record the date — publishing silently 401s when it lapses.
-- Resource owner: your personal account (the one that owns the destination repo).
-- Repository access: Only select repositories → the single destination repo.
-- Permissions → Repository permissions: Contents = Read and write AND Pull requests = Read and write. Everything else: No access.
-
-Generate, then COPY the github_pat_… value immediately — GitHub shows it only once.
-
-Then put the token where the app reads it — Vercel, not the app UI:
-
-Vercel → the-night-ventures project → Settings → Environment Variables → Add:
-
-- Name: GITHUB_TOKEN_<KEY> — pick a KEY in CAPS with underscores only (e.g. GITHUB_TOKEN_PERFECT_AI_WEBSITES).
-- Value: the github_pat_… string.
-- Environments: Production (and Preview if used). Save.
-
-Redeploy TNV (env vars only load on a new deploy).
-
-Then point the app at it:
-
-Company Data → the project → Publish Destination → tokenKey field: enter just the KEY (e.g. PERFECT_AI_WEBSITES) — not the github_pat_… value. It must match the part after GITHUB_TOKEN_ in the Vercel variable.
-
-Secret hygiene: the github_pat_… value goes only into the Vercel Environment Variable. Never paste it into a screenshot, a chat, or the Company Data field — that field takes the KEY (a pointer), never the token itself.`;
+${publishGuideText()}`;
 
 export const PREDEFINED_ITEMS = {
   "code-setup": [
@@ -378,29 +354,6 @@ export const PREDEFINED_ITEMS = {
       linkLabel: "Open Narrative Composer →",
     },
     {
-      item_key: "set-publish-destination",
-      title: "Set Publish Destination in Company Data",
-      description:
-        "In TNV → Company Data → Publish Destination, fill three fields. (1) GitHub owner = your GitHub username. (2) GitHub repo = the destination site repo name (e.g. perfect-ai-websites). (3) Token key = a SHORT UPPERCASE LABEL you invent, e.g. PERFECTAI. This is NOT the token — it is only a name. TNV will look for an environment variable named GITHUB_TOKEN_<label> (e.g. GITHUB_TOKEN_PERFECTAI). Do NOT paste the actual github_pat_... token into this field — that is the most common mistake and produces a 'GITHUB_TOKEN_github_pat_... is not set' error. Save.",
-      prompts: [],
-      linkTo: "/company/:companyId/company-data",
-      linkLabel: "Open Company Data →",
-    },
-    {
-      item_key: "create-publish-pat",
-      title: "Create the GitHub publish token",
-      description:
-        "Create the token on GitHub: avatar (top-right) → Settings → Developer settings (bottom of left sidebar) → Personal access tokens → Fine-grained tokens → Generate new token. Set: name (e.g. perfect-ai-publish); expiration = longest allowed (record the date — publish silently 401s when it lapses); resource owner = your personal account; Repository access = Only select repositories → the single destination repo; Permissions → Repository permissions → Contents = Read and write, AND Pull requests = Read and write, everything else No access. Generate, then COPY the github_pat_ value immediately — GitHub shows it only once. Treat it as a secret: never paste it into a screenshot, chat, or the Company Data field.",
-      prompts: [],
-    },
-    {
-      item_key: "add-publish-pat-to-tnv-env",
-      title: "Add the token to TNV's environment",
-      description:
-        "Put the token where the publish function actually reads it. IMPORTANT: publishing must be done from the DEPLOYED/LIVE TNV (the Vercel URL), not from a local `npm run dev` — plain local dev does NOT run the /api publish function, so publish only works on the deployed site. The token therefore lives in TNV's Vercel environment, NOT in a local .env file. In TNV's Vercel project → Settings → Environment Variables, add a variable named GITHUB_TOKEN_<LABEL> (matching the Company Data label exactly, e.g. GITHUB_TOKEN_PERFECTAI) with the github_pat_ value as its content. Enable it for the Production environment. Then REDEPLOY TNV — Vercel only loads env vars at deploy time, so a newly added variable is invisible until you redeploy. After redeploy, run the pillar/cluster publish from the live TNV URL.",
-      prompts: [],
-    },
-    {
       item_key: "confirm-default-author-on-site",
       title: "Confirm the default author exists on the site",
       description:
@@ -541,7 +494,7 @@ export const PREDEFINED_ITEMS = {
       item_key: "install-analytics",
       title: "Install Analytics",
       description:
-        "For Google Analytics 4: create a web data stream for the live domain, copy its measurement ID (G-…), add it in Vercel → Settings → Environment Variables as PUBLIC_ANALYTICS_ID (Production) and redeploy. The template adds the tag to every page. Confirm visits appear in GA4 Realtime. For another tool, install it and confirm it receives real traffic.",
+        "Part 1 — put the GA4 tag on the site (you, in GA4 and Vercel): (1) GA4 → Admin → Data streams → the Web stream for the live domain (create one if missing; its URL must be the exact live domain) → copy the Measurement ID (G-…). (2) Vercel → THIS SITE's project (not TNV) → Settings → Environment Variables → add PUBLIC_ANALYTICS_ID = the G-… ID (Production) → Save → Deployments → latest → ⋯ → Redeploy. (3) Check: open the live site → View Page Source → search for the G- ID. Then GA4 → Reports → Realtime shows you as 1 user (use an Incognito window without ad blockers). Part 2 — let TNV read the data: (4) TNV → this company → Analytics → Setup (bottom of the page) → copy the service account email. (5) GA4 → Admin → Property access management → + → Add users → paste the email → role Viewer → untick Notify → Add. (6) TNV → Analytics → Refresh: GA4 shows Connected.",
       prompts: [],
     },
     {
