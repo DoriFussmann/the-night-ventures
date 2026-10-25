@@ -354,7 +354,7 @@ export const PREDEFINED_ITEMS = {
     },
     {
       item_key: "confirm-default-author-on-site",
-      title: "Confirm the default author exists on the site",
+      title: "Set the real author on the site",
       description:
         "Publishing stamps every article with author id 'dori-fussmann' (the current universal default). The Astro template FAILS the build if that author id doesn't exist in the site's team/author data. Confirm the destination site has a team member resolving to 'dori-fussmann' before publishing; if not, add it and rebuild.",
       prompts: [],
