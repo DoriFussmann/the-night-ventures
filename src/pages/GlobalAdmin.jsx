@@ -47,10 +47,15 @@ function lastCompanyId() {
 
 const TASK_STATUSES = [
   { id: "do", label: "Do" },
-  { id: "doing", label: "Doing" },
   { id: "done", label: "Done" },
   { id: "archived", label: "Archive" },
 ];
+
+/** Board column for a task; anything unknown (e.g. the retired "doing") is Do. */
+function taskStatus(task) {
+  const status = task?.status;
+  return TASK_STATUSES.some((column) => column.id === status) ? status : "do";
+}
 
 const TASKS_MIGRATION = "063_workspace_task_board.sql";
 
@@ -98,7 +103,7 @@ function WorkspaceTasksCard() {
         type="button"
         icon={CheckSquare}
         title="Tasks"
-        desc="Do, Doing, Done, and Archive."
+        desc="Do, Done, and Archive."
         onClick={() => setOpen(true)}
       />
       <WorkspaceTasksModal open={open} onOpenChange={setOpen} />
@@ -171,7 +176,7 @@ function WorkspaceTasksModal({ open, onOpenChange }) {
   }, [open, loadTasks]);
 
   const selected = tasks.find((task) => task.id === selectedId) || null;
-  const doTasks = tasks.filter((task) => (task.status || "do") === "do");
+  const doTasks = tasks.filter((task) => taskStatus(task) === "do");
 
   const handleDownloadDo = () => {
     const { filename, content } = buildDoTasksMarkdown(
@@ -312,7 +317,7 @@ function WorkspaceTasksModal({ open, onOpenChange }) {
           <DialogHeader>
             <DialogTitle>Tasks</DialogTitle>
             <DialogDescription>
-              Move a task across Do, Doing, Done, and Archive.
+              Move a task across Do, Done, and Archive.
             </DialogDescription>
           </DialogHeader>
 
@@ -365,10 +370,10 @@ function WorkspaceTasksModal({ open, onOpenChange }) {
             {loading ? (
               <p className="text-sm text-muted-foreground">Loading tasks…</p>
             ) : (
-              <div className="grid h-full min-w-[720px] grid-cols-4 gap-3">
+              <div className="grid h-full min-w-[540px] grid-cols-3 gap-3">
                 {TASK_STATUSES.map((column) => {
                   const columnTasks = tasks.filter(
-                    (task) => (task.status || "do") === column.id
+                    (task) => taskStatus(task) === column.id
                   );
                   return (
                     <section
@@ -389,13 +394,13 @@ function WorkspaceTasksModal({ open, onOpenChange }) {
                               <li key={task.id}>
                                 <div className="flex items-start gap-2 rounded-md border border-border bg-card px-2.5 py-2">
                                   <Checkbox
-                                    checked={(task.status || "do") === "done"}
+                                    checked={taskStatus(task) === "done"}
                                     disabled={busyId === task.id}
                                     onCheckedChange={(checked) =>
                                       handleStatus(task, checked ? "done" : "do")
                                     }
                                     aria-label={
-                                      (task.status || "do") === "done"
+                                      taskStatus(task) === "done"
                                         ? "Mark not done"
                                         : "Mark done"
                                     }
@@ -448,7 +453,7 @@ function WorkspaceTasksModal({ open, onOpenChange }) {
             <div className="space-y-4">
               <div className="flex items-center gap-2">
                 <Checkbox
-                  checked={(selected.status || "do") === "done"}
+                  checked={taskStatus(selected) === "done"}
                   disabled={busyId === selected.id}
                   onCheckedChange={(checked) =>
                     handleStatus(selected, checked ? "done" : "do")
@@ -464,7 +469,7 @@ function WorkspaceTasksModal({ open, onOpenChange }) {
                     key={column.id}
                     type="button"
                     size="sm"
-                    variant={(selected.status || "do") === column.id ? "default" : "outline"}
+                    variant={taskStatus(selected) === column.id ? "default" : "outline"}
                     disabled={busyId === selected.id}
                     onClick={() => handleStatus(selected, column.id)}
                   >

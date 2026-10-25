@@ -6,18 +6,13 @@
 
 import { publishGuideText } from "../../../../lib/publish-destination/guide.js";
 
-export const STATUSES = ["open", "wip", "done"];
+export const STATUSES = ["open", "done"];
 
 export const STATUS_META = {
   open: {
     label: "Open",
     className:
       "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900",
-  },
-  wip: {
-    label: "WIP",
-    className:
-      "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950/40 dark:text-orange-300 dark:border-orange-900",
   },
   done: {
     label: "Done",
@@ -26,9 +21,13 @@ export const STATUS_META = {
   },
 };
 
+/** Any value outside STATUSES (e.g. the retired "wip") counts as open. */
+export function normalizeStatus(status) {
+  return STATUSES.includes(status) ? status : "open";
+}
+
 export function nextStatus(current) {
-  const index = STATUSES.indexOf(current);
-  return STATUSES[(index + 1) % STATUSES.length];
+  return normalizeStatus(current) === "done" ? "open" : "done";
 }
 
 export const STAGES = [

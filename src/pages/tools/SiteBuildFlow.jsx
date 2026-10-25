@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { STATUS_META, nextStatus } from "./siteBuildFlow/seedData";
+import { STATUS_META, nextStatus, normalizeStatus } from "./siteBuildFlow/seedData";
 import { loadTemplate, templateItemLink } from "./siteBuildFlow/template";
 import TemplateEditor from "./siteBuildFlow/TemplateEditor";
 import {
@@ -78,7 +78,7 @@ function syncAllStagesDoneFromItems(stages, items) {
 }
 
 function StatusBadge({ status, onCycle }) {
-  const meta = STATUS_META[status] || STATUS_META.open;
+  const meta = STATUS_META[normalizeStatus(status)];
   return (
     <button
       type="button"
@@ -90,7 +90,7 @@ function StatusBadge({ status, onCycle }) {
         "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors hover:opacity-90",
         meta.className
       )}
-      title="Click to cycle status"
+      title="Click to toggle Open / Done"
     >
       {meta.label}
     </button>
@@ -674,7 +674,7 @@ export default function SiteBuildFlow() {
       company_id: companyId,
       stage_key: stage.stage_key,
       order_index: stage.order_index,
-      status: stage.status || "open",
+      status: normalizeStatus(stage.status),
       updated_at: now,
     }));
 
@@ -685,7 +685,7 @@ export default function SiteBuildFlow() {
       title: item.title,
       description: item.description || "",
       prompts: item.prompts || [],
-      status: item.status || "open",
+      status: normalizeStatus(item.status),
       note: item.note ?? null,
       sort_order: item.sort_order,
       updated_at: now,
