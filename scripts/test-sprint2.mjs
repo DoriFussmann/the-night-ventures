@@ -123,6 +123,8 @@ await test('market from SEO Controls free text', () => {
   assert.equal(localeFromSeoControls({ seo_market: 'USA' }).market, 'us')
   assert.equal(localeFromSeoControls({ seo_market: 'Israel', seo_language: 'Hebrew' }).dfsLocationCode, 2376)
   assert.equal(localeFromSeoControls({}).market, 'us')
+  assert.equal(localeFromSeoControls({ seo_market: 'United Kingdom.', seo_language: 'English.' }).market, 'uk')
+  assert.equal(localeFromSeoControls({ seo_market: 'Israel.', seo_language: 'Hebrew.' }).language, 'he')
 })
 
 /* ---------------- Guided Advisor ---------------- */
