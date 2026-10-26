@@ -102,7 +102,8 @@ export function classifySupportingCluster(pillar, supporting) {
   if (hasGeneratedArticles(supporting) || spec === "drafted" || spec === "live") {
     status = "completed";
   } else if (!pillarPublished) status = "blocked";
-  else if (!specIsComplete(supporting)) status = "needs_spec";
+  // Keywords managed in the keyword map carry a spec; legacy entries don't.
+  else if (supporting?.spec && !specIsComplete(supporting)) status = "needs_spec";
   else if (count > 0 || spec === "planned") status = "planned";
 
   return {
