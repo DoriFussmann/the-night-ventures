@@ -903,8 +903,26 @@ function mergeWtsBlocks(text) {
  * Post-process body: demote H1s, then merge orphans in main body and separately
  * in WTS content. Runs before marker validation.
  */
+/**
+ * Web-search citations come back as separate text runs, which leaves a
+ * sourced sentence on its own line inside a paragraph. Rejoin lines within a
+ * prose paragraph; leave headings, lists, tables, quotes and markers alone.
+ */
+export function joinSoftBreaks(text) {
+  return String(text || '')
+    .split(/(\n[ \t]*\n+)/)
+    .map((part) => {
+      if (/^\n[ \t]*\n+$/.test(part) || !part.includes('\n')) return part
+      const lines = part.split('\n')
+      const structural = lines.some((line) => /^\s*(#|[-*+]\s|\d+[.)]\s|\||>|<!--|```)/.test(line))
+      if (structural) return part
+      return lines.map((line) => line.trim()).filter(Boolean).join(' ')
+    })
+    .join('')
+}
+
 function processArticleBody(body) {
-  const text = demoteBodyH1(String(body || '').replace(/\r\n/g, '\n'))
+  const text = joinSoftBreaks(demoteBodyH1(String(body || '').replace(/\r\n/g, '\n')))
   const startIdx = text.indexOf(WTS_START)
   const endIdx = text.indexOf(WTS_END)
 
@@ -917,12 +935,48 @@ function processArticleBody(body) {
   const after = text.slice(endIdx + WTS_END.length)
 
   const mergedBefore = mergeOrphanBlocks(before)
-  const mergedWts = mergeWtsBlocks(wtsInner)
+  const mergedWts = mergeWtsBlocks(joinSoftBreaks(wtsInner))
   const beforePart = mergedBefore.replace(/\s+$/, '')
   const wtsBlock = `${WTS_START}\n${mergedWts}\n${WTS_END}`
 
   if (!beforePart) return `${wtsBlock}${after}`
   return `${beforePart}\n${wtsBlock}${after}`
+}
+
+function headingKey(value) {
+  return String(value || '')
+    .replace(/^#+\s*/, '')
+    .replace(/[*_`]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+}
+
+/**
+ * Every spec key message must be developed under a heading that exists in
+ * the body. Exported for tests.
+ */
+export function keyMessageCoverageErrors(keyMessages, coverage, body) {
+  const messages = Array.isArray(keyMessages) ? keyMessages.filter((m) => String(m || '').trim()) : []
+  if (messages.length === 0) return []
+  const headings = new Set(
+    String(body || '')
+      .split('\n')
+      .filter((line) => /^#{2,3}\s/.test(line))
+      .map(headingKey)
+  )
+  const list = Array.isArray(coverage) ? coverage : []
+  const missing = messages.filter((message, i) => {
+    const entry =
+      list.find((c) => headingKey(c?.keyMessage) === headingKey(message)) || list[i] || null
+    return !entry || !headings.has(headingKey(entry.heading))
+  })
+  if (missing.length === 0) return []
+  return [
+    `keyMessageCoverage: these key messages are not developed under a heading in the body: ${missing
+      .map((m) => `"${m}"`)
+      .join('; ')}. Develop each one under its own H2/H3 and list it in keyMessageCoverage with the exact heading.`,
+  ]
 }
 
 function interpretGeneratedArticle(parsed, context) {
@@ -955,6 +1009,9 @@ function interpretGeneratedArticle(parsed, context) {
         })),
     // Author's own text (modify) keeps its claims; generated text must cite them.
     ...(context.requireClaimSources ? claimSourceErrors(articleBody, claimSources) : []),
+    ...(context.requireClaimSources
+      ? keyMessageCoverageErrors(context.article.keyMessages, parsed?.frontmatter?.keyMessageCoverage, articleBody)
+      : []),
   ]
   return {
     whereThingsStandSources,
@@ -1294,8 +1351,9 @@ export default async function handler(req, res) {
 
     // An unsourced statistic left after the retries is reported, not fatal:
     // the draft is reviewed before anything publishes.
-    const sourceWarnings = validationErrors.filter((item) => item.includes('claimSources'))
-    validationErrors = validationErrors.filter((item) => !item.includes('claimSources'))
+    const isSoft = (item) => item.includes('claimSources') || item.startsWith('keyMessageCoverage')
+    const sourceWarnings = validationErrors.filter(isSoft)
+    validationErrors = validationErrors.filter((item) => !isSoft(item))
 
     if (validationErrors.length > 0) {
       return json(res, 422, {

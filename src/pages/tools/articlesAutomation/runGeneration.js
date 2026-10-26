@@ -139,6 +139,13 @@ export async function generateClusterArticles({
         markdown,
         lengthAdjusted: Boolean(data.lengthAdjusted),
         whereThingsStandSources: normalizeSources(data.whereThingsStandSources),
+        // Things the writer could not fix after its retries; shown in the report for review.
+        reviewNotes: [
+          ...(Array.isArray(data.sourceCheck?.warnings) ? data.sourceCheck.warnings : []),
+          ...(Array.isArray(data.sourceCheck?.dropped) && data.sourceCheck.dropped.length
+            ? [`Sources dropped: ${data.sourceCheck.dropped.map((d) => `${d.url} (${d.reason})`).join(", ")}`]
+            : []),
+        ],
         image,
       };
       onJobsChange?.(cloneJobs(jobs));

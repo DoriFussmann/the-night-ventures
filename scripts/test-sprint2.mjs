@@ -206,7 +206,9 @@ await test('sources: statistics need claim sources; WTS section is not counted',
   const body = 'Seed rounds grew 18% last year, to $4.1 million.\n\n## Where Things Stand\n<!-- WHERE-THINGS-STAND:START -->\nUp 30%.\n<!-- WHERE-THINGS-STAND:END -->'
   assert.equal(countStatistics(body), 2)
   assert.equal(claimSourceErrors(body, []).length, 1)
-  assert.equal(claimSourceErrors(body, [{ url: 'https://carta.com/x', claim: '18%' }]).length, 0)
+  assert.equal(claimSourceErrors(body, [{ url: 'https://carta.com/x', claim: 'up 18% to $4.1 million' }]).length, 0)
+  const partial = claimSourceErrors(body, [{ url: 'https://carta.com/x', claim: '18%' }])
+  assert.match(partial[0], /no matching entry in claimSources: \$4\.1 million/)
   assert.equal(claimSourceErrors('No numbers here.', []).length, 0)
 })
 
