@@ -113,8 +113,6 @@ const LABEL_TO_KEY = {
   "seo language": "seo_language",
   "seo search competitors": "seo_search_competitors",
   "search competitors": "seo_search_competitors",
-  "seo publishing pace": "seo_publishing_pace",
-  "publishing pace": "seo_publishing_pace",
 };
 
 const PLACEHOLDER_RE = /^\((?:unnamed|untitled|label|none)\)$/i;
@@ -614,7 +612,6 @@ export function parseCompanyMarkdown(markdown, options = {}) {
     seo_market: parseTextField(sections.seo_market),
     seo_language: parseTextField(sections.seo_language),
     seo_search_competitors: parseTextField(sections.seo_search_competitors),
-    seo_publishing_pace: parseTextField(sections.seo_publishing_pace),
     custom,
   };
 }
