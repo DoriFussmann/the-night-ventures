@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, Download, Loader2, Upload, Workflow, X } from "lucide-react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -18,6 +18,7 @@ import BatchPublishReport, {
 import {
   loadAutomationContext,
   persistPlannedCluster,
+  plannerSpec,
   requestClusterPlan,
 } from "./articlesAutomation/planCluster";
 import { generateClusterArticles } from "./articlesAutomation/runGeneration";
@@ -39,9 +40,9 @@ import {
 } from "./articlesAutomation/selectCluster";
 
 const STAGES = [
-  { id: "cluster", label: "Cluster Selection" },
-  { id: "topic", label: "Topic Generation" },
-  { id: "articles", label: "Articles Generation" },
+  { id: "cluster", label: "Keyword Selection" },
+  { id: "topic", label: "Article Plan" },
+  { id: "articles", label: "Article Generation" },
 ];
 
 const TYPE_LABELS = {
@@ -127,7 +128,7 @@ function stageStatus(stageId, currentStage, phase) {
   return "pending";
 }
 
-function ClusterTile({ cluster, selected, busy, onSelect }) {
+function ClusterTile({ cluster, selected, busy, onSelect, companyId }) {
   const base =
     "min-w-[11rem] max-w-xs flex-1 rounded-lg border px-3 py-2.5 text-left text-sm";
 
@@ -138,6 +139,27 @@ function ClusterTile({ cluster, selected, busy, onSelect }) {
       >
         <p className="font-medium leading-snug">{cluster.clusterKeyword}</p>
         <p className="mt-1 text-[11px]">Completed</p>
+      </div>
+    );
+  }
+
+  if (cluster.status === "needs_spec") {
+    return (
+      <div
+        className={`${base} border-dashed border-amber-300 bg-amber-50/40 text-muted-foreground`}
+      >
+        <p className="font-medium leading-snug text-foreground/80">
+          {cluster.clusterKeyword}
+        </p>
+        <p className="mt-1 text-[11px]">
+          Complete the spec first (3–5 key messages).{" "}
+          <Link
+            to={`/company/${companyId}/seo-ai-advisor`}
+            className="underline underline-offset-2 hover:text-foreground"
+          >
+            Edit spec
+          </Link>
+        </p>
       </div>
     );
   }
@@ -354,7 +376,7 @@ export default function ClusterGeneration() {
     setCurrentStage("topic");
     setViewingStage("topic");
     setPhase("planning");
-    setStatusMessage(`Planning “${cluster.clusterKeyword}” cluster…`);
+    setStatusMessage(`Planning the article for “${cluster.clusterKeyword}”…`);
 
     const result = await requestClusterPlan({
       pillarKeyword: cluster.pillarKeyword,
@@ -364,6 +386,11 @@ export default function ClusterGeneration() {
       audience: ctx.audience,
       competitors: ctx.competitors,
       pillars: ctx.pillars,
+      // One keyword = one article, planned from its spec.
+      spec: cluster.supporting?.spec
+        ? plannerSpec(cluster.supporting, cluster.clusterKeyword)
+        : undefined,
+      conversionAction: ctx.conversionAction,
     });
     if (!stillCurrent(token)) return;
     proposalRef.current = result;
@@ -775,7 +802,7 @@ export default function ClusterGeneration() {
         topics = topicsFromArticles(planned);
         say(`Using saved plan for “${cluster.clusterKeyword}”…`);
       } else {
-        say(`Planning topics for “${cluster.clusterKeyword}”…`);
+        say(`Planning the article for “${cluster.clusterKeyword}”…`);
         const proposal = await requestClusterPlan({
           pillarKeyword: cluster.pillarKeyword,
           supportingKeyword: cluster.clusterKeyword,
@@ -784,6 +811,10 @@ export default function ClusterGeneration() {
           audience: ctx.audience,
           competitors: ctx.competitors,
           pillars: ctx.pillars,
+          spec: cluster.supporting?.spec
+            ? plannerSpec(cluster.supporting, cluster.clusterKeyword)
+            : undefined,
+          conversionAction: ctx.conversionAction,
         });
         topics = topicsFromArticles(proposal.articles);
         const savedPlan = await persistPlannedCluster({
@@ -1093,12 +1124,12 @@ export default function ClusterGeneration() {
   return (
     <div className="space-y-6 pb-24">
       <div>
-        <h1 className="text-xs text-foreground mb-1">Cluster Generation</h1>
+        <h1 className="text-xs text-foreground mb-1">Article Generation</h1>
         <p className="text-sm text-muted-foreground">
-          Select a supporting cluster, then Generate. The run plans topics,
-          writes articles with images, publishes them, then offers to wire
-          internal links. Confirm or Decline at each step; the countdown
-          auto-confirms after 10 seconds.
+          Each keyword in the map is one article. Select a keyword, then
+          Generate: the run plans the article from its spec, writes it with an
+          image, publishes it, then offers to place internal links. Confirm or
+          Decline at each step; the countdown auto-confirms after 10 seconds.
         </p>
       </div>
 
@@ -1106,14 +1137,14 @@ export default function ClusterGeneration() {
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-sm font-medium">
-              Generate one cluster per pillar
+              Generate one supporting article per pillar
             </h2>
             <p className="text-xs text-muted-foreground">
-              One click gives every published pillar its first cluster — plans,
-              generates, and publishes one supporting cluster for each pillar
-              that doesn’t have one yet ({runnableClusters.length} to do).
-              Pillars that already have a cluster are skipped. Keep this tab open
-              until it finishes.
+              One click gives every published pillar its first supporting
+              article — plans, generates, and publishes one for each pillar that
+              doesn’t have one yet ({runnableClusters.length} to do). Pillars
+              that already have one are skipped, and keywords without a complete
+              spec are never picked. Keep this tab open until it finishes.
             </p>
           </div>
           {batch?.running ? (
@@ -1225,7 +1256,7 @@ export default function ClusterGeneration() {
       {viewingStage === "cluster" && (
         <section className="space-y-4">
           <h2 className="text-sm font-medium text-foreground">
-            Cluster Selection
+            Keyword Selection
           </h2>
           {companyName ? (
             <p className="text-sm text-muted-foreground">{companyName}</p>
@@ -1276,6 +1307,7 @@ export default function ClusterGeneration() {
                         }
                         busy={busy}
                         onSelect={selectCluster}
+                        companyId={companyId}
                       />
                     ))}
                   </div>

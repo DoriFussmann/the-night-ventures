@@ -12,8 +12,10 @@ import {
   normalizeBatchContext,
   normalizeCompetitors,
   normalizeKeywordOptions,
+  normalizeSeoControls,
   resolveKeywordAssignment,
 } from '../lib/generate-article/prompt.js'
+import { claimSourceErrors, normalizeClaimSources, sourcesToExternalLinks } from '../lib/generate-article/sources.js'
 import { stripNoVolumeTag } from '../lib/stripNoVolumeTag.js'
 import { slugify } from '../lib/slugify.js'
 import { demoteBodyH1 } from '../lib/demoteBodyH1.js'
@@ -932,6 +934,7 @@ function interpretGeneratedArticle(parsed, context) {
   const target = assignment?.ok ? assignment.targetKeyword : context.article.targetKeyword
   const type = assignment?.ok ? assignment.articleType : context.article.type
   const whereThingsStandSources = extractWhereThingsStandSources(parsed?.frontmatter)
+  const claimSources = normalizeClaimSources(parsed?.frontmatter?.claimSources)
   const frontmatter = coerceFrontmatter(parsed?.frontmatter, {
     pillarKeyword: pillar,
     targetKeyword: target,
@@ -950,9 +953,12 @@ function interpretGeneratedArticle(parsed, context) {
             ? { length: { min: context.lengthBounds.min, max: context.lengthBounds.max } }
             : {}),
         })),
+    // Author's own text (modify) keeps its claims; generated text must cite them.
+    ...(context.requireClaimSources ? claimSourceErrors(articleBody, claimSources) : []),
   ]
   return {
     whereThingsStandSources,
+    claimSources,
     frontmatter,
     articleBody,
     validationErrors,
@@ -1040,7 +1046,7 @@ function buildParseRecoveryMessage() {
     'Your previous response could not be parsed. Do not apologize or explain.',
     'Resend the COMPLETE article now using this exact delimiter format (no markdown fences, no preamble):',
     `${FM_START}`,
-    '{ "title": "...", "h1": "...", "description": "...", "slug": "...", "date": "YYYY-MM-DD", "updatedDate": "YYYY-MM-DD", "category": "...", "tags": [], "imageAlt": "...", "keywords": [], "faqs": [{"question":"...","answer":"..."}], "draft": true, "author": null, "internalLinks": [], "externalLinks": [], "image": null, "image2": null, "image3": null, "whereThingsStandSources": [{"url":"...","note":"..."}], "competitorsMentioned": [] }',
+    '{ "title": "...", "h1": "...", "description": "...", "slug": "...", "date": "YYYY-MM-DD", "updatedDate": "YYYY-MM-DD", "category": "...", "tags": [], "imageAlt": "...", "keywords": [], "faqs": [{"question":"...","answer":"..."}], "draft": true, "author": null, "internalLinks": [], "externalLinks": [], "image": null, "image2": null, "image3": null, "whereThingsStandSources": [{"url":"...","note":"..."}], "claimSources": [{"url":"...","claim":"..."}], "competitorsMentioned": [] }',
     `${BODY_START}`,
     '<full markdown body including Where Things Stand markers and ## Key Takeaways with 3–5 bullets>',
     `${BODY_END}`,
@@ -1158,6 +1164,7 @@ export default async function handler(req, res) {
       pillarKeyword,
       supportingKeyword,
       batchContext,
+      seoControls: normalizeSeoControls(body.seoControls),
     }
     const lengthBounds =
       mode === 'modify'
@@ -1224,9 +1231,10 @@ export default async function handler(req, res) {
       article,
       competitors,
       lengthBounds,
+      requireClaimSources: mode !== 'modify',
     }
     let interpreted = interpretGeneratedArticle(parsed, interpretContext)
-    let { whereThingsStandSources, frontmatter, articleBody, validationErrors, assignment } =
+    let { whereThingsStandSources, claimSources, frontmatter, articleBody, validationErrors, assignment } =
       interpreted
     let lengthAdjusted = false
 
@@ -1254,7 +1262,7 @@ export default async function handler(req, res) {
       try {
         parsed = parseArticleFromContent(activeMessage?.content)
         interpreted = interpretGeneratedArticle(parsed, interpretContext)
-        ;({ whereThingsStandSources, frontmatter, articleBody, validationErrors, assignment } =
+        ;({ whereThingsStandSources, claimSources, frontmatter, articleBody, validationErrors, assignment } =
           interpreted)
       } catch (err) {
         console.error('generate-article corrective parse failed:', err)
@@ -1284,6 +1292,11 @@ export default async function handler(req, res) {
       }
     }
 
+    // An unsourced statistic left after the retries is reported, not fatal:
+    // the draft is reviewed before anything publishes.
+    const sourceWarnings = validationErrors.filter((item) => item.includes('claimSources'))
+    validationErrors = validationErrors.filter((item) => !item.includes('claimSources'))
+
     if (validationErrors.length > 0) {
       return json(res, 422, {
         error: 'Generated article failed validation',
@@ -1291,10 +1304,19 @@ export default async function handler(req, res) {
       })
     }
 
+    // Sources become externalLinks once their URLs load.
+    const sourceCheck = await sourcesToExternalLinks(
+      { claimSources, whereThingsStandSources: whereThingsStandSources.map((s) => ({ url: s.url, claim: s.note })) },
+      { ownHost: String(body.ownHost || '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '') }
+    )
+    frontmatter = { ...frontmatter, externalLinks: sourceCheck.externalLinks }
+
     return json(res, 200, {
       frontmatter,
       body: articleBody,
       whereThingsStandSources,
+      claimSources,
+      sourceCheck: { linked: sourceCheck.externalLinks.length, dropped: sourceCheck.dropped, warnings: sourceWarnings },
       mode,
       ...(lengthAdjusted ? { lengthAdjusted: true } : {}),
       ...(userLinks ? { userLinks } : {}),

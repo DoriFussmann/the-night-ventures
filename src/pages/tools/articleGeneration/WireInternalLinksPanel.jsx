@@ -177,12 +177,23 @@ export default function WireInternalLinksPanel({
                   <ul className="list-disc pl-5 text-xs">
                     {(article.added || []).map((link) => (
                       <li key={`${article.slug}-${link.slug}`}>
-                        → {link.slug}
-                        {link.anchor ? ` (“${link.anchor}”)` : ""}
+                        → {link.kind === "commercial" ? `commercial page (${link.slug})` : link.slug}
+                        {link.anchor ? ` on “${link.anchor}”` : ""}
+                        {link.sentence ? (
+                          <span className="block text-[11px] opacity-80">“{link.sentence}”</span>
+                        ) : null}
                       </li>
                     ))}
-                    {(article.added || []).length === 0 && (
-                      <li>No new targets (frontmatter/signpost refresh only)</li>
+                    {article.signpostRemoved && (
+                      <li>Removes the old “Further reading” line</li>
+                    )}
+                    {(article.unplaced || []).length > 0 && (
+                      <li className="opacity-80">
+                        No natural place for: {article.unplaced.join(", ")} (not forced)
+                      </li>
+                    )}
+                    {(article.added || []).length === 0 && !article.signpostRemoved && (
+                      <li>No new targets (frontmatter refresh only)</li>
                     )}
                   </ul>
                 </li>

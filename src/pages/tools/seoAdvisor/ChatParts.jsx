@@ -20,6 +20,7 @@ const TOOL_TITLES = {
   dataforseo_keyword_ideas: 'keyword ideas',
   dataforseo_related_keywords: 'related keywords',
   dataforseo_serp_results: 'Google results',
+  dataforseo_serp_overlap: 'same-results check',
   dataforseo_backlinks_summary: 'backlinks',
   dataforseo_onpage_audit: 'on-page check',
   moz_domain_metrics: 'domain authority',
@@ -133,7 +134,7 @@ function MetricChips({ card }) {
 }
 
 /** "Add Core Keyword" / "Add Supporting Keyword" card. State comes from the live tree. */
-export function RecommendationCard({ card, pillars = [], disabled, onAdd }) {
+export function RecommendationCard({ card, pillars = [], disabled, onAdd, onAddSecondary }) {
   const isSupporting = card.type === 'supporting'
   const placed = locateKeyword(pillars, card.keyword)
   const suggestedCore = isSupporting
@@ -143,6 +144,9 @@ export function RecommendationCard({ card, pillars = [], disabled, onAdd }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [editing, setEditing] = useState(false)
+  const [clash, setClash] = useState(null)
+  const [note, setNote] = useState('')
+  const [folded, setFolded] = useState(false)
   const [angle, setAngle] = useState(card.spec?.angle || '')
   const [messages, setMessages] = useState(
     card.spec?.keyMessages?.length ? [...card.spec.keyMessages] : ['']
@@ -158,8 +162,10 @@ export function RecommendationCard({ card, pillars = [], disabled, onAdd }) {
     if (busy) return
     setBusy(true)
     setError('')
+    setClash(null)
+    setNote('')
     try {
-      await onAdd({
+      const data = await onAdd({
         type: card.type,
         keyword: card.keyword,
         core: isSupporting ? selectedCore?.keyword : undefined,
@@ -172,8 +178,28 @@ export function RecommendationCard({ card, pillars = [], disabled, onAdd }) {
           status: 'approved',
         },
       })
+      if (data?.overlap?.verdict === 'close') setNote(data.overlap.message)
     } catch (err) {
+      if (err.code === 'same_results' && err.overlap?.closest) setClash(err.overlap)
       setError(err.message || 'Could not add keyword')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function foldIn() {
+    if (!clash?.closest || !onAddSecondary) return
+    setBusy(true)
+    try {
+      await onAddSecondary({
+        core: clash.closest.core,
+        keyword: clash.closest.type === 'supporting' ? clash.closest.keyword : undefined,
+        secondary: card.keyword,
+      })
+      setFolded(true)
+      setError('')
+    } catch (err) {
+      setError(err.message || 'Could not add as a secondary keyword')
     } finally {
       setBusy(false)
     }
@@ -298,12 +324,33 @@ export function RecommendationCard({ card, pillars = [], disabled, onAdd }) {
           </>
         )}
       </div>
-      {error && <p className="mt-1.5 text-xs text-destructive">{error}</p>}
+      {folded ? (
+        <p className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+          <Check className="h-3.5 w-3.5" /> Added as a secondary keyword of “{clash?.closest?.keyword}”
+        </p>
+      ) : (
+        <>
+          {error && <p className="mt-1.5 text-xs text-destructive">{error}</p>}
+          {clash?.closest && onAddSecondary && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="mt-1.5 h-7 text-xs"
+              disabled={busy}
+              onClick={foldIn}
+            >
+              Add as secondary keyword of “{clash.closest.keyword}”
+            </Button>
+          )}
+        </>
+      )}
+      {note && <p className="mt-1.5 text-xs text-amber-700 dark:text-amber-400">{note}</p>}
     </div>
   )
 }
 
-export function AssistantMessage({ message, pillars, onAdd }) {
+export function AssistantMessage({ message, pillars, onAdd, onAddSecondary }) {
   const parts = message.parts || []
   const isEmpty = parts.length === 0
   return (
@@ -327,6 +374,7 @@ export function AssistantMessage({ message, pillars, onAdd }) {
               card={part.card}
               pillars={pillars}
               onAdd={onAdd}
+              onAddSecondary={onAddSecondary}
             />
           )
         }

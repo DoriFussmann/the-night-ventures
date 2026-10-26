@@ -6,6 +6,7 @@ const TOOL_TITLES = {
   semrush_organic_research: 'Organic keywords',
   semrush_competitors_research: 'Organic competitors',
   dataforseo_keyword_volume: 'Keyword volumes',
+  dataforseo_serp_overlap: 'Same-results check',
   dataforseo_keyword_difficulty: 'Keyword difficulty',
   dataforseo_keyword_ideas: 'Keyword ideas',
   dataforseo_related_keywords: 'Related keywords',
@@ -166,6 +167,19 @@ export function toolResultToDataCard(toolName, result, { id, createdAt } = {}) {
       ])
       columns = table.columns
       rows = table.rows
+      break
+    }
+    case 'dataforseo_serp_overlap': {
+      rows = (result.matches || []).map((m) => ({
+        keyword: m.keyword,
+        core: m.core,
+        shared: `${m.shared}/10`,
+      }))
+      columns = ['keyword', 'core', 'shared']
+      if (rows.length === 0) {
+        columns = ['result']
+        rows = [{ result: result.message || 'No overlap' }]
+      }
       break
     }
     case 'dataforseo_serp_results': {

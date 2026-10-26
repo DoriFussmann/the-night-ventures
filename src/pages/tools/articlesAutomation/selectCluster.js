@@ -4,6 +4,25 @@ function pillarArticleStatus(pillarArticle) {
   return pillarArticle.status || "missing";
 }
 
+export const MIN_KEY_MESSAGES = 3;
+
+/** Pillar counts as published when its article is published or its spec is Live. */
+export function isPillarPublished(pillar) {
+  return (
+    pillarArticleStatus(pillar?.pillarArticle) === "published" ||
+    pillar?.spec?.status === "live"
+  );
+}
+
+function specStatus(entry) {
+  return String(entry?.spec?.status || "");
+}
+
+export function specIsComplete(entry) {
+  const messages = Array.isArray(entry?.spec?.keyMessages) ? entry.spec.keyMessages : [];
+  return messages.filter((m) => String(m || "").trim()).length >= MIN_KEY_MESSAGES;
+}
+
 function plannedCount(supporting) {
   return Array.isArray(supporting?.plannedArticles)
     ? supporting.plannedArticles.length
@@ -24,7 +43,7 @@ function compareClusters(a, b) {
 export function listEligibleClusters(pillars) {
   const out = [];
   for (const pillar of Array.isArray(pillars) ? pillars : []) {
-    if (pillarArticleStatus(pillar?.pillarArticle) !== "published") continue;
+    if (!isPillarPublished(pillar)) continue;
     for (const supporting of Array.isArray(pillar?.supporting)
       ? pillar.supporting
       : []) {
@@ -73,16 +92,19 @@ export function classifySupportingCluster(pillar, supporting) {
   const clusterKeyword = String(supporting?.keyword || "").trim();
   if (!clusterKeyword) return null;
 
-  const pillarPublished =
-    pillarArticleStatus(pillar?.pillarArticle) === "published";
+  const pillarPublished = isPillarPublished(pillar);
   const count = plannedCount(supporting);
   const plannedArticles = Array.isArray(supporting?.plannedArticles)
     ? supporting.plannedArticles
     : [];
+  const spec = specStatus(supporting);
   let status = "available";
-  if (!pillarPublished) status = "blocked";
-  else if (hasGeneratedArticles(supporting)) status = "completed";
-  else if (count > 0) status = "planned";
+  if (hasGeneratedArticles(supporting) || spec === "drafted" || spec === "live") {
+    status = "completed";
+  } else if (!pillarPublished) status = "blocked";
+  // Keywords managed in the keyword map carry a spec; legacy entries don't.
+  else if (supporting?.spec && !specIsComplete(supporting)) status = "needs_spec";
+  else if (count > 0 || spec === "planned") status = "planned";
 
   return {
     pillarKeyword: String(pillar.keyword || "").trim(),
@@ -92,6 +114,7 @@ export function classifySupportingCluster(pillar, supporting) {
     plannedCount: count,
     plannedArticles,
     status,
+    specStatus: spec || "approved",
     pillarPublished,
     pillar,
     supporting,
@@ -143,7 +166,7 @@ export function buildClusterTree(pillars) {
       return {
         keyword,
         slug: pillar.slug,
-        pillarPublished: pillarArticleStatus(pillar?.pillarArticle) === "published",
+        pillarPublished: isPillarPublished(pillar),
         pillar,
         clusters,
       };

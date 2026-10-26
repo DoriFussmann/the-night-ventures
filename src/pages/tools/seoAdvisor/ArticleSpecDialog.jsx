@@ -32,6 +32,7 @@ function draftFrom(spec = {}) {
     url: spec.url || '',
     format: spec.format || '',
     secondaryKeywords: (spec.secondaryKeywords || []).join('\n'),
+    expertNotes: spec.expertNotes || '',
   }
 }
 
@@ -43,13 +44,12 @@ export function specFromDraft(draft, type) {
     status: draft.status,
     url: draft.url.trim(),
   }
-  if (type === 'supporting') {
-    spec.format = draft.format
-    spec.secondaryKeywords = draft.secondaryKeywords
-      .split('\n')
-      .map((k) => k.trim())
-      .filter(Boolean)
-  }
+  if (type === 'supporting') spec.format = draft.format
+  spec.secondaryKeywords = draft.secondaryKeywords
+    .split('\n')
+    .map((k) => k.trim())
+    .filter(Boolean)
+  spec.expertNotes = draft.expertNotes.trim()
   return spec
 }
 
@@ -251,8 +251,17 @@ export default function ArticleSpecDialog({
             ) : null}
           </div>
 
-          {isSupporting ? (
-            <div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium">Expert notes</label>
+            <Textarea
+              value={draft.expertNotes}
+              onChange={(e) => set({ expertNotes: e.target.value })}
+              rows={3}
+              placeholder="Optional. First-hand experience, examples or opinions the writer should build this article around."
+            />
+          </div>
+
+          <div>
               <label className="mb-1.5 block text-sm font-medium">Secondary keywords</label>
               <Textarea
                 value={draft.secondaryKeywords}
@@ -260,8 +269,7 @@ export default function ArticleSpecDialog({
                 rows={3}
                 placeholder="One per line. Covered inside this article, no separate article."
               />
-            </div>
-          ) : null}
+          </div>
 
           <div>
             <label className="mb-1.5 block text-sm font-medium">Live URL</label>

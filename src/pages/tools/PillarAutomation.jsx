@@ -1,3 +1,4 @@
+import { advanceSpecStatus } from "../../../lib/seo-advisor/pillars.js";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, Loader2, Workflow, X } from "lucide-react";
 import { useParams } from "react-router-dom";
@@ -19,6 +20,7 @@ import {
   loadAutomationContext,
   persistPlannedCluster,
   requestClusterPlan,
+  plannerSpec,
 } from "./articlesAutomation/planCluster";
 import { generateClusterArticles } from "./articlesAutomation/runGeneration";
 import { saveGeneratedArticles } from "./articleGeneration/saveGeneratedArticles";
@@ -67,6 +69,12 @@ function pillarArticleStatus(pillarArticle) {
   if (!pillarArticle) return "missing";
   if (typeof pillarArticle === "string") return pillarArticle;
   return pillarArticle.status || "missing";
+}
+
+/** A pillar whose spec is Live already has its article on the site. */
+function pillarStatusOf(pillar) {
+  if (pillar?.spec?.status === "live") return "published";
+  return pillarArticleStatus(pillar?.pillarArticle);
 }
 
 function matchesPillar(pillar, slug, keyword) {
@@ -175,6 +183,9 @@ async function persistPlannedPillarArticle({
     wordCount: article.wordCount,
     internalLinks: asStringArray(article.internalLinks),
     ctaAngle: article.ctaAngle || undefined,
+    angle: article.angle || undefined,
+    secondaryKeywords: asStringArray(article.secondaryKeywords),
+    expertInput: article.expertInput || undefined,
     pillarRationale: String(pillarRationale || "").trim() || undefined,
     updatedAt: now,
   };
@@ -183,7 +194,7 @@ async function persistPlannedPillarArticle({
   const next = pillars.map((pillar) => {
     if (!matchesPillar(pillar, pillarSlug, pillarKeyword)) return pillar;
     found = true;
-    return { ...pillar, pillarArticle };
+    return advanceSpecStatus({ ...pillar, pillarArticle }, "planned", { type: "core" });
   });
 
   if (!found) {
@@ -441,6 +452,8 @@ export default function PillarAutomation() {
       competitors: ctx.competitors,
       pillars: ctx.pillars,
       articleTypeCounts: PILLAR_ARTICLE_TYPE_COUNTS,
+      spec: pillar.pillar?.spec ? plannerSpec(pillar.pillar, pillar.pillarKeyword) : undefined,
+      conversionAction: ctx.conversionAction,
     });
     if (!stillCurrent(token)) return;
     proposalRef.current = result;
@@ -721,7 +734,7 @@ export default function PillarAutomation() {
 
   const startFlow = async (pillar) => {
     if (!companyId || busy || !pillar) return;
-    if (pillarArticleStatus(pillar.pillarArticle) === "published") return;
+    if (pillarStatusOf(pillar) === "published") return;
 
     const token = ++runTokenRef.current;
     resetRunState();
@@ -737,7 +750,7 @@ export default function PillarAutomation() {
         (ctx?.pillars || []).find((item) =>
           matchesPillar(item, pillar.slug, pillar.keyword)
         ) || pillar;
-      if (pillarArticleStatus(fresh.pillarArticle) === "published") {
+      if (pillarStatusOf(fresh) === "published") {
         setPhase("error");
         setError(
           `“${fresh.keyword}” already has a published pillar article.`
@@ -822,6 +835,8 @@ export default function PillarAutomation() {
         competitors: ctx.competitors,
         pillars: ctx.pillars,
         articleTypeCounts: PILLAR_ARTICLE_TYPE_COUNTS,
+        spec: pillar.pillar?.spec ? plannerSpec(pillar.pillar, pillar.pillarKeyword) : undefined,
+        conversionAction: ctx.conversionAction,
       });
       const article = proposal?.articles?.[0];
       if (!article) throw new Error("No pillar article in the plan");
@@ -992,7 +1007,7 @@ export default function PillarAutomation() {
       .filter(
         (p) =>
           String(p?.keyword || "").trim() &&
-          pillarArticleStatus(p.pillarArticle) !== "published"
+          pillarStatusOf(p) !== "published"
       )
       .map((p) => ({
         pillarKeyword: String(p.keyword || "").trim(),
@@ -1081,7 +1096,7 @@ export default function PillarAutomation() {
   const runnablePillars = pillars.filter(
     (pillar) =>
       String(pillar?.keyword || "").trim() &&
-      pillarArticleStatus(pillar.pillarArticle) !== "published"
+      pillarStatusOf(pillar) !== "published"
   );
 
   return (
@@ -1239,7 +1254,7 @@ export default function PillarAutomation() {
                 const keyword = String(pillar?.keyword || "").trim();
                 if (!keyword) return null;
                 const published =
-                  pillarArticleStatus(pillar.pillarArticle) === "published";
+                  pillarStatusOf(pillar) === "published";
                 const selected =
                   picked?.pillarSlug === pillar.slug ||
                   picked?.pillarKeyword === keyword;
