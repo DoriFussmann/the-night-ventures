@@ -69,6 +69,8 @@ await test('spelling follows the SEO Controls market', () => {
   assert.match(spellingLine({ market: 'United Kingdom' }), /British/)
   assert.match(spellingLine({ language: 'Hebrew' }), /Write in Hebrew/)
   assert.equal(spellingLine({}), '')
+  assert.match(spellingLine({ market: 'United Kingdom.', language: 'English.' }), /British/)
+  assert.match(spellingLine({ language: 'Hebrew.' }), /^Write in Hebrew\.$/)
   const prompt = buildUserPrompt({
     article: { title: 'T', targetKeyword: 't', keyMessages: ['a'] },
     pillarKeyword: 'p',
