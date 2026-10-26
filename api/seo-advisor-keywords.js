@@ -4,7 +4,15 @@ import {
   parseBody,
   json,
 } from '../lib/seo-advisor/auth.js'
-import { keywordStore } from '../lib/seo-advisor/pillars.js'
+import {
+  applyAddCore,
+  applyAddSupporting,
+  keywordStore,
+  loadCoverageState,
+  mutateCoverage,
+} from '../lib/seo-advisor/pillars.js'
+import { backfillSerps, guardKeyword, newKeywordsIn, withOwnSerp } from '../lib/seo-advisor/keywordGuard.js'
+import { localeFromSeoControls, researchLocale } from '../lib/seo-advisor/markets.js'
 import { loadProfile } from '../lib/seo-advisor/context.js'
 import { seoControlsStatus } from '../lib/seo-advisor/seoControls.js'
 
@@ -16,6 +24,13 @@ import { seoControlsStatus } from '../lib/seo-advisor/seoControls.js'
  *   add_core          { keyword, searchVolume?, difficulty?, spec? }
  *   add_supporting    { core, keyword, searchVolume?, difficulty?, spec? }
  *   update_spec       { core, keyword?, spec }   (no keyword = the Core's own article)
+ *   add_secondary     { core, keyword?, secondary }
+ *   serp_backfill     {}   fetch missing / stale Google top 10s for the map
+ *
+ * Adds (add_core, add_supporting, replace_tree with new keywords) run the
+ * same-results check first: 4+ shared top-10 URLs with an article in the map
+ * → 409 { code: 'same_results', overlap }. Optional market/language codes;
+ * otherwise taken from SEO Controls.
  *   add_backlog       { core, keyword, note? }
  *   remove_backlog    { core, keyword }
  *   remove_core       { core }
@@ -59,18 +74,40 @@ export default async function handler(req, res) {
       if (companyError) throw companyError
       if (!company) return json(res, 404, { error: 'Company not found' })
 
+      const locale = body.market
+        ? researchLocale(String(body.market), String(body.language || ''))
+        : localeFromSeoControls(await loadProfile(supabase, companyId))
+
       let result
+      let overlap
       switch (action) {
         case 'add_core':
-          result = await keywordStore.addCore(supabase, companyId, body, {
-            source: body.source || 'advisor',
+        case 'add_supporting': {
+          const keyword = String(body.keyword || '').trim()
+          const guard = await guardKeyword(supabase, companyId, keyword, locale)
+          overlap = guard.overlap
+          const isCore = action === 'add_core'
+          result = await mutateCoverage(supabase, companyId, (pillars) => {
+            const added = isCore
+              ? applyAddCore(pillars, body, { source: body.source || 'advisor' })
+              : applyAddSupporting(pillars, body, { source: body.source || 'advisor' })
+            const cached = withOwnSerp(
+              added.pillars,
+              { core: isCore ? null : added.core, keyword: added.added.keyword },
+              guard.candidateSerp
+            )
+            return { ...added, pillars: cached.pillars }
           })
           break
-        case 'add_supporting':
-          result = await keywordStore.addSupporting(supabase, companyId, body, {
-            source: body.source || 'advisor',
-          })
+        }
+        case 'add_secondary':
+          result = await keywordStore.addSecondary(supabase, companyId, body)
           break
+        case 'serp_backfill': {
+          const report = await backfillSerps(supabase, companyId, locale)
+          const pillars = await keywordStore.load(supabase, companyId)
+          return json(res, 200, { pillars, backfill: report })
+        }
         case 'update_spec':
           result = await keywordStore.updateSpec(supabase, companyId, body)
           break
@@ -90,6 +127,31 @@ export default async function handler(req, res) {
           if (!Array.isArray(body.pillars)) {
             return json(res, 400, { error: 'pillars array is required' })
           }
+          {
+            const state = await loadCoverageState(supabase, companyId)
+            const fresh = newKeywordsIn(state.pillars, body.pillars).slice(0, 10)
+            // Keywords the edit drops (e.g. a rename) are not compared against.
+            const dropped = newKeywordsIn(body.pillars, state.pillars)
+            const blocked = []
+            for (const keyword of fresh) {
+              try {
+                // Compare only against keywords already stored, not the other new ones.
+                await guardKeyword(supabase, companyId, keyword, locale, {
+                  exclude: [...fresh, ...dropped],
+                })
+              } catch (err) {
+                if (err.code !== 'same_results') throw err
+                blocked.push({ keyword, ...err.overlap })
+              }
+            }
+            if (blocked.length > 0) {
+              return json(res, 409, {
+                error: blocked.map((b) => b.message).join(' '),
+                code: 'same_results',
+                blocked,
+              })
+            }
+          }
           result = await keywordStore.replaceTree(supabase, companyId, body.pillars, {
             source: 'company_data',
             expected: Array.isArray(body.expected) ? body.expected : undefined,
@@ -105,6 +167,7 @@ export default async function handler(req, res) {
         removed: result.removed,
         keptLocked: result.keptLocked,
         skipped: result.skipped,
+        overlap,
       })
     }
 
@@ -117,6 +180,7 @@ export default async function handler(req, res) {
       error: err.message || 'Unexpected server error',
       code: err.code,
       existing: err.existing,
+      overlap: err.overlap,
     })
   }
 }

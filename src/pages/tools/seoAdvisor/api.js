@@ -22,6 +22,8 @@ async function request(url, { method = 'GET', body, errorLabel } = {}) {
     const err = new Error(data.error || `${errorLabel || 'Request failed'} (${res.status})`)
     err.status = res.status
     err.code = data.code
+    err.overlap = data.overlap
+    err.blocked = data.blocked
     throw err
   }
   return data

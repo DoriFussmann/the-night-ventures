@@ -14,6 +14,8 @@ import {
 } from '../lib/seo-advisor/tools.js'
 import { researchLocale } from '../lib/seo-advisor/markets.js'
 import { authorityFromToolResult, seoControlsStatus } from '../lib/seo-advisor/seoControls.js'
+import { guardKeyword } from '../lib/seo-advisor/keywordGuard.js'
+import { computeNextStep, formatProgress } from '../lib/seo-advisor/nextStep.js'
 
 const MODEL = process.env.SEO_ADVISOR_MODEL || 'claude-sonnet-5-5'
 const TITLE_MODEL = process.env.SEO_ADVISOR_TITLE_MODEL || 'claude-haiku-5-5'
@@ -213,7 +215,7 @@ export default async function handler(req, res) {
     const system = [
       {
         type: 'text',
-        text: buildSystemPrompt({ ...ctx, locale }),
+        text: buildSystemPrompt({ ...ctx, locale, nextStep: computeNextStep(ctx.tree) }),
         cache_control: { type: 'ephemeral' },
       },
     ]
@@ -223,6 +225,16 @@ export default async function handler(req, res) {
       locale,
       pillars: ctx.pillars,
       onRecommendation: null,
+      checkOverlap: async (keyword) => {
+        if (!keyword) return { available: false, reason: 'keyword is required' }
+        try {
+          const { overlap } = await guardKeyword(supabase, companyId, keyword, locale)
+          return { available: overlap.checked, keyword, ...overlap, reason: overlap.checked ? undefined : overlap.message }
+        } catch (err) {
+          if (err.code === 'same_results') return { available: true, keyword, ...err.overlap }
+          return { available: false, reason: err.message || 'Same-results check failed' }
+        }
+      },
     }
 
     let toolCalls = 0

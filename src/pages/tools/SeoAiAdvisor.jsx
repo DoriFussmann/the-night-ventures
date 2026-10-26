@@ -50,6 +50,55 @@ import {
 import KeywordTree from './seoAdvisor/KeywordTree'
 import { AssistantMessage } from './seoAdvisor/ChatParts'
 import ArticleSpecDialog from './seoAdvisor/ArticleSpecDialog'
+import { computeNextStep, formatProgress } from '../../../lib/seo-advisor/nextStep.js'
+
+/** Guided mode: the one thing to do next, from the live map. */
+function NextStepPanel({ companyId, step, disabled, onPrompt, onOpenSpec }) {
+  let action = null
+  if (step.prompt) {
+    action = (
+      <Button size="sm" className="h-7 text-xs" disabled={disabled} onClick={() => onPrompt(step.prompt)}>
+        Start
+      </Button>
+    )
+  }
+  if (step.kind === 'spec') {
+    action = (
+      <div className="flex gap-1.5">
+        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => onOpenSpec({ type: step.keyword === step.core ? 'core' : 'supporting', core: step.core, keyword: step.keyword })}>
+          Edit spec
+        </Button>
+        <Button size="sm" className="h-7 text-xs" disabled={disabled} onClick={() => onPrompt(step.prompt)}>
+          Draft it with the Advisor
+        </Button>
+      </div>
+    )
+  }
+  if (step.kind === 'pillar' || step.kind === 'generate') {
+    action = (
+      <Button asChild size="sm" className="h-7 text-xs">
+        <Link to={`/company/${companyId}/article-generation`}>Open Article Generation</Link>
+      </Button>
+    )
+  }
+  return (
+    <div className="border-b border-border bg-muted/20 px-4 py-2.5">
+      <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Next step
+          </p>
+          <p className="text-sm font-medium">{step.title}</p>
+          <p className="text-xs text-muted-foreground">{step.detail}</p>
+        </div>
+        {action}
+      </div>
+      <p className="mx-auto mt-1.5 max-w-3xl text-[11px] tabular-nums text-muted-foreground">
+        {formatProgress(step.progress)}
+      </p>
+    </div>
+  )
+}
 
 /** Shown instead of the chat until SEO Controls are complete. */
 function SeoControlsGate({ companyId, status }) {
@@ -364,6 +413,7 @@ export default function SeoAiAdvisor() {
           ? `core:${slugifyKeyword(keyword)}`
           : `sup:${slugifyKeyword(core)}/${slugifyKeyword(keyword)}`
       )
+      return data
     } catch (err) {
       if (err.status === 409 || err.status === 404) loadTree()
       throw err
@@ -389,6 +439,12 @@ export default function SeoAiAdvisor() {
     } finally {
       setBusyKey(null)
     }
+  }
+
+  async function handleAddSecondary(payload) {
+    const data = await specAction('add_secondary', payload)
+    toast({ title: 'Added as a secondary keyword', description: `“${payload.secondary}” is now covered inside that article.` })
+    return data
   }
 
   async function specAction(action, payload) {
@@ -559,6 +615,15 @@ export default function SeoAiAdvisor() {
         </aside>
 
         <section className="flex min-h-0 flex-col">
+          {seoControls?.ready && !treeLoading && (
+            <NextStepPanel
+              companyId={companyId}
+              step={computeNextStep(pillars)}
+              disabled={sending}
+              onPrompt={(prompt) => handleSend(prompt)}
+              onOpenSpec={setSpecTarget}
+            />
+          )}
           <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto flex max-w-3xl flex-col gap-5 px-4 py-6">
               {seoControls && !seoControls.ready ? (
@@ -605,7 +670,13 @@ export default function SeoAiAdvisor() {
                         {m.text}
                       </div>
                     ) : (
-                      <AssistantMessage key={m.id} message={m} pillars={pillars} onAdd={handleAdd} />
+                      <AssistantMessage
+                        key={m.id}
+                        message={m}
+                        pillars={pillars}
+                        onAdd={handleAdd}
+                        onAddSecondary={handleAddSecondary}
+                      />
                     )
                   )}
                 </>
