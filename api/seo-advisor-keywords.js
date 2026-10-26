@@ -5,14 +5,19 @@ import {
   json,
 } from '../lib/seo-advisor/auth.js'
 import { keywordStore } from '../lib/seo-advisor/pillars.js'
+import { loadProfile } from '../lib/seo-advisor/context.js'
+import { seoControlsStatus } from '../lib/seo-advisor/seoControls.js'
 
 /**
  * Core / Supporting keyword tree (content_coverage) for a company.
  *
- * GET  ?companyId=…                       → { pillars }
+ * GET  ?companyId=…                       → { pillars, seoControls }
  * POST { companyId, action, … }           → { pillars, … }
- *   add_core          { keyword, searchVolume?, difficulty? }
- *   add_supporting    { core, keyword, searchVolume?, difficulty? }
+ *   add_core          { keyword, searchVolume?, difficulty?, spec? }
+ *   add_supporting    { core, keyword, searchVolume?, difficulty?, spec? }
+ *   update_spec       { core, keyword?, spec }   (no keyword = the Core's own article)
+ *   add_backlog       { core, keyword, note? }
+ *   remove_backlog    { core, keyword }
  *   remove_core       { core }
  *   remove_supporting { core, keyword }
  *   replace_tree      { pillars: [{ keyword, supporting: [string] }], expected? }
@@ -33,8 +38,11 @@ export default async function handler(req, res) {
       const url = new URL(req.url, 'http://localhost')
       const companyId = String(url.searchParams.get('companyId') || '').trim()
       if (!companyId) return json(res, 400, { error: 'companyId is required' })
-      const pillars = await keywordStore.load(supabase, companyId)
-      return json(res, 200, { pillars })
+      const [pillars, profile] = await Promise.all([
+        keywordStore.load(supabase, companyId),
+        loadProfile(supabase, companyId),
+      ])
+      return json(res, 200, { pillars, seoControls: seoControlsStatus(profile) })
     }
 
     if (req.method === 'POST') {
@@ -62,6 +70,15 @@ export default async function handler(req, res) {
           result = await keywordStore.addSupporting(supabase, companyId, body, {
             source: body.source || 'advisor',
           })
+          break
+        case 'update_spec':
+          result = await keywordStore.updateSpec(supabase, companyId, body)
+          break
+        case 'add_backlog':
+          result = await keywordStore.addBacklog(supabase, companyId, body)
+          break
+        case 'remove_backlog':
+          result = await keywordStore.removeBacklog(supabase, companyId, body)
           break
         case 'remove_core':
           result = await keywordStore.removeCore(supabase, companyId, body)

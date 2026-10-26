@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { History, Loader2, MessageSquarePlus, Send, Sparkles, Square, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -49,6 +49,38 @@ import {
 } from './seoAdvisor/api'
 import KeywordTree from './seoAdvisor/KeywordTree'
 import { AssistantMessage } from './seoAdvisor/ChatParts'
+import ArticleSpecDialog from './seoAdvisor/ArticleSpecDialog'
+
+/** Shown instead of the chat until SEO Controls are complete. */
+function SeoControlsGate({ companyId, status }) {
+  return (
+    <div className="py-10">
+      <h2 className="font-display text-xl tracking-tight">Complete SEO Controls first</h2>
+      <p className="mt-1 max-w-xl text-sm text-muted-foreground">
+        The Advisor suggests keywords from your offer, your searcher and their problems. Without
+        them it would be guessing. {status.requiredDone} of {status.requiredTotal} required fields
+        are done.
+      </p>
+      <ul className="mt-4 space-y-1 text-sm">
+        {status.missing.map((field) => (
+          <li key={field.key} className="flex gap-2">
+            <span className="font-medium">{field.label}</span>
+            <span className="text-muted-foreground">— {field.reason}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-5 flex flex-wrap gap-2">
+        <Button asChild size="sm">
+          <Link to={`/company/${companyId}/company-data?section=seo`}>Open SEO Controls</Link>
+        </Button>
+      </div>
+      <p className="mt-3 max-w-xl text-xs text-muted-foreground">
+        Tip: in Company Intelligence, “Download SEO brief” gives you a file to complete with
+        another AI. Drop it back on the page and approve each change.
+      </p>
+    </div>
+  )
+}
 
 const MARKET_STORAGE_KEY = 'seoAdvisor.locale'
 
@@ -133,6 +165,8 @@ export default function SeoAiAdvisor() {
   const [locale, setLocale] = useState(readStoredLocale)
   const [providerHealth, setProviderHealth] = useState(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [seoControls, setSeoControls] = useState(null)
+  const [specTarget, setSpecTarget] = useState(null)
 
   const scrollRef = useRef(null)
   const stickToBottom = useRef(true)
@@ -149,6 +183,7 @@ export default function SeoAiAdvisor() {
     try {
       const data = await getKeywordTree(companyId)
       setPillars(data.pillars || [])
+      if (data.seoControls) setSeoControls(data.seoControls)
     } catch (err) {
       setError(err.message || 'Failed to load keywords')
     } finally {
@@ -289,7 +324,11 @@ export default function SeoAiAdvisor() {
         },
       })
     } catch (err) {
-      if (err.name !== 'AbortError') setError(err.message || 'Chat failed')
+      if (err.code === 'seo_controls_incomplete' && err.seoControls) {
+        setSeoControls(err.seoControls)
+      } else if (err.name !== 'AbortError') {
+        setError(err.message || 'Chat failed')
+      }
     } finally {
       updateAssistant((m) => ({
         ...m,
@@ -312,12 +351,12 @@ export default function SeoAiAdvisor() {
     window.setTimeout(() => setHighlight((h) => (h === key ? null : h)), 1600)
   }
 
-  async function handleAdd({ type, keyword, core, searchVolume, difficulty }) {
+  async function handleAdd({ type, keyword, core, searchVolume, difficulty, spec }) {
     try {
       const data = await keywordAction(
         companyId,
         type === 'core' ? 'add_core' : 'add_supporting',
-        { keyword, core, searchVolume, difficulty }
+        { keyword, core, searchVolume, difficulty, spec }
       )
       setPillars(data.pillars || [])
       flash(
@@ -352,6 +391,37 @@ export default function SeoAiAdvisor() {
     }
   }
 
+  async function specAction(action, payload) {
+    try {
+      const data = await keywordAction(companyId, action, payload)
+      setPillars(data.pillars || [])
+      return data
+    } catch (err) {
+      if (err.status === 409 || err.status === 404) loadTree()
+      throw err
+    }
+  }
+
+  // Resolve the open spec from the live tree so it reflects every change.
+  const specPillar = specTarget
+    ? pillars.find((p) => p.slug === slugifyKeyword(specTarget.core))
+    : null
+  const specItem =
+    specTarget?.type === 'supporting'
+      ? (specPillar?.supporting || []).find((i) => i.slug === slugifyKeyword(specTarget.keyword))
+      : null
+  const openSpec =
+    specPillar && (specTarget.type === 'core' || specItem)
+      ? {
+          type: specTarget.type,
+          core: specPillar.keyword,
+          keyword: specItem ? specItem.keyword : specPillar.keyword,
+          spec: specItem ? specItem.spec : specPillar.spec,
+          backlog: specPillar.backlog || [],
+          supportingCount: (specPillar.supporting || []).length,
+        }
+      : null
+
   async function handleDeleteChat() {
     if (!sessionId) return
     try {
@@ -369,12 +439,18 @@ export default function SeoAiAdvisor() {
         .map(([k]) => k)
     : []
 
+  // Suggest the next step from where the map stands.
+  const thinnest = [...pillars].sort(
+    (a, b) => (a.supporting?.length || 0) - (b.supporting?.length || 0)
+  )[0]
   const starters = [
-    'I have a theory about this site — let me walk you through it.',
-    'Based on Company Intelligence, which Core keywords should we own?',
-    pillars[0]
-      ? `Find strong supporting keywords for “${pillars[0].keyword}”.`
+    pillars.length < 4
+      ? 'Based on SEO Controls, suggest 5 to 7 Core keywords we should own, with your reasoning.'
+      : 'Where does the keyword map stand, and what should we do next?',
+    thinnest
+      ? `Suggest Supporting keywords for “${thinnest.keyword}” (${thinnest.supporting?.length || 0} so far).`
       : 'Who are our real organic competitors, and what do they rank for?',
+    'I have a theory about this site — let me walk you through it.',
   ]
 
   const marketLabel = resolveMarket(locale.market).label
@@ -478,13 +554,16 @@ export default function SeoAiAdvisor() {
             highlight={highlight}
             busyKey={busyKey}
             onRemove={handleRemove}
+            onOpenSpec={setSpecTarget}
           />
         </aside>
 
         <section className="flex min-h-0 flex-col">
           <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto flex max-w-3xl flex-col gap-5 px-4 py-6">
-              {loadingSession ? (
+              {seoControls && !seoControls.ready ? (
+                <SeoControlsGate companyId={companyId} status={seoControls} />
+              ) : loadingSession ? (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" /> Loading chat…
                 </div>
@@ -571,7 +650,7 @@ export default function SeoAiAdvisor() {
                     size="icon"
                     className="h-9 w-9 shrink-0"
                     onClick={() => handleSend()}
-                    disabled={!input.trim()}
+                    disabled={!input.trim() || (seoControls && !seoControls.ready)}
                     aria-label="Send"
                   >
                     <Send className="h-4 w-4" />
@@ -585,6 +664,25 @@ export default function SeoAiAdvisor() {
           </div>
         </section>
       </div>
+
+      <ArticleSpecDialog
+        target={openSpec}
+        onClose={() => setSpecTarget(null)}
+        onSave={(spec) =>
+          specAction('update_spec', {
+            core: openSpec.core,
+            keyword: openSpec.type === 'supporting' ? openSpec.keyword : undefined,
+            spec,
+          })
+        }
+        onAddBacklog={(keyword) => specAction('add_backlog', { core: openSpec.core, keyword })}
+        onRemoveBacklog={(keyword) =>
+          specAction('remove_backlog', { core: openSpec.core, keyword })
+        }
+        onPromoteBacklog={(keyword) =>
+          specAction('add_supporting', { core: openSpec.core, keyword, source: 'backlog' })
+        }
+      />
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>

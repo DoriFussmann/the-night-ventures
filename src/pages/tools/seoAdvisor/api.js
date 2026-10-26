@@ -59,7 +59,8 @@ export function getKeywordTree(companyId) {
 }
 
 /**
- * @param action add_core | add_supporting | remove_core | remove_supporting | replace_tree
+ * @param action add_core | add_supporting | update_spec | add_backlog | remove_backlog
+ *   | remove_core | remove_supporting | replace_tree
  * @returns {Promise<{ pillars: object[], keptLocked?: string[], skipped?: string[] }>}
  */
 export function keywordAction(companyId, action, payload = {}) {
@@ -84,7 +85,11 @@ export async function streamChat({ companyId, sessionId, message, market, langua
 
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
-    throw new Error(data.error || `Chat failed (${res.status})`)
+    const err = new Error(data.error || `Chat failed (${res.status})`)
+    err.status = res.status
+    err.code = data.code
+    err.seoControls = data.seoControls
+    throw err
   }
 
   const reader = res.body?.getReader()

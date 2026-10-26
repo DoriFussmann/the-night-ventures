@@ -1,4 +1,12 @@
-/** Company Intelligence brief: 7 basic facts + 8 groups × 4 fields. */
+/**
+ * Company Intelligence: Basics, Business Overview, Offer and SEO Controls.
+ * Retired fields are listed in ARCHIVED_FIELDS (hidden, data kept).
+ */
+import {
+  SEO_CONTROL_FIELDS,
+  SEO_NEW_TEXT_COLUMNS,
+  seoFieldComplete,
+} from "../../../../lib/seo-advisor/seoControls.js";
 
 export function textFilled(value) {
   return Boolean(String(value ?? "").trim());
@@ -34,6 +42,7 @@ export const INTELLIGENCE_TEXT_KEYS = [
   "growth_priorities",
   "customer_acquisition",
   "learnings_constraints",
+  ...SEO_NEW_TEXT_COLUMNS,
 ];
 
 export const EMPTY_INTELLIGENCE_TEXT = Object.fromEntries(
@@ -98,34 +107,25 @@ export const BASIC_FIELDS = [
     rows: 1,
   },
   {
-    id: "legal_name",
-    key: "legal_name",
-    label: "Legal Name",
+    id: "contact_email",
+    key: "contact_email",
+    label: "Contact Email",
     kind: "text",
     rows: 1,
   },
   {
     id: "founded_date",
     key: "founded_date",
-    label: "Founded / Incorporation Date",
+    label: "Founded Date",
     kind: "text",
     rows: 1,
   },
   {
     id: "location_markets",
     key: "location_markets",
-    label: "Location / Markets Served",
+    label: "Markets Served",
     kind: "textarea",
-    rows: 3,
-    hidden: true,
-  },
-  {
-    id: "contact_email",
-    key: "contact_email",
-    label: "Contact Email",
-    kind: "text",
-    rows: 1,
-    hidden: true,
+    rows: 2,
   },
   {
     id: "social_links",
@@ -133,16 +133,32 @@ export const BASIC_FIELDS = [
     label: "Social Links",
     kind: "social",
   },
+  {
+    id: "team_members",
+    key: "team_members",
+    label: "Team & Founder Credibility",
+    helper: "Used for author bios and expertise signals in articles.",
+    kind: "team",
+  },
 ];
 
 export const VISIBLE_BASIC_FIELDS = BASIC_FIELDS.filter((field) => !field.hidden);
 
+export const SEO_GROUP_ID = "seo";
+
 export const INTELLIGENCE_GROUPS = [
   {
-    id: "company",
+    id: "business",
     number: "01",
-    title: "Company",
+    title: "Business Overview",
     fields: [
+      {
+        id: "abstract",
+        key: "abstract",
+        label: "Abstract",
+        helper: "One or two sentences. Article generation reads this.",
+        rows: 3,
+      },
       {
         id: "what_we_do",
         key: "short_description",
@@ -162,49 +178,41 @@ export const INTELLIGENCE_GROUPS = [
         rows: 4,
       },
       {
-        id: "company_stage",
-        key: "company_stage",
-        label: "Company Stage & Context",
-        rows: 4,
-      },
-    ],
-  },
-  {
-    id: "customer",
-    number: "02",
-    title: "Customer",
-    fields: [
-      {
-        id: "ideal_customer",
-        key: "target_audience",
-        label: "Ideal Customer",
-        rows: 5,
-      },
-      {
-        id: "customer_problem",
-        key: "customer_problem",
-        label: "Customer Problem",
-        rows: 5,
-      },
-      {
-        id: "trigger_moment",
-        key: "trigger_moment",
-        label: "Trigger / Moment of Need",
+        id: "core_value_proposition",
+        key: "core_value_proposition",
+        label: "Core Value Proposition",
         rows: 4,
       },
       {
-        id: "buying_criteria",
-        key: "buying_criteria",
-        label: "Buying Criteria",
-        helper: "Include important objections where relevant.",
+        id: "differentiation",
+        key: "differentiation",
+        label: "Differentiation",
         rows: 5,
+      },
+      {
+        id: "market_category",
+        key: "market_category",
+        label: "Market & Category",
+        rows: 4,
+      },
+      {
+        id: "competitors",
+        key: "competitors",
+        label: "Competitors",
+        kind: "competitors",
+      },
+      {
+        id: "brand_voice",
+        key: "brand_voice",
+        label: "Voice & Tone",
+        rows: 4,
       },
     ],
   },
   {
     id: "offer",
-    number: "03",
-    title: "Products & Services",
+    number: "02",
+    title: "Offer",
     fields: [
       {
         id: "services",
@@ -219,183 +227,55 @@ export const INTELLIGENCE_GROUPS = [
         helper: "From the customer's point of view.",
         rows: 5,
       },
-      {
-        id: "customer_outcome",
-        key: "customer_outcome",
-        label: "Customer Outcome",
-        helper: "Outcomes and benefits, not just features.",
-        rows: 4,
-      },
-      {
-        id: "commercial_model",
-        key: "commercial_model",
-        label: "Commercial Model",
-        helper: "Pricing, packaging, and how they buy.",
-        rows: 4,
-      },
     ],
   },
   {
-    id: "positioning",
-    number: "04",
-    title: "Positioning",
-    fields: [
-      {
-        id: "core_value_proposition",
-        key: "core_value_proposition",
-        label: "Core Value Proposition",
-        rows: 4,
-      },
-      {
-        id: "differentiation",
-        key: "differentiation",
-        label: "Differentiation",
-        rows: 5,
-      },
-      {
-        id: "messaging_hierarchy",
-        key: "messaging_hierarchy",
-        label: "Messaging Hierarchy",
-        helper: "The three things someone should remember.",
-        rows: 5,
-      },
-      {
-        id: "scope_boundaries",
-        key: "scope_boundaries",
-        label: "What We Are / Are Not",
-        rows: 5,
-      },
-    ],
-  },
-  {
-    id: "market",
-    number: "05",
-    title: "Market & Competition",
-    fields: [
-      {
-        id: "market_category",
-        key: "market_category",
-        label: "Market & Category",
-        rows: 4,
-      },
-      {
-        id: "competitors",
-        key: "competitors",
-        label: "Competitors & Alternatives",
-        helper: "Include indirect alternatives, not only named competitors.",
-        kind: "competitors",
-      },
-      {
-        id: "competitive_position",
-        key: "competitive_position",
-        label: "Competitive Position",
-        helper: "Advantages and important limitations.",
-        rows: 5,
-      },
-      {
-        id: "market_dynamics",
-        key: "market_dynamics",
-        label: "Market Dynamics",
-        rows: 4,
-      },
-    ],
-  },
-  {
-    id: "brand",
-    number: "06",
-    title: "Brand",
-    fields: [
-      {
-        id: "brand_feel",
-        key: "brand_feel",
-        label: "Brand Personality",
-        helper: "3–5 characteristics.",
-        rows: 4,
-      },
-      {
-        id: "brand_voice",
-        key: "brand_voice",
-        label: "Voice & Tone",
-        rows: 4,
-      },
-      {
-        id: "brand_references",
-        key: "brand_references",
-        label: "References",
-        helper: "What to borrow from each — not just names.",
-        rows: 5,
-      },
-      {
-        id: "brand_boundaries",
-        key: "brand_boundaries",
-        label: "Brand Boundaries",
-        rows: 4,
-      },
-    ],
-  },
-  {
-    id: "proof",
-    number: "07",
-    title: "Proof & Trust",
-    fields: [
-      {
-        id: "reasons_to_believe",
-        key: "reasons_to_believe",
-        label: "Reasons to Believe",
-        rows: 4,
-      },
-      {
-        id: "results_proof",
-        key: "results_proof",
-        label: "Results & Customer Proof",
-        rows: 5,
-      },
-      {
-        id: "team_members",
-        key: "team_members",
-        label: "Team & Founder Credibility",
-        kind: "team",
-      },
-      {
-        id: "trust_signals",
-        key: "trust_signals",
-        label: "Other Trust Signals",
-        rows: 4,
-      },
-    ],
-  },
-  {
-    id: "growth",
-    number: "08",
-    title: "Growth",
-    fields: [
-      {
-        id: "marketing_objectives",
-        key: "marketing_objectives",
-        label: "Business & Marketing Objectives",
-        rows: 4,
-      },
-      {
-        id: "growth_priorities",
-        key: "growth_priorities",
-        label: "Priorities",
-        rows: 4,
-      },
-      {
-        id: "customer_acquisition",
-        key: "customer_acquisition",
-        label: "Customer Acquisition & Sales",
-        rows: 5,
-      },
-      {
-        id: "learnings_constraints",
-        key: "learnings_constraints",
-        label: "Learnings & Constraints",
-        rows: 5,
-      },
-    ],
+    id: SEO_GROUP_ID,
+    number: "03",
+    title: "SEO Controls",
+    fields: SEO_CONTROL_FIELDS.map((field) => ({
+      id: field.key,
+      key: field.key,
+      label: field.label,
+      helper: field.hint,
+      rows: field.rows,
+      required: field.required,
+      seo: true,
+    })),
   },
 ];
+
+/**
+ * Fields no longer shown or used. Their data stays in the database and can be
+ * viewed under "Show archived fields".
+ */
+export const ARCHIVED_FIELDS = [
+  { key: "legal_name", label: "Legal Name" },
+  { key: "medium_description", label: "Medium Description" },
+  { key: "company_stage", label: "Company Stage & Context" },
+  { key: "customer_problem", label: "Customer Problem" },
+  { key: "trigger_moment", label: "Trigger / Moment of Need" },
+  { key: "buying_criteria", label: "Buying Criteria" },
+  { key: "customer_outcome", label: "Customer Outcome" },
+  { key: "commercial_model", label: "Commercial Model" },
+  { key: "messaging_hierarchy", label: "Messaging Hierarchy" },
+  { key: "competitive_position", label: "Competitive Position" },
+  { key: "market_dynamics", label: "Market Dynamics" },
+  { key: "brand_feel", label: "Brand Personality" },
+  { key: "brand_references", label: "References" },
+  { key: "brand_boundaries", label: "Brand Boundaries" },
+  { key: "reasons_to_believe", label: "Reasons to Believe" },
+  { key: "results_proof", label: "Results & Customer Proof" },
+  { key: "trust_signals", label: "Other Trust Signals" },
+  { key: "marketing_objectives", label: "Business & Marketing Objectives" },
+  { key: "growth_priorities", label: "Priorities" },
+  { key: "customer_acquisition", label: "Customer Acquisition & Sales" },
+  { key: "learnings_constraints", label: "Learnings & Constraints" },
+];
+
+export function archivedWithContent(fields) {
+  return ARCHIVED_FIELDS.filter((field) => textFilled(fields?.[field.key]));
+}
 
 export function intelligenceFieldFilled(field, { fields, companyName } = {}) {
   switch (field.kind || field.id) {
@@ -423,6 +303,10 @@ export function intelligenceFieldFilled(field, { fields, companyName } = {}) {
         textFilled(item?.credentials)
       );
     default:
+      if (field.seo) {
+        const def = SEO_CONTROL_FIELDS.find((item) => item.key === field.key);
+        return def ? seoFieldComplete(def, fields) : textFilled(fields?.[field.key]);
+      }
       return textFilled(fields?.[field.key]);
   }
 }
