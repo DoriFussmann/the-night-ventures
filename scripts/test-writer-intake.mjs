@@ -358,3 +358,60 @@ function siteFetch(url, init = {}) {
 }
 
 console.log('✓ writer intake')
+
+// --- link wiring: a cluster article never takes its head's keyword as anchor ---
+// Reproduces album-amicorum, Oct 2026: an article filed under supporting keyword
+// "album amicorum" got "album amicorum" links in four articles, and
+// childhood-memory-book linked its own keyword to a newer article.
+{
+  const { parseArticleMarkdown, planDeltas } = await import('../lib/wire-internal-links/plan.js')
+  const md = (fm, body) =>
+    `---\n${Object.entries(fm).map(([k, v]) => `${k}: "${v}"`).join('\n')}\ndraft: false\n---\n\n${body}\n`
+  const pillar = 'Friend Books & Friendship Keepsakes'
+  const memory = "Children's Keepsakes & Memory"
+  const articles = [
+    parseArticleMarkdown(
+      md(
+        { title: 'Album Amicorum', pillarKeyword: pillar, supportingKeyword: 'album amicorum', targetKeyword: 'album amicorum', articleType: 'flex' },
+        'This is the album amicorum, a book of friends with a long history behind it.'
+      ),
+      'album-amicorum.md'
+    ),
+    parseArticleMarkdown(
+      md(
+        { title: 'Animal friend book', pillarKeyword: pillar, supportingKeyword: 'album amicorum', targetKeyword: 'animal themed friend book', articleType: 'flex' },
+        'An animal themed friend book keeps the album amicorum tradition alive for children.'
+      ),
+      'animal-themed-friend-book.md'
+    ),
+    parseArticleMarkdown(
+      md(
+        { title: 'Childhood memory book', pillarKeyword: memory, supportingKeyword: 'childhood memory book', targetKeyword: 'childhood memory book', articleType: 'flex' },
+        'There is a version of a childhood memory book that most parents know well.'
+      ),
+      'childhood-memory-book.md'
+    ),
+    parseArticleMarkdown(
+      md(
+        { title: 'Memory book', pillarKeyword: memory, supportingKeyword: 'childhood memory book', targetKeyword: 'memory book for kids', articleType: 'comprehensive' },
+        'A memory book for kids is filled by friends rather than a parent.'
+      ),
+      'memory-book-for-kids-2.md'
+    ),
+  ]
+  const { proposed } = planDeltas(articles)
+  const added = proposed.flatMap((p) => p.added.map((a) => ({ from: p.slug, to: a.slug, anchor: a.anchor.toLowerCase() })))
+  assert.ok(
+    !added.some((a) => a.to === 'animal-themed-friend-book' && a.anchor === 'album amicorum'),
+    'the cluster head keeps "album amicorum"'
+  )
+  assert.ok(
+    !added.some((a) => a.from === 'childhood-memory-book' && a.anchor === 'childhood memory book'),
+    "an article's own keyword is never linked away from it"
+  )
+  assert.ok(
+    added.some((a) => a.from === 'animal-themed-friend-book' && a.to === 'album-amicorum' && a.anchor === 'album amicorum'),
+    '"album amicorum" still links to the article that owns it'
+  )
+  console.log('✓ link wiring respects keyword ownership')
+}
