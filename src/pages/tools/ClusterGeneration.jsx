@@ -1124,12 +1124,12 @@ export default function ClusterGeneration() {
   return (
     <div className="space-y-6 pb-24">
       <div>
-        <h1 className="text-xs text-foreground mb-1">Cluster Generation</h1>
+        <h1 className="text-xs text-foreground mb-1">Article Generation</h1>
         <p className="text-sm text-muted-foreground">
-          Select a supporting cluster, then Generate. The run plans topics,
-          writes articles with images, publishes them, then offers to wire
-          internal links. Confirm or Decline at each step; the countdown
-          auto-confirms after 10 seconds.
+          Each keyword in the map is one article. Select a keyword, then
+          Generate: the run plans the article from its spec, writes it with an
+          image, publishes it, then offers to place internal links. Confirm or
+          Decline at each step; the countdown auto-confirms after 10 seconds.
         </p>
       </div>
 
@@ -1137,14 +1137,14 @@ export default function ClusterGeneration() {
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-sm font-medium">
-              Generate one cluster per pillar
+              Generate one supporting article per pillar
             </h2>
             <p className="text-xs text-muted-foreground">
-              One click gives every published pillar its first cluster — plans,
-              generates, and publishes one supporting cluster for each pillar
-              that doesn’t have one yet ({runnableClusters.length} to do).
-              Pillars that already have a cluster are skipped. Keep this tab open
-              until it finishes.
+              One click gives every published pillar its first supporting
+              article — plans, generates, and publishes one for each pillar that
+              doesn’t have one yet ({runnableClusters.length} to do). Pillars
+              that already have one are skipped, and keywords without a complete
+              spec are never picked. Keep this tab open until it finishes.
             </p>
           </div>
           {batch?.running ? (
@@ -1256,7 +1256,7 @@ export default function ClusterGeneration() {
       {viewingStage === "cluster" && (
         <section className="space-y-4">
           <h2 className="text-sm font-medium text-foreground">
-            Cluster Selection
+            Keyword Selection
           </h2>
           {companyName ? (
             <p className="text-sm text-muted-foreground">{companyName}</p>
