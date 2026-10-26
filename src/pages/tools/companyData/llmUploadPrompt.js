@@ -111,17 +111,16 @@ Basics
 26. **SEO Search Competitors:**
     - domain.com
 27. **Out-of-scope Topics:** Topics the company will not write about
-28. **SEO Publishing Pace:** Articles per month
 
 Specialized / leftover (only if the source has this and it does not belong above)
-29. **Product Name:** Primary product or brand name people search for
-30. **Category:**
+28. **Product Name:** Primary product or brand name people search for
+29. **Category:**
     A markdown list of 1–3 industry names. ${categorySection}
-31. **Pillar Keywords:**
+30. **Pillar Keywords:**
     Nested list with TWO SPACES before supporting bullets:
     - pillar keyword
       - supporting keyword
-32. **Social & Shops:**
+31. **Social & Shops:**
     Group under ### headings that are exactly one of: Social Media | Digital Store | Other
     ### Social Media
     - Account Name
