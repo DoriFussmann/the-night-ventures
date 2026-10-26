@@ -1466,7 +1466,7 @@ export default function PillarAutomation() {
                   : "The pillar article was generated, but the site commit did not finish. Review the problems below."
               }
               destinationLabel={
-                destinationMapped
+                destinationMapped && publishResult?.ok
                   ? `Published to ${publishDestination.owner}/${publishDestination.repo}. A rebuild should start from this commit.`
                   : null
               }

@@ -51,10 +51,27 @@
       "source": "/api/site-placeholders",
       "destination": "/api/check-article-update?action=site-placeholders"
     },
-    { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    {
+      "source": "/api/publish-schedule",
+      "destination": "/api/check-article-update?action=publish-schedule"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
   ],
   "crons": [
-    { "path": "/api/audit-snapshot", "schedule": "0 9 * * *" }
+    {
+      "path": "/api/audit-snapshot",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/check-article-update?action=publish-schedule",
+      "schedule": "0 16 * * *"
+    }
   ]
 }

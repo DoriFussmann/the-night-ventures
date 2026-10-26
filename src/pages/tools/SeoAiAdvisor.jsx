@@ -51,9 +51,11 @@ import KeywordTree from './seoAdvisor/KeywordTree'
 import { AssistantMessage } from './seoAdvisor/ChatParts'
 import ArticleSpecDialog from './seoAdvisor/ArticleSpecDialog'
 import { computeNextStep, formatProgress } from '../../../lib/seo-advisor/nextStep.js'
+import { OPEN_SCHEDULE_STATUSES, normalizeSettings, summaryLine, todayIn } from '../../../lib/publish-schedule/plan.js'
+import { loadSchedules } from './articlesAutomation/publishSchedule'
 
 /** Guided mode: the one thing to do next, from the live map. */
-function NextStepPanel({ companyId, step, disabled, onPrompt, onOpenSpec }) {
+function NextStepPanel({ companyId, step, disabled, onPrompt, onOpenSpec, schedules = [] }) {
   let action = null
   if (step.prompt) {
     action = (
@@ -96,6 +98,20 @@ function NextStepPanel({ companyId, step, disabled, onPrompt, onOpenSpec }) {
       <p className="mx-auto mt-1.5 max-w-3xl text-[11px] tabular-nums text-muted-foreground">
         {formatProgress(step.progress)}
       </p>
+      {schedules.length > 0 ? (
+        <ul className="mx-auto mt-1 max-w-3xl space-y-0.5">
+          {schedules.map((schedule) => (
+            <li key={schedule.id} className="text-[11px] tabular-nums text-muted-foreground">
+              <Link
+                to={`/company/${companyId}/article-generation`}
+                className="underline-offset-2 hover:text-foreground hover:underline"
+              >
+                {summaryLine(schedule, schedule.items, todayIn(normalizeSettings(schedule.settings).timezone))}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   )
 }
@@ -216,6 +232,7 @@ export default function SeoAiAdvisor() {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [seoControls, setSeoControls] = useState(null)
   const [specTarget, setSpecTarget] = useState(null)
+  const [schedules, setSchedules] = useState([])
 
   const scrollRef = useRef(null)
   const stickToBottom = useRef(true)
@@ -226,6 +243,19 @@ export default function SeoAiAdvisor() {
   useEffect(() => {
     sessionIdRef.current = sessionId
   }, [sessionId])
+
+  // Scheduled publishing summary for the Next step panel (open schedules only).
+  useEffect(() => {
+    let cancelled = false
+    loadSchedules(companyId)
+      .then((list) => {
+        if (!cancelled) setSchedules(list.filter((s) => OPEN_SCHEDULE_STATUSES.has(s.status)))
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [companyId])
 
   const loadTree = useCallback(async () => {
     if (!companyId) return
@@ -622,6 +652,7 @@ export default function SeoAiAdvisor() {
               disabled={sending}
               onPrompt={(prompt) => handleSend(prompt)}
               onOpenSpec={setSpecTarget}
+              schedules={schedules}
             />
           )}
           <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
