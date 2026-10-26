@@ -11,6 +11,7 @@ import { handleCoreVersion } from '../lib/core-version/handler.js'
 import { handleSmartlead, handleSmartleadWebhook } from '../lib/smartlead/handler.js'
 import { handleIntegrations } from '../lib/integrations/handler.js'
 import { handleSuggestTargetKeyword } from '../lib/suggest-target-keyword/handler.js'
+import { handleSitePlaceholders } from '../lib/placeholders/handler.js'
 
 export const config = {
   maxDuration: 120,
@@ -51,6 +52,9 @@ function requestAction(req) {
     }
     if (path.endsWith('/suggest-target-keyword')) {
       return 'suggest-target-keyword'
+    }
+    if (path.endsWith('/site-placeholders')) {
+      return 'site-placeholders'
     }
   } catch {
     // ignore
@@ -293,7 +297,7 @@ export default async function handler(req, res) {
   // POST /api/wire-internal-links, POST /api/propose-external-links,
   // POST /api/check-links, POST /api/article-updates,
   // POST /api/company-data-import, POST /api/audit-summary,
-  // POST /api/suggest-target-keyword.
+  // POST /api/suggest-target-keyword, POST /api/site-placeholders.
   const action = requestAction(req)
   if (action === 'scan-live') {
     return handleScanLiveArticles(req, res)
@@ -333,6 +337,9 @@ export default async function handler(req, res) {
   }
   if (action === 'suggest-target-keyword') {
     return handleSuggestTargetKeyword(req, res)
+  }
+  if (action === 'site-placeholders') {
+    return handleSitePlaceholders(req, res)
   }
 
   if (req.method === 'OPTIONS') {
