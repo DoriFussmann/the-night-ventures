@@ -18,6 +18,15 @@ import ChatMarkdown from "../seoAdvisor/ChatMarkdown";
 import { countWords } from "./composeState";
 import { reviewFieldErrors } from "./reviewValidation";
 
+
+/** Writer images live in storage until publish; show where each one sits. */
+function previewMarkdown(body) {
+  return String(body || "").replace(
+    /!\[([^\]]*)\]\(tnv-image:[^)\s]+\)/g,
+    (_match, alt) => `> 🖼 Writer image — ${alt || "no alt text"}`
+  );
+}
+
 function FieldMeter({ label, htmlFor, value, min, max, error, children }) {
   const length = String(value || "").length;
   const ok = max == null ? length >= min : length >= min && length <= max;
@@ -362,7 +371,7 @@ export default function ReviewStage({
             }
           />
           <div className="max-h-[28rem] overflow-auto rounded-md border border-border p-3">
-            <ChatMarkdown>{state.body}</ChatMarkdown>
+            <ChatMarkdown>{previewMarkdown(state.body)}</ChatMarkdown>
           </div>
         </div>
         {Array.isArray(errors.body) &&

@@ -9,6 +9,9 @@ import ModifySource from "./articleCompose/ModifySource";
 import ReviewStage from "./articleCompose/ReviewStage";
 import ImageStage from "./articleCompose/ImageStage";
 import PublishStage from "./articleCompose/PublishStage";
+import WriterIntakePanel from "./articleCompose/WriterIntakePanel";
+import { analyzeWriterArticle, imageChoicesFromAnalysis } from "./articleCompose/writerIntake";
+import { loadCompanyPositioning } from "./articleGeneration/singleArticle";
 import { useCoverage } from "./articleCompose/useCoverage";
 import { generateIdeaArticle } from "./articleCompose/generateIdea";
 import { generateModifyArticle } from "./articleCompose/generateModify";
@@ -24,6 +27,7 @@ import {
   composeReducer,
   ideaInputErrors,
   initialComposeState,
+  intakeKeywordError,
   isIdeaInputValid,
   isModifyInputValid,
   isTargetingValid,
@@ -62,9 +66,15 @@ export default function ArticleCompose({ mode }) {
   const targetingValid = isTargetingValid(state, mode);
   const inputValid = isIdea ? isIdeaInputValid(state) : isModifyInputValid(state);
   const modifyOptions = modifyKeywordOptions(pillars);
+  const keywordChoiceError = isIdea ? "" : intakeKeywordError(state);
   const canCreate = isIdea
     ? targetingValid && inputValid && !state.generating
-    : inputValid && modifyOptions.length > 0 && !loading && !state.generating;
+    : inputValid &&
+      modifyOptions.length > 0 &&
+      !loading &&
+      !state.generating &&
+      state.intakeStatus !== "running" &&
+      !keywordChoiceError;
   const reviewReady =
     Boolean(state.frontmatter) &&
     !state.dirty &&
@@ -182,6 +192,10 @@ export default function ArticleCompose({ mode }) {
                 clusterKeyword: result.clusterKeyword || state.clusterKeyword,
                 targetKeyword: result.targetKeyword || state.targetKeyword,
                 articleType: result.articleType || state.articleType,
+                missingImages: result.missingImages || [],
+                ...(result.heroStoragePath
+                  ? { heroStoragePath: result.heroStoragePath, heroSource: result.heroSource }
+                  : {}),
               }),
           savedSlug: result.frontmatter?.slug || "",
           frontmatter: result.frontmatter,
@@ -207,6 +221,44 @@ export default function ArticleCompose({ mode }) {
           generationError: err?.message || "Generation failed",
           validationErrors: Array.isArray(err?.validationErrors) ? err.validationErrors : [],
         },
+      });
+    }
+  }
+
+  /** Writer intake: brief vs article, images, keyword options (from the original source). */
+  async function runAnalysis(input = {}) {
+    const original = input.source ?? (state.sourceBeforeIntake || state.sourceArticle);
+    const writerImages = input.writerImages ?? state.writerImages;
+    if (!String(original || "").trim()) return;
+    dispatch({ type: "patch", patch: { intakeStatus: "running", intakeError: "" } });
+    try {
+      const positioning = await loadCompanyPositioning(companyId);
+      const result = await analyzeWriterArticle({
+        companyId,
+        source: original,
+        writerImages,
+        pillars,
+        positioning,
+      });
+      dispatch({
+        type: "patch",
+        patch: {
+          intake: result,
+          intakeStatus: "done",
+          sourceArticle: result.cleanedSource,
+          sourceBeforeIntake: original,
+          imageChoices: imageChoicesFromAnalysis(result.images),
+          // The user picks the keyword; nothing is preselected.
+          selectedOption: -1,
+          pillarKeyword: "",
+          clusterKeyword: "",
+          targetKeyword: "",
+        },
+      });
+    } catch (err) {
+      dispatch({
+        type: "patch",
+        patch: { intakeStatus: "error", intakeError: err?.message || "Could not read the brief" },
       });
     }
   }
@@ -355,6 +407,14 @@ export default function ArticleCompose({ mode }) {
         disabled={state.generating || state.stage !== "input"}
       />
 
+      {state.stage === "review" && state.missingImages?.length > 0 && (
+        <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+          Writer image{state.missingImages.length > 1 ? "s" : ""}{" "}
+          {state.missingImages.map((n) => `#${n}`).join(", ")} could not be placed in the article and{" "}
+          {state.missingImages.length > 1 ? "were" : "was"} left out.
+        </p>
+      )}
+
       {state.stage === "review" && state.frontmatter && (
         <Card>
           <CardHeader>
@@ -421,7 +481,26 @@ export default function ArticleCompose({ mode }) {
               companyId={companyId}
               state={state}
               dispatch={dispatch}
-              disabled={state.generating}
+              disabled={state.generating || state.intakeStatus === "running"}
+              onIngested={({ source, writerImages }) => {
+                if (!loading && modifyOptions.length > 0) runAnalysis({ source, writerImages });
+              }}
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      {!isIdea && state.stage === "input" && String(state.sourceArticle || "").trim() && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm font-medium">Writer brief</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <WriterIntakePanel
+              state={state}
+              dispatch={dispatch}
+              disabled={state.generating || loading}
+              onAnalyze={() => runAnalysis()}
             />
           </CardContent>
         </Card>
@@ -442,6 +521,8 @@ export default function ArticleCompose({ mode }) {
                 ? Object.values(errors)
                 : [
                     ...Object.values(inputErrors),
+                    keywordChoiceError,
+                    state.intakeStatus === "running" ? "Reading the brief…" : "",
                     loading ? "Loading keywords…" : "",
                     !loading && modifyOptions.length === 0
                       ? error || "Add pillar and supporting keywords in Company Intelligence first."

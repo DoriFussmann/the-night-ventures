@@ -1,23 +1,15 @@
-const LINK_RE = /\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/g;
-const MD_IMAGE_RE = /!\[[^\]]*\]\([^)]*\)|!\[[^\]]*\]\[[^\]]*\]/g;
-const HTML_IMAGE_RE = /<img\b[^>]*>/gi;
+import {
+  hostMatchesDomain,
+  isolateImageLines,
+} from "../../../../lib/writer-intake/markdown.js";
 
-export function hostMatchesDomain(url, domain) {
-  const base = String(domain || "")
-    .trim()
-    .toLowerCase()
-    .replace(/^https?:\/\//, "")
-    .replace(/\/.*$/, "")
-    .replace(/^www\./, "");
-  if (!base) return false;
-  let host = "";
-  try {
-    host = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
-  } catch {
-    return false;
-  }
-  return host === base || host.endsWith(`.${base}`);
-}
+export { hostMatchesDomain };
+
+const LINK_RE = /\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/g;
+// Writer-image placeholders (from a .docx) are kept; any other image is removed.
+const MD_IMAGE_RE = /!\[[^\]]*\]\((?!writer-image:\d+\))[^)]*\)|!\[[^\]]*\]\[[^\]]*\]/g;
+const HTML_IMAGE_RE = /<img\b[^>]*>/gi;
+const WRITER_IMAGE_RE = /!\[[^\]]*\]\(writer-image:\d+\)/g;
 
 export function stripImages(markdown) {
   let removed = 0;
@@ -54,10 +46,21 @@ export function extractUserLinks(markdown, domain) {
 
 export function prepareSource(markdown, domain) {
   const images = stripImages(markdown);
-  const links = extractUserLinks(images.text, domain);
+  // Empty links Word leaves behind ("[](https://…)") carry nothing.
+  const withoutEmptyLinks = images.text.replace(/(^|[^!])\[\s*\]\((https?:\/\/[^)\s]+)\)/g, "$1");
+  const links = extractUserLinks(withoutEmptyLinks, domain);
+  const source = isolateImageLines(
+    links.text
+      // Word headings arrive as "### **Title**"; empty ones as "###".
+      .replace(/^(#{1,6})[ \t]+\*\*(.+?)\*\*[ \t]*$/gm, "$1 $2")
+      .replace(/^#{1,6}[ \t]*$/gm, "")
+      .replace(/[ \t]+\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+  ).trim();
   return {
-    source: links.text.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim(),
+    source,
     userLinks: links.links,
     imagesRemoved: images.removed,
+    writerImageCount: (source.match(WRITER_IMAGE_RE) || []).length,
   };
 }

@@ -11,6 +11,7 @@ import { handleCoreVersion } from '../lib/core-version/handler.js'
 import { handleSmartlead, handleSmartleadWebhook } from '../lib/smartlead/handler.js'
 import { handleIntegrations } from '../lib/integrations/handler.js'
 import { handleSuggestTargetKeyword } from '../lib/suggest-target-keyword/handler.js'
+import { handleAnalyzeWriterArticle } from '../lib/writer-intake/handler.js'
 
 export const config = {
   maxDuration: 120,
@@ -51,6 +52,9 @@ function requestAction(req) {
     }
     if (path.endsWith('/suggest-target-keyword')) {
       return 'suggest-target-keyword'
+    }
+    if (path.endsWith('/analyze-writer-article')) {
+      return 'analyze-writer-article'
     }
   } catch {
     // ignore
@@ -333,6 +337,9 @@ export default async function handler(req, res) {
   }
   if (action === 'suggest-target-keyword') {
     return handleSuggestTargetKeyword(req, res)
+  }
+  if (action === 'analyze-writer-article') {
+    return handleAnalyzeWriterArticle(req, res)
   }
 
   if (req.method === 'OPTIONS') {

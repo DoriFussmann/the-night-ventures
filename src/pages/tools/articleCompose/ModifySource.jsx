@@ -20,18 +20,27 @@ import {
 } from "./composeState";
 import { htmlToMarkdown, readSourceFile, sourceFileError } from "./sourceFile";
 import { prepareSource } from "./sourceText";
+import { uploadWriterImages } from "./writerIntake";
+import { keepWriterImages } from "../../../../lib/writer-intake/markdown.js";
 
 function FieldError({ message }) {
   if (!message) return null;
   return <p className="text-xs text-destructive">{message}</p>;
 }
 
-export default function ModifySource({ companyId, state, dispatch, disabled = false }) {
+export default function ModifySource({
+  companyId,
+  state,
+  dispatch,
+  disabled = false,
+  onIngested,
+}) {
   const locked = Boolean(disabled);
   const [domain, setDomain] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingFile, setPendingFile] = useState(null);
   const [reading, setReading] = useState(false);
+  const [readingNote, setReadingNote] = useState("");
   const errors = modifyInputErrors(state);
   const words = countWords(state.sourceArticle);
   const chars = String(state.sourceArticle || "").length;
@@ -52,7 +61,7 @@ export default function ModifySource({ companyId, state, dispatch, disabled = fa
     };
   }, [companyId]);
 
-  function applyPrepared(prepared) {
+  function applyPrepared(prepared, writerImages = []) {
     dispatch({
       type: "patch",
       patch: {
@@ -62,6 +71,17 @@ export default function ModifySource({ companyId, state, dispatch, disabled = fa
         originalTitle: prepared.originalTitle || "",
         originalDescription: prepared.originalDescription || "",
         sourceFileError: "",
+        // A new source starts a new writer intake.
+        writerImages,
+        intake: null,
+        intakeStatus: "idle",
+        intakeError: "",
+        sourceBeforeIntake: "",
+        imageChoices: {},
+        selectedOption: -1,
+        pillarKeyword: "",
+        clusterKeyword: "",
+        targetKeyword: "",
       },
     });
   }
@@ -73,8 +93,18 @@ export default function ModifySource({ companyId, state, dispatch, disabled = fa
       return;
     }
     setReading(true);
+    setReadingNote("Reading the file…");
     try {
-      applyPrepared(await readSourceFile(file, domain));
+      const prepared = await readSourceFile(file, domain);
+      let writerImages = [];
+      if (prepared.images?.length) {
+        setReadingNote(`Saving ${prepared.images.length} image${prepared.images.length === 1 ? "" : "s"} from the document…`);
+        writerImages = await uploadWriterImages({ companyId, images: prepared.images });
+      }
+      // Images that could not be saved lose their placeholder.
+      const source = keepWriterImages(prepared.source, writerImages.map((img) => img.n));
+      applyPrepared({ ...prepared, source }, writerImages);
+      onIngested?.({ source, writerImages });
     } catch (err) {
       dispatch({
         type: "patch",
@@ -82,6 +112,7 @@ export default function ModifySource({ companyId, state, dispatch, disabled = fa
       });
     } finally {
       setReading(false);
+      setReadingNote("");
     }
   }
 
@@ -155,6 +186,7 @@ export default function ModifySource({ companyId, state, dispatch, disabled = fa
         />
       </div>
       <FieldError message={state.sourceFileError} />
+      {reading && readingNote && <p className="text-xs text-muted-foreground">{readingNote}</p>}
 
       <div className="space-y-1.5">
         <div className="flex items-baseline justify-between gap-3">
@@ -192,9 +224,16 @@ export default function ModifySource({ companyId, state, dispatch, disabled = fa
           Original description: {state.originalDescription}
         </p>
       )}
+      {state.writerImages?.length > 0 && (
+        <p className="text-sm text-muted-foreground">
+          {state.writerImages.length} image{state.writerImages.length === 1 ? "" : "s"} kept from the document — choose
+          how each is used in Writer brief below.
+        </p>
+      )}
       {state.imagesRemoved > 0 && (
         <p className="text-sm text-muted-foreground">
-          {state.imagesRemoved} image{state.imagesRemoved === 1 ? "" : "s"} removed — a hero image will be generated.
+          {state.imagesRemoved} image{state.imagesRemoved === 1 ? "" : "s"} removed
+          {state.writerImages?.length ? "." : " — a hero image will be generated."}
         </p>
       )}
 

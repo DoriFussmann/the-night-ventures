@@ -47,6 +47,10 @@
       "source": "/api/suggest-target-keyword",
       "destination": "/api/check-article-update?action=suggest-target-keyword"
     },
+    {
+      "source": "/api/analyze-writer-article",
+      "destination": "/api/check-article-update?action=analyze-writer-article"
+    },
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
