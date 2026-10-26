@@ -25,6 +25,7 @@ const selectClass =
 
 function draftFrom(spec = {}) {
   return {
+    primaryKeyword: spec.primaryKeyword || '',
     angle: spec.angle || '',
     keyMessages: (spec.keyMessages || []).length ? [...spec.keyMessages] : [''],
     status: spec.status || 'approved',
@@ -36,6 +37,7 @@ function draftFrom(spec = {}) {
 
 export function specFromDraft(draft, type) {
   const spec = {
+    primaryKeyword: draft.primaryKeyword.trim(),
     angle: draft.angle.trim(),
     keyMessages: draft.keyMessages.map((m) => m.trim()).filter(Boolean),
     status: draft.status,
@@ -184,6 +186,15 @@ export default function ArticleSpecDialog({
         </DialogHeader>
 
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-4">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium">Primary keyword</label>
+            <Input
+              value={draft.primaryKeyword}
+              onChange={(e) => set({ primaryKeyword: e.target.value })}
+              placeholder={`Defaults to “${target.keyword}”`}
+            />
+          </div>
+
           <div>
             <label className="mb-1.5 block text-sm font-medium">Angle</label>
             <Textarea
