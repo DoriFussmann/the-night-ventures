@@ -47,6 +47,10 @@
       "source": "/api/suggest-target-keyword",
       "destination": "/api/check-article-update?action=suggest-target-keyword"
     },
+    {
+      "source": "/api/site-placeholders",
+      "destination": "/api/check-article-update?action=site-placeholders"
+    },
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
