@@ -104,7 +104,10 @@ export default async function handler(req, res) {
           result = await keywordStore.addSecondary(supabase, companyId, body)
           break
         case 'serp_backfill': {
-          const report = await backfillSerps(supabase, companyId, locale)
+          // Small batches so each call finishes well inside the function time limit;
+          // the caller repeats until remaining is 0.
+          const limit = Math.min(Math.max(Number(body.limit) || 8, 1), 15)
+          const report = await backfillSerps(supabase, companyId, locale, { limit })
           const pillars = await keywordStore.load(supabase, companyId)
           return json(res, 200, { pillars, backfill: report })
         }
