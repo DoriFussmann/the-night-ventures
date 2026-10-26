@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, Download, Loader2, Upload, Workflow, X } from "lucide-react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -18,6 +18,7 @@ import BatchPublishReport, {
 import {
   loadAutomationContext,
   persistPlannedCluster,
+  plannerSpec,
   requestClusterPlan,
 } from "./articlesAutomation/planCluster";
 import { generateClusterArticles } from "./articlesAutomation/runGeneration";
@@ -39,9 +40,9 @@ import {
 } from "./articlesAutomation/selectCluster";
 
 const STAGES = [
-  { id: "cluster", label: "Cluster Selection" },
-  { id: "topic", label: "Topic Generation" },
-  { id: "articles", label: "Articles Generation" },
+  { id: "cluster", label: "Keyword Selection" },
+  { id: "topic", label: "Article Plan" },
+  { id: "articles", label: "Article Generation" },
 ];
 
 const TYPE_LABELS = {
@@ -127,7 +128,7 @@ function stageStatus(stageId, currentStage, phase) {
   return "pending";
 }
 
-function ClusterTile({ cluster, selected, busy, onSelect }) {
+function ClusterTile({ cluster, selected, busy, onSelect, companyId }) {
   const base =
     "min-w-[11rem] max-w-xs flex-1 rounded-lg border px-3 py-2.5 text-left text-sm";
 
@@ -138,6 +139,27 @@ function ClusterTile({ cluster, selected, busy, onSelect }) {
       >
         <p className="font-medium leading-snug">{cluster.clusterKeyword}</p>
         <p className="mt-1 text-[11px]">Completed</p>
+      </div>
+    );
+  }
+
+  if (cluster.status === "needs_spec") {
+    return (
+      <div
+        className={`${base} border-dashed border-amber-300 bg-amber-50/40 text-muted-foreground`}
+      >
+        <p className="font-medium leading-snug text-foreground/80">
+          {cluster.clusterKeyword}
+        </p>
+        <p className="mt-1 text-[11px]">
+          Complete the spec first (3–5 key messages).{" "}
+          <Link
+            to={`/company/${companyId}/seo-ai-advisor`}
+            className="underline underline-offset-2 hover:text-foreground"
+          >
+            Edit spec
+          </Link>
+        </p>
       </div>
     );
   }
@@ -354,7 +376,7 @@ export default function ClusterGeneration() {
     setCurrentStage("topic");
     setViewingStage("topic");
     setPhase("planning");
-    setStatusMessage(`Planning “${cluster.clusterKeyword}” cluster…`);
+    setStatusMessage(`Planning the article for “${cluster.clusterKeyword}”…`);
 
     const result = await requestClusterPlan({
       pillarKeyword: cluster.pillarKeyword,
@@ -364,6 +386,11 @@ export default function ClusterGeneration() {
       audience: ctx.audience,
       competitors: ctx.competitors,
       pillars: ctx.pillars,
+      // One keyword = one article, planned from its spec.
+      spec: cluster.supporting?.spec
+        ? plannerSpec(cluster.supporting, cluster.clusterKeyword)
+        : undefined,
+      conversionAction: ctx.conversionAction,
     });
     if (!stillCurrent(token)) return;
     proposalRef.current = result;
@@ -775,7 +802,7 @@ export default function ClusterGeneration() {
         topics = topicsFromArticles(planned);
         say(`Using saved plan for “${cluster.clusterKeyword}”…`);
       } else {
-        say(`Planning topics for “${cluster.clusterKeyword}”…`);
+        say(`Planning the article for “${cluster.clusterKeyword}”…`);
         const proposal = await requestClusterPlan({
           pillarKeyword: cluster.pillarKeyword,
           supportingKeyword: cluster.clusterKeyword,
@@ -784,6 +811,10 @@ export default function ClusterGeneration() {
           audience: ctx.audience,
           competitors: ctx.competitors,
           pillars: ctx.pillars,
+          spec: cluster.supporting?.spec
+            ? plannerSpec(cluster.supporting, cluster.clusterKeyword)
+            : undefined,
+          conversionAction: ctx.conversionAction,
         });
         topics = topicsFromArticles(proposal.articles);
         const savedPlan = await persistPlannedCluster({
@@ -1276,6 +1307,7 @@ export default function ClusterGeneration() {
                         }
                         busy={busy}
                         onSelect={selectCluster}
+                        companyId={companyId}
                       />
                     ))}
                   </div>

@@ -1,5 +1,34 @@
 import { supabase } from "@/lib/supabase";
 import { stripNoVolumeTag } from "../articleGeneration/stripNoVolumeTag";
+import { advanceSpecStatus, slugifyKeyword } from "../../../../lib/seo-advisor/pillars.js";
+import { writtenArticlesFromMap } from "../../../../lib/seo-advisor/serpOverlap.js";
+import {
+  blockingOverlaps,
+  findKeywordOverlaps,
+  summarizeOverlaps,
+} from "../../../../lib/keyword-overlap.js";
+
+/**
+ * Cannibalization guard: the article about to be planned must not target the
+ * same query as an article already written for the map.
+ */
+export function plannedArticleClashes({ pillars, pillarKeyword, supportingKeyword, spec }) {
+  const keyword = supportingKeyword || pillarKeyword;
+  const target = spec?.primaryKeyword || keyword;
+  const isPillar = !supportingKeyword || supportingKeyword === pillarKeyword;
+  return blockingOverlaps(
+    findKeywordOverlaps(
+      {
+        slug: slugifyKeyword(target),
+        targetKeyword: target,
+        pillarKeyword,
+        supportingKeyword: isPillar ? "" : supportingKeyword,
+        articleType: isPillar ? "comprehensive" : "flex",
+      },
+      writtenArticlesFromMap(pillars, { exceptKeyword: keyword })
+    )
+  );
+}
 
 const ARTICLE_TYPES = [
   "comprehensive",
@@ -9,13 +38,39 @@ const ARTICLE_TYPES = [
   "flex",
 ];
 
+/** Legacy multi-article cluster. Kept only for callers that still pass counts. */
 export const DEFAULT_ARTICLE_TYPE_COUNTS = {
   comprehensive: 1,
-  howto: 1,
-  comparison: 1,
-  faq: 1,
-  flex: 1,
 };
+
+/** Spec format → planner article type (one article per keyword). */
+export const TYPE_BY_FORMAT = {
+  guide: "comprehensive",
+  "how-to": "howto",
+  comparison: "comparison",
+  faq: "faq",
+  list: "flex",
+  template: "flex",
+  explainer: "flex",
+};
+
+export function articleTypeForSpec(spec, { isPillar = false } = {}) {
+  if (isPillar) return "comprehensive";
+  return TYPE_BY_FORMAT[spec?.format] || "comprehensive";
+}
+
+/** The parts of a keyword's spec the planner and writer use. */
+export function plannerSpec(entry, keyword) {
+  const spec = entry?.spec && typeof entry.spec === "object" ? entry.spec : {};
+  return {
+    primaryKeyword: String(spec.primaryKeyword || "").trim() || keyword,
+    angle: String(spec.angle || "").trim(),
+    keyMessages: asStringArray(spec.keyMessages),
+    format: String(spec.format || "").trim(),
+    secondaryKeywords: asStringArray(spec.secondaryKeywords),
+    expertNotes: String(spec.expertNotes || "").trim(),
+  };
+}
 
 function newId() {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
@@ -73,6 +128,9 @@ export function normalizeProposalArticles(articles) {
             : 1500,
         internalLinks: asStringArray(raw?.internalLinks),
         ctaAngle: String(raw?.ctaAngle || "").trim(),
+        angle: String(raw?.angle || "").trim(),
+        secondaryKeywords: asStringArray(raw?.secondaryKeywords),
+        expertInput: String(raw?.expertInput || "").trim(),
       };
     })
     .filter((item) => item.title && item.targetKeyword);
@@ -118,8 +176,16 @@ export async function loadAutomationContext(companyId) {
     );
   }
 
+  // SEO Controls (migration 065); optional so planning works without them.
+  const seo = await supabase
+    .from("company_profiles")
+    .select("seo_conversion_action")
+    .eq("company_id", companyId)
+    .maybeSingle();
+
   return {
     companyName: companyResult.data?.name || "",
+    conversionAction: seo.error ? "" : String(seo.data?.seo_conversion_action || "").trim(),
     abstract: profileResult.data?.abstract || "",
     shortDescription: profileResult.data?.short_description || "",
     audience: String(profileResult.data?.target_audience || "").trim(),
@@ -139,10 +205,24 @@ export async function requestClusterPlan({
   audience,
   competitors,
   pillars,
-  articleTypeCounts = DEFAULT_ARTICLE_TYPE_COUNTS,
+  spec,
+  articleTypeCounts,
+  conversionAction,
 }) {
+  // One keyword = one article: the type comes from the spec's format.
+  const counts = spec
+    ? { [articleTypeForSpec(spec)]: 1 }
+    : articleTypeCounts || DEFAULT_ARTICLE_TYPE_COUNTS;
+  if (spec) {
+    const clashes = plannedArticleClashes({ pillars, pillarKeyword, supportingKeyword, spec });
+    if (clashes.length > 0) {
+      throw new Error(
+        `${summarizeOverlaps(clashes)} Change the primary keyword in the spec, or fold it into that article.`
+      );
+    }
+  }
   const typeCounts = {};
-  for (const [type, count] of Object.entries(articleTypeCounts || {})) {
+  for (const [type, count] of Object.entries(counts || {})) {
     const n = Number(count);
     if (Number.isInteger(n) && n >= 1) typeCounts[type] = n;
   }
@@ -162,6 +242,8 @@ export async function requestClusterPlan({
       contentMap: buildContentMapPayload(pillars),
       competitors,
       articleTypeCounts: typeCounts,
+      ...(spec ? { spec } : {}),
+      ...(conversionAction ? { conversionAction } : {}),
     }),
   });
   const data = await res.json().catch(() => ({}));
@@ -225,6 +307,9 @@ export async function persistPlannedCluster({
       wordCount: item.wordCount,
       internalLinks: asStringArray(item.internalLinks),
       ctaAngle: item.ctaAngle || undefined,
+      angle: item.angle || undefined,
+      secondaryKeywords: asStringArray(item.secondaryKeywords),
+      expertInput: item.expertInput || undefined,
       updatedAt: now,
     })
   );
@@ -239,11 +324,14 @@ export async function persistPlannedCluster({
           return sup;
         }
         found = true;
-        return {
-          ...sup,
-          plannedArticles,
-          clusterRationale: String(clusterRationale || "").trim(),
-        };
+        return advanceSpecStatus(
+          {
+            ...sup,
+            plannedArticles,
+            clusterRationale: String(clusterRationale || "").trim(),
+          },
+          "planned"
+        );
       }),
     };
   });

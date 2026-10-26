@@ -158,6 +158,63 @@ function buildClusterTaskInstruction(articleTypeCounts) {
   ].join('\n')
 }
 
+/** A keyword's article spec from the keyword map (see lib/seo-advisor/pillars.js). */
+export function normalizePlannerSpec(value) {
+  if (!value || typeof value !== 'object') return null
+  const list = (v) =>
+    Array.isArray(v) ? v.map((x) => String(x || '').trim()).filter(Boolean) : []
+  const spec = {
+    primaryKeyword: stripNoVolumeTag(value.primaryKeyword),
+    angle: String(value.angle || '').trim(),
+    keyMessages: list(value.keyMessages).slice(0, 5),
+    format: String(value.format || '').trim(),
+    secondaryKeywords: list(value.secondaryKeywords),
+    expertNotes: String(value.expertNotes || '').trim(),
+  }
+  return spec
+}
+
+function buildSpecTaskInstruction({ spec, type, mode, keyword, conversionAction }) {
+  const target = spec.primaryKeyword || keyword
+  return [
+    `Plan exactly ONE ${mode === 'pillar' ? 'pillar (hub) ' : ''}article for the keyword above. Every keyword in this content map is exactly one article; do not propose others.`,
+    'The article spec below was approved by the editor. Follow it:',
+    `- targetKeyword MUST be exactly: "${target}"`,
+    `- type MUST be: "${type}"`,
+    spec.angle ? `- Angle (what the article argues or answers): ${spec.angle}` : '- No angle given: write one-line searchIntent that answers the query fully.',
+    `- keyMessages MUST be exactly these, in this order (you may tighten wording, not change meaning or add new ones):\n${spec.keyMessages.map((m) => `  - ${m}`).join('\n')}`,
+    spec.secondaryKeywords.length
+      ? `- Secondary keywords to cover inside this article (no separate articles): ${spec.secondaryKeywords.join(', ')}`
+      : '',
+    'Provide: title (SEO title with the targetKeyword near the front), targetKeyword, type, searchIntent (one line), keyMessages, wordCount (2500 for a pillar, 2000 for comprehensive, 1500 otherwise), internalLinks (leave empty — links are added later from the keyword map), ctaAngle.',
+    conversionAction
+      ? `ctaAngle: one line on how the article bridges naturally to "${conversionAction}", as earned advice, never an ad.`
+      : 'ctaAngle: one line on how the article bridges naturally to what the company offers, as earned advice, never an ad.',
+    'In clusterRationale, say in one or two sentences how the plan serves the spec and what the search results suggest about format.',
+    'Respond ONLY with valid JSON, no markdown fences: { "clusterRationale": "", "articles": [ { "title", "targetKeyword", "type", "searchIntent", "keyMessages": [], "wordCount", "internalLinks": [], "ctaAngle" } ] }',
+  ]
+    .filter(Boolean)
+    .join('\n')
+}
+
+/** Force the planned article back onto the approved spec (pure; exported for tests). */
+export function applySpecToProposal(proposal, { spec, type, keyword }) {
+  const articles = Array.isArray(proposal?.articles) ? proposal.articles : []
+  const first = articles[0]
+  if (!first) throw new Error('Proposal contained no usable articles')
+  const article = {
+    ...first,
+    type,
+    targetKeyword: spec.primaryKeyword || keyword,
+    keyMessages: spec.keyMessages.length >= 3 ? spec.keyMessages : first.keyMessages,
+    internalLinks: [],
+    angle: spec.angle,
+    secondaryKeywords: spec.secondaryKeywords,
+    expertInput: spec.expertNotes,
+  }
+  return { clusterRationale: String(proposal.clusterRationale || '').trim(), articles: [article] }
+}
+
 function stripMarkdownFences(text) {
   let cleaned = String(text || '').trim()
   cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
@@ -527,6 +584,9 @@ function buildUserPrompt({
   steeringNotes,
   previousProposal,
   articleTypeCounts,
+  spec,
+  specType,
+  conversionAction,
 }) {
   const parts = [
     'Company positioning:',
@@ -583,7 +643,20 @@ function buildUserPrompt({
     )
   }
 
-  if (mode === 'pillar') {
+  if (spec) {
+    const taskParts = [
+      buildSpecTaskInstruction({
+        spec,
+        type: specType,
+        mode,
+        keyword: mode === 'cluster' ? supportingKeyword : pillarKeyword,
+        conversionAction,
+      }),
+    ]
+    if (keywordData) taskParts.push(KEYWORD_DATA_INSTRUCTION)
+    taskParts.push(WEB_SEARCH_INSTRUCTION)
+    parts.push('', taskParts.join(' '))
+  } else if (mode === 'pillar') {
     const taskParts = [PILLAR_TASK_INSTRUCTION]
     if (keywordData) {
       taskParts.push(KEYWORD_DATA_INSTRUCTION)
@@ -649,8 +722,25 @@ export default async function handler(req, res) {
       body.previousProposal && typeof body.previousProposal === 'object'
         ? body.previousProposal
         : null
+    const spec = normalizePlannerSpec(body.spec)
+    const specType =
+      mode === 'pillar'
+        ? 'comprehensive'
+        : Object.keys(normalizeArticleTypeCounts(body.articleTypeCounts) || {})[0] || 'comprehensive'
+    const conversionAction = String(body.conversionAction || '').trim()
+    if (spec && spec.keyMessages.length < 3) {
+      return json(res, 400, {
+        error: 'This keyword\'s spec needs 3 to 5 key messages before it can be planned.',
+        code: 'spec_incomplete',
+      })
+    }
+    // One keyword = one article when a spec is given.
     const articleTypeCounts =
-      mode === 'cluster' ? normalizeArticleTypeCounts(body.articleTypeCounts) : null
+      mode === 'cluster'
+        ? spec
+          ? { [specType]: 1 }
+          : normalizeArticleTypeCounts(body.articleTypeCounts)
+        : null
 
     if (!pillarKeyword) {
       return json(res, 400, { error: 'pillarKeyword is required' })
@@ -744,6 +834,9 @@ export default async function handler(req, res) {
       steeringNotes,
       previousProposal,
       articleTypeCounts,
+      spec,
+      specType,
+      conversionAction,
     })
 
     const message = await anthropic.messages.create({
@@ -759,6 +852,25 @@ export default async function handler(req, res) {
         error:
           'Model response was truncated before finishing JSON. Try again, or shorten keyword data.',
       })
+    }
+
+    if (spec) {
+      try {
+        const parsedSpec = parseProposalFromContent(message?.content, 'cluster')
+        const planned = applySpecToProposal(normalizeProposal(parsedSpec), {
+          spec,
+          type: specType,
+          keyword: targetKeyword,
+        })
+        if (mode === 'pillar') {
+          return json(res, 200, { pillarRationale: planned.clusterRationale, article: planned.articles[0] })
+        }
+        return json(res, 200, planned)
+      } catch (err) {
+        const preview = extractTextContent(message?.content).slice(0, 500)
+        console.error('plan-cluster spec parse failed:', err, preview)
+        return json(res, 502, { error: 'Failed to parse model response as JSON' })
+      }
     }
 
     let parsed

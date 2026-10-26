@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { stripNoVolumeTag } from "./stripNoVolumeTag";
+import { advanceSpecStatus } from "../../../../lib/seo-advisor/pillars.js";
 
 function norm(value) {
   return stripNoVolumeTag(value).toLowerCase();
@@ -182,6 +183,7 @@ export async function updateCoverageDrafted({
       }
 
       pillar.pillarArticle = mergeFrontmatterFields(current, success.frontmatter);
+      Object.assign(pillar, advanceSpecStatus(pillar, "drafted", { type: "core" }));
       updated += 1;
     }
   } else {
@@ -209,6 +211,7 @@ export async function updateCoverageDrafted({
     }
 
     supporting.plannedArticles = planned;
+    if (updated > 0) Object.assign(supporting, advanceSpecStatus(supporting, "drafted"));
 
     pillar.supporting = (pillar.supporting || []).map((s) =>
       s.slug === supporting.slug || norm(s.keyword) === norm(supporting.keyword)
@@ -318,6 +321,7 @@ export async function appendPlannedArticle({
     : [];
   planned.push(entry);
   supporting.plannedArticles = planned;
+  Object.assign(supporting, advanceSpecStatus(supporting, "drafted"));
   pillar.supporting = (pillar.supporting || []).map((s) =>
     s.slug === supporting.slug || norm(s.keyword) === norm(supporting.keyword)
       ? supporting
@@ -535,6 +539,7 @@ export async function updateCoveragePublished({
       }
 
       pillar.pillarArticle = markPublished(current, success.frontmatter);
+      Object.assign(pillar, advanceSpecStatus(pillar, "live", { url, type: "core" }));
       updated += 1;
     }
   } else {
@@ -563,6 +568,7 @@ export async function updateCoveragePublished({
     }
 
     supporting.plannedArticles = planned;
+    if (updated > 0) Object.assign(supporting, advanceSpecStatus(supporting, "live", { url }));
     pillar.supporting = (pillar.supporting || []).map((s) =>
       s.slug === supporting.slug || norm(s.keyword) === norm(supporting.keyword)
         ? supporting
@@ -623,7 +629,7 @@ async function saveCoveragePillars(companyId, pillars) {
   }
 }
 
-function replacePlannedBySlug(pillars, pillarKeyword, supportingKeyword, matchSlug, replace) {
+function replacePlannedBySlug(pillars, pillarKeyword, supportingKeyword, matchSlug, replace, specStatus) {
   const slug = String(matchSlug || "").trim();
   const pillar = findPillar(pillars, pillarKeyword);
   if (!pillar) {
@@ -645,6 +651,9 @@ function replacePlannedBySlug(pillars, pillarKeyword, supportingKeyword, matchSl
   }
   planned[index] = replace(planned[index]);
   supporting.plannedArticles = planned;
+  if (specStatus) {
+    Object.assign(supporting, advanceSpecStatus(supporting, specStatus.status, { url: specStatus.url }));
+  }
   pillar.supporting = (pillar.supporting || []).map((item) =>
     item.slug === supporting.slug || norm(item.keyword) === norm(supporting.keyword)
       ? supporting
@@ -682,7 +691,8 @@ export async function syncComposedCoverageBySlug({
         next.wordCount = Number(wordCount) || 0;
       }
       return next;
-    }
+    },
+    { status: "drafted" }
   );
   if (!replaced.updated) {
     return { updated: false, warning: replaced.warning || "" };
@@ -718,7 +728,8 @@ export async function markComposedCoveragePublished({
       updatedAt: now,
       draft: false,
       ...(url ? { publishedUrl: url } : {}),
-    })
+    }),
+    { status: "live", url }
   );
   if (!replaced.updated) {
     return { updated: false, warning: replaced.warning || "" };

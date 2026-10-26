@@ -58,7 +58,7 @@ export async function loadCompanyPositioning(companyId) {
   const { data, error } = await supabase
     .from("company_profiles")
     .select(
-      "abstract, short_description, competitors, target_audience, design_guide_raw"
+      "abstract, short_description, competitors, target_audience, design_guide_raw, domain"
     )
     .eq("company_id", companyId)
     .maybeSingle();
@@ -67,12 +67,32 @@ export async function loadCompanyPositioning(companyId) {
     throw new Error(error.message || "Failed to load company profile");
   }
 
+  // SEO Controls (migration 065). Loaded separately so generation still works without them.
+  const seo = await supabase
+    .from("company_profiles")
+    .select(
+      "seo_primary_offer, seo_buyer_problems, seo_content_edge, seo_conversion_action, seo_commercial_url, scope_boundaries"
+    )
+    .eq("company_id", companyId)
+    .maybeSingle();
+  const seoRow = seo.error ? {} : seo.data || {};
+
   return {
     abstract: data?.abstract || "",
     shortDescription: data?.short_description || "",
     competitors: normalizeCompetitors(data?.competitors),
     audience: String(data?.target_audience || "").trim(),
     imageryContext: getImageryContext(data?.design_guide_raw),
+    domain: String(data?.domain || "").trim(),
+    seoControls: {
+      primaryOffer: seoRow.seo_primary_offer || "",
+      targetSearcher: String(data?.target_audience || "").trim(),
+      buyerProblems: seoRow.seo_buyer_problems || "",
+      contentEdge: seoRow.seo_content_edge || "",
+      outOfScope: seoRow.scope_boundaries || "",
+      conversionAction: seoRow.seo_conversion_action || "",
+      commercialUrl: seoRow.seo_commercial_url || "",
+    },
   };
 }
 
@@ -94,6 +114,8 @@ export async function generateOneArticle({
       pillarKeyword,
       supportingKeyword: supportingKeyword || undefined,
       batchContext,
+      seoControls: positioning.seoControls,
+      ownHost: positioning.domain,
       article: {
         title: article.title,
         targetKeyword: article.targetKeyword,
@@ -103,6 +125,8 @@ export async function generateOneArticle({
         ctaAngle: article.ctaAngle,
         keyMessages: article.keyMessages,
         expertInput: article.expertInput || "",
+        angle: article.angle || "",
+        secondaryKeywords: Array.isArray(article.secondaryKeywords) ? article.secondaryKeywords : [],
       },
     }),
   });

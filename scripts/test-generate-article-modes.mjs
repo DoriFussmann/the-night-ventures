@@ -16,8 +16,9 @@ import {
 import { validateGeneratedArticle } from "../api/generate-article.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
-// Frozen output of buildUserPrompt(base) from the committed pre-change
-// lib/generate-article/prompt.js (git show HEAD:...). Not generated at test time.
+// Frozen output of buildUserPrompt(base). Regenerated in Sprint 2 when the
+// writer gained the angle / secondary keywords / FACTS AND SOURCES rules.
+// Not generated at test time.
 const defaultPromptSnapshot = readFileSync(
   join(here, "fixtures/default-prompt.snapshot.txt"),
   "utf8"
@@ -60,7 +61,27 @@ const check = (name, fn) => {
   console.log("✓", name);
 };
 
-check("default mode prompt matches the pre-change snapshot", () => {
+check("SEO Controls and spec fields reach the writer when given", () => {
+  const prompt = buildUserPrompt({
+    ...base,
+    article: { ...article, angle: "Warm intros first", secondaryKeywords: ["angel investor list"] },
+    seoControls: {
+      targetSearcher: "Seed founders",
+      contentEdge: "Ran 40 raises",
+      outOfScope: "Crypto",
+      conversionAction: "Book a call",
+      commercialUrl: "https://www.heyrupert.com/book-call/",
+    },
+  });
+  assert.ok(prompt.includes("SEO CONTROLS"));
+  assert.ok(prompt.includes("CONTENT EDGE"));
+  assert.ok(prompt.includes("OUT-OF-SCOPE TOPICS (never write about these):\nCrypto"));
+  assert.ok(prompt.includes('"angle": "Warm intros first"'));
+  assert.ok(prompt.includes('"angel investor list"'));
+  assert.ok(prompt.includes("FACTS AND SOURCES"));
+});
+
+check("default mode prompt matches the snapshot", () => {
   assert.equal(buildUserPrompt(base), defaultPromptSnapshot);
 });
 

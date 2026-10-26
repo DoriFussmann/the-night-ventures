@@ -47,6 +47,7 @@ CONTENT CONTRACT CONSTRAINTS (enforce exactly):
 - imageAlt: minimum 10 characters, genuinely descriptive of a plausible hero image for this article (even though the real image is added manually later)
 - keywords: optional in your JSON (server overwrites from targetKeyword / supportingKeyword / pillarKeyword).
 - whereThingsStandSources: array of { url, note } for web-search sources actually used in the Where Things Stand paragraph (empty array if none).
+- claimSources: array of { url, claim } — one entry per number, percentage or study finding in the main body, each from a page you opened (empty array if the body has none).
 - competitorsMentioned: array of every specific brand/company/product name mentioned anywhere in the article body (not generic category references). List every specific brand or company name mentioned in the body, even ones from the KNOWN COMPETITORS list. If none were mentioned, return an empty array.
 - faqs: array of 2-4 { question, answer } objects, genuinely useful, distinct from the body content, not filler
 
@@ -61,6 +62,14 @@ BODY REQUIREMENTS:
 - Land the ctaAngle naturally within the final 2-3 paragraphs — it must read as genuine, earned advice, never as an ad.
 - Do NOT include a 'Where Things Stand' or 'Key Takeaways' section inline in your normal flow — add each as its own section after the main body, described below.
 - Do NOT invent internal links, external links, author names, or images — these are handled separately. Do not write placeholder link text or images into the body.
+- If the spec has an angle, the article must argue or answer exactly that. Cover every secondaryKeyword naturally inside the article (a heading or a paragraph each) — they are close variants, not separate topics.
+- Never write about anything listed under OUT-OF-SCOPE TOPICS.
+
+FACTS AND SOURCES (mandatory):
+- Every number, percentage, money amount, ranking or study finding in the body must come from a page you actually opened via web search in this session. List each one in claimSources as { url, claim } where claim is the short fact as it appears in the body.
+- If you cannot find a source for a number, rewrite the sentence without the number, or drop the claim. Never write "studies show", "research suggests" or "data indicates" without a source in claimSources.
+- Prefer primary sources (official statistics, regulators, the original study or report, company filings) over blogs that repeat them. Never cite a competitor in KNOWN COMPETITORS as a source.
+- First-hand experience from EXPERT INPUT or CONTENT EDGE needs no source; write it as the author's own experience.
 - When incorporating facts, statistics, or claims found via web search, integrate them fully into the surrounding paragraph's sentence flow — never place a search-derived fact as an isolated single-sentence line separated from its paragraph by blank lines. Every sentence must belong to a paragraph of at least 2-3 sentences. Before finalizing the body, scan for and merge any orphaned single-sentence lines into their adjacent paragraph.
 
 WHERE THINGS STAND SECTION (mandatory, comes after the main body, before Key Takeaways):
@@ -84,11 +93,11 @@ KEY TAKEAWAYS SECTION (mandatory on every article — never omit, never make con
 - Second takeaway
 - Third takeaway
 
-FRONTMATTER: Generate title, h1, description, slug, tags, imageAlt, faqs per the constraints above. keywords may be omitted or left empty — the server overwrites them. Also set: date and updatedDate to today's date (ISO format), category to the pillar keyword name, draft to true, author to null, internalLinks to an empty array, externalLinks to an empty array, image/image2/image3 to null. Include whereThingsStandSources as an array of { url, note } for sources used in the Where Things Stand paragraph (empty array if none). Include competitorsMentioned: an array of every specific brand, company, or product name named anywhere in the article body (not generic category references). List every specific brand or company name mentioned in the body, even ones from the KNOWN COMPETITORS list. If none were mentioned, return an empty array.
+FRONTMATTER: Generate title, h1, description, slug, tags, imageAlt, faqs per the constraints above. keywords may be omitted or left empty — the server overwrites them. Also set: date and updatedDate to today's date (ISO format), category to the pillar keyword name, draft to true, author to null, internalLinks to an empty array, externalLinks to an empty array, image/image2/image3 to null. Include whereThingsStandSources as an array of { url, note } for sources used in the Where Things Stand paragraph (empty array if none). Include claimSources as an array of { url, claim } for every sourced fact in the main body (empty array if the body has none). Include competitorsMentioned: an array of every specific brand, company, or product name named anywhere in the article body (not generic category references). List every specific brand or company name mentioned in the body, even ones from the KNOWN COMPETITORS list. If none were mentioned, return an empty array.
 
 OUTPUT FORMAT (mandatory — do not wrap in markdown fences, do not write any preamble or closing note):
 <<<FRONTMATTER>>>
-{ "title", "h1", "description", "slug", "date", "updatedDate", "category", "tags": [], "imageAlt", "keywords": [], "faqs": [{"question","answer"}], "draft": true, "author": null, "internalLinks": [], "externalLinks": [], "image": null, "image2": null, "image3": null, "whereThingsStandSources": [{"url","note"}], "competitorsMentioned": [] }
+{ "title", "h1", "description", "slug", "date", "updatedDate", "category", "tags": [], "imageAlt", "keywords": [], "faqs": [{"question","answer"}], "draft": true, "author": null, "internalLinks": [], "externalLinks": [], "image": null, "image2": null, "image3": null, "whereThingsStandSources": [{"url","note"}], "claimSources": [{"url","claim"}], "competitorsMentioned": [] }
 <<<BODY>>>
 <full markdown body as plain text with real newlines, including Where Things Stand and the Key Takeaways section>
 <<<END>>>
