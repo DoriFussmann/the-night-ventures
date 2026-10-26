@@ -465,6 +465,20 @@ export async function upsertComposedCoverage({
  * @param {string} [opts.publishedUrl]
  * @returns {Promise<{ updated: number, unmatched: number, pillars: object[], warning?: string }>}
  */
+/** https://<domain> from Company Intelligence, for building live article URLs. */
+async function loadSiteBase(companyId) {
+  const { data } = await supabase
+    .from("company_profiles")
+    .select("domain")
+    .eq("company_id", companyId)
+    .maybeSingle();
+  const domain = String(data?.domain || "")
+    .trim()
+    .replace(/^https?:\/\//, "")
+    .replace(/\/+$/, "");
+  return domain ? `https://${domain}` : "";
+}
+
 export async function updateCoveragePublished({
   companyId,
   pillarKeyword,
@@ -502,12 +516,20 @@ export async function updateCoveragePublished({
   }
 
   const now = new Date().toISOString();
-  const url = String(publishedUrl || "").trim();
+  const siteBase = publishedUrl ? "" : await loadSiteBase(companyId);
   let updated = 0;
   let unmatched = 0;
+  // The live URL of one published article: the explicit URL, or site + slug.
+  const urlFor = (frontmatter) => {
+    if (publishedUrl) return String(publishedUrl).trim();
+    const slug = String(frontmatter?.slug || "").trim();
+    return siteBase && slug ? `${siteBase}/articles/${slug}/` : "";
+  };
+  let url = "";
 
   const markPublished = (existing, frontmatter) => {
     const fm = frontmatter && typeof frontmatter === "object" ? frontmatter : {};
+    url = urlFor(fm);
     return {
       ...existing,
       status: "published",

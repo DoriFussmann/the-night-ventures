@@ -71,7 +71,7 @@ export async function loadCompanyPositioning(companyId) {
   const seo = await supabase
     .from("company_profiles")
     .select(
-      "seo_primary_offer, seo_buyer_problems, seo_content_edge, seo_conversion_action, seo_commercial_url, scope_boundaries"
+      "seo_primary_offer, seo_buyer_problems, seo_content_edge, seo_conversion_action, seo_commercial_url, scope_boundaries, seo_market, seo_language"
     )
     .eq("company_id", companyId)
     .maybeSingle();
@@ -92,6 +92,8 @@ export async function loadCompanyPositioning(companyId) {
       outOfScope: seoRow.scope_boundaries || "",
       conversionAction: seoRow.seo_conversion_action || "",
       commercialUrl: seoRow.seo_commercial_url || "",
+      market: seoRow.seo_market || "",
+      language: seoRow.seo_language || "",
     },
   };
 }

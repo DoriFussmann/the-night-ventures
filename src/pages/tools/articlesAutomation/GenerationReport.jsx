@@ -103,6 +103,13 @@ export default function GenerationReport({
                         ? `Ready${img ? ` · ${img}` : ""}`
                         : job.error || "Failed to generate"}
                     </p>
+                    {Array.isArray(job.reviewNotes) && job.reviewNotes.length > 0 ? (
+                      <ul className="mt-1 list-disc pl-4 text-xs text-amber-800 dark:text-amber-300">
+                        {job.reviewNotes.map((note, i) => (
+                          <li key={i}>Review: {note}</li>
+                        ))}
+                      </ul>
+                    ) : null}
                     {imageTrailNote(job.image) ? (
                       <p className="text-xs opacity-60">{imageTrailNote(job.image)}</p>
                     ) : null}
