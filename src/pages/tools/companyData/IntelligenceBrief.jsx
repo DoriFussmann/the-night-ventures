@@ -9,12 +9,19 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import {
+  ARCHIVED_FIELDS,
   INTELLIGENCE_GROUPS,
+  SEO_GROUP_ID,
   VISIBLE_BASIC_FIELDS,
+  archivedWithContent,
   basicProgress,
   groupProgress,
   intelligenceFieldFilled,
 } from "./intelligenceFields";
+import {
+  formatSeoAuthority,
+  seoControlsStatus,
+} from "../../../../lib/seo-advisor/seoControls.js";
 
 function ProgressMark({ filled, total }) {
   return (
@@ -56,6 +63,11 @@ function FieldLabel({ field, filled }) {
       <div>
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-medium text-foreground">{field.label}</h3>
+          {field.required ? (
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              Required
+            </span>
+          ) : null}
           {filled ? (
             <Check
               className="h-3.5 w-3.5 shrink-0 text-emerald-600"
@@ -87,6 +99,74 @@ function PreviewLines({ lines, empty }) {
   );
 }
 
+function SeoControlsHeader({ fields, seoAuthority }) {
+  const status = seoControlsStatus(fields);
+  const authority = formatSeoAuthority(seoAuthority);
+  return (
+    <div className="space-y-1.5 rounded-md bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
+      <p className="text-sm text-foreground">
+        {status.requiredDone} of {status.requiredTotal} required fields done.
+        {status.ready
+          ? " The SEO Advisor is unlocked."
+          : " The SEO Advisor unlocks when all required fields are done."}
+      </p>
+      <p>
+        These answers decide which keywords the company targets and what each
+        article says. Use “Download SEO brief” to complete them with another AI,
+        then drop the file back here.
+      </p>
+      <p>
+        <span className="font-medium text-foreground">Domain strength:</span>{" "}
+        {authority || "Not checked yet. The SEO Advisor fills this in automatically."}
+      </p>
+    </div>
+  );
+}
+
+function ArchivedFields({ fields, onFieldChange, open, onToggle }) {
+  const withContent = archivedWithContent(fields);
+  return (
+    <div className="rounded-lg border border-dashed border-border">
+      <button
+        type="button"
+        onClick={() => onToggle?.(!open)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-sm text-muted-foreground hover:text-foreground"
+      >
+        <span>
+          {open ? "Hide archived fields" : "Show archived fields"}
+          <span className="ml-2 text-xs">
+            ({withContent.length} of {ARCHIVED_FIELDS.length} have content)
+          </span>
+        </span>
+        <ChevronDown
+          className={`h-4 w-4 shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      {open ? (
+        <div className="space-y-5 border-t border-border px-4 py-4">
+          <p className="text-xs text-muted-foreground">
+            Retired fields. They are not shown in the brief and not used by the
+            SEO Advisor or article generation. Their content is kept so nothing
+            is lost.
+          </p>
+          {ARCHIVED_FIELDS.map((field) => (
+            <div key={field.key}>
+              <h3 className="mb-1.5 text-sm font-medium text-muted-foreground">{field.label}</h3>
+              <Textarea
+                value={fields[field.key] || ""}
+                onChange={(e) => onFieldChange(field.key, e.target.value)}
+                rows={3}
+                className="min-h-[72px]"
+              />
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function IntelligenceBrief({
   companyName,
   onCompanyNameChange,
@@ -104,6 +184,9 @@ export default function IntelligenceBrief({
   configOpen,
   onToggleConfig,
   configTriggers = [],
+  seoAuthority = null,
+  archivedOpen = false,
+  onToggleArchived,
 }) {
   const ctx = { fields, companyName };
   const basic = basicProgress(ctx);
@@ -112,7 +195,7 @@ export default function IntelligenceBrief({
     {
       id: "identity",
       number: "00",
-      title: "Identity",
+      title: "Basics",
       filled: basic.filled,
       total: basic.total,
     },
@@ -130,7 +213,7 @@ export default function IntelligenceBrief({
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {sectionButtons.map((section) => (
           <SectionButton
             key={section.id}
@@ -149,7 +232,7 @@ export default function IntelligenceBrief({
           <div className="border-b border-border px-4 py-2.5">
             <h2 className="text-sm font-medium text-foreground">
               <span className="mr-3 text-[11px] tabular-nums text-muted-foreground">00</span>
-              Identity
+              Basics
             </h2>
           </div>
           <div className="grid grid-cols-1 gap-4 px-4 py-4 sm:grid-cols-2">
@@ -192,6 +275,27 @@ export default function IntelligenceBrief({
                         <p className="text-sm text-muted-foreground">None added.</p>
                       ) : null}
                     </div>
+                  </div>
+                );
+              }
+
+              if (field.kind === "team") {
+                return (
+                  <div key={field.id} className="sm:col-span-2">
+                    <FieldLabel field={field} filled={filled} />
+                    <PreviewLines
+                      lines={teamPreview}
+                      empty="No team or founder notes recorded yet."
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="mt-3"
+                      onClick={() => onOpenStructured("team")}
+                    >
+                      Edit team
+                    </Button>
                   </div>
                 );
               }
@@ -243,6 +347,9 @@ export default function IntelligenceBrief({
               </h2>
             </div>
             <div className="space-y-6 px-4 py-5">
+                {group.id === SEO_GROUP_ID ? (
+                  <SeoControlsHeader fields={fields} seoAuthority={seoAuthority} />
+                ) : null}
                 {group.fields.map((field) => {
                   const filled = intelligenceFieldFilled(field, ctx);
                   if (field.kind === "services") {
@@ -305,6 +412,17 @@ export default function IntelligenceBrief({
                       </div>
                     );
                   }
+                  if (field.seo && field.rows === 1) {
+                    return (
+                      <div key={field.id}>
+                        <FieldLabel field={field} filled={filled} />
+                        <Input
+                          value={fields[field.key] || ""}
+                          onChange={(e) => onFieldChange(field.key, e.target.value)}
+                        />
+                      </div>
+                    );
+                  }
                   return (
                     <div key={field.id}>
                       <FieldLabel field={field} filled={filled} />
@@ -321,6 +439,13 @@ export default function IntelligenceBrief({
           </div>
         );
       })}
+
+      <ArchivedFields
+        fields={fields}
+        onFieldChange={onFieldChange}
+        open={archivedOpen}
+        onToggle={onToggleArchived}
+      />
 
       <Collapsible
         open={configOpen}

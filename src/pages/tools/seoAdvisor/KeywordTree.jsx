@@ -11,6 +11,42 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
+import {
+  ARTICLE_STATUS_LABELS,
+  MAX_CORE_KEYWORDS,
+  MAX_SUPPORTING_PER_CORE,
+  MIN_KEY_MESSAGES,
+} from '../../../../lib/seo-advisor/pillars.js'
+
+const STATUS_CLASS = {
+  idea: 'bg-muted text-muted-foreground',
+  approved: 'bg-sky-500/10 text-sky-800 dark:text-sky-300',
+  planned: 'bg-violet-500/10 text-violet-800 dark:text-violet-300',
+  drafted: 'bg-amber-500/10 text-amber-800 dark:text-amber-300',
+  live: 'bg-emerald-500/10 text-emerald-800 dark:text-emerald-300',
+}
+
+/** Status chip; amber dot when the article has fewer than 3 key messages. */
+function SpecMark({ spec }) {
+  if (!spec) return null
+  const thin = (spec.keyMessages || []).length < MIN_KEY_MESSAGES
+  return (
+    <span className="flex shrink-0 items-center gap-1">
+      {thin && (
+        <span
+          className="h-1.5 w-1.5 rounded-full bg-amber-500"
+          title={`Fewer than ${MIN_KEY_MESSAGES} key messages`}
+          aria-label="Key messages missing"
+        />
+      )}
+      <span
+        className={cn('rounded px-1 py-px text-[9px] font-medium uppercase tracking-wide', STATUS_CLASS[spec.status])}
+      >
+        {ARTICLE_STATUS_LABELS[spec.status] || spec.status}
+      </span>
+    </span>
+  )
+}
 
 export function formatVolume(value) {
   if (value == null) return null
@@ -64,7 +100,7 @@ function LockMark() {
 /**
  * Left panel: live Core → Supporting keyword tree from content_coverage.
  */
-export default function KeywordTree({ pillars = [], loading, highlight, busyKey, onRemove }) {
+export default function KeywordTree({ pillars = [], loading, highlight, busyKey, onRemove, onOpenSpec }) {
   const [collapsed, setCollapsed] = useState({})
   const [confirm, setConfirm] = useState(null)
   const supportingTotal = pillars.reduce((n, p) => n + (p.supporting?.length || 0), 0)
@@ -82,7 +118,7 @@ export default function KeywordTree({ pillars = [], loading, highlight, busyKey,
       <div className="flex items-baseline justify-between gap-2 border-b border-border px-4 py-3">
         <h2 className="text-sm font-medium">Keywords</h2>
         <p className="text-[11px] tabular-nums text-muted-foreground">
-          {pillars.length} core · {supportingTotal} supporting
+          {pillars.length}/{MAX_CORE_KEYWORDS} core · {supportingTotal} supporting
         </p>
       </div>
 
@@ -128,9 +164,19 @@ export default function KeywordTree({ pillars = [], loading, highlight, busyKey,
                         {pillar.keyword}
                       </span>
                       <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
-                        {supporting.length}
+                        {supporting.length}/{MAX_SUPPORTING_PER_CORE}
                       </span>
                     </button>
+                    {onOpenSpec && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenSpec({ type: 'core', core: pillar.keyword })}
+                        className="shrink-0 rounded hover:ring-1 hover:ring-border"
+                        title="Article spec"
+                      >
+                        <SpecMark spec={pillar.spec} />
+                      </button>
+                    )}
                     <Metrics item={pillar} />
                     {pillar.locked ? (
                       <LockMark />
@@ -145,6 +191,17 @@ export default function KeywordTree({ pillars = [], loading, highlight, busyKey,
 
                   {!isCollapsed && (
                     <ul className="ml-[18px] border-l border-border pl-2">
+                      {(pillar.backlog || []).length > 0 && onOpenSpec && (
+                        <li>
+                          <button
+                            type="button"
+                            onClick={() => onOpenSpec({ type: 'core', core: pillar.keyword })}
+                            className="px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
+                          >
+                            Backlog: {pillar.backlog.length}
+                          </button>
+                        </li>
+                      )}
                       {supporting.length === 0 ? (
                         <li className="px-1.5 py-1 text-[11px] text-muted-foreground/80">
                           No supporting keywords yet
@@ -160,12 +217,22 @@ export default function KeywordTree({ pillars = [], loading, highlight, busyKey,
                                 highlight === key && 'animate-pulse bg-primary/10'
                               )}
                             >
-                              <span
-                                className="min-w-0 flex-1 truncate text-xs text-foreground/90"
-                                title={item.keyword}
+                              <button
+                                type="button"
+                                disabled={!onOpenSpec}
+                                onClick={() =>
+                                  onOpenSpec?.({
+                                    type: 'supporting',
+                                    core: pillar.keyword,
+                                    keyword: item.keyword,
+                                  })
+                                }
+                                className="min-w-0 flex-1 truncate text-left text-xs text-foreground/90 enabled:hover:underline"
+                                title={`${item.keyword} — open article spec`}
                               >
                                 {item.keyword}
-                              </span>
+                              </button>
+                              <SpecMark spec={item.spec} />
                               <Metrics item={item} />
                               {item.locked ? (
                                 <LockMark />

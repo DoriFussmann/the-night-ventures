@@ -1,5 +1,6 @@
 import { serviceHasContent } from "../templateToPrompt/customFieldKeys";
 import { parsedFieldPresent } from "./parseCompanyMarkdown";
+import { SEO_CONTROL_FIELDS } from "../../../../lib/seo-advisor/seoControls.js";
 
 function textFilled(value) {
   return Boolean(String(value ?? "").trim());
@@ -49,50 +50,55 @@ export const COMPANY_DATA_POINT_DEFS = [
   { id: "domain", label: "Domain", parsedKey: "domain" },
   { id: "contact_email", label: "Contact Email", parsedKey: "contact_email" },
   { id: "social_links", label: "Social Links", parsedKey: "social_links" },
-  { id: "legal_name", label: "Legal Name", parsedKey: "legal_name" },
-  { id: "founded_date", label: "Founded / Incorporation Date", parsedKey: "founded_date" },
-  { id: "location_markets", label: "Location / Markets Served", parsedKey: "location_markets" },
+  { id: "legal_name", label: "Legal Name", parsedKey: "legal_name", hidden: true },
+  { id: "founded_date", label: "Founded Date", parsedKey: "founded_date" },
+  { id: "location_markets", label: "Markets Served", parsedKey: "location_markets" },
   { id: "product_name", label: "Product Name", parsedKey: "product_name" },
   { id: "category", label: "Category", parsedKey: "category" },
-  { id: "target", label: "Ideal Customer", parsedKey: "target_audience" },
+  { id: "target", label: "Target Searcher", parsedKey: "target_audience" },
   { id: "services", label: "Products & Services", parsedKey: "services" },
   { id: "abstract", label: "Abstract", parsedKey: "abstract" },
   { id: "short", label: "What We Do", parsedKey: "short_description" },
-  { id: "medium", label: "Medium Description", parsedKey: "medium_description" },
+  { id: "medium", label: "Medium Description", parsedKey: "medium_description", hidden: true },
   { id: "long", label: "Story & Mission", parsedKey: "long_description" },
   { id: "business_model", label: "Business Model", parsedKey: "business_model" },
-  { id: "company_stage", label: "Company Stage & Context", parsedKey: "company_stage" },
-  { id: "customer_problem", label: "Customer Problem", parsedKey: "customer_problem" },
-  { id: "trigger_moment", label: "Trigger / Moment of Need", parsedKey: "trigger_moment" },
-  { id: "buying_criteria", label: "Buying Criteria", parsedKey: "buying_criteria" },
+  { id: "company_stage", label: "Company Stage & Context", parsedKey: "company_stage", hidden: true },
+  { id: "customer_problem", label: "Customer Problem", parsedKey: "customer_problem", hidden: true },
+  { id: "trigger_moment", label: "Trigger / Moment of Need", parsedKey: "trigger_moment", hidden: true },
+  { id: "buying_criteria", label: "Buying Criteria", parsedKey: "buying_criteria", hidden: true },
   { id: "how_it_works", label: "How It Works", parsedKey: "how_it_works" },
-  { id: "customer_outcome", label: "Customer Outcome", parsedKey: "customer_outcome" },
-  { id: "commercial_model", label: "Commercial Model", parsedKey: "commercial_model" },
+  { id: "customer_outcome", label: "Customer Outcome", parsedKey: "customer_outcome", hidden: true },
+  { id: "commercial_model", label: "Commercial Model", parsedKey: "commercial_model", hidden: true },
   {
     id: "core_value_proposition",
     label: "Core Value Proposition",
     parsedKey: "core_value_proposition",
   },
   { id: "differentiation", label: "Differentiation", parsedKey: "differentiation" },
-  { id: "messaging_hierarchy", label: "Messaging Hierarchy", parsedKey: "messaging_hierarchy" },
-  { id: "scope_boundaries", label: "What We Are / Are Not", parsedKey: "scope_boundaries" },
+  { id: "messaging_hierarchy", label: "Messaging Hierarchy", parsedKey: "messaging_hierarchy", hidden: true },
+  { id: "scope_boundaries", label: "Out-of-scope Topics", parsedKey: "scope_boundaries" },
   { id: "market_category", label: "Market & Category", parsedKey: "market_category" },
-  { id: "competitive_position", label: "Competitive Position", parsedKey: "competitive_position" },
-  { id: "market_dynamics", label: "Market Dynamics", parsedKey: "market_dynamics" },
-  { id: "brand_feel", label: "Brand Personality", parsedKey: "brand_feel" },
+  { id: "competitive_position", label: "Competitive Position", parsedKey: "competitive_position", hidden: true },
+  { id: "market_dynamics", label: "Market Dynamics", parsedKey: "market_dynamics", hidden: true },
+  { id: "brand_feel", label: "Brand Personality", parsedKey: "brand_feel", hidden: true },
   { id: "brand_voice", label: "Voice & Tone", parsedKey: "brand_voice" },
-  { id: "brand_references", label: "References", parsedKey: "brand_references" },
-  { id: "brand_boundaries", label: "Brand Boundaries", parsedKey: "brand_boundaries" },
-  { id: "reasons_to_believe", label: "Reasons to Believe", parsedKey: "reasons_to_believe" },
-  { id: "results_proof", label: "Results & Customer Proof", parsedKey: "results_proof" },
+  { id: "brand_references", label: "References", parsedKey: "brand_references", hidden: true },
+  { id: "brand_boundaries", label: "Brand Boundaries", parsedKey: "brand_boundaries", hidden: true },
+  { id: "reasons_to_believe", label: "Reasons to Believe", parsedKey: "reasons_to_believe", hidden: true },
+  { id: "results_proof", label: "Results & Customer Proof", parsedKey: "results_proof", hidden: true },
   { id: "team_members", label: "Team & Founder Credibility", parsedKey: "team_members" },
-  { id: "trust_signals", label: "Other Trust Signals", parsedKey: "trust_signals" },
-  { id: "marketing_objectives", label: "Business & Marketing Objectives", parsedKey: "marketing_objectives" },
-  { id: "growth_priorities", label: "Priorities", parsedKey: "growth_priorities" },
-  { id: "customer_acquisition", label: "Customer Acquisition & Sales", parsedKey: "customer_acquisition" },
-  { id: "learnings_constraints", label: "Learnings & Constraints", parsedKey: "learnings_constraints" },
+  { id: "trust_signals", label: "Other Trust Signals", parsedKey: "trust_signals", hidden: true },
+  { id: "marketing_objectives", label: "Business & Marketing Objectives", parsedKey: "marketing_objectives", hidden: true },
+  { id: "growth_priorities", label: "Priorities", parsedKey: "growth_priorities", hidden: true },
+  { id: "customer_acquisition", label: "Customer Acquisition & Sales", parsedKey: "customer_acquisition", hidden: true },
+  { id: "learnings_constraints", label: "Learnings & Constraints", parsedKey: "learnings_constraints", hidden: true },
   { id: "pillars", label: "Pillar Keywords", parsedKey: "core_keywords" },
-  { id: "competitors", label: "Competitors & Alternatives", parsedKey: "competitors" },
+  { id: "competitors", label: "Competitors", parsedKey: "competitors" },
+  ...SEO_CONTROL_FIELDS.filter((field) => field.key.startsWith("seo_")).map((field) => ({
+    id: field.key,
+    label: `SEO ${field.label}`,
+    parsedKey: field.key,
+  })),
   { id: "social-shops", label: "Social & Shops", parsedKey: "social_shops" },
   {
     id: "publish-destination",
@@ -339,6 +345,16 @@ export function mergeParsedCompanyFields({
       case "growth_priorities":
       case "customer_acquisition":
       case "learnings_constraints":
+      case "scope_boundaries":
+      case "seo_primary_offer":
+      case "seo_conversion_action":
+      case "seo_commercial_url":
+      case "seo_buyer_problems":
+      case "seo_content_edge":
+      case "seo_market":
+      case "seo_language":
+      case "seo_search_competitors":
+      case "seo_publishing_pace":
         nextFields[point.parsedKey] = parsed[point.parsedKey];
         break;
       case "social-shops":

@@ -73,13 +73,27 @@ import {
   tokenKeyIssue,
 } from "../../../lib/publish-destination/tokenKey.js";
 import { getKeywordTree, keywordAction } from "./seoAdvisor/api";
-import { slugifyKeyword } from "../../../lib/seo-advisor/pillars.js";
+import {
+  MAX_CORE_KEYWORDS,
+  MAX_SUPPORTING_PER_CORE,
+  slugifyKeyword,
+} from "../../../lib/seo-advisor/pillars.js";
+import ArticleSpecDialog from "./seoAdvisor/ArticleSpecDialog";
 import {
   EMPTY_INTELLIGENCE_TEXT,
   allBriefPoints,
   applyCustomFieldFallbacks,
   briefProgress,
 } from "./companyData/intelligenceFields";
+import {
+  SEO_AUTHORITY_COLUMN,
+  SEO_CONTROL_FIELDS,
+  SEO_NEW_TEXT_COLUMNS,
+  buildSeoBriefMarkdown,
+  isSeoBriefMarkdown,
+  parseSeoBriefMarkdown,
+  seoBriefImportPreview,
+} from "../../../lib/seo-advisor/seoControls.js";
 
 const HIDDEN_CUSTOM_FIELDS = new Set([
   "founded year",
@@ -275,11 +289,6 @@ function countFilled(list) {
   return list.filter((value) => String(value || "").trim()).length;
 }
 
-function supportingLeft(pillar) {
-  const supporting = Array.isArray(pillar?.supporting) ? pillar.supporting : [];
-  return supporting.filter((value) => !String(value || "").trim()).length;
-}
-
 function emptyCompetitor() {
   return { name: "", url: "" };
 }
@@ -316,6 +325,9 @@ const PROFILE_SELECT_BASE =
 const PROFILE_SELECT_INTELLIGENCE =
   "legal_name, founded_date, location_markets, company_stage, customer_problem, trigger_moment, buying_criteria, how_it_works, customer_outcome, commercial_model, differentiation, messaging_hierarchy, market_category, competitive_position, market_dynamics, brand_references, brand_boundaries, reasons_to_believe, results_proof, trust_signals, marketing_objectives, growth_priorities, customer_acquisition, learnings_constraints";
 
+/** Added in migration 065. Loaded separately so the page works before it runs. */
+const PROFILE_SELECT_SEO = [...SEO_NEW_TEXT_COLUMNS, SEO_AUTHORITY_COLUMN].join(", ");
+
 const EMPTY_PROFILE = {
   domain: "",
   product_name: "",
@@ -336,6 +348,7 @@ const EMPTY_PROFILE = {
   contact_email: "",
   social_links: [],
   ...EMPTY_INTELLIGENCE_TEXT,
+  seo_authority: null,
 };
 
 function profileFromRow(profile) {
@@ -370,6 +383,10 @@ function profileFromRow(profile) {
         profile[key] || "",
       ])
     ),
+    seo_authority:
+      profile.seo_authority && typeof profile.seo_authority === "object"
+        ? profile.seo_authority
+        : null,
   };
 }
 
@@ -478,6 +495,10 @@ export default function CompanyData() {
   const [importResult, setImportResult] = useState(null);
   const [openGroups, setOpenGroups] = useState({});
   const [configOpen, setConfigOpen] = useState(false);
+  const [archivedOpen, setArchivedOpen] = useState(false);
+  const [seoImport, setSeoImport] = useState(null);
+  const [savedTree, setSavedTree] = useState([]);
+  const [specTarget, setSpecTarget] = useState(null);
   const importFileRef = useRef(null);
 
   const loadData = useCallback(async () => {
@@ -498,9 +519,20 @@ export default function CompanyData() {
       supabase.from("companies").select("name, github_owner, github_repo, github_token_key, email_campaigns_enabled, email_campaigns_provider, email_campaigns_campaign_id").eq("id", companyId).maybeSingle(),
       supabase
         .from("company_profiles")
-        .select(`${PROFILE_SELECT_BASE}, ${PROFILE_SELECT_INTELLIGENCE}`)
+        .select(`${PROFILE_SELECT_BASE}, ${PROFILE_SELECT_INTELLIGENCE}, ${PROFILE_SELECT_SEO}`)
         .eq("company_id", companyId)
         .maybeSingle()
+        .then(async (result) => {
+          if (result.error && /seo_|column/i.test(result.error.message || "")) {
+            // SEO Controls migration (065) not run yet.
+            return supabase
+              .from("company_profiles")
+              .select(`${PROFILE_SELECT_BASE}, ${PROFILE_SELECT_INTELLIGENCE}`)
+              .eq("company_id", companyId)
+              .maybeSingle();
+          }
+          return result;
+        })
         .then(async (result) => {
           if (
             result.error &&
@@ -625,6 +657,7 @@ export default function CompanyData() {
       const rows = pillarsFromTree(tree);
       keywordsBaselineRef.current = JSON.stringify(pillarsForSave(rows));
       setKeywordLocks(locksFromTree(tree));
+        setSavedTree(tree);
       setKeywordsLoadError("");
       setFields((prev) => ({
         ...prev,
@@ -650,6 +683,13 @@ export default function CompanyData() {
 
   useEffect(() => {
     const panel = searchParams.get("panel");
+    if (searchParams.get("section") === "seo") {
+      setOpenGroups((prev) => ({ ...prev, seo: true }));
+      const next = new URLSearchParams(searchParams);
+      next.delete("section");
+      setSearchParams(next, { replace: true });
+      return;
+    }
     if (panel === "social-shops" || panel === "connections") {
       setOpenPanel(panel);
       const next = new URLSearchParams(searchParams);
@@ -1362,6 +1402,7 @@ export default function CompanyData() {
         const rows = pillarsFromTree(tree);
         keywordsBaselineRef.current = JSON.stringify(pillarsForSave(rows));
         setKeywordLocks(locksFromTree(tree));
+        setSavedTree(tree);
         setKeywordsLoadError("");
       } catch (keywordLoadError) {
         console.error("Failed to reload keyword tree:", keywordLoadError);
@@ -1383,6 +1424,7 @@ export default function CompanyData() {
         const rows = pillarsFromTree(tree);
         keywordsBaselineRef.current = JSON.stringify(pillarsForSave(rows));
         setKeywordLocks(locksFromTree(tree));
+        setSavedTree(tree);
         setFields((prev) => ({
           ...prev,
           core_keywords: normalizePillarKeywords(rows, {
@@ -1615,6 +1657,11 @@ export default function CompanyData() {
         return;
       }
 
+      if (isSeoBriefMarkdown(source)) {
+        startSeoBriefImport(source, file.name || "SEO brief");
+        return;
+      }
+
       const emptyFieldLabels = getCompanyDataPoints({
         fields,
         selectedIndustryIds,
@@ -1798,6 +1845,9 @@ export default function CompanyData() {
       ["Priorities", fields.growth_priorities],
       ["Customer Acquisition & Sales", fields.customer_acquisition],
       ["Learnings & Constraints", fields.learnings_constraints],
+      ...SEO_CONTROL_FIELDS.filter((field) => field.key.startsWith("seo_")).map(
+        (field) => [`SEO ${field.label}`, fields[field.key]]
+      ),
       ["Product Name", fields.product_name],
       ["Category", categoryLines],
       ["Abstract", fields.abstract],
@@ -1859,6 +1909,9 @@ export default function CompanyData() {
       "Priorities",
       "Customer Acquisition & Sales",
       "Learnings & Constraints",
+      ...SEO_CONTROL_FIELDS.filter((field) => field.key.startsWith("seo_")).map(
+        (field) => `SEO ${field.label}`
+      ),
       "Category",
       "Pillar Keywords",
       "Social & Shops",
@@ -1881,6 +1934,118 @@ export default function CompanyData() {
       .replace(/^-|-$/g, "");
 
     downloadMarkdown(`${slug || "company"}-data.md`, lines.join("\n").trim() + "\n");
+  };
+
+  const companySlug = () =>
+    (companyName || "company")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "company";
+
+  const handleDownloadSeoBrief = () => {
+    const keywordTree = normalizePillarKeywords(fields.core_keywords)
+      .filter((pillar) => pillar.keyword.trim())
+      .map((pillar) => ({
+        keyword: pillar.keyword.trim(),
+        supporting: pillar.supporting
+          .map((kw) => String(kw || "").trim())
+          .filter(Boolean)
+          .map((keyword) => ({ keyword })),
+      }));
+    downloadMarkdown(
+      `${companySlug()}-seo-brief.md`,
+      buildSeoBriefMarkdown({
+        companyName,
+        domain: fields.domain,
+        profile: fields,
+        keywordTree,
+      })
+    );
+  };
+
+  /** SEO brief import: parsed locally, every change previewed before saving. */
+  const startSeoBriefImport = (source, fileName) => {
+    const { values } = parseSeoBriefMarkdown(source);
+    const rows = seoBriefImportPreview(values, fields);
+    setSeoImport({
+      fileName,
+      rows,
+      selected: Object.fromEntries(rows.map((row) => [row.key, true])),
+    });
+  };
+
+  const applySeoBriefImport = async () => {
+    if (!seoImport) return;
+    const chosen = seoImport.rows.filter((row) => seoImport.selected[row.key]);
+    if (chosen.length === 0) {
+      setSeoImport(null);
+      return;
+    }
+    const nextFields = { ...fields };
+    for (const row of chosen) nextFields[row.key] = row.next;
+    setFields(nextFields);
+    const saved = await persistProfile({ fields: nextFields, skipSavedMessage: true });
+    if (!saved) return;
+    setImportResult({
+      fileName: seoImport.fileName,
+      filled: chosen.map((row) => row.label),
+      skipped: seoImport.rows
+        .filter((row) => !seoImport.selected[row.key])
+        .map((row) => row.label),
+      notInFile: [],
+      stillMissing: [],
+      keywordWarning: keywordSaveNoteRef.current,
+      seoBrief: true,
+    });
+    setSeoImport(null);
+  };
+
+  const specAction = async (action, payload) => {
+    const result = await keywordAction(companyId, action, payload);
+    const tree = result.pillars || [];
+    setSavedTree(tree);
+    setKeywordLocks(locksFromTree(tree));
+    if (action === "add_supporting") {
+      // The tree changed outside the form; refresh the editor baseline and rows.
+      const rows = pillarsFromTree(tree);
+      keywordsBaselineRef.current = JSON.stringify(pillarsForSave(rows));
+      setFields((prev) => ({
+        ...prev,
+        core_keywords: normalizePillarKeywords(rows, { minCount: 0 }),
+      }));
+    }
+    return result;
+  };
+
+  const specPillar = specTarget
+    ? savedTree.find((item) => item.slug === slugifyKeyword(specTarget.core))
+    : null;
+  const specItem =
+    specTarget?.type === "supporting"
+      ? (specPillar?.supporting || []).find(
+          (item) => item.slug === slugifyKeyword(specTarget.keyword)
+        )
+      : null;
+  const openSpec =
+    specPillar && (specTarget.type === "core" || specItem)
+      ? {
+          type: specTarget.type,
+          core: specPillar.keyword,
+          keyword: specItem ? specItem.keyword : specPillar.keyword,
+          spec: specItem ? specItem.spec : specPillar.spec,
+          backlog: specPillar.backlog || [],
+          supportingCount: (specPillar.supporting || []).length,
+        }
+      : null;
+
+  const savedSpecFor = (coreKeyword, supportingKeyword) => {
+    const core = savedTree.find((item) => item.slug === slugifyKeyword(coreKeyword));
+    if (!core) return null;
+    if (!supportingKeyword) return core.spec || null;
+    const item = (core.supporting || []).find(
+      (entry) => entry.slug === slugifyKeyword(supportingKeyword)
+    );
+    return item?.spec || null;
   };
 
   const openDataPoint = (id) => {
@@ -1979,7 +2144,7 @@ export default function CompanyData() {
             {companyName || "Company Intelligence"}
           </h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Canonical brief of the business. Nothing here is required.
+            Canonical brief of the business. SEO Controls must be complete before the SEO Advisor suggests keywords.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -2013,6 +2178,9 @@ export default function CompanyData() {
           }
           configOpen={configOpen}
           onToggleConfig={setConfigOpen}
+          seoAuthority={fields.seo_authority}
+          archivedOpen={archivedOpen}
+          onToggleArchived={setArchivedOpen}
           configTriggers={[
             {
               id: "product_name",
@@ -2025,30 +2193,6 @@ export default function CompanyData() {
               title: "SEO Category",
               filled: selectedIndustries.length > 0,
               onClick: () => setOpenPanel("category"),
-            },
-            {
-              id: "location_markets",
-              title: "Location / Markets Served",
-              filled: Boolean((fields.location_markets || "").trim()),
-              onClick: () => setOpenPanel("location_markets"),
-            },
-            {
-              id: "contact_email",
-              title: "Contact Email",
-              filled: Boolean((fields.contact_email || "").trim()),
-              onClick: () => setOpenPanel("contact_email"),
-            },
-            {
-              id: "abstract",
-              title: "Abstract (legacy)",
-              filled: Boolean(fields.abstract.trim()),
-              onClick: () => setOpenPanel("abstract"),
-            },
-            {
-              id: "medium",
-              title: "Medium Description (legacy)",
-              filled: Boolean(fields.medium_description.trim()),
-              onClick: () => setOpenPanel("medium"),
             },
             {
               id: "pillars",
@@ -2098,6 +2242,9 @@ export default function CompanyData() {
           </Button>
           <Button type="button" variant="secondary" onClick={handleDownloadMarkdown}>
             Download as Markdown
+          </Button>
+          <Button type="button" variant="secondary" onClick={handleDownloadSeoBrief}>
+            Download SEO brief
           </Button>
           <Button type="button" variant="outline" onClick={handleAddField}>
             + Add leftover field
@@ -2212,7 +2359,13 @@ export default function CompanyData() {
         {importResult && !importBusy && (
           <div className="rounded-lg border border-border bg-muted/20 px-4 py-3 text-sm">
             <p className="font-medium text-foreground">
-              {importResult.filled.length > 0
+              {importResult.seoBrief
+                ? importResult.filled.length > 0
+                  ? `Saved ${importResult.filled.length} field${
+                      importResult.filled.length === 1 ? "" : "s"
+                    } from ${importResult.fileName}`
+                  : `Nothing saved from ${importResult.fileName}`
+                : importResult.filled.length > 0
                 ? `Filled ${importResult.filled.length} field${
                     importResult.filled.length === 1 ? "" : "s"
                   } from ${importResult.fileName}`
@@ -2225,7 +2378,8 @@ export default function CompanyData() {
             )}
             {importResult.skipped.length > 0 && (
               <p className="mt-2 text-muted-foreground">
-                Already filled, left as-is: {importResult.skipped.join(", ")}
+                {importResult.seoBrief ? "Not applied: " : "Already filled, left as-is: "}
+                {importResult.skipped.join(", ")}
               </p>
             )}
             {importResult.notInFile.length > 0 && (
@@ -2233,7 +2387,7 @@ export default function CompanyData() {
                 Not found in file: {importResult.notInFile.join(", ")}
               </p>
             )}
-            {importResult.stillMissing.length > 0 ? (
+            {importResult.seoBrief ? null : importResult.stillMissing.length > 0 ? (
               <p className="mt-2 text-muted-foreground">
                 Still missing: {importResult.stillMissing.join(", ")}
               </p>
@@ -2246,6 +2400,63 @@ export default function CompanyData() {
           </div>
         )}
       </div>
+
+      {/* SEO brief import preview */}
+      <Dialog open={Boolean(seoImport)} onOpenChange={(open) => !open && setSeoImport(null)}>
+        <DialogContent className={PANEL_DIALOG_CLASS}>
+          <DialogHeader className="shrink-0 space-y-1 border-b border-border px-6 py-4 pr-12 text-left">
+            <DialogTitle>Review SEO brief changes</DialogTitle>
+            <DialogDescription>
+              {seoImport?.rows.length
+                ? `${seoImport.rows.length} field${seoImport.rows.length === 1 ? "" : "s"} in ${seoImport.fileName} differ from what is saved. Untick anything you don’t want. Empty answers in the file are ignored.`
+                : `${seoImport?.fileName || "The file"} has no changes to apply.`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
+            {(seoImport?.rows || []).map((row) => (
+              <div key={row.key} className="rounded-lg border border-border">
+                <label className="flex items-center gap-2 border-b border-border px-3 py-2 text-sm font-medium">
+                  <Checkbox
+                    checked={Boolean(seoImport.selected[row.key])}
+                    onCheckedChange={(checked) =>
+                      setSeoImport((prev) => ({
+                        ...prev,
+                        selected: { ...prev.selected, [row.key]: Boolean(checked) },
+                      }))
+                    }
+                  />
+                  {row.label}
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {row.change === "fill" ? "fills an empty field" : "replaces current text"}
+                  </span>
+                </label>
+                <div className="grid grid-cols-1 gap-3 px-3 py-2.5 text-sm sm:grid-cols-2">
+                  <div>
+                    <p className="mb-1 text-[11px] uppercase tracking-wider text-muted-foreground">Now</p>
+                    <p className="whitespace-pre-wrap text-muted-foreground">{row.current || "Empty"}</p>
+                  </div>
+                  <div>
+                    <p className="mb-1 text-[11px] uppercase tracking-wider text-muted-foreground">From file</p>
+                    <p className="whitespace-pre-wrap text-foreground">{row.next}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <DialogFooter className="shrink-0 gap-2 border-t border-border px-6 py-4">
+            <Button type="button" variant="outline" onClick={() => setSeoImport(null)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={saving || !seoImport?.rows.some((row) => seoImport.selected[row.key])}
+              onClick={applySeoBriefImport}
+            >
+              {saving ? "Saving..." : "Save selected"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Domain */}
       <Dialog
@@ -2542,7 +2753,6 @@ export default function CompanyData() {
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-4">
             {pillars.map((pillar, index) => {
               const isOpen = Boolean(openPillars[index]);
-              const left = supportingLeft(pillar);
               const supportingCount = pillar.supporting.length;
               const pillarSlug = slugifyKeyword(pillar.keyword);
               const pillarLocked =
@@ -2593,8 +2803,20 @@ export default function CompanyData() {
                       />
                     )}
                     <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                      {left} left
+                      {countFilled(pillar.supporting)}/{MAX_SUPPORTING_PER_CORE}
                     </span>
+                    {savedSpecFor(pillar.keyword) ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 shrink-0 text-xs"
+                        onClick={() => setSpecTarget({ type: "core", core: pillar.keyword })}
+                        title="Article spec: angle, key messages, status"
+                      >
+                        Spec · {(savedSpecFor(pillar.keyword).keyMessages || []).length} msgs
+                      </Button>
+                    ) : null}
                     <div className="flex shrink-0 items-center gap-0.5">
                       <button
                         type="button"
@@ -2668,6 +2890,24 @@ export default function CompanyData() {
                                 aria-label="Locked: has content"
                               />
                             )}
+                            {keyword.trim() && savedSpecFor(pillar.keyword, keyword) ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-8 shrink-0 text-xs"
+                                onClick={() =>
+                                  setSpecTarget({
+                                    type: "supporting",
+                                    core: pillar.keyword,
+                                    keyword,
+                                  })
+                                }
+                                title="Article spec: angle, key messages, status"
+                              >
+                                Spec · {(savedSpecFor(pillar.keyword, keyword).keyMessages || []).length} msgs
+                              </Button>
+                            ) : null}
                           </div>
                         );
                       })}
@@ -2675,6 +2915,7 @@ export default function CompanyData() {
                         type="button"
                         variant="outline"
                         size="sm"
+                        disabled={supportingCount >= MAX_SUPPORTING_PER_CORE}
                         onClick={() => addSupportingKeyword(index)}
                       >
                         + New
@@ -2685,9 +2926,20 @@ export default function CompanyData() {
               );
             })}
 
-            <Button type="button" variant="outline" size="sm" onClick={addPillarKeyword}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={pillars.length >= MAX_CORE_KEYWORDS}
+              onClick={addPillarKeyword}
+            >
               + New
             </Button>
+            <p className="text-xs text-muted-foreground">
+              Up to {MAX_CORE_KEYWORDS} Core keywords and {MAX_SUPPORTING_PER_CORE} Supporting
+              keywords per Core. Each keyword is one article; save first, then open its Spec
+              to edit the angle and key messages.
+            </p>
           </div>
           <DialogFooter className="shrink-0 gap-2 border-t border-border px-6 py-4 sm:justify-between">
             <Button
@@ -2706,6 +2958,25 @@ export default function CompanyData() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ArticleSpecDialog
+        target={openSpec}
+        onClose={() => setSpecTarget(null)}
+        onSave={(spec) =>
+          specAction("update_spec", {
+            core: openSpec.core,
+            keyword: openSpec.type === "supporting" ? openSpec.keyword : undefined,
+            spec,
+          })
+        }
+        onAddBacklog={(keyword) => specAction("add_backlog", { core: openSpec.core, keyword })}
+        onRemoveBacklog={(keyword) =>
+          specAction("remove_backlog", { core: openSpec.core, keyword })
+        }
+        onPromoteBacklog={(keyword) =>
+          specAction("add_supporting", { core: openSpec.core, keyword, source: "backlog" })
+        }
+      />
 
       {/* Competitors */}
       <Dialog

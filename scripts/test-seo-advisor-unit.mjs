@@ -309,7 +309,7 @@ await test('tool definitions are valid and locale is injected', async () => {
   assert.equal(calls[2].body[0].language_code, 'he')
 })
 
-await test('system prompt carries CI, tree and market', () => {
+await test('system prompt carries SEO Controls, CI, tree and market', () => {
   const prompt = buildSystemPrompt({
     company: { name: 'Acme' },
     profile: { domain: 'acme.com', target_audience: 'Agency owners', competitors: [{ name: 'Rival', url: 'rival.com' }] },
@@ -318,9 +318,12 @@ await test('system prompt carries CI, tree and market', () => {
     locale: researchLocale('uk'),
   })
   assert.match(prompt, /Company: Acme/)
-  assert.match(prompt, /Target audience: Agency owners/)
-  assert.match(prompt, /Competitors: Rival — rival\.com/)
-  assert.match(prompt, /CORE: Email Marketing \(LOCKED\)/)
+  assert.match(prompt, /## SEO Controls\n/)
+  assert.match(prompt, /Target searcher: Agency owners/)
+  assert.match(prompt, /Primary offer: \(not set\)/)
+  assert.ok(prompt.indexOf('## SEO Controls') < prompt.indexOf('## Company Intelligence'))
+  assert.match(prompt, /Business competitors: Rival — rival\.com/)
+  assert.match(prompt, /CORE: Email Marketing \(status planned, LOCKED\) \[2\/10 supporting\]/)
   assert.match(prompt, /supporting: newsletter tools/)
   assert.match(prompt, /United Kingdom/)
 })

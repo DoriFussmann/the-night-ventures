@@ -64,82 +64,64 @@ ${emptySection}OUTPUT
 
 FIELDS AND SHAPES
 
-Identity
+Basics
 1. **Domain:** example.com
-2. **Legal Name:** Registered / legal company name
-3. **Founded / Incorporation Date:** Year or full date
-4. **Location / Markets Served:** HQ, regions, or markets served
-5. **Contact Email:** hello@example.com
-6. **Social Links:**
+2. **Contact Email:** hello@example.com
+3. **Founded Date:** Year or full date
+4. **Markets Served:** HQ, regions, or markets served
+5. **Social Links:**
    - Instagram: https://instagram.com/...
+6. **Team & Founder Credibility:**
+    - Full Name: Role · Credentials
+      Short bio.
+      - https://linkedin.com/in/...
 
-01 Company
-7. **What We Do:** What the company does and the business it is in
-8. **Story & Mission:** Origin, mission, or why it exists
-9. **Business Model:** How the company makes money
-10. **Company Stage & Context:** Stage, size, maturity, launch status
+01 Business Overview
+7. **Abstract:** One or two sentences on the business
+8. **What We Do:** What the company does and the business it is in
+9. **Story & Mission:** Origin, mission, or why it exists
+10. **Business Model:** How the company makes money
+11. **Core Value Proposition:** Clearest statement of value
+12. **Differentiation:** What is meaningfully different
+13. **Market & Category:** Market / category context
+14. **Competitors:**
+    Name + URL. URLs MUST start with https://
+    - Competitor Name: https://example.com
+15. **Voice & Tone:** How the company should sound
 
-02 Customer
-11. **Ideal Customer:** Who the business is designed for
-12. **Customer Problem:** Problems or unmet needs
-13. **Trigger / Moment of Need:** What causes them to start looking
-14. **Buying Criteria:** What matters when choosing, including objections
-
-03 Products & Services
-15. **Products & Services:**
+02 Offer
+16. **Products & Services:**
     One block per offering, separated by a blank line:
     Title: ...
     Summary: ...
     Detail: ...
-16. **How It Works:** From the customer's point of view
-17. **Customer Outcome:** Outcomes and benefits, not just features
-18. **Commercial Model:** Pricing, packaging, and how they buy
+17. **How It Works:** From the customer's point of view
 
-04 Positioning
-19. **Core Value Proposition:** Clearest statement of value
-20. **Differentiation:** What is meaningfully different
-21. **Messaging Hierarchy:** The three things someone should remember
-22. **What We Are / Are Not:** Positioning boundaries
-
-05 Market & Competition
-23. **Market & Category:** Market / category context
-24. **Competitors & Alternatives:**
-    Name + URL. URLs MUST start with https://
-    Include indirect alternatives as extra rows if needed.
-    - Competitor Name: https://example.com
-25. **Competitive Position:** Advantages and important limitations
-26. **Market Dynamics:** Relevant trends or market forces
-
-06 Brand
-27. **Brand Personality:** 3–5 characteristics
-28. **Voice & Tone:** How the company should sound
-29. **References:** What to borrow from each reference, not just names
-30. **Brand Boundaries:** What to avoid
-
-07 Proof & Trust
-31. **Reasons to Believe:** Why claims are credible
-32. **Results & Customer Proof:** Results, testimonials, case studies
-33. **Team & Founder Credibility:**
-    - Full Name: Role · Credentials
-      Short bio.
-      - https://linkedin.com/in/...
-34. **Other Trust Signals:** Customers, partners, press, awards, affiliations
-
-08 Growth
-35. **Business & Marketing Objectives:**
-36. **Priorities:**
-37. **Customer Acquisition & Sales:**
-38. **Learnings & Constraints:**
+03 SEO Controls
+18. **SEO Primary Offer:** The one offer the content exists to sell
+19. **Target Searcher:** Who types the searches: role, stage, situation
+20. **SEO Problems Before Buying:**
+    4–7 problems, one per line, in the buyer's words
+    - problem
+21. **SEO Conversion Action:** What a reader should do next (book a call, buy)
+22. **SEO Commercial Page URL:** https://... page every article links to
+23. **SEO Content Edge:** First-hand experience, data or cases competitors lack
+24. **SEO Search Market:** Country or region
+25. **SEO Language:** Language of the articles
+26. **SEO Search Competitors:**
+    - domain.com
+27. **Out-of-scope Topics:** Topics the company will not write about
+28. **SEO Publishing Pace:** Articles per month
 
 Specialized / leftover (only if the source has this and it does not belong above)
-39. **Product Name:** Primary product or brand name people search for
-40. **Category:**
+29. **Product Name:** Primary product or brand name people search for
+30. **Category:**
     A markdown list of 1–3 industry names. ${categorySection}
-41. **Pillar Keywords:**
+31. **Pillar Keywords:**
     Nested list with TWO SPACES before supporting bullets:
     - pillar keyword
       - supporting keyword
-42. **Social & Shops:**
+32. **Social & Shops:**
     Group under ### headings that are exactly one of: Social Media | Digital Store | Other
     ### Social Media
     - Account Name
@@ -147,13 +129,11 @@ Specialized / leftover (only if the source has this and it does not belong above
       - Status: Done
       - URL: https://...
       - Username: @handle
-43. **Abstract:** leftover positioning only
-44. **Medium Description:** leftover copy only
 
-Accepted aliases if you already used the old names: Short Description → What We Do; Long Description → Story & Mission; Target Description → Ideal Customer; Scope / Boundaries → What We Are / Are Not; Competitors → Competitors & Alternatives; Team Members → Team & Founder Credibility.
+Accepted aliases if you already used the old names: Short Description → What We Do; Long Description → Story & Mission; Target Description / Ideal Customer → Target Searcher; Scope / Boundaries / What We Are / Are Not → Out-of-scope Topics; Competitors & Alternatives → Competitors; Team Members → Team & Founder Credibility.
 ${customSection}
 QUALITY BAR
-- Allocate each fact to the most specific brief field. Do not dump the whole file into What We Do, Story & Mission, or Abstract.
+- Allocate each fact to the most specific brief field. Do not dump the whole file into What We Do, Story & Mission, or Abstract. Never invent facts for SEO Controls; leave a field out if the source does not support it.
 - Keep product names, people, URLs, and claims consistent across fields.
 - Do not add extra top-level sections besides the fields listed above.
 `;

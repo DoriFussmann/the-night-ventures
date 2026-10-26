@@ -13,6 +13,7 @@ import {
   healthSnapshot,
 } from '../lib/seo-advisor/tools.js'
 import { researchLocale } from '../lib/seo-advisor/markets.js'
+import { authorityFromToolResult, seoControlsStatus } from '../lib/seo-advisor/seoControls.js'
 
 const MODEL = process.env.SEO_ADVISOR_MODEL || 'claude-sonnet-5-5'
 const TITLE_MODEL = process.env.SEO_ADVISOR_TITLE_MODEL || 'claude-haiku-5-5'
@@ -170,6 +171,23 @@ export default async function handler(req, res) {
     return json(res, 500, { error: 'Server configuration error' })
   }
 
+  // Gate: no keyword suggestions until SEO Controls are complete.
+  let ctx
+  try {
+    ctx = await loadCompanyContext(supabase, companyId)
+  } catch (err) {
+    console.error('seo-advisor-chat context error:', err)
+    return json(res, err.statusCode || 500, { error: err.message || 'Failed to load company' })
+  }
+  const seoStatus = seoControlsStatus(ctx.profile)
+  if (!seoStatus.ready) {
+    return json(res, 409, {
+      error: 'Complete SEO Controls in Company Intelligence before using the SEO Advisor.',
+      code: 'seo_controls_incomplete',
+      seoControls: seoStatus,
+    })
+  }
+
   res.statusCode = 200
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
   res.setHeader('Cache-Control', 'no-cache, no-transform')
@@ -186,7 +204,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    const ctx = await loadCompanyContext(supabase, companyId)
     const session = await ensureSession(supabase, companyId, sessionIdIn, locale)
     send('session', { id: session.id, title: session.title })
 
@@ -209,6 +226,7 @@ export default async function handler(req, res) {
     }
 
     let toolCalls = 0
+    let authorityChain = Promise.resolve()
     let assistantText = ''
 
     while (!closed) {
@@ -257,6 +275,23 @@ export default async function handler(req, res) {
           } catch (err) {
             result = { available: false, reason: err?.message || 'Tool execution failed' }
           }
+          // Capture the company's own domain strength (SEO Controls), one write at a time.
+          authorityChain = authorityChain.then(async () => {
+            const authority = authorityFromToolResult(
+              toolUse.name,
+              result,
+              ctx.profile?.domain,
+              ctx.profile?.seo_authority
+            )
+            if (!authority) return
+            ctx.profile = { ...ctx.profile, seo_authority: authority }
+            const { error: authorityError } = await supabase
+              .from('company_profiles')
+              .update({ seo_authority: authority })
+              .eq('company_id', companyId)
+            if (authorityError) console.error('seo_authority save failed:', authorityError.message)
+          })
+          await authorityChain
           if (provider) {
             send('tool_end', {
               id: toolUse.id,
