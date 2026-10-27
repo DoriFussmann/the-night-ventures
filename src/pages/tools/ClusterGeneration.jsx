@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Download, Loader2, Upload, Workflow, X } from "lucide-react";
+import { CalendarClock, Check, Download, Loader2, Upload, Workflow, X } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,56 @@ import {
   buildClusterTree,
   pickCoverageClusters,
 } from "./articlesAutomation/selectCluster";
+import { SchedulePanel, ScheduleDialog } from "./articlesAutomation/ScheduledPublishing";
+import {
+  appendKeywords,
+  approveItem,
+  cancelSchedule,
+  createSchedule,
+  loadSchedules,
+  markWriteFailed,
+  markWritten,
+  moveItem,
+  pauseSchedule,
+  publishItemNow,
+  reflowAfterPublish,
+  resumeSchedule,
+  skipItem,
+  unskipItem,
+} from "./articlesAutomation/publishSchedule";
+import {
+  OPEN_SCHEDULE_STATUSES,
+  nextOf,
+  normalizeSettings,
+  openItems,
+  todayIn,
+} from "../../../lib/publish-schedule/plan.js";
+
+/** Keywords under a pillar that can be written and scheduled now. */
+function schedulableClusters(node, schedules) {
+  const queued = new Set(
+    (schedules || [])
+      .filter((s) => OPEN_SCHEDULE_STATUSES.has(s.status))
+      .flatMap((s) => s.items)
+      .filter((item) => item.status !== "skipped" && item.status !== "published")
+      .map((item) => String(item.keyword).toLowerCase())
+  );
+  return (node?.clusters || []).filter(
+    (c) =>
+      (c.status === "available" || c.status === "planned") &&
+      (!c.supporting?.spec || ["approved", "planned"].includes(c.specStatus)) &&
+      !queued.has(c.clusterKeyword.toLowerCase())
+  );
+}
+
+function openScheduleFor(schedules, node) {
+  return (schedules || []).find(
+    (s) =>
+      OPEN_SCHEDULE_STATUSES.has(s.status) &&
+      (s.pillar_slug === (node.slug || node.keyword) ||
+        String(s.pillar_keyword).toLowerCase() === node.keyword.toLowerCase())
+  );
+}
 
 const STAGES = [
   { id: "cluster", label: "Keyword Selection" },
@@ -250,6 +300,12 @@ export default function ClusterGeneration() {
   const [wireActive, setWireActive] = useState(false);
 
   const [batch, setBatch] = useState(null);
+  const [schedules, setSchedules] = useState([]);
+  const [scheduleError, setScheduleError] = useState("");
+  const [scheduleBusy, setScheduleBusy] = useState(false);
+  const [writing, setWriting] = useState(null);
+  const [scheduleDialog, setScheduleDialog] = useState(null);
+  const writingRef = useRef(false);
   const [nowTick, setNowTick] = useState(Date.now());
   const stopRef = useRef(false);
 
@@ -261,7 +317,8 @@ export default function ClusterGeneration() {
   const stageRef = useRef(currentStage);
   stageRef.current = currentStage;
 
-  const busy = !IDLE_PHASES.has(phase) || wireActive || Boolean(batch?.running);
+  const busy =
+    !IDLE_PHASES.has(phase) || wireActive || Boolean(batch?.running) || Boolean(writing);
   const tree = useMemo(() => buildClusterTree(pillars), [pillars]);
 
   const refreshContext = useCallback(async () => {
@@ -785,7 +842,7 @@ export default function ClusterGeneration() {
   }, [batch?.running]);
 
   const generateOneCluster = useCallback(
-    async (cluster, destination, onStatus) => {
+    async (cluster, destination, onStatus, { publish = true } = {}) => {
       const ctx = contextRef.current;
       if (!ctx) throw new Error("Missing company context");
       const say = (m) => onStatus && onStatus(m);
@@ -891,6 +948,8 @@ export default function ClusterGeneration() {
           articles: drafted,
         });
       }
+      // Scheduled publishing: write and save only; the schedule publishes it.
+      if (!publish) return { savedRows: saved.saved || [], topics, articles: drafted };
 
       say(
         `Publishing “${cluster.clusterKeyword}” to ${destination.owner}/${destination.repo}…`
@@ -1081,6 +1140,194 @@ export default function ClusterGeneration() {
     );
   }, [publishDestination, pillars, refreshContext, generateOneCluster]);
 
+  // ── Scheduled publishing ────────────────────────────────────────────
+  const refreshSchedules = useCallback(async () => {
+    if (!companyId) {
+      setSchedules([]);
+      return [];
+    }
+    try {
+      const next = await loadSchedules(companyId);
+      setSchedules(next);
+      return next;
+    } catch (err) {
+      setScheduleError(err?.message || "Failed to load schedules");
+      return [];
+    }
+  }, [companyId]);
+
+  useEffect(() => {
+    refreshSchedules();
+  }, [refreshSchedules]);
+
+  useEffect(() => {
+    if (!writing) return undefined;
+    const warn = (e) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [writing]);
+
+  /** Publish now when this item is due today and the site has not published today. */
+  const publishIfDueToday = useCallback(async (scheduleId, itemId) => {
+    const all = await loadSchedules(companyId);
+    const schedule = all.find((s) => s.id === scheduleId);
+    if (!schedule) return all;
+    const today = todayIn(normalizeSettings(schedule.settings).timezone);
+    const next = nextOf(schedule, schedule.items, today);
+    if (!next?.due || next.item.id !== itemId) return all;
+    const siteBusy = all
+      .flatMap((s) => s.items)
+      .some(
+        (item) =>
+          item.status === "published" &&
+          item.published_at &&
+          todayIn(normalizeSettings(schedule.settings).timezone, new Date(item.published_at)) === today
+      );
+    if (siteBusy) return all;
+    setWriting((w) => (w ? { ...w, message: "Publishing today’s article…" } : w));
+    const result = await publishItemNow(itemId);
+    if (!result.ok && result.error) setScheduleError(`“${next.item.keyword}”: ${result.error}`);
+    return loadSchedules(companyId);
+  }, [companyId]);
+
+  /** Write every unwritten article of a schedule, one at a time, in this tab. */
+  const writeSchedule = useCallback(
+    async (scheduleId) => {
+      if (writingRef.current) return;
+      writingRef.current = true;
+      setScheduleError("");
+      try {
+        let ctx = contextRef.current;
+        try {
+          ctx = await refreshContext();
+        } catch {
+          /* keep what we have */
+        }
+        let all = await loadSchedules(companyId);
+        let schedule = all.find((s) => s.id === scheduleId);
+        const queue = openItems(schedule?.items || []).filter((item) => item.status === "to_write");
+        for (let i = 0; i < queue.length; i += 1) {
+          const item = queue[i];
+          setWriting({
+            scheduleId,
+            itemId: item.id,
+            index: i + 1,
+            total: queue.length,
+            message: `Writing “${item.keyword}”…`,
+          });
+          const fresh = buildClusterTree(ctx?.pillars || [])
+            .flatMap((node) => node.clusters)
+            .find((c) => c.clusterKeyword.toLowerCase() === String(item.keyword).toLowerCase());
+          if (!fresh || (fresh.status !== "available" && fresh.status !== "planned")) {
+            await markWriteFailed(
+              item.id,
+              !fresh
+                ? "the keyword is no longer in the map"
+                : fresh.status === "completed"
+                  ? "this keyword already has an article"
+                  : "the spec is not complete"
+            );
+            continue;
+          }
+          try {
+            const result = await generateOneCluster(
+              fresh,
+              publishDestination,
+              (m) => setWriting((w) => (w ? { ...w, message: m } : w)),
+              { publish: false }
+            );
+            const row = result.savedRows?.[0];
+            if (!row?.id) throw new Error("The draft was not saved");
+            await markWritten(item.id, row.id);
+            try {
+              ctx = await refreshContext();
+            } catch {
+              /* keep going */
+            }
+            all = await publishIfDueToday(scheduleId, item.id);
+          } catch (err) {
+            await markWriteFailed(item.id, err?.message || "generation failed");
+          }
+          setSchedules(await loadSchedules(companyId));
+        }
+      } catch (err) {
+        setScheduleError(err?.message || "Writing stopped");
+      } finally {
+        writingRef.current = false;
+        setWriting(null);
+        await refreshSchedules();
+        try {
+          await refreshContext();
+        } catch {
+          /* ignore */
+        }
+      }
+    },
+    [companyId, generateOneCluster, publishDestination, publishIfDueToday, refreshContext, refreshSchedules]
+  );
+
+  const confirmSchedule = useCallback(
+    async ({ keywords, settings, start }) => {
+      const dialog = scheduleDialog;
+      if (!dialog) return;
+      if (!isPublishDestinationMapped(publishDestination)) {
+        throw new Error("Set Publish Destination in Company Data first");
+      }
+      let scheduleId = dialog.schedule?.id;
+      if (dialog.mode === "append" && dialog.schedule) {
+        await appendKeywords({ schedule: dialog.schedule, keywords, schedules });
+      } else {
+        scheduleId = await createSchedule({
+          companyId,
+          pillar: { slug: dialog.node.slug, keyword: dialog.node.keyword },
+          keywords,
+          settings,
+          start,
+          schedules,
+        });
+      }
+      await refreshSchedules();
+      // Writing starts after the dialog closes.
+      setTimeout(() => writeSchedule(scheduleId), 0);
+    },
+    [companyId, publishDestination, refreshSchedules, scheduleDialog, schedules, writeSchedule]
+  );
+
+  const onScheduleAction = useCallback(
+    async (name, schedule, item, extra = {}) => {
+      setScheduleBusy(true);
+      setScheduleError("");
+      try {
+        if (name === "publish_now") {
+          const result = await publishItemNow(item.id);
+          if (!result.ok) {
+            setScheduleError(`“${item.keyword}”: ${result.error || "publish failed"}`);
+          } else {
+            const fresh = await loadSchedules(companyId);
+            const current = fresh.find((s) => s.id === schedule.id);
+            if (current) await reflowAfterPublish(current, item.id, fresh);
+            await refreshContext().catch(() => {});
+          }
+        } else if (name === "pause") await pauseSchedule(schedule);
+        else if (name === "resume") await resumeSchedule(schedule, schedules);
+        else if (name === "cancel") await cancelSchedule(schedule);
+        else if (name === "skip") await skipItem(schedule, item, schedules);
+        else if (name === "unskip") await unskipItem(schedule, item);
+        else if (name === "approve") await approveItem(item);
+        else if (name === "move") await moveItem(item, extra.day);
+      } catch (err) {
+        setScheduleError(err?.message || "That did not work");
+      } finally {
+        await refreshSchedules();
+        setScheduleBusy(false);
+      }
+    },
+    [companyId, refreshContext, refreshSchedules, schedules]
+  );
+
   const batchElapsed = batch
     ? Math.floor(
         (((batch.running ? nowTick : batch.finishedAt || nowTick) -
@@ -1132,6 +1379,37 @@ export default function ClusterGeneration() {
           Decline at each step; the countdown auto-confirms after 10 seconds.
         </p>
       </div>
+
+      <SchedulePanel
+        schedules={schedules}
+        companyId={companyId}
+        writing={writing}
+        busy={scheduleBusy || Boolean(writing) || Boolean(batch?.running)}
+        error={scheduleError}
+        onAction={onScheduleAction}
+        onResumeWriting={(schedule) => writeSchedule(schedule.id)}
+        onAdd={(schedule) => {
+          const node = tree.find(
+            (n) =>
+              (n.slug || n.keyword) === schedule.pillar_slug ||
+              n.keyword.toLowerCase() === String(schedule.pillar_keyword).toLowerCase()
+          );
+          if (node) setScheduleDialog({ mode: "append", node, schedule });
+        }}
+      />
+      {!schedules.length && scheduleError ? (
+        <p className="text-sm text-destructive">{scheduleError}</p>
+      ) : null}
+      <ScheduleDialog
+        open={Boolean(scheduleDialog)}
+        mode={scheduleDialog?.mode}
+        pillar={scheduleDialog?.node}
+        schedule={scheduleDialog?.schedule}
+        schedules={schedules}
+        candidates={scheduleDialog ? schedulableClusters(scheduleDialog.node, schedules) : []}
+        onClose={() => setScheduleDialog(null)}
+        onConfirm={confirmSchedule}
+      />
 
       <div className="rounded-lg border border-border bg-card px-4 py-4 space-y-3">
         <div className="flex items-start justify-between gap-3">
@@ -1290,6 +1568,32 @@ export default function ClusterGeneration() {
                       Pillar not published
                     </span>
                   )}
+                  {(() => {
+                    const open = openScheduleFor(schedules, pillar);
+                    if (open) {
+                      return (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                          <CalendarClock className="h-3 w-3" />
+                          Scheduled
+                        </span>
+                      );
+                    }
+                    const ready = pillar.pillarPublished ? schedulableClusters(pillar, schedules) : [];
+                    if (!ready.length) return null;
+                    return (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="ml-auto h-7 text-xs"
+                        disabled={busy || !destinationMapped}
+                        onClick={() => setScheduleDialog({ mode: "new", node: pillar })}
+                      >
+                        <CalendarClock className="mr-1.5 h-3.5 w-3.5" />
+                        Generate &amp; schedule ({ready.length})
+                      </Button>
+                    );
+                  })()}
                 </div>
                 {pillar.clusters.length === 0 ? (
                   <p className="text-xs text-muted-foreground">
@@ -1543,7 +1847,7 @@ export default function ClusterGeneration() {
                   : "Articles were generated, but the site commit did not finish. Review the problems below."
               }
               destinationLabel={
-                destinationMapped
+                destinationMapped && publishResult.ok
                   ? `Published to ${publishDestination.owner}/${publishDestination.repo}. A rebuild should start from this commit.`
                   : null
               }
