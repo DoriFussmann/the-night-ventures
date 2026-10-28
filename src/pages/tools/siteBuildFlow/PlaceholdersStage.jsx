@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ChevronDown, Loader2, RefreshCw } from "lucide-react";
+import { Check, ChevronDown, Copy, Loader2, RefreshCw } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -58,6 +58,34 @@ function StatePill({ state }) {
   );
 }
 
+function PromptBox({ prompt }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  };
+  return (
+    <div className="rounded-[10px] border border-border bg-muted/40">
+      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-1.5">
+        <span className="text-[11px] font-medium text-muted-foreground">Prompt for Claude Chat or Cursor</span>
+        <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-[11px]" onClick={copy}>
+          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+          {copied ? "Copied" : "Copy"}
+        </Button>
+      </div>
+      <pre className="whitespace-pre-wrap break-words px-3 py-2 font-mono text-xs text-foreground">{prompt}</pre>
+      {prompt.includes("[") && (
+        <p className="px-3 pb-2 text-[11px] text-muted-foreground">Replace the parts in [square brackets] before sending.</p>
+      )}
+    </div>
+  );
+}
+
 function ItemRow({ item, expanded, onToggle, onSignoff, signing }) {
   const extra = item.findings.length - FINDINGS_SHOWN;
   return (
@@ -88,6 +116,15 @@ function ItemRow({ item, expanded, onToggle, onSignoff, signing }) {
       {expanded && (
         <div className="space-y-3 border-t border-border px-4 py-3">
           {item.help && <p className="text-sm text-foreground">{item.help}</p>}
+          {item.steps?.length > 0 && (
+            <ol className="list-decimal space-y-1.5 pl-5 text-sm text-foreground marker:text-muted-foreground">
+              {item.steps.map((step, index) => (
+                <li key={index}>{step}</li>
+              ))}
+            </ol>
+          )}
+          {item.prompt && <PromptBox prompt={item.prompt} />}
+          {item.findings.length > 0 && <p className="text-[11px] font-medium text-muted-foreground">Found in</p>}
           {item.findings.length > 0 && (
             <ul className="space-y-1">
               {item.findings.slice(0, FINDINGS_SHOWN).map((f, index) => (
@@ -205,7 +242,11 @@ export default function PlaceholdersStage({ companyId, onSummary }) {
     };
   }, [companyId, runScan]);
 
-  const summary = useMemo(() => (row?.report ? summarize(row.report, row.signoffs || {}) : null), [row]);
+  const repoName = destination ? `${destination.owner}/${destination.repo}` : "";
+  const summary = useMemo(
+    () => (row?.report ? summarize(row.report, row.signoffs || {}, repoName) : null),
+    [row, repoName]
+  );
 
   useEffect(() => {
     onSummary?.(summary);

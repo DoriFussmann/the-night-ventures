@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { checkPlaceholders, findImageBriefsWithoutSrc, globToRegExp, templateFileHash } from '../lib/placeholders/check.js'
 import { githubSiteFiles, isManifest, loadManifest, scanSitePlaceholders } from '../lib/placeholders/handler.js'
-import { summarize } from '../src/pages/tools/siteBuildFlow/placeholdersSummary.js'
+import { guideFor, summarize } from '../src/pages/tools/siteBuildFlow/placeholdersSummary.js'
 
 let passed = 0
 const check = async (name, fn) => {
@@ -199,6 +199,26 @@ await check('an unknown check kind reports "unknown", not a crash', async () => 
   )
   assert.equal(report.results[0].status, 'unknown')
   assert.equal(report.clear, false)
+})
+
+await check('every bundled check has a step-by-step guide', () => {
+  for (const c of BUNDLED.checks) {
+    assert.ok(c.help, `${c.id}: help`)
+    assert.ok(Array.isArray(c.steps) && c.steps.length >= 2, `${c.id}: steps`)
+  }
+})
+
+await check('guide: old scans fall back to the bundled guide, and [owner/repo] is filled in', () => {
+  const old = { id: 'page-copy', help: 'old one-liner', status: 'placeholder', findings: [] }
+  const g = guideFor(old, 'acme/site')
+  assert.notEqual(g.help, 'old one-liner')
+  assert.ok(g.steps.length >= 2)
+  assert.ok(g.prompt.includes('acme/site') && !g.prompt.includes('[owner/repo]'))
+  const own = { id: 'page-copy', help: 'h', steps: ['a', 'b'], prompt: 'p [owner/repo]' }
+  assert.deepEqual(guideFor(own, 'x/y'), { help: 'h', steps: ['a', 'b'], prompt: 'p x/y' })
+  assert.equal(guideFor({ id: 'not-a-check', help: 'keep me' }).help, 'keep me')
+  const s = summarize({ results: [old] }, {}, 'acme/site')
+  assert.ok(s.items[0].steps.length >= 2)
 })
 
 console.log(`All ${passed} placeholder checks passed.`)
