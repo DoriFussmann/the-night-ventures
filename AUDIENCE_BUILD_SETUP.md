@@ -6,7 +6,8 @@ Spec: TNV Lead Sourcing Engine — AudienceLab Spec (Claude doc).
 
 1. Supabase → SQL Editor → New query → paste the full contents of
    `supabase/migrations/068_audience_build.sql` → Run, then the same for
-   `069_audience_build_settings.sql`. Both are safe to re-run.
+   `069_audience_build_settings.sql` and `070_lead_sourcing_runs.sql`.
+   All are safe to re-run.
 2. Vercel → Project → Settings → Environment Variables → add:
    - `AUDIENCELAB_API_KEY` — AudienceLab → Account → API keys
    - (optional) `AUDIENCE_BUILD_MODEL` — Claude model for matching; default `claude-opus-5-5`
@@ -64,3 +65,25 @@ After saving segments, **Who to target → Draft with Claude**:
 AudienceLab semantics (verified): values in one filter are OR'd, filters are
 AND'ed, several segments are a union; include filters drop people with an
 unknown value, exclude filters keep them.
+
+## Step 5: today's leads
+
+Once filters are approved, **Today's leads → Pull today's leads**:
+
+1. Creates an AudienceLab audience: approved segments + filters, high intent,
+   `days_back = 1`, business email with a validation status. Generation took
+   ~4 s in testing; the audience is deleted after its records are read.
+2. Removes anyone who can't be emailed: duplicates, Do Not Contact
+   (`email_dnc`), emailed for this company in the last 90 days
+   (`email_leads`), and excluded domains (the company's own domain plus
+   `company_profiles.outbound_exclude_domains`). People emailed 90+ days ago
+   stay: they are high intent again.
+3. Claude scores each eligible person's fit 0–10 in batches of 40 (max 400 a
+   day). Score = 70% fit, 20% company-size fit, 10% contact quality; intent is
+   equal for everyone in the run, so it isn't weighted.
+4. The top inboxes × daily cap are ticked as today's list. Tick/untick to
+   swap people, then **Approve List** to lock it. **Download CSV** uses
+   AudienceLab column names, so it imports as-is in Email Campaigns.
+
+A re-pull replaces the day's list unless it was already pushed. Runs are
+stored in `lead_sourcing_runs`, people in `lead_sourcing_candidates`.
