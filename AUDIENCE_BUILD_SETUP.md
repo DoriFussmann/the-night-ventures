@@ -45,3 +45,22 @@ When AudienceLab ships a new sheet, export its first tab to CSV and run:
     node scripts/build-al-keywords.mjs path/to/taxonomy.csv
 
 then commit the updated file and re-sync.
+
+## Step 3: who to target (ICP filters)
+
+After saving segments, **Who to target → Draft with Claude**:
+
+1. The page reads the real makeup of the selected segments (one `/insights`
+   call: seniority, department, titles, company size, revenue, industry, and
+   what share of people have each field).
+2. Claude drafts filters from Company Intelligence + that makeup, using only
+   values AudienceLab accepts (`GET /audiences/attributes/*`). Unknown values
+   are dropped.
+3. You edit them. **Check impact** counts fresh people per day as each group
+   of filters is added (one call per row, cached 12 h).
+4. **Approve Filters** saves them to the config and to the company's
+   `icp_*` fields.
+
+AudienceLab semantics (verified): values in one filter are OR'd, filters are
+AND'ed, several segments are a union; include filters drop people with an
+unknown value, exclude filters keep them.
