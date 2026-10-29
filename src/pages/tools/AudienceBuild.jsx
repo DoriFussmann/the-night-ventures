@@ -10,7 +10,6 @@ import { audienceBuild } from "./audienceBuild/api";
 import { attachCounts } from "../../../lib/audience-build/logic.js";
 
 const AUTO_COUNT_TOP = 5;
-const COUNT_CONCURRENCY = 2;
 
 const fmt = (v) => (v == null ? "—" : Number(v).toLocaleString());
 
@@ -44,6 +43,7 @@ function Capacity({ companyId, capacity, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
   const need = (Number(inboxes) || 0) * (Number(cap) || 0);
+  const multiplier = capacity?.multiplier ?? 3;
   const dirty = String(capacity?.inboxes) !== inboxes || String(capacity?.cap) !== cap;
 
   const save = async () => {
@@ -78,7 +78,11 @@ function Capacity({ companyId, capacity, onSaved }) {
         </Button>
         <div className="ml-auto grid grid-cols-2 gap-3">
           <Stat label="Leads needed / day" value={fmt(need)} />
-          <Stat label="Target fresh pool / day" value={fmt(need * 3)} sub="3× need, so ranking has a choice" />
+          <Stat
+            label="Target fresh pool / day"
+            value={fmt(Math.round(need * multiplier))}
+            sub={`${multiplier}× need (set in Admin)`}
+          />
         </div>
       </div>
       <div className="mt-2">
@@ -112,45 +116,57 @@ function Match({ companyId, status, onChanged }) {
   useEffect(() => setSelected(savedIds), [savedIds]);
 
   const need = status?.capacity?.need || lastMatch?.need || 0;
+  const multiplier = status?.capacity?.multiplier ?? 3;
+  const target = Math.round(need * multiplier);
   // Counts fetched on this page: segment_id -> rows | "counting" | { error }.
   const [localCounts, setLocalCounts] = useState({});
   const candidates = useMemo(() => {
     const base = lastMatch?.candidates || [];
     const rows = Object.values(localCounts).filter(Array.isArray).flat();
     if (!rows.length) return base;
-    const counted = attachCounts(base, rows, need);
+    const counted = attachCounts(base, rows, need, multiplier);
     // attachCounts only fills what it was given; keep server-side counts too.
     return counted.map((c, i) => (c.counted ? c : base[i]));
-  }, [lastMatch, localCounts, need]);
+  }, [lastMatch, localCounts, need, multiplier]);
 
+  // Returns fresh people/day for the segment, or null on failure.
   const countOne = useCallback(async (segmentId) => {
     setLocalCounts((m) => ({ ...m, [segmentId]: "counting" }));
     try {
       const rows = await audienceBuild("count", { segmentId });
       setLocalCounts((m) => ({ ...m, [segmentId]: rows.map((r) => ({ ...r, segment_id: segmentId })) }));
+      return Number(rows.find((r) => r.days_back === 1)?.reach) || 0;
     } catch (e) {
       setLocalCounts((m) => ({ ...m, [segmentId]: { error: e.message } }));
+      return null;
     }
   }, []);
 
-  // After each match, count the top candidates that have no fresh count, two at a time.
+  // After each match, count the top candidates one at a time, best first.
+  // Stop as soon as one segment alone covers the target pool: the rest aren't needed.
   const ranAt = lastMatch?.ran_at;
+  const [autoStopped, setAutoStopped] = useState(null);
   useEffect(() => {
     if (!ranAt) return undefined;
     let cancelled = false;
-    const queue = (lastMatch?.candidates || [])
-      .slice(0, AUTO_COUNT_TOP)
-      .filter((c) => !c.counted)
-      .map((c) => c.segment_id);
-    const worker = async () => {
-      while (!cancelled && queue.length) await countOne(queue.shift());
-    };
-    Array.from({ length: COUNT_CONCURRENCY }, worker);
+    setAutoStopped(null);
+    const top = (lastMatch?.candidates || []).slice(0, AUTO_COUNT_TOP);
+    (async () => {
+      for (const c of top) {
+        if (cancelled) return;
+        const perDay = c.counted ? c.reach_1d_high : await countOne(c.segment_id);
+        if (cancelled) return;
+        if (target > 0 && perDay != null && perDay >= target) {
+          setAutoStopped(c.topic);
+          return;
+        }
+      }
+    })();
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ranAt, countOne]);
+  }, [ranAt, countOne, target]);
   const counting = Object.values(localCounts).filter((v) => v === "counting").length;
   const blocked = !status?.taxonomy?.segments || !status?.audienceLabConfigured;
 
@@ -293,17 +309,19 @@ function Match({ companyId, status, onChanged }) {
           <div className="flex flex-wrap items-center gap-3">
             <Button size="sm" onClick={save} disabled={saving || !dirty}>
               <Check className="mr-1.5 h-4 w-4" />
-              {saving ? "Saving…" : "Save selection"}
+              {saving ? "Saving…" : "Save Selection"}
             </Button>
             <span className="text-sm text-muted-foreground">
               {orderedSelection.length} selected · ~{fmt(selectedPerDay)} fresh people/day before overlap and ICP filters
-              {need ? ` · need ${fmt(need)}, target ${fmt(need * 3)}` : ""}
+              {need ? ` · need ${fmt(need)}, target ${fmt(target)}` : ""}
             </span>
             {saveMsg && <span className="text-sm text-emerald-700">{saveMsg}</span>}
           </div>
           <p className="text-xs text-muted-foreground">
-            {counting > 0 && <>Counting {counting} segment{counting > 1 ? "s" : ""} (about 30 seconds each)… </>}
-            Counts: high intent only, business email with a validation status. The top 5 are counted automatically. The first
+            {counting > 0 && <>Counting (about 30 seconds per segment)… </>}
+            {autoStopped && <>Stopped counting: {autoStopped} alone covers the target. </>}
+            Counts: high intent only, business email with a validation status. The top 5 are counted one by one, best
+            first, stopping once one segment covers the target; use Count for any other. The first
             selected segment (highest relevance) is the primary. ICP filters in the next step will lower these numbers.
           </p>
 
