@@ -5,7 +5,8 @@ counts how many high-intent people with a validated business email they hold.
 Spec: TNV Lead Sourcing Engine — AudienceLab Spec (Claude doc).
 
 1. Supabase → SQL Editor → New query → paste the full contents of
-   `supabase/migrations/068_audience_build.sql` → Run. Safe to re-run.
+   `supabase/migrations/068_audience_build.sql` → Run, then the same for
+   `069_audience_build_settings.sql`. Both are safe to re-run.
 2. Vercel → Project → Settings → Environment Variables → add:
    - `AUDIENCELAB_API_KEY` — AudienceLab → Account → API keys
    - (optional) `AUDIENCE_BUILD_MODEL` — Claude model for matching; default `claude-opus-5-5`
@@ -14,7 +15,9 @@ Spec: TNV Lead Sourcing Engine — AudienceLab Spec (Claude doc).
    segments). Shared by all companies. A weekly Vercel cron (Mondays 11:00
    UTC, needs `CRON_SECRET`) re-checks AudienceLab and rewrites the table only
    if the list changed; "Check for updates" in Admin does the same on demand.
-4. For each company: set Sending capacity, then **Find audiences**.
+4. Admin → Audience Build → **Target pool multiplier** (default 3×): fresh
+   people needed per day = leads sent per day × this.
+5. For each company: set Sending capacity, then **Find audiences**.
 
 ## How matching works
 
@@ -25,8 +28,8 @@ Spec: TNV Lead Sourcing Engine — AudienceLab Spec (Claude doc).
    Competitor names match segment topics by trigram similarity.
 3. Claude ranks the candidates 0–10 and the page shows the top 10 for "researchers are buyers right now".
 4. The page counts the top 5 via AudienceLab `/insights` (high intent,
-   business email with a validation status; 7-day and 1-day windows), two at a
-   time. Each count takes 10–30 s; results are cached 12 h in
+   business email with a validation status; 7-day and 1-day windows) one at a
+   time, best first, and stops once one segment alone covers the target pool. Each count takes 10–30 s; results are cached 12 h in
    `al_segment_counts` and shared across companies.
 
 Do Not Call is deliberately not a filter: it governs phone outreach, and on a
