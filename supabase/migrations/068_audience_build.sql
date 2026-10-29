@@ -2,6 +2,7 @@
 --   * al_segments: AudienceLab's pre-made intent segments (taxonomy), synced
 --     from GET /audiences/attributes/segments + keywords from the taxonomy
 --     sheet, searchable with Postgres full-text search.
+--   * al_sync_state: last weekly taxonomy check (fingerprint, timestamps).
 --   * search_al_segments(): keyword retrieval used by the segment matcher.
 --   * al_segment_counts: cached AudienceLab counts per segment/window/filters.
 --   * lead_sourcing_configs: one row per company — chosen segments, the last
@@ -53,6 +54,35 @@ begin
   ) then
     create policy "Authenticated users can manage al_segments"
       on public.al_segments for all to authenticated using (true) with check (true);
+  end if;
+end $$;
+
+-- Singleton: last taxonomy check. The weekly cron (and the Admin button)
+-- fingerprints AudienceLab's segment list and only rewrites al_segments
+-- when it changed.
+create table if not exists public.al_sync_state (
+  id boolean primary key default true check (id),
+  fingerprint text,
+  segments integer not null default 0,
+  checked_at timestamptz,
+  synced_at timestamptz,
+  last_error text
+);
+
+comment on table public.al_sync_state is
+  'Audience Build: last AudienceLab taxonomy check (weekly cron + Admin). One row.';
+
+alter table public.al_sync_state enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'al_sync_state'
+      and policyname = 'Authenticated users can manage al_sync_state'
+  ) then
+    create policy "Authenticated users can manage al_sync_state"
+      on public.al_sync_state for all to authenticated using (true) with check (true);
   end if;
 end $$;
 

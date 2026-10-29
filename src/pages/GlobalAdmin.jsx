@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   CheckSquare,
+  Crosshair,
   ChevronDown,
   Download,
   GitBranch,
@@ -12,6 +13,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { audienceBuild } from "@/pages/tools/audienceBuild/api";
 import { buildDoTasksMarkdown } from "@/lib/doTasksMarkdown";
 import { downloadMarkdown } from "@/pages/tools/siteBuildFlow/buildFlowMarkdown";
 import { Button } from "@/components/ui/button";
@@ -890,6 +892,67 @@ function CoreVersionCompanyMenu() {
   );
 }
 
+function AudienceLabTaxonomyCard() {
+  const [info, setInfo] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+
+  const load = useCallback(async () => {
+    try {
+      setInfo(await audienceBuild("taxonomy-status"));
+    } catch (e) {
+      setErr(e.message);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const fmt = (v) =>
+    v ? new Date(v).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "never";
+
+  const check = async () => {
+    setBusy(true);
+    setMsg("");
+    setErr("");
+    try {
+      const r = await audienceBuild("sync-segments");
+      setMsg(
+        r.changed
+          ? `Updated: ${r.segments.toLocaleString()} segments (${r.with_high.toLocaleString()} with high intent).`
+          : "No changes from AudienceLab."
+      );
+      await load();
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className={CARD_CLASS}>
+      <div className="flex items-center gap-2">
+        <Crosshair className="h-4 w-4 text-muted-foreground" />
+        <span className="text-sm font-medium text-foreground">AudienceLab taxonomy</span>
+      </div>
+      <p className="mt-1.5 text-xs text-muted-foreground">
+        {info
+          ? `${info.segments.toLocaleString()} segments · updated ${fmt(info.synced_at)} · checked ${fmt(info.checked_at)}. Checks weekly (Mon).`
+          : "Pre-made intent segments used by Audience Build."}
+      </p>
+      {info?.last_error && <p className="mt-1 text-xs text-destructive">Last check failed: {info.last_error}</p>}
+      {msg && <p className="mt-1 text-xs text-emerald-700">{msg}</p>}
+      {err && <p className="mt-1 text-xs text-destructive">{err}</p>}
+      <Button size="sm" variant="outline" className="mt-2 h-7 text-xs" onClick={check} disabled={busy}>
+        {busy ? "Checking… (up to a minute)" : info?.segments ? "Check for updates" : "Sync now"}
+      </Button>
+    </div>
+  );
+}
+
 export default function GlobalAdmin() {
   const cid = lastCompanyId();
 
@@ -920,6 +983,8 @@ export default function GlobalAdmin() {
         />
 
         <CoreVersionCompanyMenu />
+
+        <AudienceLabTaxonomyCard />
 
         {integrations.to ? (
           <ToolCard

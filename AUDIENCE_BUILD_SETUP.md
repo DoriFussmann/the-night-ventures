@@ -10,8 +10,10 @@ Spec: TNV Lead Sourcing Engine — AudienceLab Spec (Claude doc).
    - `AUDIENCELAB_API_KEY` — AudienceLab → Account → API keys
    - (optional) `AUDIENCE_BUILD_MODEL` — Claude model for matching; default `claude-opus-5-5`
    `ANTHROPIC_API_KEY` must already be set. Then Deployments → Redeploy.
-3. Open any company → Audience Build → AudienceLab taxonomy → **Sync now**
-   (about a minute; ~45,000 segments). Shared by all companies; re-sync weekly.
+3. Admin → **AudienceLab taxonomy** → **Sync now** (about 20 s; ~45,000
+   segments). Shared by all companies. A weekly Vercel cron (Mondays 11:00
+   UTC, needs `CRON_SECRET`) re-checks AudienceLab and rewrites the table only
+   if the list changed; "Check for updates" in Admin does the same on demand.
 4. For each company: set Sending capacity, then **Find audiences**.
 
 ## How matching works
@@ -21,7 +23,7 @@ Spec: TNV Lead Sourcing Engine — AudienceLab Spec (Claude doc).
 2. Postgres full-text search (`search_al_segments`) over segment topic,
    taxonomy keywords, category and description returns ~80 candidates.
    Competitor names match segment topics by trigram similarity.
-3. Claude ranks the candidates 0–10 for "researchers are buyers right now".
+3. Claude ranks the candidates 0–10 and the page shows the top 10 for "researchers are buyers right now".
 4. The page counts the top 5 via AudienceLab `/insights` (high intent,
    business email with a validation status; 7-day and 1-day windows), two at a
    time. Each count takes 10–30 s; results are cached 12 h in

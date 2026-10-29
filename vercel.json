@@ -72,6 +72,10 @@
     {
       "path": "/api/check-article-update?action=publish-schedule",
       "schedule": "0 16 * * *"
+    },
+    {
+      "path": "/api/check-article-update?action=audience-build",
+      "schedule": "0 11 * * 1"
     }
   ],
   "functions": {

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Check, Crosshair, Database, RefreshCw, Search } from "lucide-react";
+import { Check, Crosshair, RefreshCw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -81,59 +81,6 @@ function Capacity({ companyId, capacity, onSaved }) {
           <Stat label="Target fresh pool / day" value={fmt(need * 3)} sub="3× need, so ranking has a choice" />
         </div>
       </div>
-      <div className="mt-2">
-        <ErrorLine>{err}</ErrorLine>
-      </div>
-    </Section>
-  );
-}
-
-function Taxonomy({ taxonomy, onSynced }) {
-  const [syncing, setSyncing] = useState(false);
-  const [err, setErr] = useState("");
-  const [result, setResult] = useState(null);
-
-  const sync = async () => {
-    setSyncing(true);
-    setErr("");
-    setResult(null);
-    try {
-      setResult(await audienceBuild("sync-segments"));
-      onSynced();
-    } catch (e) {
-      setErr(e.message);
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  return (
-    <Section
-      title="AudienceLab taxonomy"
-      description="AudienceLab's pre-made intent segments, shared by all companies. Sync weekly or when AudienceLab ships a new taxonomy."
-      collapsible
-      defaultOpen={!taxonomy?.segments}
-      actions={
-        <Button size="sm" variant="outline" onClick={sync} disabled={syncing}>
-          <Database className="mr-1.5 h-4 w-4" />
-          {syncing ? "Syncing…" : taxonomy?.segments ? "Sync again" : "Sync now"}
-        </Button>
-      }
-    >
-      <div className="grid max-w-md grid-cols-2 gap-3">
-        <Stat label="Segments" value={fmt(taxonomy?.segments)} />
-        <Stat label="Last synced" value={taxonomy?.synced_at ? fmtDate(taxonomy.synced_at) : "Never"} />
-      </div>
-      {syncing && (
-        <div className="mt-3">
-          <Loading label="Downloading ~45,000 segments and saving them… about a minute" />
-        </div>
-      )}
-      {result && (
-        <p className="mt-3 text-sm text-muted-foreground">
-          Synced {fmt(result.synced)} segments · {fmt(result.with_high)} offer high intent · {fmt(result.with_keywords)} with keywords.
-        </p>
-      )}
       <div className="mt-2">
         <ErrorLine>{err}</ErrorLine>
       </div>
@@ -407,7 +354,15 @@ export default function AudienceBuild() {
           </Notice>
         )}
         <Capacity key={`${status.capacity?.inboxes}-${status.capacity?.cap}`} companyId={companyId} capacity={status.capacity} onSaved={load} />
-        <Taxonomy taxonomy={status.taxonomy} onSynced={load} />
+        {!status.taxonomy?.segments && (
+          <Notice>
+            The AudienceLab taxonomy hasn't been synced yet. Run it once in{" "}
+            <Link className="underline" to="/admin">
+              Admin → AudienceLab taxonomy
+            </Link>
+            ; it then refreshes weekly on its own.
+          </Notice>
+        )}
         <Match companyId={companyId} status={status} onChanged={load} />
       </div>
     );
