@@ -22,6 +22,7 @@ import {
   normalizeResult,
   parseUpdateFromContent,
 } from '../lib/article-updates/wtsCheck.js'
+import { handleAnalyzeWriterArticle } from '../lib/writer-intake/handler.js'
 
 export const config = {
   // 300: the daily scheduled publisher (publish-schedule) commits, merges,
@@ -70,6 +71,9 @@ function requestAction(req) {
     }
     if (path.endsWith('/publish-schedule')) {
       return 'publish-schedule'
+    }
+    if (path.endsWith('/analyze-writer-article')) {
+      return 'analyze-writer-article'
     }
   } catch {
     // ignore
@@ -204,6 +208,9 @@ export default async function handler(req, res) {
   }
   if (action === 'audience-build') {
     return handleAudienceBuild(req, res)
+  }
+  if (action === 'analyze-writer-article') {
+    return handleAnalyzeWriterArticle(req, res)
   }
 
   if (req.method === 'OPTIONS') {

@@ -1,7 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { findKeywordOverlaps } from "../../../../lib/keyword-overlap.js";
 
-function coverageArticles(pillars) {
+export function coverageArticles(pillars) {
   const out = [];
   for (const pillar of Array.isArray(pillars) ? pillars : []) {
     const pillarKeyword = String(pillar?.keyword || "").trim();

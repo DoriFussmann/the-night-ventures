@@ -39,7 +39,9 @@ export default function TargetingSection({
   const locked = Boolean(disabled);
   const errors = targetingErrors(state, mode);
   const showWordCount = mode !== "modify" || state.expandLength;
-  const modifyAssigned = mode === "modify" && Boolean(state.pillarKeyword);
+  // A writer intake can hand the choice back to the user ("Choose manually").
+  const manualPick = mode === "modify" && state.selectedOption === "manual";
+  const modifyAssigned = mode === "modify" && Boolean(state.pillarKeyword) && !manualPick;
   const typeLabel =
     ARTICLE_TYPES.find((type) => type.value === state.articleType)?.label ||
     state.articleType;
@@ -124,9 +126,11 @@ export default function TargetingSection({
       <div>
         <h2 className="text-sm font-medium text-foreground">Targeting</h2>
         <p className="text-xs text-muted-foreground">
-          {mode === "modify"
-            ? "Pillar, cluster, target keyword, and article type are chosen from your keyword list when you adjust."
-            : "Pillar, cluster, and target keyword are required before the article can be created."}
+          {mode === "modify" && state.intake
+            ? "Chosen from your Company Intelligence keywords in Writer brief below."
+            : mode === "modify"
+              ? "Pillar, cluster, target keyword, and article type are chosen from your keyword list when you adjust."
+              : "Pillar, cluster, and target keyword are required before the article can be created."}
         </p>
       </div>
 
@@ -142,7 +146,7 @@ export default function TargetingSection({
         </p>
       )}
 
-      {mode === "modify" && !modifyAssigned && (
+      {mode === "modify" && !modifyAssigned && !manualPick && !state.intake && (
         <p className="text-sm text-muted-foreground">
           Drop the article, then Adjust. The chosen pillar, cluster, target keyword, and article type show up here.
         </p>
@@ -169,7 +173,7 @@ export default function TargetingSection({
         </dl>
       )}
 
-      {mode !== "modify" && (
+      {(mode !== "modify" || manualPick) && (
       <>
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-1.5">

@@ -56,6 +56,10 @@
       "destination": "/api/check-article-update?action=publish-schedule"
     },
     {
+      "source": "/api/analyze-writer-article",
+      "destination": "/api/check-article-update?action=analyze-writer-article"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/$1"
     },

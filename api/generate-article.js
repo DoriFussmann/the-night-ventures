@@ -13,8 +13,10 @@ import {
   normalizeCompetitors,
   normalizeKeywordOptions,
   normalizeSeoControls,
+  normalizeWriterBrief,
   resolveKeywordAssignment,
 } from '../lib/generate-article/prompt.js'
+import { finalizeWriterBody } from '../lib/writer-intake/finalize.js'
 import { claimSourceErrors, normalizeClaimSources, sourcesToExternalLinks } from '../lib/generate-article/sources.js'
 import { stripNoVolumeTag } from '../lib/stripNoVolumeTag.js'
 import { slugify } from '../lib/slugify.js'
@@ -746,13 +748,24 @@ function isBlockquoteBlock(block) {
   return /^\s*>/.test(String(block || ''))
 }
 
+function isTableBlock(block) {
+  return /^\s*\|/.test(String(block || ''))
+}
+
+/** A block that is only an image (e.g. a writer's image kept in place). */
+function isImageBlock(block) {
+  return /^\s*!\[[^\]]*\]\([^)]*\)\s*$/.test(String(block || ''))
+}
+
 /** Structural markdown that must never be merged into/from as prose. */
 function isStructuralBlock(block) {
   return (
     isHeadingBlock(block) ||
     isListBlock(block) ||
     isHorizontalRuleBlock(block) ||
-    isBlockquoteBlock(block)
+    isBlockquoteBlock(block) ||
+    isTableBlock(block) ||
+    isImageBlock(block)
   )
 }
 
@@ -914,7 +927,7 @@ export function joinSoftBreaks(text) {
     .map((part) => {
       if (/^\n[ \t]*\n+$/.test(part) || !part.includes('\n')) return part
       const lines = part.split('\n')
-      const structural = lines.some((line) => /^\s*(#|[-*+]\s|\d+[.)]\s|\||>|<!--|```)/.test(line))
+      const structural = lines.some((line) => /^\s*(#|[-*+]\s|\d+[.)]\s|\||>|<!--|```|!\[)/.test(line))
       if (structural) return part
       return lines.map((line) => line.trim()).filter(Boolean).join(' ')
     })
@@ -995,8 +1008,10 @@ function interpretGeneratedArticle(parsed, context) {
     supportingKeyword: supporting,
     articleType: type,
   })
-  const articleBody = processArticleBody(String(parsed?.body || ''))
+  const writer = finalizeWriterBody(String(parsed?.body || ''), context.writerBrief || null)
+  const articleBody = processArticleBody(writer.body)
   const validationErrors = [
+    ...writer.errors,
     ...(assignment && !assignment.ok ? assignment.errors : []),
     ...(assignment && !assignment.ok
       ? []
@@ -1179,6 +1194,7 @@ export default async function handler(req, res) {
     let sourceArticle = ''
     let expand = false
     let userLinks = null
+    let writerBrief = null
 
     if (mode === 'idea' || mode === 'modify') {
       competitors = mergeAllowedBrands(competitors, body.allowedBrands)
@@ -1198,6 +1214,7 @@ export default async function handler(req, res) {
       }
       sourceArticle = body.sourceArticle
       expand = body.expand === true
+      writerBrief = normalizeWriterBrief(body.writerBrief)
     }
 
     const modelChoosesKeywords =
@@ -1238,6 +1255,7 @@ export default async function handler(req, res) {
             sourceArticle,
             expand,
             keywordOptions: modelChoosesKeywords ? keywordOptions : [],
+            writerBrief,
           })
         : buildUserPrompt(promptInput)
 
@@ -1289,6 +1307,7 @@ export default async function handler(req, res) {
       competitors,
       lengthBounds,
       requireClaimSources: mode !== 'modify',
+      writerBrief,
     }
     let interpreted = interpretGeneratedArticle(parsed, interpretContext)
     let { whereThingsStandSources, claimSources, frontmatter, articleBody, validationErrors, assignment } =
@@ -1351,7 +1370,12 @@ export default async function handler(req, res) {
 
     // An unsourced statistic left after the retries is reported, not fatal:
     // the draft is reviewed before anything publishes.
-    const isSoft = (item) => item.includes('claimSources') || item.startsWith('keyMessageCoverage')
+    // A writer image the model kept dropping is reported, not fatal: the
+    // client shows it and the image can be placed by hand in Review.
+    const isSoft = (item) =>
+      item.includes('claimSources') ||
+      item.startsWith('keyMessageCoverage') ||
+      item.startsWith('Image placeholder')
     const sourceWarnings = validationErrors.filter(isSoft)
     validationErrors = validationErrors.filter((item) => !isSoft(item))
 
@@ -1383,6 +1407,13 @@ export default async function handler(req, res) {
             mainBodyWordCount: countMainBodyWords(articleBody),
             sourceWordCount: lengthBounds.sourceWordCount,
             assignment,
+            ...(writerBrief
+              ? {
+                  missingImages: writerBrief.imageNumbers.filter(
+                    (n) => !articleBody.includes(`](writer-image:${n})`)
+                  ),
+                }
+              : {}),
           }
         : {}),
     })

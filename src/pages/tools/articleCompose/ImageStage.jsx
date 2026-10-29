@@ -93,6 +93,9 @@ export default function ImageStage({ companyId, state, dispatch }) {
           className="w-full max-w-xl rounded-md border border-border"
         />
       )}
+      {state.heroSource?.source === "writer" && (
+        <p className="text-xs text-muted-foreground">The writer&apos;s image. Regenerate to replace it.</p>
+      )}
       {attribution && (
         <p className="text-xs text-muted-foreground">
           {attribution.photographer ? (

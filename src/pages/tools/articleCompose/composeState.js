@@ -54,7 +54,43 @@ export const initialComposeState = {
   suggesting: false,
   cannibalization: [],
   cannibalizationError: "",
+  // Writer intake (article delivered as a document with a brief and images).
+  writerImages: [],
+  intake: null,
+  intakeStatus: "idle",
+  intakeError: "",
+  sourceBeforeIntake: "",
+  imageChoices: {},
+  selectedOption: -1,
+  missingImages: [],
 };
+
+/** Keyword choice from the writer intake: an analysed option, or "manual". */
+export function intakeSelectionPatch(intake, selection) {
+  if (selection === "manual") {
+    return { selectedOption: "manual" };
+  }
+  const option = intake?.options?.[selection];
+  if (!option) return { selectedOption: -1 };
+  return {
+    selectedOption: selection,
+    pillarKeyword: option.pillarKeyword,
+    clusterKeyword: option.supportingKeyword,
+    targetKeyword: option.targetKeyword,
+    articleType: option.articleType || "flex",
+  };
+}
+
+/** With a writer intake, the user must pick the keyword before adjusting. */
+export function intakeKeywordError(state) {
+  if (!state.intake) return "";
+  if (state.selectedOption === -1) return "Choose a keyword for this article.";
+  const missing =
+    !String(state.pillarKeyword || "").trim() ||
+    !String(state.clusterKeyword || "").trim() ||
+    !String(state.targetKeyword || "").trim();
+  return missing ? "Pick a pillar, cluster and target keyword." : "";
+}
 
 export function composeReducer(state, action) {
   switch (action.type) {

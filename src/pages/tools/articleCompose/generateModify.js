@@ -2,7 +2,15 @@ import { loadCompanyPositioning } from "../articleGeneration/singleArticle";
 import { todayIso } from "../../../../lib/wire-internal-links/externalLinksYaml.js";
 import { countMainBodyWords } from "../../../../lib/generate-article/mainBodyWords.js";
 import { countWords, modifyKeywordOptions, parseAllowedBrands } from "./composeState";
-import { updateComposedDraftById } from "./draftRecord";
+import { saveHeroOnDraft, updateComposedDraftById } from "./draftRecord";
+import { keepWriterImages } from "../../../../lib/writer-intake/markdown.js";
+import {
+  bodyWithStoredImages,
+  heroImageNumber,
+  sourceForGeneration,
+  applyWriterHero,
+  writerBriefForGeneration,
+} from "./writerIntake";
 import { saveComposedDraft } from "./saveComposedDraft";
 import { IdeaGenerationError } from "./generateIdea";
 
@@ -36,9 +44,23 @@ export async function generateModifyArticle({
   const chosen = Boolean(pillarKeyword && clusterKeyword && targetKeyword);
   const keywordOptions = chosen ? [] : modifyKeywordOptions(pillars);
   const expand = state.expandLength === true;
+  const intake = state.intake || null;
+  const choices = state.imageChoices || {};
+  const option =
+    intake && Number.isInteger(state.selectedOption) ? intake.options?.[state.selectedOption] : null;
+  // Only images placed in the article go to the model; without an intake none do.
+  const sourceArticle = intake
+    ? sourceForGeneration(state.sourceArticle, choices)
+    : keepWriterImages(state.sourceArticle, []);
+  const writerBrief = writerBriefForGeneration({
+    intake,
+    choices,
+    option,
+    domain: positioning.domain,
+  });
   const wordCount = expand
     ? Number(state.wordCount)
-    : countWords(state.sourceArticle);
+    : countWords(sourceArticle);
   const ctaAngle = String(state.ctaAngle || "").trim();
   const checkedLinks = (Array.isArray(state.userLinks) ? state.userLinks : [])
     .filter((link) => link?.checked !== false)
@@ -53,8 +75,10 @@ export async function generateModifyArticle({
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       mode: "modify",
-      sourceArticle: String(state.sourceArticle || ""),
+      sourceArticle,
       expand,
+      writerBrief,
+      seoControls: positioning.seoControls,
       allowedBrands: parseAllowedBrands(state.allowedBrandsText),
       userLinks: checkedLinks,
       abstract: positioning.abstract,
@@ -103,6 +127,7 @@ export async function generateModifyArticle({
   const savedCluster = String(assigned.supportingKeyword || clusterKeyword).trim();
   const savedTarget = String(assigned.targetKeyword || targetKeyword).trim();
   const savedType = String(assigned.articleType || state.articleType).trim() || state.articleType;
+  const body = bodyWithStoredImages(data.body || "", state.writerImages);
   const saveInput = {
     companyId,
     pillarKeyword: savedPillar,
@@ -111,7 +136,7 @@ export async function generateModifyArticle({
     type: savedType,
     targetKeyword: savedTarget,
     frontmatter,
-    body: data.body || "",
+    body,
     whereThingsStandSources: Array.isArray(data.whereThingsStandSources)
       ? data.whereThingsStandSources
       : [],
@@ -126,7 +151,7 @@ export async function generateModifyArticle({
         draftId: existingDraftId,
         wordCount: Number.isFinite(Number(data.mainBodyWordCount))
           ? Number(data.mainBodyWordCount)
-          : countMainBodyWords(data.body || ""),
+          : countMainBodyWords(body),
       })
     : await saveComposedDraft(saveInput);
   if (saved.slugChangedFrom) {
@@ -136,6 +161,22 @@ export async function generateModifyArticle({
     frontmatter.slug = saved.frontmatter.slug;
   }
 
+  // The writer's hero image, unless the user left every image out.
+  let hero = null;
+  const heroN = intake ? heroImageNumber(choices) : null;
+  const heroImage = (state.writerImages || []).find((img) => img.n === heroN);
+  if (heroImage) {
+    hero = await applyWriterHero({ companyId, slug: saved.row.slug, image: heroImage });
+    if (hero) {
+      await saveHeroOnDraft({
+        companyId,
+        draftId: String(saved.row.id),
+        storagePath: hero.storagePath,
+        heroSource: hero.heroSource,
+      });
+    }
+  }
+
   return {
     draftId: String(saved.row.id),
     pillarKeyword: savedPillar,
@@ -143,10 +184,13 @@ export async function generateModifyArticle({
     targetKeyword: savedTarget,
     articleType: savedType,
     frontmatter,
-    body: data.body || "",
+    body,
     whereThingsStandSources: Array.isArray(data.whereThingsStandSources)
       ? data.whereThingsStandSources
       : [],
+    heroStoragePath: hero?.storagePath || "",
+    heroSource: hero?.heroSource || null,
+    missingImages: Array.isArray(data.missingImages) ? data.missingImages : [],
     slugNote: saved.slugChangedFrom
       ? `Slug changed to ${saved.row.slug} because ${saved.slugChangedFrom} already exists.`
       : "",
