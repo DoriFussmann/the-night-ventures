@@ -13,6 +13,7 @@ import { handleIntegrations } from '../lib/integrations/handler.js'
 import { handleSuggestTargetKeyword } from '../lib/suggest-target-keyword/handler.js'
 import { handleSitePlaceholders } from '../lib/placeholders/handler.js'
 import { handlePublishSchedule } from '../lib/publish-schedule/handler.js'
+import { handleAudienceBuild } from '../lib/audience-build/handler.js'
 import {
   MAX_TOKENS,
   MODEL,
@@ -200,6 +201,9 @@ export default async function handler(req, res) {
   }
   if (action === 'publish-schedule') {
     return handlePublishSchedule(req, res)
+  }
+  if (action === 'audience-build') {
+    return handleAudienceBuild(req, res)
   }
 
   if (req.method === 'OPTIONS') {
