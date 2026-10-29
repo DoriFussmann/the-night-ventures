@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Section, Loading, ErrorLine, Stat, fmtDate } from "./emailCampaigns/ui";
 import { audienceBuild } from "./audienceBuild/api";
+import IcpFilters from "./audienceBuild/IcpFilters";
 import { attachCounts } from "../../../lib/audience-build/logic.js";
 
 const AUTO_COUNT_TOP = 5;
@@ -382,6 +383,7 @@ export default function AudienceBuild() {
           </Notice>
         )}
         <Match companyId={companyId} status={status} onChanged={load} />
+        <IcpFilters companyId={companyId} status={status} onChanged={load} />
       </div>
     );
 
