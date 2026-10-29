@@ -73,5 +73,10 @@
       "path": "/api/check-article-update?action=publish-schedule",
       "schedule": "0 16 * * *"
     }
-  ]
+  ],
+  "functions": {
+    "api/check-article-update.js": {
+      "includeFiles": "lib/audience-build/data/**"
+    }
+  }
 }

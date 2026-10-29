@@ -30,6 +30,7 @@ import Audit from '@/pages/tools/Audit';
 import SystemMap from '@/pages/tools/SystemMap';
 import CoreVersion from '@/pages/tools/CoreVersion';
 import EmailCampaigns from '@/pages/tools/EmailCampaigns';
+import AudienceBuild from '@/pages/tools/AudienceBuild';
 import Integrations from '@/pages/tools/Integrations';
 import ArticleCompose from '@/pages/tools/ArticleCompose';
 import Analytics from '@/pages/tools/Analytics';
@@ -83,6 +84,7 @@ const AuthenticatedApp = () => {
           <Route path="/company/:companyId/system-map" element={<SystemMap />} />
           <Route path="/company/:companyId/core-version" element={<CoreVersion />} />
           <Route path="/company/:companyId/email-campaigns" element={<EmailCampaigns />} />
+          <Route path="/company/:companyId/audience-build" element={<AudienceBuild />} />
           <Route path="/company/:companyId/integrations" element={<Integrations />} />
         </Route>
       </Route>
