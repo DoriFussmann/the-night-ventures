@@ -9,7 +9,8 @@ import {
   TOOL_DEFINITIONS,
   executeTool,
   providerLabelForTool,
-  MAX_TOOL_CALLS_PER_TURN,
+  TOOL_BUDGET,
+  planToolRun,
   healthSnapshot,
 } from '../lib/seo-advisor/tools.js'
 import { researchLocale } from '../lib/seo-advisor/markets.js'
@@ -20,6 +21,8 @@ import { computeNextStep, formatProgress } from '../lib/seo-advisor/nextStep.js'
 const MODEL = process.env.SEO_ADVISOR_MODEL || 'claude-sonnet-5-5'
 const TITLE_MODEL = process.env.SEO_ADVISOR_TITLE_MODEL || 'claude-haiku-5-5'
 const MAX_TOKENS = 8192
+// Safety stop: a turn never loops through more than this many tool rounds.
+const MAX_TOOL_ROUNDS = 8
 
 // Tool definitions never change, so cache them with a breakpoint on the last one.
 const CACHED_TOOLS = TOOL_DEFINITIONS.map((tool, i) =>
@@ -237,16 +240,23 @@ export default async function handler(req, res) {
       },
     }
 
+    let used = { data: 0, cards: 0 }
     let toolCalls = 0
+    let forceAnswer = false
+    let rounds = 0
     let authorityChain = Promise.resolve()
     let assistantText = ''
 
     while (!closed) {
+      rounds += 1
+      // Once the budget is spent (or after many rounds), the next turn must answer in text.
+      const mustAnswer = forceAnswer || rounds > MAX_TOOL_ROUNDS
       const stream = anthropic.messages.stream({
         model: MODEL,
         max_tokens: MAX_TOKENS,
         system,
         tools: CACHED_TOOLS,
+        ...(mustAnswer ? { tool_choice: { type: 'none' } } : {}),
         messages: withCacheBreakpoint(messages),
       })
 
@@ -267,9 +277,9 @@ export default async function handler(req, res) {
         break
       }
 
-      const remaining = Math.max(0, MAX_TOOL_CALLS_PER_TURN - toolCalls)
-      const toRun = toolUses.slice(0, remaining)
-      const skipped = toolUses.slice(remaining)
+      const plan = planToolRun(toolUses, used)
+      const { toRun, skipped } = plan
+      used = plan.used
       toolCalls += toRun.length
 
       const outcomes = await Promise.all(
@@ -318,13 +328,16 @@ export default async function handler(req, res) {
       )
 
       if (skipped.length > 0) {
-        send('status', { message: 'Tool limit reached for this message; answering with the data so far.' })
+        forceAnswer = true
+        send('status', {
+          message: `Used this message's ${TOOL_BUDGET.data} data lookups; the Advisor is answering with what it has. Ask again to continue.`,
+        })
         for (const toolUse of skipped) {
           outcomes.push({
             toolUse,
             result: {
               available: false,
-              reason: `Skipped: max ${MAX_TOOL_CALLS_PER_TURN} tool calls per message. Answer with the data you have.`,
+              reason: `Skipped: this message's budget (${TOOL_BUDGET.data} data lookups, ${TOOL_BUDGET.cards} Add cards) is used up. Answer now with the data you have; the user can ask a follow-up to continue.`,
             },
             isError: true,
           })
@@ -343,7 +356,12 @@ export default async function handler(req, res) {
         toolResults.push({
           type: 'tool_result',
           tool_use_id: toolUse.id,
-          content: JSON.stringify(result),
+          // Tell the model what budget is left so it can plan the rest of the turn.
+          content: JSON.stringify(
+            result && typeof result === 'object' && !Array.isArray(result)
+              ? { ...result, budget_remaining: plan.remaining }
+              : result
+          ),
           ...(isError ? { is_error: true } : {}),
         })
       }

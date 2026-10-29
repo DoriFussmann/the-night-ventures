@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   CheckSquare,
+  Crosshair,
   ChevronDown,
   Download,
   GitBranch,
@@ -12,6 +13,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { audienceBuild } from "@/pages/tools/audienceBuild/api";
 import { buildDoTasksMarkdown } from "@/lib/doTasksMarkdown";
 import { downloadMarkdown } from "@/pages/tools/siteBuildFlow/buildFlowMarkdown";
 import { Button } from "@/components/ui/button";
@@ -890,6 +892,111 @@ function CoreVersionCompanyMenu() {
   );
 }
 
+function AudienceLabTaxonomyCard() {
+  const [info, setInfo] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+  const [multiplier, setMultiplier] = useState("");
+  const [savingM, setSavingM] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await audienceBuild("taxonomy-status");
+      setInfo(data);
+      setMultiplier(String(data?.settings?.pool_multiplier ?? 3));
+    } catch (e) {
+      setErr(e.message);
+    }
+  }, []);
+
+  const saveMultiplier = async () => {
+    setSavingM(true);
+    setMsg("");
+    setErr("");
+    try {
+      const r = await audienceBuild("save-settings", { poolMultiplier: Number(multiplier) });
+      setMsg(`Target pool set to ${r.pool_multiplier}× daily need.`);
+      await load();
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setSavingM(false);
+    }
+  };
+  const multiplierDirty = info && String(info.settings?.pool_multiplier ?? 3) !== multiplier;
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const fmt = (v) =>
+    v ? new Date(v).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "never";
+
+  const check = async () => {
+    setBusy(true);
+    setMsg("");
+    setErr("");
+    try {
+      const r = await audienceBuild("sync-segments");
+      setMsg(
+        r.changed
+          ? `Updated: ${r.segments.toLocaleString()} segments (${r.with_high.toLocaleString()} with high intent).`
+          : "No changes from AudienceLab."
+      );
+      await load();
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className={CARD_CLASS}>
+      <div className="flex items-center gap-2">
+        <Crosshair className="h-4 w-4 text-muted-foreground" />
+        <span className="text-sm font-medium text-foreground">Audience Build</span>
+      </div>
+      <p className="mt-1.5 text-xs text-muted-foreground">
+        {info
+          ? `AudienceLab taxonomy: ${info.segments.toLocaleString()} segments · updated ${fmt(info.synced_at)} · checked ${fmt(info.checked_at)}. Checks weekly (Mon).`
+          : "AudienceLab taxonomy and settings for Audience Build."}
+      </p>
+      {info?.last_error && <p className="mt-1 text-xs text-destructive">Last check failed: {info.last_error}</p>}
+      {msg && <p className="mt-1 text-xs text-emerald-700">{msg}</p>}
+      {err && <p className="mt-1 text-xs text-destructive">{err}</p>}
+      <Button size="sm" variant="outline" className="mt-2 h-7 text-xs" onClick={check} disabled={busy}>
+        {busy ? "Checking… (up to a minute)" : info?.segments ? "Check for updates" : "Sync now"}
+      </Button>
+      <div className="mt-3 border-t border-border pt-3">
+        <Label htmlFor="ab-multiplier" className="text-xs">
+          Target pool multiplier
+        </Label>
+        <p className="text-xs text-muted-foreground">
+          Fresh people needed per day = leads sent per day × this. Headroom for removals, ICP filters and ranking.
+        </p>
+        <div className="mt-1.5 flex items-center gap-2">
+          <Input
+            id="ab-multiplier"
+            type="number"
+            min={1}
+            max={10}
+            step={0.5}
+            className="h-7 w-20 text-xs"
+            value={multiplier}
+            onChange={(e) => setMultiplier(e.target.value)}
+          />
+          <span className="text-xs text-muted-foreground">×</span>
+          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={saveMultiplier} disabled={!multiplierDirty || savingM}>
+            {savingM ? "Saving…" : "Save"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function GlobalAdmin() {
   const cid = lastCompanyId();
 
@@ -920,6 +1027,8 @@ export default function GlobalAdmin() {
         />
 
         <CoreVersionCompanyMenu />
+
+        <AudienceLabTaxonomyCard />
 
         {integrations.to ? (
           <ToolCard

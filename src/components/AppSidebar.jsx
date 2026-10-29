@@ -26,6 +26,7 @@ import {
   Settings,
   TriangleAlert,
   ChartLine,
+  Crosshair,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -520,6 +521,13 @@ export default function AppSidebar({ user }) {
                   path: `/company/${activeCompanyId}/audit`,
                   icon: ClipboardCheck,
                   status: "Partial",
+                }}
+              />
+              <NavItem
+                item={{
+                  label: "Audience Build",
+                  path: `/company/${activeCompanyId}/audience-build`,
+                  icon: Crosshair,
                 }}
               />
               {emailEnabled && (

@@ -10,6 +10,14 @@ import { cn } from "@/lib/utils";
 import { STATUS_META, nextStatus, normalizeStatus } from "./siteBuildFlow/seedData";
 import { loadTemplate, templateItemLink } from "./siteBuildFlow/template";
 import TemplateEditor from "./siteBuildFlow/TemplateEditor";
+import PlaceholdersStage from "./siteBuildFlow/PlaceholdersStage";
+import {
+  PLACEHOLDERS_AFTER_STAGE,
+  PLACEHOLDERS_STAGE_KEY,
+  PLACEHOLDERS_STAGE_NAME,
+  loadSavedScan,
+  summarize as summarizePlaceholders,
+} from "./siteBuildFlow/placeholdersApi";
 import {
   SITE_BUILD_FLOW_MARKDOWN_FILENAME,
   buildSiteBuildFlowMarkdown,
@@ -133,6 +141,7 @@ export default function SiteBuildFlow() {
   const [template, setTemplate] = useState([]);
   const [editingStageKey, setEditingStageKey] = useState(null);
   const [activeStageKey, setActiveStageKey] = useState("");
+  const [placeholderSummary, setPlaceholderSummary] = useState(null);
   const [expandedItemKey, setExpandedItemKey] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -555,7 +564,9 @@ export default function SiteBuildFlow() {
     setSavedState(cloneState(next));
     setDraftState(cloneState(next));
     setActiveStageKey((prev) =>
-      templateStages.some((stage) => stage.stage_key === prev) ? prev : templateStages[0]?.stage_key || ""
+      prev === PLACEHOLDERS_STAGE_KEY || templateStages.some((stage) => stage.stage_key === prev)
+        ? prev
+        : templateStages[0]?.stage_key || ""
     );
     setExpandedItemKey(null);
     setLoading(false);
@@ -564,6 +575,25 @@ export default function SiteBuildFlow() {
   useEffect(() => {
     loadAndSeed();
   }, [loadAndSeed]);
+
+  // Sidebar status of the live Placeholders stage, from the last saved scan.
+  useEffect(() => {
+    if (!companyId) return undefined;
+    let cancelled = false;
+    setPlaceholderSummary(null);
+    loadSavedScan(companyId)
+      .then((saved) => {
+        if (!cancelled && saved?.report) {
+          setPlaceholderSummary(summarizePlaceholders(saved.report, saved.signoffs || {}));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId]);
+
+  const isPlaceholdersStage = activeStageKey === PLACEHOLDERS_STAGE_KEY;
 
   const isDirty = useMemo(
     () =>
@@ -574,8 +604,10 @@ export default function SiteBuildFlow() {
 
   const activeStage = useMemo(
     () =>
-      template.find((s) => s.stage_key === activeStageKey) ||
-      template[0] || { stage_key: "", name: "" },
+      activeStageKey === PLACEHOLDERS_STAGE_KEY
+        ? { stage_key: PLACEHOLDERS_STAGE_KEY, name: PLACEHOLDERS_STAGE_NAME }
+        : template.find((s) => s.stage_key === activeStageKey) ||
+          template[0] || { stage_key: "", name: "" },
     [template, activeStageKey]
   );
 
@@ -768,6 +800,52 @@ export default function SiteBuildFlow() {
     );
   }
 
+  // Live stage card: not part of the editable template, status comes from the scan.
+  const placeholdersCard = () => {
+    const selected = isPlaceholdersStage;
+    const select = () => {
+      setActiveStageKey(PLACEHOLDERS_STAGE_KEY);
+      setExpandedItemKey(null);
+    };
+    const s = placeholderSummary;
+    const meta = STATUS_META[s?.complete ? "done" : "open"];
+    return (
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={select}
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return;
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            select();
+          }
+        }}
+        className={cn(
+          "w-full cursor-pointer rounded-[14px] border border-border bg-card px-4 py-3 text-left transition-colors",
+          selected ? "bg-accent" : "hover:bg-accent/40"
+        )}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <p className="min-w-0 flex-1 text-sm leading-snug text-foreground">
+            {PLACEHOLDERS_STAGE_NAME}
+          </p>
+          <span
+            className={cn(
+              "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
+              meta.className
+            )}
+          >
+            {meta.label}
+          </span>
+        </div>
+        <p className="mt-1.5 text-[11px] text-muted-foreground">
+          {s ? `(${s.requiredDone} of ${s.requiredTotal} done · live)` : "(live from the site repo)"}
+        </p>
+      </div>
+    );
+  };
+
   return (
     <div className="flex min-h-[calc(100vh-3rem)] flex-col">
       <div className="sticky top-0 z-20 border-b border-border bg-background/95 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
@@ -775,9 +853,13 @@ export default function SiteBuildFlow() {
           <div>
             <h1 className="text-xs text-foreground mb-0.5">Site Build Flow</h1>
             <p className="text-xs text-muted-foreground">
-              {activeStage.name} —{" "}
-              {activeItems.filter((i) => i.status === "done").length} of{" "}
-              {activeItems.length} items done
+              {isPlaceholdersStage
+                ? `${activeStage.name} — live from the site repo${
+                    placeholderSummary
+                      ? `: ${placeholderSummary.requiredDone} of ${placeholderSummary.requiredTotal} required done`
+                      : ""
+                  }`
+                : `${activeStage.name} — ${activeItems.filter((i) => i.status === "done").length} of ${activeItems.length} items done`}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -791,7 +873,7 @@ export default function SiteBuildFlow() {
               variant="outline"
               size="sm"
               onClick={() => setEditingStageKey(activeStageKey || "new")}
-              disabled={isDirty || saving || loading}
+              disabled={isDirty || saving || loading || isPlaceholdersStage}
               title={isDirty ? "Save or discard this company's changes first" : undefined}
             >
               <Pencil className="h-3.5 w-3.5" />
@@ -855,6 +937,8 @@ export default function SiteBuildFlow() {
           <p className="text-[11px] uppercase tracking-[0.08em] font-medium text-muted-foreground">
             Stages
           </p>
+          {!template.some((stage) => stage.stage_key === PLACEHOLDERS_AFTER_STAGE) &&
+            placeholdersCard()}
           {template.map((stage) => {
             const stageRow = draftStagesByKey[stage.stage_key];
             const status = stageRow?.status || "open";
@@ -870,8 +954,8 @@ export default function SiteBuildFlow() {
             };
 
             return (
+              <React.Fragment key={stage.stage_key}>
               <div
-                key={stage.stage_key}
                 role="button"
                 tabIndex={0}
                 onClick={selectStage}
@@ -930,6 +1014,8 @@ export default function SiteBuildFlow() {
                   </div>
                 </div>
               </div>
+              {stage.stage_key === PLACEHOLDERS_AFTER_STAGE && placeholdersCard()}
+              </React.Fragment>
             );
           })}
         </div>
@@ -938,7 +1024,9 @@ export default function SiteBuildFlow() {
           <h2 className="text-lg font-normal tracking-tight text-foreground">
             {activeStage.name}
           </h2>
-          {activeItems.length === 0 ? (
+          {isPlaceholdersStage ? (
+            <PlaceholdersStage companyId={companyId} onSummary={setPlaceholderSummary} />
+          ) : activeItems.length === 0 ? (
             <p className="text-xs text-muted-foreground">No items in this stage.</p>
           ) : (
             activeItems.map((item) => {

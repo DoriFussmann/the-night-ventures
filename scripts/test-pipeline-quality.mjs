@@ -7,6 +7,9 @@ import { joinSoftBreaks, keyMessageCoverageErrors } from '../api/generate-articl
 import { buildUserPrompt, spellingLine } from '../lib/generate-article/prompt.js'
 import { sourcesToExternalLinks } from '../lib/generate-article/sources.js'
 import { hasCommercialLink, parseArticleMarkdown, planDeltas } from '../lib/wire-internal-links/plan.js'
+import { TOOL_BUDGET, checkOverlapBatch, planToolRun } from '../lib/seo-advisor/tools.js'
+import { buildSystemPrompt } from '../lib/seo-advisor/context.js'
+import { researchLocale } from '../lib/seo-advisor/markets.js'
 
 let passed = 0
 async function test(name, fn) {
@@ -104,6 +107,40 @@ await test('an existing commercial link to another site page counts; no second o
   const { proposed, skipped } = planDeltas([withLink], { commercial: { url: '/book-call/', phrases: ['Rupert'] } })
   assert.equal(proposed.length, 0)
   assert.equal(skipped[0].slug, 'a')
+})
+
+await test('Advisor budget: Add cards never use the data budget', () => {
+  const data = (n) => Array.from({ length: n }, (_, i) => ({ name: 'dataforseo_keyword_volume', id: `d${i}` }))
+  const cards = (n) => Array.from({ length: n }, (_, i) => ({ name: 'recommend_keyword', id: `c${i}` }))
+  const first = planToolRun([...data(10), ...cards(7)])
+  assert.equal(first.toRun.length, 17)
+  assert.deepEqual(first.used, { data: 10, cards: 7 })
+  const second = planToolRun([...data(10), ...cards(7)], first.used)
+  assert.equal(second.toRun.filter((t) => t.name !== 'recommend_keyword').length, TOOL_BUDGET.data - 10)
+  assert.equal(second.toRun.filter((t) => t.name === 'recommend_keyword').length, TOOL_BUDGET.cards - 7)
+  assert.equal(second.skipped.length, 4 + 2)
+  assert.deepEqual(second.remaining, { data: 0, cards: 0 })
+})
+
+await test('same-results check runs several candidates in one call', async () => {
+  const seen = []
+  const out = await checkOverlapBatch(
+    { keywords: ['a', 'B', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] },
+    async (k) => {
+      seen.push(k)
+      return { available: true, verdict: k === 'c' ? 'same' : 'distinct' }
+    }
+  )
+  assert.deepEqual(seen, ['a', 'B', 'c', 'd', 'e', 'f', 'g'])
+  assert.equal(out.results.find((r) => r.keyword === 'c').verdict, 'same')
+  assert.match(out.note, /first 7/)
+  assert.equal((await checkOverlapBatch({}, async () => ({}))).available, false)
+})
+
+await test('system prompt tells the Advisor its budget and to batch', () => {
+  const prompt = buildSystemPrompt({ company: { name: 'A' }, profile: {}, industries: [], tree: [], locale: researchLocale('us') })
+  assert.match(prompt, new RegExp(`${TOOL_BUDGET.data} data lookups and ${TOOL_BUDGET.cards} Add cards`))
+  assert.match(prompt, /one dataforseo_serp_overlap call checks up to 7/)
 })
 
 console.log(`\n${passed} passed${process.exitCode ? ', some failed' : ''}`)

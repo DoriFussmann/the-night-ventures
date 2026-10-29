@@ -170,16 +170,15 @@ export function toolResultToDataCard(toolName, result, { id, createdAt } = {}) {
       break
     }
     case 'dataforseo_serp_overlap': {
-      rows = (result.matches || []).map((m) => ({
-        keyword: m.keyword,
-        core: m.core,
-        shared: `${m.shared}/10`,
+      // One row per candidate checked: its verdict and the closest keyword in the map.
+      const checks = Array.isArray(result.results) ? result.results : [result]
+      rows = checks.map((r) => ({
+        candidate: r.keyword || '',
+        verdict: r.verdict || (r.available === false ? 'unchecked' : ''),
+        closest: r.closest ? `${r.closest.keyword} (${r.closest.shared}/10)` : '—',
       }))
-      columns = ['keyword', 'core', 'shared']
-      if (rows.length === 0) {
-        columns = ['result']
-        rows = [{ result: result.message || 'No overlap' }]
-      }
+      columns = ['candidate', 'verdict', 'closest']
+      subtitle = checks.map((r) => r.keyword).filter(Boolean).join(', ')
       break
     }
     case 'dataforseo_serp_results': {

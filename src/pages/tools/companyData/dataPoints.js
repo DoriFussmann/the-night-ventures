@@ -354,7 +354,6 @@ export function mergeParsedCompanyFields({
       case "seo_market":
       case "seo_language":
       case "seo_search_competitors":
-      case "seo_publishing_pace":
         nextFields[point.parsedKey] = parsed[point.parsedKey];
         break;
       case "social-shops":

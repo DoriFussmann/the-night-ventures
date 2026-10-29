@@ -48,13 +48,43 @@
       "destination": "/api/check-article-update?action=suggest-target-keyword"
     },
     {
+      "source": "/api/site-placeholders",
+      "destination": "/api/check-article-update?action=site-placeholders"
+    },
+    {
+      "source": "/api/publish-schedule",
+      "destination": "/api/check-article-update?action=publish-schedule"
+    },
+    {
       "source": "/api/analyze-writer-article",
       "destination": "/api/check-article-update?action=analyze-writer-article"
     },
-    { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
   ],
   "crons": [
-    { "path": "/api/audit-snapshot", "schedule": "0 9 * * *" }
-  ]
+    {
+      "path": "/api/audit-snapshot",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/check-article-update?action=publish-schedule",
+      "schedule": "0 16 * * *"
+    },
+    {
+      "path": "/api/check-article-update?action=audience-build",
+      "schedule": "0 11 * * 1"
+    }
+  ],
+  "functions": {
+    "api/check-article-update.js": {
+      "includeFiles": "lib/audience-build/data/**"
+    }
+  }
 }
