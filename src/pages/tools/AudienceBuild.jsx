@@ -39,7 +39,7 @@ function Notice({ children }) {
   );
 }
 
-function Capacity({ companyId, capacity, onSaved }) {
+function Capacity({ companyId, capacity, onSaved, done }) {
   const [inboxes, setInboxes] = useState(String(capacity?.inboxes ?? 1));
   const [cap, setCap] = useState(String(capacity?.cap ?? 30));
   const [saving, setSaving] = useState(false);
@@ -65,6 +65,10 @@ function Capacity({ companyId, capacity, onSaved }) {
     <Section
       title="Sending capacity"
       description="Single touch: every email goes to a new lead, so leads needed per day = inboxes × daily cap."
+      collapsible
+      defaultOpen={!done}
+      done={done}
+      summary={`${capacity?.inboxes} inbox${capacity?.inboxes === 1 ? "" : "es"} × ${capacity?.cap} a day = ${fmt(capacity?.need)} leads/day · target pool ${fmt(capacity?.targetPool)}`}
     >
       <div className="flex flex-wrap items-end gap-4">
         <div className="space-y-1">
@@ -105,7 +109,7 @@ function Makeup({ makeup }) {
   );
 }
 
-function Match({ companyId, status, onChanged }) {
+function Match({ companyId, status, onChanged, done }) {
   const config = status?.config;
   const lastMatch = config?.last_match || null;
   const savedIds = useMemo(() => (config?.segments || []).map((s) => s.segment_id), [config]);
@@ -214,6 +218,12 @@ function Match({ companyId, status, onChanged }) {
 
   return (
     <Section
+      collapsible
+      defaultOpen={!done}
+      done={done}
+      summary={(config?.segments || [])
+        .map((sg) => `${sg.topic}${sg.role === "primary" ? " (primary)" : ""}`)
+        .join(" · ")}
       title="Find the audience"
       description="Claude plans a buyer-side search from Company Intelligence, ranks AudienceLab segments, then counts real high-intent people with a validated business email."
       actions={
@@ -361,6 +371,14 @@ export default function AudienceBuild() {
     load();
   }, [load]);
 
+  // A step is "done" once its result is saved; done steps start collapsed.
+  // Keys include the flag so a step collapses the moment it completes.
+  const steps = {
+    segments: Boolean(status?.config?.segments?.length),
+    filters: Boolean(status?.config?.filters?.approved),
+  };
+  steps.capacity = steps.segments;
+
   let body;
   if (err) body = <ErrorLine>{err}</ErrorLine>;
   else if (!status) body = <Loading />;
@@ -373,7 +391,13 @@ export default function AudienceBuild() {
             Variables, then redeploy.
           </Notice>
         )}
-        <Capacity key={`${status.capacity?.inboxes}-${status.capacity?.cap}`} companyId={companyId} capacity={status.capacity} onSaved={load} />
+        <Capacity
+          key={`${status.capacity?.inboxes}-${status.capacity?.cap}-${steps.capacity}`}
+          companyId={companyId}
+          capacity={status.capacity}
+          onSaved={load}
+          done={steps.capacity}
+        />
         {!status.taxonomy?.segments && (
           <Notice>
             The AudienceLab taxonomy hasn't been synced yet. Run it once in{" "}
@@ -383,8 +407,8 @@ export default function AudienceBuild() {
             ; it then refreshes weekly on its own.
           </Notice>
         )}
-        <Match companyId={companyId} status={status} onChanged={load} />
-        <IcpFilters companyId={companyId} status={status} onChanged={load} />
+        <Match key={`match-${steps.segments}`} companyId={companyId} status={status} onChanged={load} done={steps.segments} />
+        <IcpFilters key={`icp-${steps.filters}`} companyId={companyId} status={status} onChanged={load} done={steps.filters} />
         <TodaysLeads companyId={companyId} status={status} />
       </div>
     );

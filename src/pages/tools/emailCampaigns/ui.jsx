@@ -1,9 +1,11 @@
 import React, { useState } from "react";
-import { AlertTriangle, ChevronRight, Loader2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronRight, Loader2 } from "lucide-react";
 
 // collapsible: header toggles the body. Children stay mounted while closed so
 // sections keep their data (e.g. the unread count in the Replies title).
-export function Section({ title, description, actions, children, id, collapsible = false, defaultOpen = true }) {
+// done: a check before the title. summary: shown instead of the description
+// while closed (what was decided in a finished step).
+export function Section({ title, description, actions, children, id, collapsible = false, defaultOpen = true, done = false, summary }) {
   const [open, setOpen] = useState(collapsible ? defaultOpen : true);
   const heading = (
     <div className="min-w-0 space-y-0.5">
@@ -11,9 +13,14 @@ export function Section({ title, description, actions, children, id, collapsible
         {collapsible && (
           <ChevronRight className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} />
         )}
+        {done && <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" aria-label="Done" />}
         {title}
       </h2>
-      {description && <p className={`text-xs text-muted-foreground ${collapsible ? "pl-[22px]" : ""}`}>{description}</p>}
+      {!open && summary ? (
+        <p className={`text-xs text-foreground/80 ${collapsible ? "pl-[22px]" : ""}`}>{summary}</p>
+      ) : (
+        description && <p className={`text-xs text-muted-foreground ${collapsible ? "pl-[22px]" : ""}`}>{description}</p>
+      )}
     </div>
   );
   return (

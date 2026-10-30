@@ -133,13 +133,40 @@ function TermInput({ value, onChange, placeholder }) {
   );
 }
 
+// "11 to 25" + "51 to 100" → "11–100"; open-ended bands keep their words.
+function bandRange(bands) {
+  const lo = String(bands[0]).split(" to ")[0];
+  const last = String(bands.at(-1));
+  const hi = last.includes(" to ") ? last.split(" to ").at(-1) : last;
+  if (bands.length === 1) return String(bands[0]);
+  if (last.endsWith("+") || /and over/i.test(last)) return `${lo}+`;
+  if (/^under /i.test(lo)) return `up to ${hi}`;
+  return `${lo}–${hi}`;
+}
+
+// One line for the collapsed header: the approved filters, briefly.
+function approvedSummary(saved) {
+  const f = saved?.approved;
+  if (!f) return "";
+  const parts = [
+    f.seniority?.length ? f.seniority.join(", ") : null,
+    f.departments?.length ? f.departments.join(", ") : null,
+    f.titles?.length ? `titles: ${f.titles.join(", ")}` : null,
+    f.employee_bands?.length ? `${bandRange(f.employee_bands)} employees` : null,
+    f.revenue_bands?.length ? `revenue ${bandRange(f.revenue_bands)}` : null,
+    f.industries?.length ? `in ${f.industries.join(", ")}` : null,
+    f.exclude_industries?.length ? `not ${f.exclude_industries.join(", ")}` : null,
+  ].filter(Boolean);
+  return parts.length ? `Approved: ${parts.join(" · ")}` : "Approved: no filters (everyone in the segments)";
+}
+
 const COVERAGE_CLS = {
   covers: "text-emerald-700",
   partial: "text-amber-700",
   short: "text-red-700",
 };
 
-export default function IcpFilters({ companyId, status, onChanged }) {
+export default function IcpFilters({ companyId, status, onChanged, done }) {
   const config = status?.config;
   const saved = config?.filters || {};
   const allowed = saved.allowed;
@@ -224,6 +251,10 @@ export default function IcpFilters({ companyId, status, onChanged }) {
 
   return (
     <Section
+      collapsible
+      defaultOpen={!done}
+      done={done}
+      summary={approvedSummary(saved)}
       title="Who to target"
       description="Filters that keep only buyers: the role that can say yes, at a company that fits. Claude drafts them from Company Intelligence and the real makeup of your selected segments; you edit and approve."
       actions={
