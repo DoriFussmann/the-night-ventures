@@ -478,6 +478,29 @@ export default function CompanyData() {
   const [emailEnabled, setEmailEnabled] = useState(false);
   const [emailProvider, setEmailProvider] = useState("");
   const [emailCampaignId, setEmailCampaignId] = useState("");
+  // Audience Build sending capacity (company_profiles.outbound_*). Loaded and
+  // saved separately so the main brief save is unaffected if migration 068
+  // hasn't run.
+  const [outboundInboxes, setOutboundInboxes] = useState("1");
+  const [outboundDailyCap, setOutboundDailyCap] = useState("30");
+
+  useEffect(() => {
+    if (!companyId) return undefined;
+    let cancelled = false;
+    supabase
+      .from("company_profiles")
+      .select("outbound_inboxes, outbound_daily_cap")
+      .eq("company_id", companyId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled || error || !data) return;
+        setOutboundInboxes(String(data.outbound_inboxes ?? 1));
+        setOutboundDailyCap(String(data.outbound_daily_cap ?? 30));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId]);
   /** Active panel modal: 'target' | 'pillars' | 'competitors' | 'publish-destination' | ... | `custom:${id}` */
   const [openPanel, setOpenPanel] = useState(null);
   const [openPillars, setOpenPillars] = useState({});
@@ -1505,6 +1528,18 @@ export default function CompanyData() {
           : null,
       })
       .eq("id", companyId);
+
+    const inboxesNum = Math.round(Number(outboundInboxes));
+    const capNum = Math.round(Number(outboundDailyCap));
+    if (inboxesNum >= 1 && inboxesNum <= 20 && capNum >= 1 && capNum <= 200) {
+      const { error: capacityError } = await supabase
+        .from("company_profiles")
+        .update({ outbound_inboxes: inboxesNum, outbound_daily_cap: capNum })
+        .eq("company_id", companyId);
+      if (capacityError && !/outbound_|column/i.test(capacityError.message || "")) {
+        console.error("Failed to save sending capacity:", capacityError);
+      }
+    }
 
     if (companyUpdateError) {
       console.error("Failed to save company record:", companyUpdateError);
@@ -3439,6 +3474,50 @@ export default function CompanyData() {
                     placeholder="e.g. 01H8X..."
                   />
                 </div>
+                <div className="space-y-2 rounded-md border border-border p-3">
+                  <Label>Sending capacity</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Single touch: every email goes to a new person, so Audience Build
+                    picks inboxes × emails per inbox new leads each weekday.
+                  </p>
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div className="space-y-1">
+                      <Label htmlFor="outbound_inboxes" className="text-xs">
+                        Inboxes
+                      </Label>
+                      <Input
+                        id="outbound_inboxes"
+                        type="number"
+                        min={1}
+                        max={20}
+                        className="w-24"
+                        value={outboundInboxes}
+                        onChange={(e) => setOutboundInboxes(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="outbound_daily_cap" className="text-xs">
+                        Emails per inbox per day
+                      </Label>
+                      <Input
+                        id="outbound_daily_cap"
+                        type="number"
+                        min={1}
+                        max={200}
+                        className="w-24"
+                        value={outboundDailyCap}
+                        onChange={(e) => setOutboundDailyCap(e.target.value)}
+                      />
+                    </div>
+                    <p className="pb-2 text-sm">
+                      ={" "}
+                      <span className="font-medium tabular-nums">
+                        {(Math.round(Number(outboundInboxes)) || 0) * (Math.round(Number(outboundDailyCap)) || 0)}
+                      </span>{" "}
+                      new leads per weekday
+                    </p>
+                  </div>
+                </div>
                 <p className="text-xs text-muted-foreground">
                   API key: set{" "}
                   {emailProvider === "smartlead"
@@ -3467,6 +3546,7 @@ export default function CompanyData() {
                 const text = [
                   `Email campaigns: ${emailEnabled ? "on" : "off"}`,
                   emailEnabled && emailProvider ? `Provider: ${emailProvider}` : "",
+                  emailEnabled ? `Sending capacity: ${outboundInboxes} inboxes × ${outboundDailyCap}/day` : "",
                   emailEnabled && emailCampaignId.trim()
                     ? `Campaign ID: ${emailCampaignId.trim()}`
                     : "",
