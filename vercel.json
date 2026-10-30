@@ -80,6 +80,10 @@
     {
       "path": "/api/check-article-update?action=audience-build",
       "schedule": "0 11 * * 1"
+    },
+    {
+      "path": "/api/check-article-update?action=audience-build&job=daily-pull",
+      "schedule": "0 12 * * 1-5"
     }
   ],
   "functions": {

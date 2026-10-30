@@ -2,8 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Check, Crosshair, RefreshCw, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Section, Loading, ErrorLine, Stat, fmtDate } from "./emailCampaigns/ui";
 import { audienceBuild } from "./audienceBuild/api";
@@ -39,28 +37,10 @@ function Notice({ children }) {
   );
 }
 
-function Capacity({ companyId, capacity, onSaved, done }) {
-  const [inboxes, setInboxes] = useState(String(capacity?.inboxes ?? 1));
-  const [cap, setCap] = useState(String(capacity?.cap ?? 30));
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState("");
-  const need = (Number(inboxes) || 0) * (Number(cap) || 0);
+// Read-only here: inboxes and emails per inbox are set in Company Intelligence →
+// Email Campaigns, next to the SmartLead campaign they send from.
+function Capacity({ companyId, capacity, done }) {
   const multiplier = capacity?.multiplier ?? 3;
-  const dirty = String(capacity?.inboxes) !== inboxes || String(capacity?.cap) !== cap;
-
-  const save = async () => {
-    setSaving(true);
-    setErr("");
-    try {
-      await audienceBuild("save-capacity", { companyId, inboxes: Number(inboxes), dailyCap: Number(cap) });
-      onSaved();
-    } catch (e) {
-      setErr(e.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
   return (
     <Section
       title="Sending capacity"
@@ -71,28 +51,15 @@ function Capacity({ companyId, capacity, onSaved, done }) {
       summary={`${capacity?.inboxes} inbox${capacity?.inboxes === 1 ? "" : "es"} × ${capacity?.cap} a day = ${fmt(capacity?.need)} leads/day · target pool ${fmt(capacity?.targetPool)}`}
     >
       <div className="flex flex-wrap items-end gap-4">
-        <div className="space-y-1">
-          <Label htmlFor="ab-inboxes">Inboxes</Label>
-          <Input id="ab-inboxes" type="number" min={1} max={20} className="w-24" value={inboxes} onChange={(e) => setInboxes(e.target.value)} />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Stat label="Inboxes" value={fmt(capacity?.inboxes)} />
+          <Stat label="Emails per inbox / day" value={fmt(capacity?.cap)} />
+          <Stat label="Leads needed / day" value={fmt(capacity?.need)} />
+          <Stat label="Target fresh pool / day" value={fmt(capacity?.targetPool)} sub={`${multiplier}× need (set in Admin)`} />
         </div>
-        <div className="space-y-1">
-          <Label htmlFor="ab-cap">Emails per inbox per day</Label>
-          <Input id="ab-cap" type="number" min={1} max={200} className="w-24" value={cap} onChange={(e) => setCap(e.target.value)} />
-        </div>
-        <Button size="sm" onClick={save} disabled={!dirty || saving}>
-          {saving ? "Saving…" : "Save"}
-        </Button>
-        <div className="ml-auto grid grid-cols-2 gap-3">
-          <Stat label="Leads needed / day" value={fmt(need)} />
-          <Stat
-            label="Target fresh pool / day"
-            value={fmt(Math.round(need * multiplier))}
-            sub={`${multiplier}× need (set in Admin)`}
-          />
-        </div>
-      </div>
-      <div className="mt-2">
-        <ErrorLine>{err}</ErrorLine>
+        <Link className="text-sm underline" to={`/company/${companyId}/company-data`}>
+          Change in Company Intelligence → Email Campaigns
+        </Link>
       </div>
     </Section>
   );
@@ -391,13 +358,7 @@ export default function AudienceBuild() {
             Variables, then redeploy.
           </Notice>
         )}
-        <Capacity
-          key={`${status.capacity?.inboxes}-${status.capacity?.cap}-${steps.capacity}`}
-          companyId={companyId}
-          capacity={status.capacity}
-          onSaved={load}
-          done={steps.capacity}
-        />
+        <Capacity key={`cap-${steps.capacity}`} companyId={companyId} capacity={status.capacity} done={steps.capacity} />
         {!status.taxonomy?.segments && (
           <Notice>
             The AudienceLab taxonomy hasn't been synced yet. Run it once in{" "}
@@ -409,7 +370,7 @@ export default function AudienceBuild() {
         )}
         <Match key={`match-${steps.segments}`} companyId={companyId} status={status} onChanged={load} done={steps.segments} />
         <IcpFilters key={`icp-${steps.filters}`} companyId={companyId} status={status} onChanged={load} done={steps.filters} />
-        <TodaysLeads companyId={companyId} status={status} />
+        <TodaysLeads companyId={companyId} status={status} onChanged={load} />
       </div>
     );
 
