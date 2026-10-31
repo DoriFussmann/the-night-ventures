@@ -216,9 +216,17 @@ export default function TodaysLeads({ companyId, status, connection, onChanged }
       title="Today's leads"
       description="Builds today's audience from your segments and approved filters (high intent, last day), removes anyone who can't be emailed, has Claude score each person's fit, and picks the top ones for today."
       actions={
-        <Button size="sm" variant={run ? "outline" : "default"} onClick={pull} disabled={pulling || run?.status === "pushed"}>
-          {pulling ? "Pulling…" : run ? "Pull again" : "Pull today's leads"}
-        </Button>
+        <>
+          <Button size="sm" variant={run ? "outline" : "default"} onClick={pull} disabled={pulling || run?.status === "pushed"}>
+            {pulling ? "Pulling…" : run ? "Pull again" : "Pull today's leads"}
+          </Button>
+          {!pulling && candidates.length > 0 && run?.status !== "pushed" && (
+            <Button size="sm" onClick={approve} disabled={!pushable || approving || !selectedCount}>
+              <Send className="mr-1.5 h-4 w-4" />
+              {approving ? "Pushing…" : run.status === "approved" ? `Retry Push (${selectedCount})` : `Approve & Push (${selectedCount})`}
+            </Button>
+          )}
+        </>
       }
     >
       <div className="mb-4 flex flex-wrap items-center gap-3 rounded-md border border-border px-3 py-2">
@@ -341,10 +349,6 @@ export default function TodaysLeads({ companyId, status, connection, onChanged }
 
           {candidates.length > 0 && (
             <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
-              <Button size="sm" onClick={approve} disabled={!pushable || approving || !selectedCount}>
-                <Send className="mr-1.5 h-4 w-4" />
-                {approving ? "Pushing…" : run.status === "approved" ? `Retry Push (${selectedCount})` : `Approve & Push (${selectedCount})`}
-              </Button>
               <Button size="sm" variant="outline" onClick={downloadCsv} disabled={!selectedCount}>
                 <Download className="mr-1.5 h-4 w-4" /> Download CSV
               </Button>
