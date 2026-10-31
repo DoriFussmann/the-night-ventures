@@ -23,8 +23,9 @@ campaign as its only step.
 6. Email Campaigns → **Email copy**: write the subject and body, then
    **Save & sync to Instantly**. Variables use `{{first_name}}`-style names;
    on sync the built-in ones become Instantly's (`{{firstName}}`,
-   `{{lastName}}`, `{{companyName}}`) and the rest are sent with each lead as
-   custom variables.
+   `{{lastName}}`, `{{companyName}}`, `{{jobTitle}}`) and the rest are sent
+   with each lead as custom variables. Never send a built-in field as a custom
+   variable too: Instantly rejects the lead.
 7. Email Campaigns → Replies → **Connect tracking** once. It registers
    Instantly webhooks for `reply_received`, `email_sent`, `email_bounced` and
    `lead_unsubscribed` on this campaign. Replies land in TNV and email
