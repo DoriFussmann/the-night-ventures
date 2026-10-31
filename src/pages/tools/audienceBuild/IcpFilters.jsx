@@ -145,19 +145,21 @@ function bandRange(bands) {
 }
 
 // One line for the collapsed header: the approved filters, briefly.
+// One line: the first couple of values per filter, the rest as "+N".
 function approvedSummary(saved) {
   const f = saved?.approved;
   if (!f) return "";
+  const few = (list, n = 2) => (list.length > n ? `${list.slice(0, n).join(", ")} +${list.length - n}` : list.join(", "));
   const parts = [
-    f.seniority?.length ? f.seniority.join(", ") : null,
-    f.departments?.length ? f.departments.join(", ") : null,
-    f.titles?.length ? `titles: ${f.titles.join(", ")}` : null,
+    f.seniority?.length ? few(f.seniority) : null,
+    f.departments?.length ? few(f.departments) : null,
+    f.titles?.length ? `titles: ${few(f.titles)}` : null,
     f.employee_bands?.length ? `${bandRange(f.employee_bands)} employees` : null,
     f.revenue_bands?.length ? `revenue ${bandRange(f.revenue_bands)}` : null,
-    f.industries?.length ? `in ${f.industries.join(", ")}` : null,
-    f.exclude_industries?.length ? `not ${f.exclude_industries.join(", ")}` : null,
+    f.industries?.length ? `in ${few(f.industries)}` : null,
+    f.exclude_industries?.length ? `not ${few(f.exclude_industries, 1)}` : null,
   ].filter(Boolean);
-  return parts.length ? `Approved: ${parts.join(" · ")}` : "Approved: no filters (everyone in the segments)";
+  return parts.length ? parts.join(" · ") : "No filters (everyone in the segments)";
 }
 
 const COVERAGE_CLS = {

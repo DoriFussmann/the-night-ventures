@@ -102,24 +102,3 @@ export function cleanLeads(rows, { includePersonal = false } = {}) {
     },
   };
 }
-
-// Map a cleaned lead to SmartLead's lead_list item shape.
-export function toSmartleadLead(c) {
-  return {
-    email: c.email,
-    first_name: c.first_name,
-    last_name: c.last_name,
-    company_name: c.company_name,
-    company_url: c.company_domain,
-    website: c.company_domain,
-    linkedin_profile: c.linkedin_url,
-    location: c.company_state,
-    custom_fields: {
-      job_title: c.job_title,
-      headline: c.headline,
-      industry: c.company_industry,
-      company_size: c.company_employee_count,
-      company_revenue: c.company_revenue,
-    },
-  };
-}

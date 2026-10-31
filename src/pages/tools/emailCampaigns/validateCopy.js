@@ -1,8 +1,9 @@
 // Checks the campaign copy's {{variables}} against a cleaned lead list, so a
 // push never sends "Hi {{first_name}}," with a blank. Pure, unit-testable.
 
-// SmartLead variable name → field on a cleaned lead. Keep in sync with
-// mapLead() in lib/smartlead/handler.js.
+// Variable name in TNV copy → field on a cleaned lead. On sync to Instantly the
+// core ones become camelCase ({{first_name}} → {{firstName}}) and the rest are
+// custom variables. Keep in sync with lib/instantly/mapping.js.
 export const VARIABLE_MAP = {
   first_name: "first_name",
   last_name: "last_name",
@@ -21,25 +22,14 @@ export const VARIABLE_MAP = {
 
 const VAR_RE = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g;
 
-export function sequenceSteps(sequences) {
-  return Array.isArray(sequences)
-    ? sequences
-    : sequences?.data || sequences?.sequences || [];
+// copy = { subject, body } — the single-touch email.
+function copyBlocks(copy) {
+  return [copy?.subject, copy?.body].filter(Boolean).map(String);
 }
 
-// Every text block (subject + body, including A/B variants) in the sequence.
-function copyBlocks(sequences) {
-  const out = [];
-  for (const step of sequenceSteps(sequences)) {
-    out.push(step.subject, step.email_body);
-    for (const v of step.sequence_variants || []) out.push(v.subject, v.email_body);
-  }
-  return out.filter(Boolean).map(String);
-}
-
-export function extractVariables(sequences) {
+export function extractVariables(copy) {
   const found = new Set();
-  for (const text of copyBlocks(sequences)) {
+  for (const text of copyBlocks(copy)) {
     for (const m of text.matchAll(VAR_RE)) found.add(m[1].toLowerCase());
   }
   return [...found].sort();
@@ -47,8 +37,8 @@ export function extractVariables(sequences) {
 
 // Returns one row per variable: how many leads would render it blank.
 // `supported: false` means this lead source never provides that variable.
-export function validateCopy(sequences, leads) {
-  const vars = extractVariables(sequences);
+export function validateCopy(copy, leads) {
+  const vars = extractVariables(copy);
   const total = leads?.length || 0;
   const rows = vars.map((name) => {
     const field = VARIABLE_MAP[name];
@@ -64,8 +54,8 @@ export function validateCopy(sequences, leads) {
 }
 
 // Leads missing any variable the copy uses.
-export function leadsMissingVariables(sequences, leads) {
-  const fields = extractVariables(sequences)
+export function leadsMissingVariables(copy, leads) {
+  const fields = extractVariables(copy)
     .map((n) => VARIABLE_MAP[n])
     .filter(Boolean);
   return (leads || []).filter((l) => fields.some((f) => !String(l[f] ?? "").trim()));
@@ -97,24 +87,4 @@ export function resolveVar(name, lead) {
 // Plain-text merge (subjects). Missing values become "[name]".
 export function renderText(text, lead) {
   return String(text || "").replace(VAR_RE, (_, name) => resolveVar(name, lead) || `[${name}]`);
-}
-
-// SmartLead campaign lead → the cleaned-lead shape used everywhere else.
-export function fromSmartleadLead(row) {
-  const l = row?.lead || row || {};
-  const cf = l.custom_fields || {};
-  return {
-    first_name: l.first_name || "",
-    last_name: l.last_name || "",
-    email: l.email || "",
-    company_name: l.company_name || "",
-    company_domain: l.company_url || l.website || "",
-    linkedin_url: l.linkedin_profile || "",
-    company_state: l.location || "",
-    job_title: cf.job_title || "",
-    headline: cf.headline || "",
-    company_industry: cf.industry || "",
-    company_employee_count: cf.company_size || "",
-    company_revenue: cf.company_revenue || "",
-  };
 }

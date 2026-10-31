@@ -1,113 +1,91 @@
 import React, { useState } from "react";
-import { Loader2, Pause, Play, Square } from "lucide-react";
+import { Loader2, Pause, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { smartlead } from "./smartleadApi";
-import { ErrorLine, Stat, fmtDate, num, statusBadgeClass } from "./ui";
+import { CAMPAIGN_STATUS, NOT_SENDING } from "../../../../lib/instantly/mapping.js";
+import { instantly } from "./instantlyApi";
+import { ErrorLine, Stat, fmtDate } from "./ui";
 
-// Campaign identity + status controls. Campaign ID is read-only here — it's
+const STATUS_CLS = {
+  1: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  2: "bg-orange-50 text-orange-700 border-orange-200",
+  3: "bg-slate-100 text-slate-600 border-slate-200",
+};
+
+// Campaign identity + pause/resume. The Campaign ID is read-only here — it's
 // set in Company Intelligence.
 export default function Overview({ companyId, overview, onChanged }) {
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
-  const [confirmStop, setConfirmStop] = useState(false);
 
-  const c = Array.isArray(overview.campaign) ? overview.campaign[0] : overview.campaign || {};
-  const status = String(c.status || "").toUpperCase();
-  const leadStats = overview.analytics?.campaign_lead_stats || {};
-  const isLive = status === "ACTIVE" || status === "START";
-  const isFinal = status === "STOPPED" || status === "COMPLETED";
+  const c = overview.campaign || {};
+  const a = overview.analytics || {};
+  const status = Number(c.status);
+  const isLive = status === 1;
+  const canStart = [0, 2, -1, -2].includes(status);
 
   const setStatus = async (next) => {
     setBusy(next);
     setErr("");
     try {
-      await smartlead("status", companyId, { status: next });
+      await instantly("status", companyId, { status: next });
       await onChanged();
     } catch (e) {
       setErr(e.message);
     } finally {
       setBusy("");
-      setConfirmStop(false);
     }
   };
 
   return (
-    <section className="rounded-lg border border-border bg-card px-5 py-4 space-y-4">
+    <section className="space-y-4 rounded-lg border border-border bg-card px-5 py-4">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-lg font-semibold">{c.name || "(unnamed campaign)"}</h2>
-            {status && <Badge className={statusBadgeClass(status)}>{status}</Badge>}
+            <Badge className={STATUS_CLS[status] || "bg-red-50 text-red-700 border-red-200"}>
+              {CAMPAIGN_STATUS[status] || `Status ${c.status}`}
+            </Badge>
           </div>
           <p className="text-xs text-muted-foreground">
-            SmartLead · Campaign ID <span className="font-mono">{overview.campaignId}</span> ·
-            created {fmtDate(c.created_at)} · change the ID in Company Intelligence
+            Instantly · Campaign ID <span className="font-mono">{overview.campaignId}</span> · created {fmtDate(c.created)}
+            {c.dailyLimit ? ` · campaign limit ${c.dailyLimit}/day` : ""} · change the ID in Company Intelligence
           </p>
+          {isLive && c.notSending && (
+            <p className="text-xs text-amber-700">Not sending right now: {NOT_SENDING[c.notSending] || c.notSending}</p>
+          )}
+          {c.steps !== 1 && (
+            <p className="text-xs text-amber-700">
+              The campaign has {c.steps} step{c.steps === 1 ? "" : "s"}. Single touch needs exactly 1 — save the copy
+              below to replace them.
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           {isLive && (
-            <Button size="sm" variant="outline" onClick={() => setStatus("PAUSED")} disabled={!!busy}>
-              {busy === "PAUSED" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Pause className="mr-1.5 h-4 w-4" />}
+            <Button size="sm" variant="outline" onClick={() => setStatus("pause")} disabled={!!busy}>
+              {busy === "pause" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Pause className="mr-1.5 h-4 w-4" />}
               Pause
             </Button>
           )}
-          {!isLive && !isFinal && (
-            <Button size="sm" onClick={() => setStatus("START")} disabled={!!busy}>
-              {busy === "START" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Play className="mr-1.5 h-4 w-4" />}
-              {status === "PAUSED" ? "Resume" : "Start"}
-            </Button>
-          )}
-          {!isFinal && (
-            <Button size="sm" variant="outline" className="text-destructive" onClick={() => setConfirmStop(true)} disabled={!!busy}>
-              <Square className="mr-1.5 h-4 w-4" /> Stop
+          {canStart && (
+            <Button size="sm" onClick={() => setStatus("activate")} disabled={!!busy || c.steps !== 1} title={c.steps !== 1 ? "Save the email copy first" : undefined}>
+              {busy === "activate" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Play className="mr-1.5 h-4 w-4" />}
+              {status === 2 ? "Resume" : "Activate"}
             </Button>
           )}
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-        <Stat label="Leads in campaign" value={overview.leadCount.toLocaleString()} />
-        <Stat label="Not started" value={num(leadStats.notStarted).toLocaleString()} sub="queued" />
-        <Stat label="In progress" value={num(leadStats.inprogress).toLocaleString()} />
-        <Stat label="Completed" value={num(leadStats.completed).toLocaleString()} />
-        <Stat label="Blocked" value={num(leadStats.blocked).toLocaleString()} tone={num(leadStats.blocked) ? "bad" : undefined} />
+        <Stat label="Leads in campaign" value={a.leads.toLocaleString()} />
+        <Stat label="Contacted" value={a.contacted.toLocaleString()} />
+        <Stat label="Completed" value={a.completed.toLocaleString()} />
+        <Stat label="Bounced" value={a.bounced.toLocaleString()} tone={a.bounced ? "bad" : undefined} />
+        <Stat label="Unsubscribed" value={a.unsubscribed.toLocaleString()} />
       </div>
 
       <ErrorLine>{err}</ErrorLine>
-
-      <AlertDialog open={confirmStop} onOpenChange={setConfirmStop}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Stop this campaign permanently?</AlertDialogTitle>
-            <AlertDialogDescription>
-              SmartLead can't restart a stopped campaign. To stop sending temporarily, use Pause.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={(e) => {
-                e.preventDefault();
-                setStatus("STOPPED");
-              }}
-            >
-              {busy === "STOPPED" ? "Stopping…" : "Stop permanently"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </section>
   );
 }

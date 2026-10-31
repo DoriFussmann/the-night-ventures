@@ -7,7 +7,7 @@ Spec: TNV Lead Sourcing Engine — AudienceLab Spec (Claude doc).
 1. Supabase → SQL Editor → New query → paste the full contents of
    `supabase/migrations/068_audience_build.sql` → Run, then the same for
    `069_audience_build_settings.sql`, `070_lead_sourcing_runs.sql` and
-   `071_lead_sourcing_push.sql`.
+   `071_lead_sourcing_push.sql` (and `072_instantly.sql`, see Email Campaigns).
    All are safe to re-run.
 2. Vercel → Project → Settings → Environment Variables → add:
    - `AUDIENCELAB_API_KEY` — AudienceLab → Account → API keys
@@ -17,9 +17,11 @@ Spec: TNV Lead Sourcing Engine — AudienceLab Spec (Claude doc).
    segments). Shared by all companies. A weekly Vercel cron (Mondays 11:00
    UTC, needs `CRON_SECRET`) re-checks AudienceLab and rewrites the table only
    if the list changed; "Check for updates" in Admin does the same on demand.
-4. Company Intelligence → Email Campaigns: SmartLead campaign ID and
-   **Sending capacity** (inboxes × emails per inbox = new leads per weekday).
-   The campaign should have exactly one step (single touch).
+4. Connect Instantly first: [EMAIL_CAMPAIGNS_SETUP.md](EMAIL_CAMPAIGNS_SETUP.md).
+   Then Company Intelligence → Email Campaigns: pick the Instantly campaign
+   and set **Sending capacity** (inboxes × emails per inbox = new leads per
+   weekday), or let Audience Build → **Instantly connection** copy it from the
+   campaign's healthy accounts.
 5. Admin → Audience Build → **Target pool multiplier** (default 3×): fresh
    people needed per day = leads sent per day × this.
 6. For each company: **Find audiences**, then **Who to target**.
@@ -104,10 +106,19 @@ stored in `lead_sourcing_runs`, people in `lead_sourcing_candidates`.
 - **24-hour window.** Nothing is sent until **Approve & Push**. A list not
   pushed within 24 hours of the pull becomes `expired`; the next pull
   replaces it.
-- **Push** (`pushLeadsToCampaign` in `lib/smartlead/handler.js`): same rules
+- **Push** (`pushLeadsToCampaign` in `lib/instantly/handler.js`): same rules
   as the CSV import (Do Not Contact never pushed, everyone recorded in
   `email_leads` + an `email_lead_imports` row named "Audience Build <date>").
   Someone emailed 90+ days ago is re-contacted: their old entry is removed
-  from the campaign first, because SmartLead won't re-email a lead already in
+  from the campaign first, because Instantly won't re-add a lead already in
   it. `email_leads.created_at` is reset to the push time (the 90-day clock).
-- The section warns when the SmartLead campaign doesn't have exactly 1 step.
+- Push is blocked until **Instantly connection** shows the campaign, exactly
+  1 step and the copy synced. Mailbox health, tracking and active status are
+  shown there too, each with its fix.
+
+## Step 7: results
+
+**Results** lists each pushed day with pushed / sent / replied / bounced /
+unsubscribed, from `email_leads.sent_at`, `replied_at`, `bounced_at`,
+`unsubscribed_at`. The Instantly webhook fills those, so counts start once
+tracking is connected.

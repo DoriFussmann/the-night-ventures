@@ -1,4 +1,4 @@
-// Turns SmartLead email HTML into safe HTML for display: keeps formatting
+// Turns email HTML into safe HTML for display: keeps formatting
 // (bold, italic, underline, lists, links, line breaks, headings, simple
 // tables), drops scripts/styles/event handlers, and highlights {{variables}}.
 
@@ -8,7 +8,7 @@ const ALLOWED = new Set([
   "TABLE", "THEAD", "TBODY", "TR", "TD", "TH", "SUB", "SUP", "CODE", "PRE",
 ]);
 const DROP_WITH_CONTENT = new Set(["SCRIPT", "STYLE", "IFRAME", "OBJECT", "EMBED", "HEAD", "TITLE", "META", "LINK"]);
-// Inline styles SmartLead's editor uses for bold/italic/underline.
+// Inline styles email editors use for bold/italic/underline.
 const STYLE_KEEP = /^(font-weight|font-style|text-decoration|text-align)$/i;
 const VAR_RE = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g;
 

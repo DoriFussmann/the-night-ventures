@@ -17,13 +17,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
@@ -54,6 +47,7 @@ import {
   trimTeamMembersForSave,
 } from "./templateToPrompt/customFieldKeys";
 import SocialShopsPanel from "./SocialShopsPanel";
+import CampaignPicker from "./emailCampaigns/CampaignPicker";
 import ConnectionsPanel, {
   ANALYTICS_TOOLS_FIELD,
   connectionsHaveContent,
@@ -476,7 +470,6 @@ export default function CompanyData() {
   const keyIssue = tokenKeyIssue(githubTokenKey);
   const destinationIssue = ownerIssue || repoIssue || keyIssue;
   const [emailEnabled, setEmailEnabled] = useState(false);
-  const [emailProvider, setEmailProvider] = useState("");
   const [emailCampaignId, setEmailCampaignId] = useState("");
   // Audience Build sending capacity (company_profiles.outbound_*). Loaded and
   // saved separately so the main brief save is unaffected if migration 068
@@ -539,7 +532,7 @@ export default function CompanyData() {
       socialAccountsResult,
       keywordTreeResult,
     ] = await Promise.all([
-      supabase.from("companies").select("name, github_owner, github_repo, github_token_key, email_campaigns_enabled, email_campaigns_provider, email_campaigns_campaign_id").eq("id", companyId).maybeSingle(),
+      supabase.from("companies").select("name, github_owner, github_repo, github_token_key, email_campaigns_enabled, email_campaigns_campaign_id").eq("id", companyId).maybeSingle(),
       supabase
         .from("company_profiles")
         .select(`${PROFILE_SELECT_BASE}, ${PROFILE_SELECT_INTELLIGENCE}, ${PROFILE_SELECT_SEO}`)
@@ -600,7 +593,6 @@ export default function CompanyData() {
       setGithubRepo(companyResult.data?.github_repo || "");
       setGithubTokenKey(companyResult.data?.github_token_key || "");
       setEmailEnabled(Boolean(companyResult.data?.email_campaigns_enabled));
-      setEmailProvider(companyResult.data?.email_campaigns_provider || "");
       setEmailCampaignId(companyResult.data?.email_campaigns_campaign_id || "");
     }
 
@@ -1522,7 +1514,7 @@ export default function CompanyData() {
         github_repo: githubRepo.trim() || null,
         github_token_key: githubTokenKey.trim().toUpperCase() || null,
         email_campaigns_enabled: emailEnabled,
-        email_campaigns_provider: emailEnabled ? emailProvider || null : null,
+        email_campaigns_provider: emailEnabled ? "instantly" : null,
         email_campaigns_campaign_id: emailEnabled
           ? emailCampaignId.trim() || null
           : null,
@@ -3427,10 +3419,9 @@ export default function CompanyData() {
           <DialogHeader className="shrink-0 space-y-1 border-b border-border px-6 py-4 pr-12 text-left">
             <DialogTitle>Email Campaigns</DialogTitle>
             <DialogDescription>
-              Outreach for this company (EPIC). Turn it on, choose the provider,
-              and set the campaign ID. The provider API key lives in a Vercel
-              environment variable (INSTANTLY_API_KEY / SMARTLEAD_API_KEY), not
-              here.
+              Outreach for this company (EPIC) through Instantly. Turn it on and
+              pick the campaign. The API key lives in Vercel
+              (INSTANTLY_API_KEY), not here.
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
@@ -3454,31 +3445,20 @@ export default function CompanyData() {
             {emailEnabled && (
               <>
                 <div className="space-y-2">
-                  <Label htmlFor="email_campaigns_provider">Provider</Label>
-                  <Select value={emailProvider} onValueChange={setEmailProvider}>
-                    <SelectTrigger id="email_campaigns_provider">
-                      <SelectValue placeholder="Choose provider" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="instantly">Instantly</SelectItem>
-                      <SelectItem value="smartlead">SmartLead</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email_campaigns_campaign_id">Campaign ID</Label>
-                  <Input
+                  <Label htmlFor="email_campaigns_campaign_id">Instantly campaign</Label>
+                  <CampaignPicker
                     id="email_campaigns_campaign_id"
+                    companyId={companyId}
                     value={emailCampaignId}
-                    onChange={(e) => setEmailCampaignId(e.target.value)}
-                    placeholder="e.g. 01H8X..."
+                    onChange={setEmailCampaignId}
                   />
                 </div>
                 <div className="space-y-2 rounded-md border border-border p-3">
                   <Label>Sending capacity</Label>
                   <p className="text-xs text-muted-foreground">
                     Single touch: every email goes to a new person, so Audience Build
-                    picks inboxes × emails per inbox new leads each weekday.
+                    picks inboxes × emails per inbox new leads each weekday. Audience
+                    Build → Instantly connection can fill these from the campaign&apos;s accounts.
                   </p>
                   <div className="flex flex-wrap items-end gap-3">
                     <div className="space-y-1">
@@ -3519,11 +3499,8 @@ export default function CompanyData() {
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  API key: set{" "}
-                  {emailProvider === "smartlead"
-                    ? "SMARTLEAD_API_KEY"
-                    : "INSTANTLY_API_KEY"}{" "}
-                  in Vercel → Settings → Environment Variables, then redeploy. The
+                  API key: set INSTANTLY_API_KEY (and INSTANTLY_WEBHOOK_SECRET for
+                  reply tracking) in Vercel → Settings → Environment Variables, then redeploy. The
                   Integrations tab shows its status.
                 </p>
               </>
@@ -3535,7 +3512,6 @@ export default function CompanyData() {
               variant="destructive"
               onClick={() => {
                 setEmailEnabled(false);
-                setEmailProvider("");
                 setEmailCampaignId("");
               }}
             >
@@ -3545,7 +3521,7 @@ export default function CompanyData() {
               onCopy={async () => {
                 const text = [
                   `Email campaigns: ${emailEnabled ? "on" : "off"}`,
-                  emailEnabled && emailProvider ? `Provider: ${emailProvider}` : "",
+                  emailEnabled ? "Provider: Instantly" : "",
                   emailEnabled ? `Sending capacity: ${outboundInboxes} inboxes × ${outboundDailyCap}/day` : "",
                   emailEnabled && emailCampaignId.trim()
                     ? `Campaign ID: ${emailCampaignId.trim()}`

@@ -4,12 +4,12 @@ import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { smartlead } from "./smartleadApi";
+import { instantly } from "./instantlyApi";
 import { ErrorLine, Loading, Section, fmtDate } from "./ui";
 
 const EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
 
-// Source of truth lives in our DB; entries are also pushed to SmartLead's
+// Source of truth lives in our DB; entries are also pushed to Instantly's
 // global block list. Unsubscribes from the webhook land here automatically.
 export default function DoNotContact({ companyId, refreshKey }) {
   const [rows, setRows] = useState(null);
@@ -53,9 +53,9 @@ export default function DoNotContact({ companyId, refreshKey }) {
     setErr("");
     setMsg("");
     try {
-      const r = await smartlead("dnc-add", companyId, { emails, note });
+      const r = await instantly("dnc-add", companyId, { emails, note });
       setMsg(
-        `Added ${r.added}.` + (r.synced ? " Blocked in SmartLead too." : ` Not synced to SmartLead: ${r.syncError}`)
+        `Added ${r.added}.` + (r.synced ? " Blocked in Instantly too." : ` Not synced to Instantly: ${r.syncError}`)
       );
       setInput("");
       setNote("");
@@ -77,7 +77,7 @@ export default function DoNotContact({ companyId, refreshKey }) {
   return (
     <Section
       title={`Do Not Contact (${total.toLocaleString()})`}
-      description="Checked before every push and blocked in SmartLead. Unsubscribes are added automatically once reply notifications are connected."
+      description="Checked before every push and blocked in Instantly. Unsubscribes and hard bounces are added automatically once tracking is connected."
     >
       <div className="space-y-4">
         <div className="grid gap-2 sm:grid-cols-[1fr_16rem_auto] sm:items-start">
@@ -111,7 +111,7 @@ export default function DoNotContact({ companyId, refreshKey }) {
                   <tr key={r.id} className="border-t border-border">
                     <td className="px-3 py-1.5 break-all">
                       {r.email}
-                      {!r.synced_to_provider && <span className="ml-2 text-xs text-orange-700">not in SmartLead</span>}
+                      {!r.synced_to_provider && <span className="ml-2 text-xs text-orange-700">not in Instantly</span>}
                     </td>
                     <td className="px-3 py-1.5 text-xs">{r.source}</td>
                     <td className="px-3 py-1.5 text-xs text-muted-foreground">{r.note || "—"}</td>

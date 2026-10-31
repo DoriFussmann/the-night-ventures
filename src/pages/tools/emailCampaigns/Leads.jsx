@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { smartlead } from "./smartleadApi";
+import { instantly } from "./instantlyApi";
 import { ErrorLine, Loading, Section, fmtDate } from "./ui";
 
 const PAGE = 50;
@@ -21,28 +21,36 @@ function Pager({ offset, total, onChange }) {
   );
 }
 
-// Leads currently inside the SmartLead campaign, with per-lead status.
+const LEAD_STATUS = { 1: "Active", 2: "Paused", 3: "Completed", [-1]: "Bounced", [-2]: "Unsubscribed", [-3]: "Skipped" };
+
+// Leads currently inside the Instantly campaign, with per-lead status.
+// Instantly pages by cursor, so we keep the cursors we've seen to go back.
 function InCampaign({ companyId, refreshKey }) {
-  const [offset, setOffset] = useState(0);
+  const [cursors, setCursors] = useState([null]);
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
+  const cursor = cursors[cursors.length - 1];
+
+  useEffect(() => {
+    setCursors([null]);
+  }, [companyId, refreshKey]);
 
   useEffect(() => {
     let cancelled = false;
     setData(null);
     setErr("");
-    smartlead("leads", companyId, { offset, limit: PAGE })
+    instantly("leads", companyId, { cursor, limit: PAGE })
       .then((d) => !cancelled && setData(d))
       .catch((e) => !cancelled && setErr(e.message));
     return () => {
       cancelled = true;
     };
-  }, [companyId, offset, refreshKey]);
+  }, [companyId, cursor]);
 
   if (err) return <ErrorLine>{err}</ErrorLine>;
   if (!data) return <Loading />;
-  const list = Array.isArray(data?.data) ? data.data : [];
-  const total = Number(data?.total_leads) || 0;
+  const list = data.items || [];
+  const page = cursors.length;
   return (
     <div className="space-y-3">
       <div className="overflow-x-auto rounded-md border border-border">
@@ -51,22 +59,28 @@ function InCampaign({ companyId, refreshKey }) {
             <tr><th className="px-3 py-2 font-medium">Email</th><th className="px-3 py-2 font-medium">Name</th><th className="px-3 py-2 font-medium">Company</th><th className="px-3 py-2 font-medium">Status</th><th className="px-3 py-2 font-medium">Added</th></tr>
           </thead>
           <tbody>
-            {list.map((row, i) => {
-              const lead = row.lead || row;
-              return (
-                <tr key={lead.id || i} className="border-t border-border">
-                  <td className="px-3 py-1.5 break-all">{lead.email}</td>
-                  <td className="px-3 py-1.5">{[lead.first_name, lead.last_name].filter(Boolean).join(" ") || "—"}</td>
-                  <td className="px-3 py-1.5">{lead.company_name || "—"}</td>
-                  <td className="px-3 py-1.5 text-xs">{row.status || "—"}</td>
-                  <td className="px-3 py-1.5 text-xs text-muted-foreground">{fmtDate(row.created_at)}</td>
-                </tr>
-              );
-            })}
+            {list.map((lead, i) => (
+              <tr key={lead.id || i} className="border-t border-border">
+                <td className="px-3 py-1.5 break-all">{lead.email}</td>
+                <td className="px-3 py-1.5">{[lead.first_name, lead.last_name].filter(Boolean).join(" ") || "—"}</td>
+                <td className="px-3 py-1.5">{lead.company_name || "—"}</td>
+                <td className="px-3 py-1.5 text-xs">
+                  {LEAD_STATUS[lead.status] || "—"}
+                  {Number(lead.email_reply_count) > 0 ? " · replied" : ""}
+                </td>
+                <td className="px-3 py-1.5 text-xs text-muted-foreground">{fmtDate(lead.timestamp_created)}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
-      <Pager offset={offset} total={total} onChange={setOffset} />
+      <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+        <span className="tabular-nums">{list.length ? `Page ${page} · ${list.length} leads` : "No leads"}</span>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" disabled={page === 1} onClick={() => setCursors((c) => c.slice(0, -1))}>Previous</Button>
+          <Button size="sm" variant="outline" disabled={!data.next} onClick={() => setCursors((c) => [...c, data.next])}>Next</Button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -151,8 +165,8 @@ export default function Leads({ companyId, refreshKey }) {
       title="Leads"
       description={
         tab === "campaign"
-          ? "What's in the SmartLead campaign right now."
-          : "Everyone ever pushed for this company. Nobody here is pushed again."
+          ? "What's in the Instantly campaign right now."
+          : "Everyone ever pushed for this company. Nobody here is pushed again within 90 days."
       }
       actions={
         <>

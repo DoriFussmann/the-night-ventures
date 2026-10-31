@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { smartlead } from "./smartleadApi";
-import { ErrorLine, Loading, Section, Stat, num, pct } from "./ui";
+import { instantly } from "./instantlyApi";
+import { ErrorLine, Loading, Section, Stat, pct } from "./ui";
 
 const RANGES = [
   { id: 1, label: "24h" },
@@ -10,18 +10,8 @@ const RANGES = [
   { id: "all", label: "All time" },
 ];
 
-function normalize(raw) {
-  const a = Array.isArray(raw) ? raw[0] || {} : raw || {};
-  const sent = num(a.sent_count ?? a.sent);
-  return {
-    sent,
-    opened: num(a.unique_open_count ?? a.open_count),
-    clicked: num(a.unique_click_count ?? a.click_count),
-    replied: num(a.reply_count),
-    bounced: num(a.bounce_count),
-    unsubscribed: num(a.unsubscribed_count ?? a.unsubscribe_count),
-  };
-}
+// Both the all-time numbers and the ranges come normalized from the server
+// (lib/instantly/mapping.js normalizeAnalytics).
 
 export default function Analytics({ companyId, allTime }) {
   const [range, setRange] = useState(7);
@@ -34,7 +24,7 @@ export default function Analytics({ companyId, allTime }) {
     let cancelled = false;
     setLoading(true);
     setErr("");
-    smartlead("analytics-range", companyId, { days: range })
+    instantly("analytics-range", companyId, { days: range })
       .then((d) => !cancelled && setCache((c) => ({ ...c, [range]: d })))
       .catch((e) => !cancelled && setErr(e.message))
       .finally(() => !cancelled && setLoading(false));
@@ -44,12 +34,12 @@ export default function Analytics({ companyId, allTime }) {
   }, [range, companyId, cache]);
 
   const data = range === "all" ? allTime : cache[range];
-  const m = data ? normalize(data) : null;
+  const m = data || null;
 
   return (
     <Section
       title="Performance"
-      description="Rates are against emails sent in the period."
+      description="Unique opens, clicks and replies. Rates are against emails sent in the period."
       actions={RANGES.map((r) => (
         <Button key={r.id} size="sm" variant={range === r.id ? "default" : "outline"} onClick={() => setRange(r.id)}>
           {r.label}

@@ -6,18 +6,18 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { smartlead } from "./smartleadApi";
+import { instantly } from "./instantlyApi";
 import { cleanLeads, OUTPUT_FIELDS } from "./cleanLeads";
 import { leadsMissingVariables, validateCopy } from "./validateCopy";
 import { ErrorLine, Loading, Section, num } from "./ui";
 
 const DEFAULT_MAX_PUSH = 500;
-const PUSH_CHUNK = 2000; // leads per server call (server batches 400 to SmartLead)
+const PUSH_CHUNK = 2000; // leads per server call (server batches 1,000 to Instantly)
 
 // Upload → clean → check (DNC, already pushed, copy variables) → push.
 // Default mode is Replace: existing campaign leads are removed first so the
 // newest list is what goes out (LIFO). Leads that replied are kept.
-export default function LeadImport({ companyId, sequences, currentLeadCount, onDone }) {
+export default function LeadImport({ companyId, copy, currentLeadCount, onDone }) {
   const [fileName, setFileName] = useState("");
   const [rows, setRows] = useState(null);
   const [includePersonal, setIncludePersonal] = useState(false);
@@ -56,7 +56,7 @@ export default function LeadImport({ companyId, sequences, currentLeadCount, onD
           setRows(res.data);
           // Check every email in the file once; cleaning options only narrow it.
           const all = cleanLeads(res.data, { includePersonal: true }).leads.map((l) => l.email);
-          const d = await smartlead("precheck", companyId, { emails: all });
+          const d = await instantly("precheck", companyId, { emails: all });
           setBlocked({ dnc: new Set(d.dnc), existing: new Set(d.existing) });
         } catch (err) {
           setParseErr(err?.message || "Could not check the file");
@@ -76,8 +76,8 @@ export default function LeadImport({ companyId, sequences, currentLeadCount, onD
     const cleaned = cleanLeads(rows, { includePersonal });
     const afterDnc = cleaned.leads.filter((l) => !blocked.dnc.has(l.email));
     const fresh = afterDnc.filter((l) => !blocked.existing.has(l.email));
-    const validation = validateCopy(sequences, fresh);
-    const incomplete = leadsMissingVariables(sequences, fresh);
+    const validation = validateCopy(copy, fresh);
+    const incomplete = leadsMissingVariables(copy, fresh);
     const incompleteSet = new Set(incomplete.map((l) => l.email));
     const eligible = skipIncomplete ? fresh.filter((l) => !incompleteSet.has(l.email)) : fresh;
     const cap = Math.max(1, Math.floor(Number(maxPush)) || DEFAULT_MAX_PUSH);
@@ -93,7 +93,7 @@ export default function LeadImport({ companyId, sequences, currentLeadCount, onD
       unsupported: validation.variables.filter((v) => !v.supported),
       final,
     };
-  }, [rows, blocked, includePersonal, sequences, skipIncomplete, maxPush]);
+  }, [rows, blocked, includePersonal, copy, skipIncomplete, maxPush]);
 
   const canPush =
     prepared && prepared.final.length > 0 && (!prepared.unsupported.length || ackUnsupported) && !progress;
@@ -106,7 +106,7 @@ export default function LeadImport({ companyId, sequences, currentLeadCount, onD
     let importId = null;
     try {
       setProgress({ phase: "Starting", removed: 0, pushed: 0, total: leads.length });
-      ({ importId } = await smartlead("import-start", companyId, {
+      ({ importId } = await instantly("import-start", companyId, {
         mode,
         fileName,
         inputCount: prepared.stats.input,
@@ -121,13 +121,13 @@ export default function LeadImport({ companyId, sequences, currentLeadCount, onD
 
       let removed = 0;
       if (mode === "replace") {
-        let kept = 0;
+        let cursor = null;
         for (let guard = 0; guard < 500; guard++) {
           setProgress((p) => ({ ...p, phase: "Removing current campaign leads", removed }));
-          const r = await smartlead("clear-batch", companyId, { importId, offset: kept });
+          const r = await instantly("clear-batch", companyId, { importId, cursor });
           removed += r.removed;
-          kept += r.kept;
-          if (r.remaining <= 0 || r.stuck) break;
+          cursor = r.cursor;
+          if (r.done || r.stuck) break;
         }
       }
 
@@ -135,7 +135,7 @@ export default function LeadImport({ companyId, sequences, currentLeadCount, onD
       for (let i = 0; i < leads.length; i += PUSH_CHUNK) {
         setProgress((p) => ({ ...p, phase: "Pushing new leads", removed, pushed: i }));
         const part = leads.slice(i, i + PUSH_CHUNK);
-        const r = await smartlead("leads-import", companyId, {
+        const r = await instantly("leads-import", companyId, {
           importId,
           leads: part,
           final: i + PUSH_CHUNK >= leads.length,
@@ -148,7 +148,7 @@ export default function LeadImport({ companyId, sequences, currentLeadCount, onD
       onDone?.();
     } catch (err) {
       setPushErr(err?.message || "Push failed");
-      if (importId) smartlead("import-fail", companyId, { importId, error: err?.message }).catch(() => {});
+      if (importId) instantly("import-fail", companyId, { importId, error: err?.message }).catch(() => {});
     } finally {
       setProgress(null);
     }
@@ -301,8 +301,8 @@ export default function LeadImport({ companyId, sequences, currentLeadCount, onD
               </div>
               <p className="text-xs text-muted-foreground">
                 {mode === "replace"
-                  ? `Removes the ${currentLeadCount.toLocaleString()} leads now in the campaign — including mid-sequence follow-ups — except anyone who replied, then adds this list. Newest list goes out first.`
-                  : "Adds this list behind the existing queue. SmartLead sends older leads first."}
+                  ? `Removes the ${currentLeadCount.toLocaleString()} leads now in the campaign — including anyone not emailed yet — except anyone who replied, then adds this list. Newest list goes out first.`
+                  : "Adds this list behind the existing queue. Instantly may send older leads first."}
               </p>
             </div>
 
@@ -338,7 +338,7 @@ export default function LeadImport({ companyId, sequences, currentLeadCount, onD
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
             <span>
               Done. {result.removed ? `Removed ${result.removed.toLocaleString()} old leads. ` : ""}
-              Added {num(result.added)}; SmartLead rejected {num(result.invalid)} invalid, {num(result.blocked_by_provider)} blocked,{" "}
+              Added {num(result.added)}; Instantly rejected {num(result.invalid)} invalid, {num(result.blocked_by_provider)} on its block list,{" "}
               {num(result.already_in_campaign) + num(result.duplicates)} duplicates.
               {num(result.skipped_dnc) + num(result.skipped_existing) > 0 &&
                 ` Server skipped ${num(result.skipped_dnc) + num(result.skipped_existing)} more (DNC / already pushed).`}

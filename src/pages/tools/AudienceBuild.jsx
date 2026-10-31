@@ -7,6 +7,8 @@ import { Section, Loading, ErrorLine, Stat, fmtDate } from "./emailCampaigns/ui"
 import { audienceBuild } from "./audienceBuild/api";
 import IcpFilters from "./audienceBuild/IcpFilters";
 import TodaysLeads from "./audienceBuild/TodaysLeads";
+import Connection from "./audienceBuild/Connection";
+import Results from "./audienceBuild/Results";
 import { attachCounts } from "../../../lib/audience-build/logic.js";
 
 const AUTO_COUNT_TOP = 5;
@@ -38,7 +40,7 @@ function Notice({ children }) {
 }
 
 // Read-only here: inboxes and emails per inbox are set in Company Intelligence →
-// Email Campaigns, next to the SmartLead campaign they send from.
+// Email Campaigns, or copied from Instantly in the connection step.
 function Capacity({ companyId, capacity, done }) {
   const multiplier = capacity?.multiplier ?? 3;
   return (
@@ -323,6 +325,8 @@ export default function AudienceBuild() {
   const { companyId } = useParams();
   const [status, setStatus] = useState(null);
   const [err, setErr] = useState("");
+  const [connection, setConnection] = useState(null);
+  const [resultsKey, setResultsKey] = useState(0);
 
   const load = useCallback(async () => {
     setErr("");
@@ -333,10 +337,20 @@ export default function AudienceBuild() {
     }
   }, [companyId]);
 
+  const loadConnection = useCallback(async () => {
+    try {
+      setConnection(await audienceBuild("campaign-check", { companyId }));
+    } catch (e) {
+      setConnection({ ok: false, canPush: false, checks: [{ id: "campaign", ok: false, label: "Instantly", detail: e.message }] });
+    }
+  }, [companyId]);
+
   useEffect(() => {
     setStatus(null);
+    setConnection(null);
     load();
-  }, [load]);
+    loadConnection();
+  }, [load, loadConnection]);
 
   // A step is "done" once its result is saved; done steps start collapsed.
   // Keys include the flag so a step collapses the moment it completes.
@@ -358,6 +372,13 @@ export default function AudienceBuild() {
             Variables, then redeploy.
           </Notice>
         )}
+        <Connection
+          companyId={companyId}
+          connection={connection}
+          capacity={status.capacity}
+          onReload={loadConnection}
+          onChanged={load}
+        />
         <Capacity key={`cap-${steps.capacity}`} companyId={companyId} capacity={status.capacity} done={steps.capacity} />
         {!status.taxonomy?.segments && (
           <Notice>
@@ -370,7 +391,16 @@ export default function AudienceBuild() {
         )}
         <Match key={`match-${steps.segments}`} companyId={companyId} status={status} onChanged={load} done={steps.segments} />
         <IcpFilters key={`icp-${steps.filters}`} companyId={companyId} status={status} onChanged={load} done={steps.filters} />
-        <TodaysLeads companyId={companyId} status={status} onChanged={load} />
+        <TodaysLeads
+          companyId={companyId}
+          status={status}
+          connection={connection}
+          onChanged={() => {
+            load();
+            setResultsKey((k) => k + 1);
+          }}
+        />
+        <Results companyId={companyId} refreshKey={resultsKey} />
       </div>
     );
 
@@ -382,7 +412,15 @@ export default function AudienceBuild() {
           {status?.company?.name ? `${status.company.name} — ` : ""}Audience Build
         </h1>
         {status && (
-          <Button size="sm" variant="outline" onClick={load}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              load();
+              loadConnection();
+              setResultsKey((k) => k + 1);
+            }}
+          >
             <RefreshCw className="mr-1.5 h-4 w-4" /> Refresh
           </Button>
         )}

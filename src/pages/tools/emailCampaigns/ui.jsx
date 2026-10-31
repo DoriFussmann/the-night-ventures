@@ -4,7 +4,7 @@ import { AlertTriangle, CheckCircle2, ChevronRight, Loader2 } from "lucide-react
 // collapsible: header toggles the body. Children stay mounted while closed so
 // sections keep their data (e.g. the unread count in the Replies title).
 // done: a check before the title. summary: shown instead of the description
-// while closed (what was decided in a finished step).
+// while closed (what was decided in a finished step), always one line.
 export function Section({ title, description, actions, children, id, collapsible = false, defaultOpen = true, done = false, summary }) {
   const [open, setOpen] = useState(collapsible ? defaultOpen : true);
   const heading = (
@@ -17,7 +17,12 @@ export function Section({ title, description, actions, children, id, collapsible
         {title}
       </h2>
       {!open && summary ? (
-        <p className={`text-xs text-foreground/80 ${collapsible ? "pl-[22px]" : ""}`}>{summary}</p>
+        <p
+          className={`truncate text-xs text-foreground/80 ${collapsible ? "pl-[22px]" : ""}`}
+          title={typeof summary === "string" ? summary : undefined}
+        >
+          {summary}
+        </p>
       ) : (
         description && <p className={`text-xs text-muted-foreground ${collapsible ? "pl-[22px]" : ""}`}>{description}</p>
       )}

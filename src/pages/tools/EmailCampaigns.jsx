@@ -3,12 +3,12 @@ import { useParams } from "react-router-dom";
 import { Mail, RefreshCw } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
-import { smartlead } from "./emailCampaigns/smartleadApi";
+import { instantly } from "./emailCampaigns/instantlyApi";
 import { ErrorLine, Loading } from "./emailCampaigns/ui";
 import Overview from "./emailCampaigns/Overview";
 import Analytics from "./emailCampaigns/Analytics";
 import Replies from "./emailCampaigns/Replies";
-import SequenceCopy from "./emailCampaigns/SequenceCopy";
+import EmailCopy from "./emailCampaigns/EmailCopy";
 import LeadImport from "./emailCampaigns/LeadImport";
 import ImportHistory from "./emailCampaigns/ImportHistory";
 import Leads from "./emailCampaigns/Leads";
@@ -37,7 +37,7 @@ export default function EmailCampaigns() {
     setCompanyErr("");
     supabase
       .from("companies")
-      .select("name, email_campaigns_enabled, email_campaigns_provider, email_campaigns_campaign_id")
+      .select("name, email_campaigns_enabled, email_campaigns_campaign_id")
       .eq("id", companyId)
       .maybeSingle()
       .then(({ data, error }) => {
@@ -50,15 +50,12 @@ export default function EmailCampaigns() {
     };
   }, [companyId]);
 
-  const ready =
-    company?.email_campaigns_enabled &&
-    company?.email_campaigns_provider === "smartlead" &&
-    String(company?.email_campaigns_campaign_id || "").trim();
+  const ready = company?.email_campaigns_enabled && String(company?.email_campaigns_campaign_id || "").trim();
 
   const loadOverview = useCallback(async () => {
     setOverviewErr("");
     try {
-      setOverview(await smartlead("overview", companyId));
+      setOverview(await instantly("overview", companyId));
     } catch (e) {
       setOverviewErr(e.message);
     }
@@ -78,10 +75,8 @@ export default function EmailCampaigns() {
   else if (!company) body = <Loading />;
   else if (!company.email_campaigns_enabled)
     body = <Notice>Email campaigns are off for this company. Turn them on in Company Intelligence → Email Campaigns.</Notice>;
-  else if (company.email_campaigns_provider !== "smartlead")
-    body = <Notice>Only SmartLead is supported right now. Switch the provider in Company Intelligence → Email Campaigns.</Notice>;
   else if (!ready)
-    body = <Notice>No Campaign ID set. Add it in Company Intelligence → Email Campaigns.</Notice>;
+    body = <Notice>No Instantly campaign chosen. Pick it in Company Intelligence → Email Campaigns.</Notice>;
   else if (overviewErr) body = <ErrorLine>{overviewErr}</ErrorLine>;
   else if (!overview) body = <Loading label="Loading campaign…" />;
   else
@@ -90,11 +85,18 @@ export default function EmailCampaigns() {
         <Overview companyId={companyId} overview={overview} onChanged={loadOverview} />
         <Analytics companyId={companyId} allTime={overview.analytics} />
         <Replies companyId={companyId} />
-        <SequenceCopy companyId={companyId} sequences={overview.sequences} />
+        <EmailCopy
+          companyId={companyId}
+          copy={overview.copy}
+          liveCopy={overview.liveCopy}
+          inSync={overview.copyInSync}
+          syncedAt={overview.copySyncedAt}
+          onSaved={loadOverview}
+        />
         <LeadImport
           companyId={companyId}
-          sequences={overview.sequences}
-          currentLeadCount={overview.leadCount}
+          copy={overview.copy || overview.liveCopy}
+          currentLeadCount={overview.analytics?.leads || 0}
           onDone={refreshAll}
         />
         <ImportHistory companyId={companyId} refreshKey={refreshKey} />

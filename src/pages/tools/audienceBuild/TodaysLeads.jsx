@@ -14,7 +14,7 @@ const STATUS = {
   ready: { label: "Ready for review", cls: "bg-amber-50 text-amber-700 border-amber-200" },
   approved: { label: "Approved, not pushed yet", cls: "bg-amber-50 text-amber-700 border-amber-200" },
   expired: { label: "Expired, not sent", cls: "bg-muted text-muted-foreground border-border" },
-  pushed: { label: "Pushed to SmartLead", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  pushed: { label: "Pushed to Instantly", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
   failed: { label: "Failed", cls: "bg-red-50 text-red-700 border-red-200" },
 };
 
@@ -58,11 +58,12 @@ function PushResult({ result }) {
     result.already_in_campaign ? `${result.already_in_campaign} already in the campaign` : null,
     result.duplicates ? `${result.duplicates} duplicates` : null,
     result.invalid ? `${result.invalid} invalid` : null,
-    result.blocked_by_provider ? `${result.blocked_by_provider} blocked by SmartLead` : null,
+    result.blocked_by_provider ? `${result.blocked_by_provider} on Instantly's block list` : null,
+    result.skipped_by_provider ? `${result.skipped_by_provider} skipped by Instantly` : null,
   ].filter(Boolean);
   return (
     <p className="text-sm">
-      SmartLead added <span className="font-medium tabular-nums">{fmt(result.added)}</span> of {fmt(result.sent)} sent
+      Instantly added <span className="font-medium tabular-nums">{fmt(result.added)}</span> of {fmt(result.sent)} sent
       {extra.length ? <span className="text-muted-foreground"> · {extra.join(" · ")}</span> : null}
     </p>
   );
@@ -104,11 +105,10 @@ function toCsv(rows) {
   return [CSV_COLUMNS.map(([h]) => h).join(","), ...rows.map((r) => CSV_COLUMNS.map(([, k]) => esc(r[k])).join(","))].join("\n");
 }
 
-export default function TodaysLeads({ companyId, status, onChanged }) {
+export default function TodaysLeads({ companyId, status, connection, onChanged }) {
   const approvedFilters = status?.config?.filters?.approved;
   const dailyPull = Boolean(status?.config?.daily_pull_enabled);
   const [savingAuto, setSavingAuto] = useState(false);
-  const [campaign, setCampaign] = useState(null);
   const need = status?.capacity?.need || 0;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -132,13 +132,6 @@ export default function TodaysLeads({ companyId, status, onChanged }) {
     if (approvedFilters) load();
   }, [approvedFilters, load]);
 
-  useEffect(() => {
-    if (!approvedFilters) return;
-    audienceBuild("campaign-check", { companyId })
-      .then(setCampaign)
-      .catch((e) => setCampaign({ ok: false, error: e.message }));
-  }, [approvedFilters, companyId]);
-
   const toggleAuto = async (enabled) => {
     setSavingAuto(true);
     setErr("");
@@ -157,7 +150,8 @@ export default function TodaysLeads({ companyId, status, onChanged }) {
   const run = data?.run;
   const candidates = data?.candidates || [];
   const editable = run?.status === "ready";
-  const pushable = ["ready", "approved"].includes(run?.status) && campaign?.ok !== false;
+  const pushable = ["ready", "approved"].includes(run?.status) && connection?.canPush === true;
+  const blockers = (connection?.checks || []).filter((c) => !c.ok && ["api_key", "campaign", "single_step", "copy"].includes(c.id));
   const selectedCount = candidates.filter((c) => c.selected).length;
   const shown = showAll ? candidates : candidates.slice(0, Math.max(PAGE, selectedCount + 10));
 
@@ -192,8 +186,8 @@ export default function TodaysLeads({ companyId, status, onChanged }) {
   };
 
   const approve = async () => {
-    const warn = campaign?.ok && campaign.steps !== 1 ? `\n\nWarning: the SmartLead campaign has ${campaign.steps} steps, not 1.` : "";
-    if (!window.confirm(`Push ${selectedCount} people to the SmartLead campaign now?${warn}`)) return;
+    const warn = connection?.campaign?.status !== 1 ? "\n\nThe campaign isn't active yet, so Instantly will hold them until you activate it." : "";
+    if (!window.confirm(`Push ${selectedCount} people to the Instantly campaign "${connection?.campaign?.name || ""}" now?${warn}`)) return;
     setApproving(true);
     setErr("");
     try {
@@ -236,13 +230,10 @@ export default function TodaysLeads({ companyId, status, onChanged }) {
           Nothing is sent until you approve. Unapproved lists expire after 24 hours.
         </span>
       </div>
-      {campaign && !campaign.ok && (
-        <p className="mb-3 text-sm text-amber-700">SmartLead: {campaign.error}. Pushing is off until that&apos;s fixed.</p>
-      )}
-      {campaign?.ok && campaign.steps !== 1 && (
+      {connection && blockers.length > 0 && (
         <p className="mb-3 text-sm text-amber-700">
-          The SmartLead campaign has {campaign.steps} step{campaign.steps === 1 ? "" : "s"}. Single touch expects exactly 1:
-          {campaign.steps === 0 ? " add the email in SmartLead." : " remove the follow-ups in SmartLead."}
+          Pushing is off until Instantly is ready: {blockers.map((c) => `${c.label.toLowerCase()} — ${c.detail || "not ready"}`).join("; ")}.
+          See Instantly connection above.
         </p>
       )}
       {loading && <Loading />}
@@ -273,7 +264,7 @@ export default function TodaysLeads({ companyId, status, onChanged }) {
             </p>
           )}
           {run.status === "pushed" && (
-            <p className="text-sm">Pushed to SmartLead {fmtDate(run.pushed_at)}.</p>
+            <p className="text-sm">Pushed to Instantly {fmtDate(run.pushed_at)}.</p>
           )}
           <PushResult result={run.push_result} />
           <Funnel counts={run.counts} need={run.need || need} />

@@ -6,14 +6,11 @@ import {
   leadsMissingVariables,
 } from "../src/pages/tools/emailCampaigns/validateCopy.js";
 
-const seq = [
-  { subject: "Quick q, {{first_name}}", email_body: "<p>Saw {{ company_name }} is in {{industry}}</p>" },
-  {
-    subject: "",
-    email_body: "Following up",
-    sequence_variants: [{ subject: "Hey", email_body: "{{Favorite_Color}} {{first_name}}" }],
-  },
-];
+// Single touch: one email, { subject, body }.
+const seq = {
+  subject: "Quick q, {{first_name}}",
+  body: "Saw {{ company_name }} is in {{industry}}.\n\n{{Favorite_Color}} {{first_name}}",
+};
 
 assert.deepEqual(extractVariables(seq), ["company_name", "favorite_color", "first_name", "industry"]);
 
@@ -29,6 +26,6 @@ assert.equal(byName.company_name.missing, 0);
 assert.equal(byName.favorite_color.supported, false);
 assert.equal(v.ok, false);
 assert.equal(leadsMissingVariables(seq, leads).length, 1);
-assert.equal(validateCopy([], leads).ok, true);
+assert.equal(validateCopy(null, leads).ok, true);
 
 console.log("validate-copy: all assertions passed.");

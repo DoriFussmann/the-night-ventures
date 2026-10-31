@@ -4,9 +4,9 @@ import assert from "node:assert/strict";
 import {
   cleanLead,
   cleanLeads,
-  toSmartleadLead,
   OUTPUT_FIELDS,
 } from "../src/pages/tools/emailCampaigns/cleanLeads.js";
+import { mapLead } from "../lib/instantly/mapping.js";
 
 let passed = 0;
 const check = (name, fn) => {
@@ -77,7 +77,7 @@ check("personal-only leads are dropped by default", () => {
   assert.equal(stats.personal, 0);
 });
 
-check("toSmartleadLead maps to SmartLead shape with custom_fields", () => {
+check("mapLead maps a cleaned lead to Instantly's /leads/add shape", () => {
   const c = cleanLead({
     FIRST_NAME: "A",
     LAST_NAME: "B",
@@ -87,12 +87,12 @@ check("toSmartleadLead maps to SmartLead shape with custom_fields", () => {
     JOB_TITLE: "CEO",
     COMPANY_INDUSTRY: "SaaS",
   });
-  const s = toSmartleadLead(c);
+  const s = mapLead(c);
   assert.equal(s.email, "a@x.com");
   assert.equal(s.company_name, "Acme");
-  assert.equal(s.company_url, "acme.com");
-  assert.equal(s.custom_fields.job_title, "CEO");
-  assert.equal(s.custom_fields.industry, "SaaS");
+  assert.equal(s.website, "acme.com");
+  assert.equal(s.job_title, "CEO");
+  assert.equal(s.custom_variables.industry, "SaaS");
 });
 
 console.log(`\nAll ${passed} clean-leads assertions passed.`);

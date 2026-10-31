@@ -10,19 +10,19 @@ async function authHeaders() {
   };
 }
 
-// SmartLead call scoped to a company. The server resolves the campaign ID from
+// Instantly call scoped to a company. The server resolves the campaign ID from
 // the company record — the client never sends one. `payload` is passed through
-// as-is (leads, offset, status, days, …).
-export async function smartlead(resource, companyId, payload = {}) {
+// as-is (leads, cursor, status, days, …).
+export async function instantly(resource, companyId, payload = {}) {
   const headers = await authHeaders();
-  const res = await fetch("/api/check-article-update?action=smartlead", {
+  const res = await fetch("/api/check-article-update?action=instantly", {
     method: "POST",
     headers,
     body: JSON.stringify({ ...payload, resource, companyId }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data.ok === false) {
-    throw new Error(data.error || `SmartLead request failed (${res.status})`);
+    throw new Error(data.error || `Instantly request failed (${res.status})`);
   }
   return data.data;
 }

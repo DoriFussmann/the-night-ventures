@@ -3,11 +3,12 @@ import { BellRing, Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { smartlead } from "./smartleadApi";
+import { instantly } from "./instantlyApi";
 import { ErrorLine, Loading, Section, fmtDate } from "./ui";
 
-// Replies arrive via the SmartLead webhook (EMAIL_REPLY) → email_replies.
-// The same webhook emails a notification and feeds the sidebar badge.
+// Replies arrive via the Instantly webhook (reply_received) → email_replies.
+// The same webhook emails a notification and feeds the sidebar badge. The
+// connect button also registers sent / bounced / unsubscribed tracking.
 export default function Replies({ companyId }) {
   const [rows, setRows] = useState(null);
   const [err, setErr] = useState("");
@@ -29,10 +30,8 @@ export default function Replies({ companyId }) {
 
   const checkHook = useCallback(async () => {
     try {
-      const d = await smartlead("webhook-status", companyId);
-      const list = Array.isArray(d) ? d : d?.data || [];
-      const ours = list.some((w) => String(w.webhook_url || w.url || "").includes("smartlead-webhook"));
-      setHook({ state: ours ? "on" : "off" });
+      const d = await instantly("webhook-status", companyId);
+      setHook({ state: d.missing?.length ? "off" : "on", missing: d.missing || [] });
     } catch (e) {
       setHook({ state: "error", message: e.message });
     }
@@ -46,7 +45,7 @@ export default function Replies({ companyId }) {
   const connect = async () => {
     setConnecting(true);
     try {
-      await smartlead("webhook-register", companyId);
+      await instantly("webhook-register", companyId);
       await checkHook();
     } catch (e) {
       setHook({ state: "error", message: e.message });
@@ -71,7 +70,7 @@ export default function Replies({ companyId }) {
   const addDnc = async (email) => {
     setDncBusy(email);
     try {
-      await smartlead("dnc-add", companyId, { emails: [email], note: "Added from reply" });
+      await instantly("dnc-add", companyId, { emails: [email], note: "Added from reply" });
     } catch (e) {
       setErr(e.message);
     } finally {
@@ -94,7 +93,9 @@ export default function Replies({ companyId }) {
       description={
         hook.state === "on"
           ? "Live — new replies land here and trigger an email notification."
-          : "Replies are captured from the moment notifications are connected."
+          : hook.missing?.length
+            ? `Not connected: ${hook.missing.join(", ")}. Replies are captured from the moment tracking is connected.`
+            : "Replies are captured from the moment tracking is connected."
       }
       actions={
         <>
@@ -106,7 +107,7 @@ export default function Replies({ companyId }) {
           {hook.state !== "on" && hook.state !== "checking" && (
             <Button size="sm" onClick={connect} disabled={connecting}>
               {connecting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <BellRing className="mr-1.5 h-4 w-4" />}
-              Connect reply notifications
+              Connect tracking
             </Button>
           )}
         </>
