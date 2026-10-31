@@ -153,6 +153,9 @@ export default function TodaysLeads({ companyId, status, connection, onChanged }
   const pushable = ["ready", "approved"].includes(run?.status) && connection?.canPush === true;
   const blockers = (connection?.checks || []).filter((c) => !c.ok && ["api_key", "campaign", "single_step", "copy"].includes(c.id));
   const selectedCount = candidates.filter((c) => c.selected).length;
+  // After a push: top up to today's capacity (e.g. an inbox was added).
+  const leftInList = candidates.filter((c) => !c.selected).length;
+  const topUp = run?.status === "pushed" ? Math.min(leftInList, Math.max(0, need - selectedCount)) : 0;
   const shown = showAll ? candidates : candidates.slice(0, Math.max(PAGE, selectedCount + 10));
 
   const pull = async () => {
@@ -166,6 +169,27 @@ export default function TodaysLeads({ companyId, status, connection, onChanged }
     } finally {
       await load();
       setPulling(false);
+    }
+  };
+
+  const pushMore = async () => {
+    const raw = window.prompt(
+      `Push how many more? Next by rank from today's list (${leftInList} left, already pushed ${selectedCount}, need ${need}/day).`,
+      String(topUp || Math.min(leftInList, 30))
+    );
+    if (raw == null) return;
+    const count = Math.round(Number(raw));
+    if (!count || count < 1) return;
+    setApproving(true);
+    setErr("");
+    try {
+      await audienceBuild("push-more", { runId: run.id, count });
+      await load();
+      onChanged?.();
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setApproving(false);
     }
   };
 
@@ -224,6 +248,12 @@ export default function TodaysLeads({ companyId, status, connection, onChanged }
             <Button size="sm" onClick={approve} disabled={!pushable || approving || !selectedCount}>
               <Send className="mr-1.5 h-4 w-4" />
               {approving ? "Pushing…" : run.status === "approved" ? `Retry Push (${selectedCount})` : `Approve & Push (${selectedCount})`}
+            </Button>
+          )}
+          {!pulling && run?.status === "pushed" && leftInList > 0 && (
+            <Button size="sm" variant={topUp > 0 ? "default" : "outline"} onClick={pushMore} disabled={approving || connection?.canPush !== true}>
+              <Send className="mr-1.5 h-4 w-4" />
+              {approving ? "Pushing…" : topUp > 0 ? `Push ${topUp} more` : "Push more"}
             </Button>
           )}
         </>
