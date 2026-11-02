@@ -22,6 +22,7 @@ import {
   requestClusterPlan,
 } from "./articlesAutomation/planCluster";
 import { generateClusterArticles } from "./articlesAutomation/runGeneration";
+import { keywordAction } from "./seoAdvisor/api";
 import { downloadArticlesZip } from "./articleGeneration/downloadZip";
 import { saveGeneratedArticles } from "./articleGeneration/saveGeneratedArticles";
 import { syncGeneratedArticlePublished } from "./articleGeneration/syncGeneratedArticlePublished";
@@ -408,6 +409,12 @@ export default function ClusterGeneration() {
     pickedRef.current = null;
   };
 
+  // Editor's own points for the single-article flow (saved as the spec's Expert notes).
+  const [planPoints, setPlanPoints] = useState("");
+  const [planGatePaused, setPlanGatePaused] = useState(false);
+  const planPointsRef = useRef("");
+  planPointsRef.current = planPoints;
+
   const stillCurrent = (token) => runTokenRef.current === token;
 
   const declineFlow = useCallback(() => {
@@ -452,6 +459,8 @@ export default function ClusterGeneration() {
     if (!stillCurrent(token)) return;
     proposalRef.current = result;
     setProposal(result);
+    setPlanPoints(String(cluster.supporting?.spec?.expertNotes || result.articles?.[0]?.expertInput || ""));
+    setPlanGatePaused(false);
     setPhase("plan_review");
     setStatusMessage(
       `Plan ready for “${cluster.clusterKeyword}”. Confirm to save as planned.`
@@ -530,13 +539,21 @@ export default function ClusterGeneration() {
     try {
       setPhase("persisting");
       setStatusMessage("Saving cluster as planned…");
+      const points = planPointsRef.current.trim();
+      if (points !== String(cluster.supporting?.spec?.expertNotes || "").trim()) {
+        await keywordAction(companyId, "update_spec", {
+          core: cluster.pillarKeyword,
+          keyword: cluster.clusterKeyword,
+          spec: { expertNotes: points },
+        });
+      }
       const saved = await persistPlannedCluster({
         companyId,
         pillarSlug: cluster.pillarSlug,
         pillarKeyword: cluster.pillarKeyword,
         supportingSlug: cluster.clusterSlug,
         supportingKeyword: cluster.clusterKeyword,
-        articles: nextProposal.articles,
+        articles: nextProposal.articles.map((article) => ({ ...article, expertInput: points || undefined })),
         clusterRationale: nextProposal.clusterRationale,
       });
       if (!stillCurrent(token)) return;
@@ -855,7 +872,11 @@ export default function ClusterGeneration() {
         Array.isArray(cluster.plannedArticles) &&
         cluster.plannedArticles.length > 0
       ) {
-        planned = cluster.plannedArticles;
+        // A saved plan may predate the editor's latest points; the spec wins.
+        const notes = String(cluster.supporting?.spec?.expertNotes || "").trim();
+        planned = notes
+          ? cluster.plannedArticles.map((article) => ({ ...article, expertInput: notes }))
+          : cluster.plannedArticles;
         topics = topicsFromArticles(planned);
         say(`Using saved plan for “${cluster.clusterKeyword}”…`);
       } else {
@@ -1270,11 +1291,19 @@ export default function ClusterGeneration() {
   );
 
   const confirmSchedule = useCallback(
-    async ({ keywords, settings, start }) => {
+    async ({ keywords, settings, start, points = [] }) => {
       const dialog = scheduleDialog;
       if (!dialog) return;
       if (!isPublishDestinationMapped(publishDestination)) {
         throw new Error("Set Publish Destination in Company Data first");
+      }
+      // Save the editor's points to each keyword's spec before writing reads it.
+      for (const p of points) {
+        await keywordAction(companyId, "update_spec", {
+          core: p.pillarKeyword,
+          keyword: p.keyword,
+          spec: { expertNotes: p.expertNotes },
+        });
       }
       let scheduleId = dialog.schedule?.id;
       if (dialog.mode === "append" && dialog.schedule) {
@@ -1696,6 +1725,28 @@ export default function ClusterGeneration() {
                       {article.targetKeyword}
                       {article.wordCount ? ` · ${article.wordCount} words` : ""}
                     </p>
+                    {Array.isArray(article.keyMessages) && article.keyMessages.length ? (
+                      <ul className="list-disc space-y-0.5 pl-5 text-xs text-foreground/80">
+                        {article.keyMessages.map((m, j) => (
+                          <li key={j}>{m}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {phase === "plan_review" ? (
+                      <textarea
+                        className="mt-1 min-h-[72px] w-full rounded-md border border-input bg-background px-2.5 py-2 text-sm"
+                        placeholder="Your points (optional): the writer opens with these and builds the article around them. Typing pauses the countdown."
+                        value={planPoints}
+                        onFocus={() => setPlanGatePaused(true)}
+                        onChange={(e) => {
+                          setPlanGatePaused(true);
+                          setPlanPoints(e.target.value);
+                        }}
+                        aria-label="Your points for this article"
+                      />
+                    ) : planPoints ? (
+                      <p className="whitespace-pre-wrap text-xs text-foreground/80">Your points: {planPoints}</p>
+                    ) : null}
                   </li>
                 ))}
               </ul>
@@ -1706,6 +1757,8 @@ export default function ClusterGeneration() {
               key="plan-gate"
               onConfirm={confirmPlan}
               onDecline={declineFlow}
+              paused={planGatePaused}
+              hint={planGatePaused ? "Countdown paused while you add your points. Confirm when ready." : undefined}
             />
           )}
         </section>

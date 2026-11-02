@@ -11,6 +11,8 @@ export default function ConfirmGate({
   confirmLabel = "Confirm",
   declineLabel = "Decline",
   disabled = false,
+  // Stops the countdown (e.g. while the user types); buttons stay usable.
+  paused = false,
 }) {
   const [remaining, setRemaining] = useState(seconds);
   const settledRef = useRef(false);
@@ -28,7 +30,7 @@ export default function ConfirmGate({
   };
 
   useEffect(() => {
-    if (disabled) return undefined;
+    if (disabled || paused) return undefined;
     const id = window.setInterval(() => {
       setRemaining((n) => {
         if (n <= 1) {
@@ -39,11 +41,11 @@ export default function ConfirmGate({
       });
     }, 1000);
     return () => window.clearInterval(id);
-  }, [disabled]);
+  }, [disabled, paused]);
 
   useEffect(() => {
-    if (!disabled && remaining <= 0) settle("confirm");
-  }, [remaining, disabled]);
+    if (!disabled && !paused && remaining <= 0) settle("confirm");
+  }, [remaining, disabled, paused]);
 
   const pct =
     seconds > 0 ? Math.round(((seconds - remaining) / seconds) * 100) : 100;
