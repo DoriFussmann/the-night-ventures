@@ -13,6 +13,7 @@ import {
 } from "./writerIntake";
 import { saveComposedDraft } from "./saveComposedDraft";
 import { IdeaGenerationError } from "./generateIdea";
+import { jsonAuthHeaders } from "@/lib/authHeaders";
 
 function authorSourceLinks(userLinks) {
   const addedAt = todayIso();
@@ -72,7 +73,7 @@ export async function generateModifyArticle({
 
   const res = await fetch("/api/generate-article", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: await jsonAuthHeaders(),
     body: JSON.stringify({
       mode: "modify",
       sourceArticle,

@@ -2,6 +2,7 @@ import { loadCompanyPositioning } from "../articleGeneration/singleArticle";
 import { nonEmptyKeyPoints, parseAllowedBrands } from "./composeState";
 import { updateComposedDraftById } from "./draftRecord";
 import { saveComposedDraft } from "./saveComposedDraft";
+import { jsonAuthHeaders } from "@/lib/authHeaders";
 
 export class IdeaGenerationError extends Error {
   constructor(message, validationErrors = []) {
@@ -22,7 +23,7 @@ export async function generateIdeaArticle({ companyId, state, existingDraftId = 
 
   const res = await fetch("/api/generate-article", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: await jsonAuthHeaders(),
     body: JSON.stringify({
       mode: "idea",
       abstract: positioning.abstract,

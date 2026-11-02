@@ -1,3 +1,4 @@
+import { rejectUnlessUser } from '../lib/http/requireUser.js'
 import Anthropic from '@anthropic-ai/sdk'
 
 function json(res, status, body) {
@@ -127,6 +128,8 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return json(res, 405, { error: 'Method not allowed' })
   }
+
+  if (await rejectUnlessUser(req, res)) return
 
   try {
     const apiKey = process.env.ANTHROPIC_API_KEY

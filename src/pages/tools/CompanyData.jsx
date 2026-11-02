@@ -58,6 +58,7 @@ import {
   getCompanyDataPoints,
   mergeParsedCompanyFields,
 } from "./companyData/dataPoints";
+import { jsonAuthHeaders } from "@/lib/authHeaders";
 import IntelligenceBrief from "./companyData/IntelligenceBrief";
 import PublishDestinationGuide from "./companyData/PublishDestinationGuide";
 import PublishDestinationCheck from "./companyData/PublishDestinationCheck";
@@ -1708,7 +1709,7 @@ export default function CompanyData() {
 
       const res = await fetch("/api/company-data-import", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await jsonAuthHeaders(),
         body: JSON.stringify({
           markdown: source,
           companyName,

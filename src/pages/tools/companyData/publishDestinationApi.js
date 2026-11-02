@@ -10,7 +10,7 @@ export async function checkPublishDestination({ owner, repo, tokenKey }) {
   const token = data?.session?.access_token;
   if (!token) throw new Error("Not signed in");
 
-  const res = await fetch("/api/check-article-update?action=integrations", {
+  const res = await fetch("/api/integrations", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,

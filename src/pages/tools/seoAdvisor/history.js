@@ -1,4 +1,4 @@
-/** Pure helpers (no browser deps) — unit-tested in scripts/test-seo-advisor-unit.mjs. */
+/** Pure helpers (no browser deps). */
 
 function providerFor(name) {
   if (String(name).startsWith('semrush_')) return 'Semrush'

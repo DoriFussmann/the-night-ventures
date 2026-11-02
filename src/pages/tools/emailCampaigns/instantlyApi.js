@@ -15,7 +15,7 @@ async function authHeaders() {
 // as-is (leads, cursor, status, days, …).
 export async function instantly(resource, companyId, payload = {}) {
   const headers = await authHeaders();
-  const res = await fetch("/api/check-article-update?action=instantly", {
+  const res = await fetch("/api/instantly", {
     method: "POST",
     headers,
     body: JSON.stringify({ ...payload, resource, companyId }),

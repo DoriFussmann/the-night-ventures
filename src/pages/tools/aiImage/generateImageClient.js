@@ -1,3 +1,4 @@
+import { jsonAuthHeaders } from "@/lib/authHeaders";
 export const IMAGE_SIZES = ["1024x1024", "1536x1024", "1024x1536"];
 
 export function slugifyFilename(label) {
@@ -21,7 +22,7 @@ export function imageSrcFromResult(result) {
 export async function generateOneImage({ prompt, size, styleContext }) {
   const res = await fetch("/api/generate-image", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: await jsonAuthHeaders(),
     body: JSON.stringify({ prompt, size, styleContext }),
   });
   const data = await res.json().catch(() => ({}));
@@ -45,7 +46,7 @@ export async function findStockImage(params) {
   try {
     const res = await fetch("/api/generate-image", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: await jsonAuthHeaders(),
       body: JSON.stringify({ mode: "stock", ...params }),
     });
     const data = await res.json().catch(() => null);
