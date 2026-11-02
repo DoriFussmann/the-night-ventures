@@ -254,4 +254,11 @@ await check('status: Done counts only when the scan agrees; WIP/Blocked hold a r
   assert.equal(s.items.find((i) => i.id === 'd').state, 'confirmed', 'old sign-offs read as Done')
 })
 
+await check('hidden checks (Google Analytics ID) are left out of scans and saved reports', async () => {
+  const { report } = await scanSitePlaceholders(fakeOctokit(templateRepo()), DEST)
+  assert.ok(!report.results.some((r) => r.id === 'ga4-id'))
+  const s = summarize({ results: [{ id: 'ga4-id', level: 'suggested', status: 'placeholder', findings: [] }] })
+  assert.equal(s.items.length, 0)
+})
+
 console.log(`All ${passed} placeholder checks passed.`)

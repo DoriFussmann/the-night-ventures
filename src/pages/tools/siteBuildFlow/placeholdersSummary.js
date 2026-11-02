@@ -1,6 +1,7 @@
 // Pure helpers for the Placeholders stage (no Supabase import, so node tests can load it).
 
 import BUNDLED from "../../../../lib/placeholders/blueprint.json" with { type: "json" };
+import { HIDDEN_CHECKS } from "../../../../lib/placeholders/hidden.js";
 
 const BUNDLED_GUIDES = Object.fromEntries((BUNDLED.checks || []).map((c) => [c.id, c]));
 
@@ -40,7 +41,7 @@ export function manualStatus(entry) {
  * `status` is what the menu shows: the person's choice, else what the scan implies.
  */
 export function summarize(report, signoffs = {}, repoName = "") {
-  const results = Array.isArray(report?.results) ? report.results : [];
+  const results = (Array.isArray(report?.results) ? report.results : []).filter((r) => !HIDDEN_CHECKS.has(r.id));
   const items = results.map((r) => {
     const manual = manualStatus(signoffs?.[r.id]);
     const signed = manual === "done";

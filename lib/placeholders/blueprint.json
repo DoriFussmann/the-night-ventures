@@ -87,28 +87,6 @@
       "prompt": "In site/src/config/site.ts, set SAME_AS to this list of URLs: [\"[https://www.linkedin.com/company/...]\", \"[https://x.com/...]\"]. Keep the type annotation (string[]). Change nothing else. Show me the diff."
     },
     {
-      "id": "ga4-id",
-      "label": "Google Analytics ID",
-      "group": "Site config",
-      "level": "suggested",
-      "kind": "value",
-      "file": "src/config/site.ts",
-      "patterns": [
-        "^export const GA4_MEASUREMENT_ID\\s*=\\s*\"([^\"]*)\""
-      ],
-      "placeholders": [
-        ""
-      ],
-      "help": "No Google Analytics ID is set. Optional: skip it if the site does not use Google Analytics.",
-      "steps": [
-        "In Google Analytics, go to Admin → Data streams → click the site's web stream → copy the Measurement ID (starts with G-). No property yet? Create one first, or skip this item.",
-        "Paste the prompt below into Cursor with your ID filled in.",
-        "Commit and push to the branch TNV publishes to (usually main), then click Re-scan.",
-        "Alternative: set PUBLIC_ANALYTICS_ID in Vercel instead. That works too, but this check cannot see it and will stay amber."
-      ],
-      "prompt": "In site/src/config/site.ts, set GA4_MEASUREMENT_ID to \"[G-XXXXXXXXXX]\". Change nothing else. Show me the diff."
-    },
-    {
       "id": "articles-description",
       "label": "Articles index description",
       "group": "Site config",
