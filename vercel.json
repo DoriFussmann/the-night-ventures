@@ -4,64 +4,191 @@
   "framework": "vite",
   "rewrites": [
     {
-      "source": "/api/scan-live-articles",
-      "destination": "/api/check-article-update?action=scan-live"
+      "source": "/api/check-article-update",
+      "has": [
+        {
+          "type": "query",
+          "key": "action",
+          "value": "scan-live"
+        }
+      ],
+      "destination": "/api/scan-live-articles"
     },
     {
-      "source": "/api/publish-to-site",
-      "destination": "/api/check-article-update?action=publish-to-site"
+      "source": "/api/check-article-update",
+      "has": [
+        {
+          "type": "query",
+          "key": "action",
+          "value": "publish-to-site"
+        }
+      ],
+      "destination": "/api/publish-to-site"
     },
     {
-      "source": "/api/wire-internal-links",
-      "destination": "/api/check-article-update?action=wire-internal-links"
+      "source": "/api/check-article-update",
+      "has": [
+        {
+          "type": "query",
+          "key": "action",
+          "value": "wire-internal-links"
+        }
+      ],
+      "destination": "/api/wire-internal-links"
     },
     {
-      "source": "/api/propose-external-links",
-      "destination": "/api/check-article-update?action=propose-external-links"
+      "source": "/api/check-article-update",
+      "has": [
+        {
+          "type": "query",
+          "key": "action",
+          "value": "propose-external-links"
+        }
+      ],
+      "destination": "/api/propose-external-links"
     },
     {
-      "source": "/api/check-links",
-      "destination": "/api/check-article-update?action=check-links"
+      "source": "/api/check-article-update",
+      "has": [
+        {
+          "type": "query",
+          "key": "action",
+          "value": "check-links"
+        }
+      ],
+      "destination": "/api/check-links"
     },
     {
-      "source": "/api/article-updates",
-      "destination": "/api/check-article-update?action=article-updates"
+      "source": "/api/check-article-update",
+      "has": [
+        {
+          "type": "query",
+          "key": "action",
+          "value": "article-updates"
+        }
+      ],
+      "destination": "/api/article-updates"
     },
     {
-      "source": "/api/company-data-import",
-      "destination": "/api/check-article-update?action=company-data-import"
+      "source": "/api/check-article-update",
+      "has": [
+        {
+          "type": "query",
+          "key": "action",
+          "value": "company-data-import"
+        }
+      ],
+      "destination": "/api/company-data-import"
     },
     {
-      "source": "/api/audit-summary",
-      "destination": "/api/check-article-update?action=audit-summary"
+      "source": "/api/check-article-update",
+      "has": [
+        {
+          "type": "query",
+          "key": "action",
+          "value": "audit-summary"
+        }
+      ],
+      "destination": "/api/audit-summary"
     },
     {
-      "source": "/api/core-version",
-      "destination": "/api/check-article-update?action=core-version"
+      "source": "/api/check-article-update",
+      "has": [
+        {
+          "type": "query",
+          "key": "action",
+          "value": "core-version"
+        }
+      ],
+      "destination": "/api/core-version"
     },
     {
-      "source": "/api/integrations",
-      "destination": "/api/check-article-update?action=integrations"
+      "source": "/api/check-article-update",
+      "has": [
+        {
+          "type": "query",
+          "key": "action",
+          "value": "instantly"
+        }
+      ],
+      "destination": "/api/instantly"
     },
     {
-      "source": "/api/suggest-target-keyword",
-      "destination": "/api/check-article-update?action=suggest-target-keyword"
+      "source": "/api/check-article-update",
+      "has": [
+        {
+          "type": "query",
+          "key": "action",
+          "value": "instantly-webhook"
+        }
+      ],
+      "destination": "/api/instantly-webhook"
     },
     {
-      "source": "/api/site-placeholders",
-      "destination": "/api/check-article-update?action=site-placeholders"
+      "source": "/api/check-article-update",
+      "has": [
+        {
+          "type": "query",
+          "key": "action",
+          "value": "integrations"
+        }
+      ],
+      "destination": "/api/integrations"
     },
     {
-      "source": "/api/publish-schedule",
-      "destination": "/api/check-article-update?action=publish-schedule"
+      "source": "/api/check-article-update",
+      "has": [
+        {
+          "type": "query",
+          "key": "action",
+          "value": "suggest-target-keyword"
+        }
+      ],
+      "destination": "/api/suggest-target-keyword"
     },
     {
-      "source": "/api/analyze-writer-article",
-      "destination": "/api/check-article-update?action=analyze-writer-article"
+      "source": "/api/check-article-update",
+      "has": [
+        {
+          "type": "query",
+          "key": "action",
+          "value": "site-placeholders"
+        }
+      ],
+      "destination": "/api/site-placeholders"
     },
     {
-      "source": "/api/(.*)",
-      "destination": "/api/$1"
+      "source": "/api/check-article-update",
+      "has": [
+        {
+          "type": "query",
+          "key": "action",
+          "value": "publish-schedule"
+        }
+      ],
+      "destination": "/api/publish-schedule"
+    },
+    {
+      "source": "/api/check-article-update",
+      "has": [
+        {
+          "type": "query",
+          "key": "action",
+          "value": "audience-build"
+        }
+      ],
+      "destination": "/api/audience-build"
+    },
+    {
+      "source": "/api/check-article-update",
+      "has": [
+        {
+          "type": "query",
+          "key": "action",
+          "value": "analyze-writer-article"
+        }
+      ],
+      "destination": "/api/analyze-writer-article"
     },
     {
       "source": "/((?!api/).*)",
@@ -74,20 +201,20 @@
       "schedule": "0 9 * * *"
     },
     {
-      "path": "/api/check-article-update?action=publish-schedule",
+      "path": "/api/publish-schedule",
       "schedule": "0 16 * * *"
     },
     {
-      "path": "/api/check-article-update?action=audience-build",
+      "path": "/api/audience-build",
       "schedule": "0 11 * * 1"
     },
     {
-      "path": "/api/check-article-update?action=audience-build&job=daily-pull",
+      "path": "/api/audience-build?job=daily-pull",
       "schedule": "0 12 * * 1-5"
     }
   ],
   "functions": {
-    "api/check-article-update.js": {
+    "api/audience-build.js": {
       "includeFiles": "lib/audience-build/data/**"
     }
   }

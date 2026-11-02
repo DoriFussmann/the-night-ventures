@@ -13,7 +13,7 @@ async function authHeaders() {
 // Audience Build call. The AudienceLab and Anthropic keys stay on the server.
 export async function audienceBuild(resource, payload = {}) {
   const headers = await authHeaders();
-  const res = await fetch("/api/check-article-update?action=audience-build", {
+  const res = await fetch("/api/audience-build", {
     method: "POST",
     headers,
     body: JSON.stringify({ ...payload, resource }),

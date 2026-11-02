@@ -40,6 +40,7 @@ import {
   readCachedStyleSpec,
   writeCachedStyleSpec,
 } from "./clusterImage/styleSpecCache";
+import { jsonAuthHeaders } from "@/lib/authHeaders";
 
 function normalizePillarsFromCoverage(raw) {
   if (!Array.isArray(raw)) return [];
@@ -225,7 +226,7 @@ export default function ClusterImageGenerator() {
       try {
         const res = await fetch("/api/cluster-image-spec", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: await jsonAuthHeaders(),
           body: JSON.stringify({ imagery, palette }),
         });
         const data = await res.json().catch(() => ({}));
@@ -269,7 +270,7 @@ export default function ClusterImageGenerator() {
     const imagery = `${imageryContext}\n\nAdditional guidelines:\n${extra}`;
     const res = await fetch("/api/cluster-image-spec", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: await jsonAuthHeaders(),
       body: JSON.stringify({ imagery, palette }),
     });
     const data = await res.json().catch(() => ({}));

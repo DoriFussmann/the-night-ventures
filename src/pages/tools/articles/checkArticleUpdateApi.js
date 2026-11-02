@@ -1,9 +1,10 @@
+import { jsonAuthHeaders } from "@/lib/authHeaders";
 /** Same POST as Articles Update — WTS freshness check. Do not change the endpoint. */
 
 export async function checkArticleUpdate(article) {
   const res = await fetch("/api/check-article-update", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: await jsonAuthHeaders(),
     body: JSON.stringify({
       publishedUrl: article.publishedUrl,
       targetKeyword: article.targetKeyword,

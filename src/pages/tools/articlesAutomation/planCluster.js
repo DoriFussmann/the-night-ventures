@@ -7,6 +7,7 @@ import {
   findKeywordOverlaps,
   summarizeOverlaps,
 } from "../../../../lib/keyword-overlap.js";
+import { jsonAuthHeaders } from "@/lib/authHeaders";
 
 /**
  * Cannibalization guard: the article about to be planned must not target the
@@ -232,7 +233,7 @@ export async function requestClusterPlan({
 
   const res = await fetch("/api/plan-cluster", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: await jsonAuthHeaders(),
     body: JSON.stringify({
       pillarKeyword,
       supportingKeyword,

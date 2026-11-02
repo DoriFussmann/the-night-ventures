@@ -1,3 +1,4 @@
+import { rejectUnlessUser } from '../lib/http/requireUser.js'
 import { findStockImage } from '../lib/image-sourcing/run.js'
 
 export const config = {
@@ -41,6 +42,8 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return json(res, 405, { error: 'Method not allowed' })
   }
+
+  if (await rejectUnlessUser(req, res)) return
 
   let body
   try {

@@ -12,6 +12,7 @@ import {
   loadCompanyPublishDestination,
   publishArticlesToSite,
 } from "./publishToSite";
+import { jsonAuthHeaders } from "@/lib/authHeaders";
 
 function normalizeCompetitors(value) {
   if (!Array.isArray(value)) return [];
@@ -107,7 +108,7 @@ export async function generateOneArticle({
 }) {
   const res = await fetch("/api/generate-article", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: await jsonAuthHeaders(),
     body: JSON.stringify({
       abstract: positioning.abstract,
       shortDescription: positioning.shortDescription,

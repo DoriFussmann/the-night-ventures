@@ -493,7 +493,6 @@ export default function AppSidebar({ user }) {
               {buildNav.map((item) => (
                 <NavItem key={item.path} item={item} />
               ))}
-              <NavDropdown label="Generation" icon={Layers} items={generationItems} />
             </div>
 
             <SectionRule />

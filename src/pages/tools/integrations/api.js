@@ -12,9 +12,9 @@ async function authHeaders() {
 
 export async function listIntegrations(companyId) {
   const headers = await authHeaders();
-  const qs = new URLSearchParams({ action: "integrations" });
+  const qs = new URLSearchParams();
   if (companyId) qs.set("companyId", companyId);
-  const res = await fetch(`/api/check-article-update?${qs}`, { headers });
+  const res = await fetch(`/api/integrations?${qs}`, { headers });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || "Failed to load integrations");
   return data;
@@ -22,7 +22,7 @@ export async function listIntegrations(companyId) {
 
 export async function testIntegration(companyId, id) {
   const headers = await authHeaders();
-  const res = await fetch("/api/check-article-update?action=integrations", {
+  const res = await fetch("/api/integrations", {
     method: "POST",
     headers,
     body: JSON.stringify({ companyId, id }),

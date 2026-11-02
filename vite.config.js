@@ -3,7 +3,6 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { defineConfig, loadEnv } from 'vite'
-import { ACTION_ROUTES } from './lib/actionRoutes.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -41,21 +40,12 @@ function localApiPlugin() {
           }
 
           const pathname = url.split('?')[0]
-          let name = pathname.slice('/api/'.length).replace(/\/$/, '')
+          const name = pathname.slice('/api/'.length).replace(/\/$/, '')
           if (!name || name.includes('..') || name.includes('/')) {
             res.statusCode = 404
             res.setHeader('Content-Type', 'application/json')
             res.end(JSON.stringify({ error: 'Not found' }))
             return
-          }
-
-          // Public /api routes that share api/check-article-update.js.
-          const action = ACTION_ROUTES[name]
-          if (action) {
-            name = 'check-article-update'
-            const parsed = new URL(url, 'http://localhost')
-            parsed.searchParams.set('action', action)
-            req.url = `/api/check-article-update${parsed.search}`
           }
 
           const filePath = path.resolve(__dirname, 'api', `${name}.js`)

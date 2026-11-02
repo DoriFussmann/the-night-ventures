@@ -1,19 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { handleScanLiveArticles } from '../lib/scan-live-articles/handler.js'
-import { handlePublishToSite } from '../lib/publish-to-site/handler.js'
-import { handleWireInternalLinks } from '../lib/wire-internal-links/handler.js'
-import { handleProposeExternalLinks } from '../lib/external-links/handler.js'
-import { handleCheckLinks } from '../lib/check-links/handler.js'
-import { handleArticleUpdates } from '../lib/article-updates/handler.js'
-import { handleCompanyDataImport } from '../lib/company-data-import/handler.js'
-import { handleAuditSummary } from '../lib/audit-summary/handler.js'
-import { handleCoreVersion } from '../lib/core-version/handler.js'
-import { handleInstantly, handleInstantlyWebhook } from '../lib/instantly/handler.js'
-import { handleIntegrations } from '../lib/integrations/handler.js'
-import { handleSuggestTargetKeyword } from '../lib/suggest-target-keyword/handler.js'
-import { handleSitePlaceholders } from '../lib/placeholders/handler.js'
-import { handlePublishSchedule } from '../lib/publish-schedule/handler.js'
-import { handleAudienceBuild } from '../lib/audience-build/handler.js'
+import { rejectUnlessUser } from '../lib/http/requireUser.js'
 import {
   MAX_TOKENS,
   MODEL,
@@ -22,63 +8,10 @@ import {
   normalizeResult,
   parseUpdateFromContent,
 } from '../lib/article-updates/wtsCheck.js'
-import { handleAnalyzeWriterArticle } from '../lib/writer-intake/handler.js'
 
 export const config = {
-  // 300: the daily scheduled publisher (publish-schedule) commits, merges,
-  // wires links and may refresh Where Things Stand in one run.
+  // Live page fetch + Claude web search can be slow.
   maxDuration: 300,
-}
-
-function requestAction(req) {
-  try {
-    const url = new URL(req.url || '/', 'http://localhost')
-    const fromQuery = url.searchParams.get('action')
-    if (fromQuery) return String(fromQuery).trim()
-    const path = url.pathname.replace(/\/$/, '')
-    if (path.endsWith('/scan-live-articles')) {
-      return 'scan-live'
-    }
-    if (path.endsWith('/publish-to-site')) {
-      return 'publish-to-site'
-    }
-    if (path.endsWith('/wire-internal-links')) {
-      return 'wire-internal-links'
-    }
-    if (path.endsWith('/propose-external-links')) {
-      return 'propose-external-links'
-    }
-    if (path.endsWith('/check-links')) {
-      return 'check-links'
-    }
-    if (path.endsWith('/article-updates')) {
-      return 'article-updates'
-    }
-    if (path.endsWith('/company-data-import')) {
-      return 'company-data-import'
-    }
-    if (path.endsWith('/audit-summary')) {
-      return 'audit-summary'
-    }
-    if (path.endsWith('/integrations')) {
-      return 'integrations'
-    }
-    if (path.endsWith('/suggest-target-keyword')) {
-      return 'suggest-target-keyword'
-    }
-    if (path.endsWith('/site-placeholders')) {
-      return 'site-placeholders'
-    }
-    if (path.endsWith('/publish-schedule')) {
-      return 'publish-schedule'
-    }
-    if (path.endsWith('/analyze-writer-article')) {
-      return 'analyze-writer-article'
-    }
-  } catch {
-    // ignore
-  }
-  return ''
 }
 
 function json(res, status, body) {
@@ -151,68 +84,9 @@ export {
   parseUpdateFromContent,
 }
 
+// POST /api/check-article-update — propose a refreshed Where Things Stand
+// paragraph for one published article.
 export default async function handler(req, res) {
-  // Hobby is capped at 12 functions; extra public URLs are mounted here
-  // instead of adding more api/*.js files.
-  // Public: POST /api/scan-live-articles, POST /api/publish-to-site,
-  // POST /api/wire-internal-links, POST /api/propose-external-links,
-  // POST /api/check-links, POST /api/article-updates,
-  // POST /api/company-data-import, POST /api/audit-summary,
-  // POST /api/suggest-target-keyword, POST /api/site-placeholders,
-  // GET|POST /api/publish-schedule (also the daily publishing cron).
-  const action = requestAction(req)
-  if (action === 'scan-live') {
-    return handleScanLiveArticles(req, res)
-  }
-  if (action === 'publish-to-site') {
-    return handlePublishToSite(req, res)
-  }
-  if (action === 'wire-internal-links') {
-    return handleWireInternalLinks(req, res)
-  }
-  if (action === 'propose-external-links') {
-    return handleProposeExternalLinks(req, res)
-  }
-  if (action === 'check-links') {
-    return handleCheckLinks(req, res)
-  }
-  if (action === 'article-updates') {
-    return handleArticleUpdates(req, res)
-  }
-  if (action === 'company-data-import') {
-    return handleCompanyDataImport(req, res)
-  }
-  if (action === 'audit-summary') {
-    return handleAuditSummary(req, res)
-  }
-  if (action === 'core-version') {
-    return handleCoreVersion(req, res)
-  }
-  if (action === 'instantly') {
-    return handleInstantly(req, res)
-  }
-  if (action === 'instantly-webhook') {
-    return handleInstantlyWebhook(req, res)
-  }
-  if (action === 'integrations') {
-    return handleIntegrations(req, res)
-  }
-  if (action === 'suggest-target-keyword') {
-    return handleSuggestTargetKeyword(req, res)
-  }
-  if (action === 'site-placeholders') {
-    return handleSitePlaceholders(req, res)
-  }
-  if (action === 'publish-schedule') {
-    return handlePublishSchedule(req, res)
-  }
-  if (action === 'audience-build') {
-    return handleAudienceBuild(req, res)
-  }
-  if (action === 'analyze-writer-article') {
-    return handleAnalyzeWriterArticle(req, res)
-  }
-
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*')
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -223,6 +97,8 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return json(res, 405, { error: 'Method not allowed' })
   }
+
+  if (await rejectUnlessUser(req, res)) return
 
   try {
     const apiKey = process.env.ANTHROPIC_API_KEY
