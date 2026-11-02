@@ -8,6 +8,7 @@ import ScoreGauge from './audit/ScoreGauge'
 import ConnectionsCheck from './audit/ConnectionsCheck'
 import CategoryGrid, { formatRunAt, formatCost } from './audit/CategoryGrid'
 import IssueList from './audit/IssueList'
+import AiVisibilityPanel from './audit/AiVisibilityPanel'
 import { useAuditRunner } from './audit/useAuditRunner'
 
 /** Metrics shown per category: [metrics key, label]. */
@@ -49,6 +50,14 @@ const METRIC_LABELS = {
     ['competitorMedianRoots', 'Competitor median roots'],
     ['spamScore', 'Spam Score %'],
     ['pageAuthority', 'Home Page Authority'],
+  ],
+  ai_visibility: [
+    ['shareOfVoice', 'Share of voice'],
+    ['citedShare', 'Answers citing you'],
+    ['enginesNaming', 'Engines naming you'],
+    ['brandRecognized', 'Engines that know the brand'],
+    ['aioCited', 'AI Overviews citing you'],
+    ['aiModeCited', 'AI Mode citing you'],
   ],
 }
 
@@ -238,12 +247,13 @@ function RunNotes({ entry }) {
 /**
  * @param {{
  *   categoryId: string,
+ *   companyId: string,
  *   entry: any,
  *   pendingAccept: Set<string>,
  *   onToggleAccepted: (issues: any[], accepted: boolean) => void,
  * }} props
  */
-function CategoryDetail({ categoryId, entry, pendingAccept, onToggleAccepted }) {
+function CategoryDetail({ categoryId, companyId, entry, pendingAccept, onToggleAccepted }) {
   const meta = categoryById(categoryId)
   const latest = entry.latest
   const metrics = latest?.metrics || {}
@@ -290,6 +300,7 @@ function CategoryDetail({ categoryId, entry, pendingAccept, onToggleAccepted }) 
       {categoryId === 'clusters' ? <ClusterTable rows={metrics.clusters} /> : null}
       {categoryId === 'speed' ? <SpeedPages pages={metrics.pages} /> : null}
       {categoryId === 'authority' ? <AuthorityCompetitors metrics={metrics} /> : null}
+      {categoryId === 'ai_visibility' ? <AiVisibilityPanel metrics={metrics} companyId={companyId} /> : null}
 
       <RunNotes entry={entry} />
 
@@ -425,6 +436,7 @@ export default function Audit() {
                 <div role="tabpanel" id={`audit-panel-${selected}`} aria-labelledby={`audit-tab-${selected}`}>
                   <CategoryDetail
                     categoryId={selected}
+                    companyId={companyId}
                     entry={stateCategories[selected]}
                     pendingAccept={audit.pendingAccept}
                     onToggleAccepted={audit.toggleAccepted}

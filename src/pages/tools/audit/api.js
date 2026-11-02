@@ -101,3 +101,21 @@ export function setIssuesAccepted(companyId, issues, accepted) {
     issues: issues.map((i) => ({ fingerprint: i.fingerprint, checkId: i.check_id })),
   })
 }
+
+/** @param {string} companyId */
+export function getAiPrompts(companyId) {
+  return get('audit.aiPrompts', { companyId })
+}
+
+/** Replace the AI Visibility prompt set with a freshly generated one. @param {string} companyId */
+export function regenerateAiPrompts(companyId) {
+  return post('audit.aiPromptsRegenerate', { companyId })
+}
+
+/**
+ * @param {string} companyId
+ * @param {string} promptId
+ */
+export function removeAiPrompt(companyId, promptId) {
+  return post('audit.aiPromptRemove', { companyId, promptId })
+}
