@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Loader2, Play } from 'lucide-react'
+import { Download, Loader2, Play } from 'lucide-react'
 import { buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { CATEGORIES, categoryById } from '../../../lib/audit/categories.js'
@@ -9,6 +9,7 @@ import ConnectionsCheck from './audit/ConnectionsCheck'
 import CategoryGrid, { formatRunAt, formatCost } from './audit/CategoryGrid'
 import IssueList from './audit/IssueList'
 import AiVisibilityPanel from './audit/AiVisibilityPanel'
+import { buildCategoryMarkdown, buildIssuesCsv, downloadFile, reportFilename } from './audit/report'
 import { useAuditRunner } from './audit/useAuditRunner'
 
 /** Metrics shown per category: [metrics key, label]. */
@@ -248,12 +249,13 @@ function RunNotes({ entry }) {
  * @param {{
  *   categoryId: string,
  *   companyId: string,
+ *   company: any,
  *   entry: any,
  *   pendingAccept: Set<string>,
  *   onToggleAccepted: (issues: any[], accepted: boolean) => void,
  * }} props
  */
-function CategoryDetail({ categoryId, companyId, entry, pendingAccept, onToggleAccepted }) {
+function CategoryDetail({ categoryId, companyId, company, entry, pendingAccept, onToggleAccepted }) {
   const meta = categoryById(categoryId)
   const latest = entry.latest
   const metrics = latest?.metrics || {}
@@ -267,11 +269,41 @@ function CategoryDetail({ categoryId, companyId, entry, pendingAccept, onToggleA
           <h2 className="text-sm font-semibold">{meta?.label}</h2>
           <p className="text-xs text-muted-foreground">{meta?.description}</p>
         </div>
-        <p className="text-xs text-muted-foreground">
-          Last run {formatRunAt(latest?.finished_at || latest?.started_at)}
-          {meta?.paid ? ` · ${formatCost(latest?.cost_usd)}` : ''}
-          {entry.previous ? ` · compared with ${formatRunAt(entry.previous.started_at)}` : ' · first run (baseline)'}
-        </p>
+        <div className="flex flex-col items-end gap-1.5">
+          <p className="text-xs text-muted-foreground">
+            Last run {formatRunAt(latest?.finished_at || latest?.started_at)}
+            {meta?.paid ? ` · ${formatCost(latest?.cost_usd)}` : ''}
+            {entry.previous ? ` · compared with ${formatRunAt(entry.previous.started_at)}` : ' · first run (baseline)'}
+          </p>
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              onClick={() =>
+                downloadFile(
+                  reportFilename(company, meta, entry, 'md'),
+                  buildCategoryMarkdown({ company, meta, entry, metricLabels: labels }),
+                  'text/markdown;charset=utf-8'
+                )
+              }
+              className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'h-7 text-xs')}
+              title="Download this section as a Markdown report"
+            >
+              <Download className="h-3.5 w-3.5" aria-hidden="true" />
+              Report (.md)
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                downloadFile(reportFilename(company, meta, entry, 'csv'), buildIssuesCsv(entry), 'text/csv;charset=utf-8')
+              }
+              className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'h-7 text-xs')}
+              title="Download every issue (open, accepted, fixed) as CSV"
+            >
+              <Download className="h-3.5 w-3.5" aria-hidden="true" />
+              Issues (.csv)
+            </button>
+          </div>
+        </div>
       </div>
 
       {labels.length ? (
@@ -437,6 +469,7 @@ export default function Audit() {
                   <CategoryDetail
                     categoryId={selected}
                     companyId={companyId}
+                    company={state?.company || null}
                     entry={stateCategories[selected]}
                     pendingAccept={audit.pendingAccept}
                     onToggleAccepted={audit.toggleAccepted}
