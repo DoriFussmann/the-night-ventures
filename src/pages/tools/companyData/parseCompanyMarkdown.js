@@ -50,6 +50,7 @@ const LABEL_TO_KEY = {
   "scope boundaries": "scope_boundaries",
   "what we are / are not": "scope_boundaries",
   "what we are/are not": "scope_boundaries",
+  "what we are not": "scope_boundaries",
   "market & category": "market_category",
   "market and category": "market_category",
   "competitive position": "competitive_position",

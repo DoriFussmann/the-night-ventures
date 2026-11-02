@@ -54,7 +54,6 @@ export const COMPANY_DATA_POINT_DEFS = [
   { id: "founded_date", label: "Founded Date", parsedKey: "founded_date" },
   { id: "location_markets", label: "Markets Served", parsedKey: "location_markets" },
   { id: "product_name", label: "Product Name", parsedKey: "product_name" },
-  { id: "category", label: "Category", parsedKey: "category" },
   { id: "target", label: "Target Searcher", parsedKey: "target_audience" },
   { id: "services", label: "Products & Services", parsedKey: "services" },
   { id: "abstract", label: "Abstract", parsedKey: "abstract" },
@@ -64,7 +63,6 @@ export const COMPANY_DATA_POINT_DEFS = [
   { id: "business_model", label: "Business Model", parsedKey: "business_model" },
   { id: "company_stage", label: "Company Stage & Context", parsedKey: "company_stage", hidden: true },
   { id: "customer_problem", label: "Customer Problem", parsedKey: "customer_problem", hidden: true },
-  { id: "trigger_moment", label: "Trigger / Moment of Need", parsedKey: "trigger_moment", hidden: true },
   { id: "buying_criteria", label: "Buying Criteria", parsedKey: "buying_criteria", hidden: true },
   { id: "how_it_works", label: "How It Works", parsedKey: "how_it_works" },
   { id: "customer_outcome", label: "Customer Outcome", parsedKey: "customer_outcome", hidden: true },
@@ -76,7 +74,7 @@ export const COMPANY_DATA_POINT_DEFS = [
   },
   { id: "differentiation", label: "Differentiation", parsedKey: "differentiation" },
   { id: "messaging_hierarchy", label: "Messaging Hierarchy", parsedKey: "messaging_hierarchy", hidden: true },
-  { id: "scope_boundaries", label: "Out-of-scope Topics", parsedKey: "scope_boundaries" },
+  { id: "scope_boundaries", label: "What We Are Not", parsedKey: "scope_boundaries" },
   { id: "market_category", label: "Market & Category", parsedKey: "market_category" },
   { id: "competitive_position", label: "Competitive Position", parsedKey: "competitive_position", hidden: true },
   { id: "market_dynamics", label: "Market Dynamics", parsedKey: "market_dynamics", hidden: true },
@@ -91,7 +89,6 @@ export const COMPANY_DATA_POINT_DEFS = [
   { id: "marketing_objectives", label: "Business & Marketing Objectives", parsedKey: "marketing_objectives", hidden: true },
   { id: "growth_priorities", label: "Priorities", parsedKey: "growth_priorities", hidden: true },
   { id: "customer_acquisition", label: "Customer Acquisition & Sales", parsedKey: "customer_acquisition", hidden: true },
-  { id: "learnings_constraints", label: "Learnings & Constraints", parsedKey: "learnings_constraints", hidden: true },
   { id: "pillars", label: "Pillar Keywords", parsedKey: "core_keywords" },
   { id: "competitors", label: "Competitors", parsedKey: "competitors" },
   ...SEO_CONTROL_FIELDS.filter((field) => field.key.startsWith("seo_")).map((field) => ({
@@ -109,7 +106,6 @@ export const COMPANY_DATA_POINT_DEFS = [
 
 export function getCompanyDataPoints({
   fields,
-  selectedIndustryIds = [],
   socialShopsFilled = false,
   customFieldDefs = [],
   customValues = {},
@@ -125,9 +121,6 @@ export function getCompanyDataPoints({
         break;
       case "product_name":
         filled = textFilled(fields?.product_name);
-        break;
-      case "category":
-        filled = (selectedIndustryIds || []).length > 0;
         break;
       case "target":
         filled = textFilled(fields?.target_audience);
@@ -190,23 +183,6 @@ export function getCompanyDataPoints({
   return [...standard, ...custom];
 }
 
-function matchIndustryIds(names, industries) {
-  const byName = new Map(
-    (industries || []).map((industry) => [
-      String(industry.name || "")
-        .trim()
-        .toLowerCase(),
-      industry.id,
-    ])
-  );
-  const ids = [];
-  for (const name of names || []) {
-    const id = byName.get(String(name || "").trim().toLowerCase());
-    if (id && !ids.includes(id)) ids.push(id);
-  }
-  return ids;
-}
-
 function customNameFromParsed(parsed, defName) {
   if (!parsed?.custom) return null;
   if (textFilled(parsed.custom[defName])) return parsed.custom[defName];
@@ -226,13 +202,10 @@ export function mergeParsedCompanyFields({
   fields,
   customValues,
   customFieldDefs = [],
-  selectedIndustryIds = [],
-  industries = [],
   socialShopsFilled = false,
 }) {
   const nextFields = { ...fields };
   const nextCustom = { ...customValues };
-  let nextIndustryIds = [...selectedIndustryIds];
   let nextSocialAccounts = null;
   let nextSocialNotes = null;
   const filled = [];
@@ -241,7 +214,6 @@ export function mergeParsedCompanyFields({
 
   const points = getCompanyDataPoints({
     fields,
-    selectedIndustryIds,
     socialShopsFilled,
     customFieldDefs,
     customValues,
@@ -271,15 +243,6 @@ export function mergeParsedCompanyFields({
       case "product_name":
         nextFields.product_name = parsed.product_name;
         break;
-      case "category": {
-        const ids = matchIndustryIds(parsed.category, industries);
-        if (ids.length === 0) {
-          notInFile.push(point.label);
-          continue;
-        }
-        nextIndustryIds = ids;
-        break;
-      }
       case "target":
         nextFields.target_audience = parsed.target_audience;
         break;
@@ -324,7 +287,6 @@ export function mergeParsedCompanyFields({
       case "location_markets":
       case "company_stage":
       case "customer_problem":
-      case "trigger_moment":
       case "buying_criteria":
       case "how_it_works":
       case "customer_outcome":
@@ -344,7 +306,6 @@ export function mergeParsedCompanyFields({
       case "marketing_objectives":
       case "growth_priorities":
       case "customer_acquisition":
-      case "learnings_constraints":
       case "scope_boundaries":
       case "seo_primary_offer":
       case "seo_conversion_action":
@@ -400,7 +361,6 @@ export function mergeParsedCompanyFields({
   return {
     nextFields,
     nextCustom,
-    nextIndustryIds,
     socialAccounts: nextSocialAccounts,
     socialNotes: nextSocialNotes,
     filled,

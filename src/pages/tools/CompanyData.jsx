@@ -10,7 +10,6 @@ import {
   Lock,
   Trash2,
   Upload,
-  X,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
@@ -19,7 +18,6 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Badge } from "@/components/ui/badge";
 import {
   Collapsible,
   CollapsibleContent,
@@ -318,7 +316,7 @@ const PROFILE_SELECT_BASE =
   "id, domain, product_name, target_audience, abstract, short_description, medium_description, long_description, business_model, core_value_proposition, scope_boundaries, brand_feel, brand_voice, core_keywords, competitors, services, team_members, contact_email, social_links, custom_fields";
 
 const PROFILE_SELECT_INTELLIGENCE =
-  "legal_name, founded_date, location_markets, company_stage, customer_problem, trigger_moment, buying_criteria, how_it_works, customer_outcome, commercial_model, differentiation, messaging_hierarchy, market_category, competitive_position, market_dynamics, brand_references, brand_boundaries, reasons_to_believe, results_proof, trust_signals, marketing_objectives, growth_priorities, customer_acquisition, learnings_constraints";
+  "legal_name, founded_date, location_markets, company_stage, customer_problem, buying_criteria, how_it_works, customer_outcome, commercial_model, differentiation, messaging_hierarchy, market_category, competitive_position, market_dynamics, brand_references, brand_boundaries, reasons_to_believe, results_proof, trust_signals, marketing_objectives, growth_priorities, customer_acquisition";
 
 /** Added in migration 065. Loaded separately so the page works before it runs. */
 const PROFILE_SELECT_SEO = [...SEO_NEW_TEXT_COLUMNS, SEO_AUTHORITY_COLUMN].join(", ");
@@ -456,9 +454,6 @@ export default function CompanyData() {
   const [fields, setFields] = useState(EMPTY_PROFILE);
   const [customFieldDefs, setCustomFieldDefs] = useState([]);
   const [customValues, setCustomValues] = useState({});
-  const [industries, setIndustries] = useState([]);
-  const [selectedIndustryIds, setSelectedIndustryIds] = useState([]);
-  const [industryFilter, setIndustryFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState("");
@@ -528,8 +523,6 @@ export default function CompanyData() {
       companyResult,
       profileResult,
       customFieldsResult,
-      industriesResult,
-      companyIndustriesResult,
       socialAccountsResult,
       keywordTreeResult,
     ] = await Promise.all([
@@ -567,11 +560,6 @@ export default function CompanyData() {
         .from("company_custom_fields")
         .select("id, name, created_at")
         .order("created_at", { ascending: true }),
-      supabase.from("industries").select("id, name").order("name", { ascending: true }),
-      supabase
-        .from("company_industries")
-        .select("industry_id")
-        .eq("company_id", companyId),
       supabase
         .from("social_accounts")
         .select("id", { count: "exact", head: true })
@@ -606,28 +594,6 @@ export default function CompanyData() {
         (customFieldsResult.data || []).filter(
           (field) => !HIDDEN_CUSTOM_FIELDS.has(String(field.name || "").trim().toLowerCase())
         )
-      );
-    }
-
-    if (industriesResult.error) {
-      console.error("Failed to load industries:", industriesResult.error);
-      setError(industriesResult.error.message || "Failed to load industries");
-      setIndustries([]);
-    } else {
-      setIndustries(industriesResult.data || []);
-    }
-
-    if (companyIndustriesResult.error) {
-      console.error("Failed to load company industries:", companyIndustriesResult.error);
-      setError(
-        companyIndustriesResult.error.message || "Failed to load company categories"
-      );
-      setSelectedIndustryIds([]);
-    } else {
-      setSelectedIndustryIds(
-        (companyIndustriesResult.data || [])
-          .map((row) => row.industry_id)
-          .filter(Boolean)
       );
     }
 
@@ -716,14 +682,6 @@ export default function CompanyData() {
 
   const updateField = (key, value) => {
     setFields((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const toggleIndustry = (industryId) => {
-    setSelectedIndustryIds((prev) =>
-      prev.includes(industryId)
-        ? prev.filter((id) => id !== industryId)
-        : [...prev, industryId]
-    );
   };
 
   const updatePillarKeyword = (index, value) => {
@@ -1023,10 +981,6 @@ export default function CompanyData() {
       case "contact_email":
         updateField("contact_email", "");
         break;
-      case "category":
-        setSelectedIndustryIds([]);
-        setIndustryFilter("");
-        break;
       case "target":
         updateField("target_audience", "");
         break;
@@ -1113,13 +1067,6 @@ export default function CompanyData() {
         githubTokenKey.trim() && `GitHub token key: ${githubTokenKey.trim()}`,
       ]
         .filter(Boolean)
-        .join("\n");
-    }
-
-    if (panelId === "category") {
-      return industries
-        .filter((industry) => selectedIndustryIds.includes(industry.id))
-        .map((industry) => industry.name)
         .join("\n");
     }
 
@@ -1272,7 +1219,6 @@ export default function CompanyData() {
 
     const currentFields = overrides.fields ?? fields;
     const currentCustomValues = overrides.customValues ?? customValues;
-    const currentIndustryIds = overrides.selectedIndustryIds ?? selectedIndustryIds;
 
     setSaving(true);
     setSavedMessage("");
@@ -1284,7 +1230,6 @@ export default function CompanyData() {
         overrides,
         currentFields,
         currentCustomValues,
-        currentIndustryIds,
       });
     } catch (err) {
       console.error("Failed to save company profile:", err);
@@ -1299,7 +1244,6 @@ export default function CompanyData() {
     overrides,
     currentFields,
     currentCustomValues,
-    currentIndustryIds,
   }) => {
     if (destinationIssue) {
       setError(`Publish Destination: ${destinationIssue}`);
@@ -1475,35 +1419,6 @@ export default function CompanyData() {
       setError(note);
     }
 
-    const { error: deleteIndustriesError } = await supabase
-      .from("company_industries")
-      .delete()
-      .eq("company_id", companyId);
-
-    if (deleteIndustriesError) {
-      console.error("Failed to clear company categories:", deleteIndustriesError);
-      setError(deleteIndustriesError.message || "Failed to save categories");
-      setSaving(false);
-      return false;
-    }
-
-    if (currentIndustryIds.length > 0) {
-      const { error: insertIndustriesError } = await supabase
-        .from("company_industries")
-        .insert(
-          currentIndustryIds.map((industry_id) => ({
-            company_id: companyId,
-            industry_id,
-          }))
-        );
-
-      if (insertIndustriesError) {
-        console.error("Failed to save company categories:", insertIndustriesError);
-        setError(insertIndustriesError.message || "Failed to save categories");
-        setSaving(false);
-        return false;
-      }
-    }
 
     setProfileId(data?.id || profileId);
 
@@ -1600,8 +1515,6 @@ export default function CompanyData() {
       fields,
       customValues,
       customFieldDefs,
-      selectedIndustryIds,
-      industries,
       socialShopsFilled,
     });
 
@@ -1619,12 +1532,10 @@ export default function CompanyData() {
     if (merged.filled.length > 0) {
       setFields(nextFields);
       setCustomValues(merged.nextCustom);
-      setSelectedIndustryIds(merged.nextIndustryIds);
 
       const saved = await persistProfile({
         fields: nextFields,
         customValues: merged.nextCustom,
-        selectedIndustryIds: merged.nextIndustryIds,
         skipSavedMessage: true,
       });
       if (!saved) return false;
@@ -1641,7 +1552,6 @@ export default function CompanyData() {
 
     const afterPoints = getCompanyDataPoints({
       fields: nextFields,
-      selectedIndustryIds: merged.nextIndustryIds,
       socialShopsFilled: merged.socialAccounts ? true : socialShopsFilled,
       customFieldDefs,
       customValues: merged.nextCustom,
@@ -1692,7 +1602,6 @@ export default function CompanyData() {
 
       const emptyFieldLabels = getCompanyDataPoints({
         fields,
-        selectedIndustryIds,
         socialShopsFilled,
         customFieldDefs,
         customValues,
@@ -1714,7 +1623,6 @@ export default function CompanyData() {
           markdown: source,
           companyName,
           customFieldNames: customFieldDefs.map((def) => def.name),
-          industryNames: industries.map((industry) => industry.name),
           emptyFieldLabels,
         }),
       });
@@ -1772,11 +1680,6 @@ export default function CompanyData() {
     const serviceLines = trimServicesForSave(fields.services)
       .map((s) => formatServiceCopyBlock(s))
       .join("\n\n");
-
-    const categoryLines = industries
-      .filter((industry) => selectedIndustryIds.includes(industry.id))
-      .map((industry) => `- ${industry.name}`)
-      .join("\n");
 
     let socialShopsLines = "";
     if (companyId) {
@@ -1847,7 +1750,6 @@ export default function CompanyData() {
       ["Company Stage & Context", fields.company_stage],
       ["Ideal Customer", fields.target_audience],
       ["Customer Problem", fields.customer_problem],
-      ["Trigger / Moment of Need", fields.trigger_moment],
       ["Buying Criteria", fields.buying_criteria],
       ["Products & Services", serviceLines],
       ["How It Works", fields.how_it_works],
@@ -1856,7 +1758,7 @@ export default function CompanyData() {
       ["Core Value Proposition", fields.core_value_proposition],
       ["Differentiation", fields.differentiation],
       ["Messaging Hierarchy", fields.messaging_hierarchy],
-      ["What We Are / Are Not", fields.scope_boundaries],
+      ["What We Are Not", fields.scope_boundaries],
       ["Market & Category", fields.market_category],
       ["Competitors & Alternatives", competitorLines],
       ["Competitive Position", fields.competitive_position],
@@ -1872,12 +1774,10 @@ export default function CompanyData() {
       ["Business & Marketing Objectives", fields.marketing_objectives],
       ["Priorities", fields.growth_priorities],
       ["Customer Acquisition & Sales", fields.customer_acquisition],
-      ["Learnings & Constraints", fields.learnings_constraints],
       ...SEO_CONTROL_FIELDS.filter((field) => field.key.startsWith("seo_")).map(
         (field) => [`SEO ${field.label}`, fields[field.key]]
       ),
       ["Product Name", fields.product_name],
-      ["Category", categoryLines],
       ["Abstract", fields.abstract],
       ["Medium Description", fields.medium_description],
       ["Pillar Keywords", pillarLines],
@@ -1911,7 +1811,6 @@ export default function CompanyData() {
       "Company Stage & Context",
       "Ideal Customer",
       "Customer Problem",
-      "Trigger / Moment of Need",
       "Buying Criteria",
       "Products & Services",
       "How It Works",
@@ -1920,7 +1819,7 @@ export default function CompanyData() {
       "Core Value Proposition",
       "Differentiation",
       "Messaging Hierarchy",
-      "What We Are / Are Not",
+      "What We Are Not",
       "Market & Category",
       "Competitors & Alternatives",
       "Competitive Position",
@@ -1936,11 +1835,9 @@ export default function CompanyData() {
       "Business & Marketing Objectives",
       "Priorities",
       "Customer Acquisition & Sales",
-      "Learnings & Constraints",
       ...SEO_CONTROL_FIELDS.filter((field) => field.key.startsWith("seo_")).map(
         (field) => `SEO ${field.label}`
       ),
-      "Category",
       "Pillar Keywords",
       "Social & Shops",
       "Connections",
@@ -2101,7 +1998,6 @@ export default function CompanyData() {
     }
     if (
       id === "product_name" ||
-      id === "category" ||
       id === "location_markets" ||
       id === "contact_email"
     ) {
@@ -2117,15 +2013,6 @@ export default function CompanyData() {
   const pillarTotal = pillars.length;
   const competitors = normalizeCompetitors(fields.competitors);
   const services = normalizeServices(fields.services);
-  const industryQuery = industryFilter.trim().toLowerCase();
-  const filteredIndustries = industryQuery
-    ? industries.filter((industry) =>
-        industry.name.toLowerCase().includes(industryQuery)
-      )
-    : industries;
-  const selectedIndustries = industries.filter((industry) =>
-    selectedIndustryIds.includes(industry.id)
-  );
   const publishDestinationFilled = Boolean(
     githubOwner.trim() && githubRepo.trim() && githubTokenKey.trim()
   );
@@ -2215,12 +2102,6 @@ export default function CompanyData() {
               title: "Product Name",
               filled: Boolean(fields.product_name.trim()),
               onClick: () => setOpenPanel("product_name"),
-            },
-            {
-              id: "category",
-              title: "SEO Category",
-              filled: selectedIndustries.length > 0,
-              onClick: () => setOpenPanel("category"),
             },
             {
               id: "pillars",
@@ -2628,96 +2509,6 @@ export default function CompanyData() {
         </DialogContent>
       </Dialog>
 
-      {/* Category */}
-      <Dialog
-        open={openPanel === "category"}
-        onOpenChange={(open) => {
-          setOpenPanel(open ? "category" : null);
-          if (!open) setIndustryFilter("");
-        }}
-      >
-        <DialogContent className={PANEL_DIALOG_CLASS}>
-          <DialogHeader className="shrink-0 space-y-1 border-b border-border px-6 py-4 pr-12 text-left">
-            <DialogTitle>
-              Category
-              {selectedIndustries.length
-                ? ` (${selectedIndustries.length})`
-                : ""}
-            </DialogTitle>
-            <DialogDescription>
-              Select industries that describe this company.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-4">
-            {selectedIndustries.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {selectedIndustries.map((industry) => (
-                  <Badge
-                    key={industry.id}
-                    variant="secondary"
-                    className="gap-1 pr-1 font-normal"
-                  >
-                    {industry.name}
-                    <button
-                      type="button"
-                      className="inline-flex rounded-sm p-0.5 hover:bg-muted"
-                      onClick={() => toggleIndustry(industry.id)}
-                      aria-label={`Remove ${industry.name}`}
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                ))}
-              </div>
-            )}
-            <Input
-              value={industryFilter}
-              onChange={(e) => setIndustryFilter(e.target.value)}
-              placeholder="Filter industries..."
-            />
-            <div className="space-y-1 rounded-md border border-border p-2">
-              {filteredIndustries.length === 0 ? (
-                <p className="px-1 py-2 text-sm text-muted-foreground">
-                  {industries.length === 0
-                    ? "No industries available. Run the industries migration."
-                    : "No matches."}
-                </p>
-              ) : (
-                filteredIndustries.map((industry) => {
-                  const checked = selectedIndustryIds.includes(industry.id);
-                  return (
-                    <label
-                      key={industry.id}
-                      className="flex cursor-pointer items-center gap-2 rounded-sm px-1 py-1.5 text-sm hover:bg-muted"
-                    >
-                      <Checkbox
-                        checked={checked}
-                        onCheckedChange={() => toggleIndustry(industry.id)}
-                      />
-                      <span>{industry.name}</span>
-                    </label>
-                  );
-                })
-              )}
-            </div>
-          </div>
-          <DialogFooter className="shrink-0 gap-2 border-t border-border px-6 py-4 sm:justify-between">
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => confirmClearPanel("category", "Category")}
-            >
-              Delete
-            </Button>
-            <PanelModalActions
-              onCopy={() => handleCopyPanel(openPanel)}
-              onClose={() => setOpenPanel(null)}
-              onSave={saveAndClosePanel}
-              saving={saving}
-            />
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Target Description */}
       <Dialog

@@ -23,7 +23,6 @@ export const INTELLIGENCE_TEXT_KEYS = [
   "location_markets",
   "company_stage",
   "customer_problem",
-  "trigger_moment",
   "buying_criteria",
   "how_it_works",
   "customer_outcome",
@@ -41,7 +40,6 @@ export const INTELLIGENCE_TEXT_KEYS = [
   "marketing_objectives",
   "growth_priorities",
   "customer_acquisition",
-  "learnings_constraints",
   ...SEO_NEW_TEXT_COLUMNS,
 ];
 
@@ -254,7 +252,6 @@ export const ARCHIVED_FIELDS = [
   { key: "medium_description", label: "Medium Description" },
   { key: "company_stage", label: "Company Stage & Context" },
   { key: "customer_problem", label: "Customer Problem" },
-  { key: "trigger_moment", label: "Trigger / Moment of Need" },
   { key: "buying_criteria", label: "Buying Criteria" },
   { key: "customer_outcome", label: "Customer Outcome" },
   { key: "commercial_model", label: "Commercial Model" },
@@ -270,7 +267,6 @@ export const ARCHIVED_FIELDS = [
   { key: "marketing_objectives", label: "Business & Marketing Objectives" },
   { key: "growth_priorities", label: "Priorities" },
   { key: "customer_acquisition", label: "Customer Acquisition & Sales" },
-  { key: "learnings_constraints", label: "Learnings & Constraints" },
 ];
 
 export function archivedWithContent(fields) {
