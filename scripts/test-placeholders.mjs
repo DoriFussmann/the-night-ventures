@@ -221,4 +221,37 @@ await check('guide: old scans fall back to the bundled guide, and [owner/repo] i
   assert.ok(s.items[0].steps.length >= 2)
 })
 
+await check('status: Done counts only when the scan agrees; WIP/Blocked hold a replaced item back', async () => {
+  const report = {
+    results: [
+      { id: 'a', label: 'A', group: 'g', level: 'required', status: 'replaced', findings: [] },
+      { id: 'b', label: 'B', group: 'g', level: 'required', status: 'placeholder', findings: [] },
+      { id: 'c', label: 'C', group: 'g', level: 'required', status: 'unknown', findings: [] },
+      { id: 'd', label: 'D', group: 'g', level: 'required', status: 'review', findings: [] },
+    ],
+  }
+  let s = summarize(report, {})
+  assert.deepEqual(s.items.map((i) => i.status), ['done', 'todo', 'todo', 'todo'])
+  assert.equal(s.requiredDone, 1)
+
+  s = summarize(report, {
+    a: { status: 'wip' },
+    b: { status: 'done' },
+    c: { status: 'done' },
+    d: { status: 'blocked' },
+  })
+  const by = Object.fromEntries(s.items.map((i) => [i.id, i]))
+  assert.equal(by.a.isDone, false, 'WIP keeps a replaced item open')
+  assert.equal(by.b.isDone, false, 'Done is ignored while the placeholder is still there')
+  assert.equal(by.b.doneConflict, true)
+  assert.equal(by.c.state, 'confirmed', "Done confirms a can't-check item")
+  assert.equal(by.d.status, 'blocked')
+  assert.equal(s.requiredDone, 1)
+  assert.equal(s.wip, 1)
+  assert.equal(s.blocked, 1)
+
+  s = summarize(report, { b: { status: 'done' }, c: { status: 'done' }, d: { at: 'legacy sign-off' } })
+  assert.equal(s.items.find((i) => i.id === 'd').state, 'confirmed', 'old sign-offs read as Done')
+})
+
 console.log(`All ${passed} placeholder checks passed.`)

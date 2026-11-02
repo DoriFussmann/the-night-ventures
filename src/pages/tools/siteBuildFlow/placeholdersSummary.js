@@ -19,26 +19,55 @@ export function guideFor(result, repoName = "") {
   };
 }
 
+/** Work statuses a person can set on an item, in menu order. */
+export const WORK_STATUSES = ["todo", "wip", "blocked", "done"];
+
 /**
- * Turn a report + sign-offs into what the page shows. A "review" item counts
- * as done only once signed off; a sign-off is ignored while the scan still
- * finds the placeholder.
+ * The status a person set on an item, or null. Stored in the `signoffs` column
+ * as { status, at, by }; an entry from before statuses existed (no `status`)
+ * was a sign-off, so it reads as "done".
+ */
+export function manualStatus(entry) {
+  if (!entry) return null;
+  return WORK_STATUSES.includes(entry.status) ? entry.status : "done";
+}
+
+/**
+ * Turn a report + statuses into what the page shows.
+ * - A "review" or "can't check" item counts as done once a person marks it Done.
+ * - "Done" is ignored while the scan still finds the placeholder (`doneConflict`).
+ * - To do / WIP / Blocked keep a replaced item from counting as done.
+ * `status` is what the menu shows: the person's choice, else what the scan implies.
  */
 export function summarize(report, signoffs = {}, repoName = "") {
   const results = Array.isArray(report?.results) ? report.results : [];
   const items = results.map((r) => {
-    const signed = Boolean(signoffs?.[r.id]);
+    const manual = manualStatus(signoffs?.[r.id]);
+    const signed = manual === "done";
     let state = r.status;
-    if (r.status === "review" && signed) state = "confirmed";
-    return { ...r, ...guideFor(r, repoName), signed, state };
+    if ((r.status === "review" || r.status === "unknown") && signed) state = "confirmed";
+    const scanDone = state === "replaced" || state === "confirmed";
+    const isDone = scanDone && (manual === null || manual === "done");
+    const status = manual || (scanDone ? "done" : "todo");
+    return {
+      ...r,
+      ...guideFor(r, repoName),
+      signed,
+      state,
+      status,
+      isDone,
+      doneConflict: signed && r.status === "placeholder",
+    };
   });
   const required = items.filter((i) => i.level === "required");
-  const done = required.filter((i) => i.state === "replaced" || i.state === "confirmed").length;
+  const count = (s) => required.filter((i) => i.status === s && !i.isDone).length;
   return {
     items,
     requiredTotal: required.length,
-    requiredDone: done,
-    openSignoffs: required.filter((i) => i.state === "review").length,
-    complete: required.length > 0 && done === required.length,
+    requiredDone: required.filter((i) => i.isDone).length,
+    openSignoffs: required.filter((i) => i.state === "review" && i.status !== "wip" && i.status !== "blocked").length,
+    wip: count("wip"),
+    blocked: count("blocked"),
+    complete: required.length > 0 && required.every((i) => i.isDone),
   };
 }

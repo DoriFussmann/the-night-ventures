@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Check, ChevronDown, Copy, Loader2, RefreshCw } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, Copy, Loader2, RefreshCw } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,7 @@ import {
   scanSitePlaceholders,
   summarize,
 } from "./placeholdersApi";
+import { WORK_STATUSES } from "./placeholdersSummary";
 
 const STATE_META = {
   placeholder: {
@@ -37,6 +38,40 @@ const STATE_META = {
 };
 
 const STATE_ORDER = { placeholder: 0, unknown: 1, review: 2, confirmed: 3, replaced: 4 };
+
+const STATUS_META = {
+  todo: { label: "To do", className: "bg-background text-muted-foreground border-border" },
+  wip: { label: "WIP", className: "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-900" },
+  blocked: { label: "Blocked", className: "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-900" },
+  done: { label: "Done", className: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900" },
+};
+
+/** Sort key inside a group: open work first, then by scan state. */
+const sortKey = (item) => (item.isDone ? 10 : 0) + STATE_ORDER[item.state];
+
+function StatusSelect({ item, disabled, onChange }) {
+  const meta = STATUS_META[item.status] || STATUS_META.todo;
+  return (
+    <select
+      aria-label={`Status of ${item.label}`}
+      value={item.status}
+      disabled={disabled}
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => event.stopPropagation()}
+      onChange={(event) => onChange(item.id, event.target.value)}
+      className={cn(
+        "h-6 shrink-0 cursor-pointer rounded-full border px-2 text-[11px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60",
+        meta.className
+      )}
+    >
+      {WORK_STATUSES.map((s) => (
+        <option key={s} value={s}>
+          {STATUS_META[s].label}
+        </option>
+      ))}
+    </select>
+  );
+}
 const FINDINGS_SHOWN = 8;
 
 function timeAgo(iso) {
@@ -86,7 +121,7 @@ function PromptBox({ prompt }) {
   );
 }
 
-function ItemRow({ item, expanded, onToggle, onSignoff, signing }) {
+function ItemRow({ item, expanded, onToggle, onStatus, saving }) {
   const extra = item.findings.length - FINDINGS_SHOWN;
   return (
     <div className={cn("rounded-[14px] border border-border bg-card transition-colors", expanded ? "bg-accent/30" : "hover:bg-accent/40")}>
@@ -111,7 +146,13 @@ function ItemRow({ item, expanded, onToggle, onSignoff, signing }) {
             <span className="text-[11px] text-muted-foreground">· {item.findings.length}</span>
           )}
         </div>
-        <StatePill state={item.state} />
+        <div className="flex shrink-0 items-center gap-2">
+          {item.doneConflict && (
+            <AlertTriangle className="h-3.5 w-3.5 text-amber-600" aria-label="Marked Done, but the scan still finds template text" />
+          )}
+          <StatePill state={item.state} />
+          <StatusSelect item={item} disabled={saving} onChange={onStatus} />
+        </div>
       </div>
       {expanded && (
         <div className="space-y-3 border-t border-border px-4 py-3">
@@ -139,20 +180,22 @@ function ItemRow({ item, expanded, onToggle, onSignoff, signing }) {
               {extra > 0 && <li className="text-xs text-muted-foreground">+{extra} more</li>}
             </ul>
           )}
-          {item.review && (item.state === "review" || item.state === "confirmed") && (
-            <label className="flex items-center gap-2 text-xs text-foreground">
-              <input
-                type="checkbox"
-                checked={item.signed}
-                disabled={signing}
-                onChange={(event) => onSignoff(item.id, event.target.checked)}
-              />
-              I confirm the new content was reviewed
-              {item.signedBy && <span className="text-muted-foreground">({item.signedBy})</span>}
-            </label>
+          {item.doneConflict && (
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              Marked Done, but the last scan still finds template text. It won&apos;t count as done until a re-scan comes back clean.
+            </p>
           )}
-          {item.review && item.state === "placeholder" && (
-            <p className="text-xs text-muted-foreground">Sign-off opens once the template text is gone.</p>
+          {item.state === "review" && !item.doneConflict && (
+            <p className="text-xs text-muted-foreground">Set the status to Done once the new content has been reviewed.</p>
+          )}
+          {item.state === "unknown" && item.status !== "done" && (
+            <p className="text-xs text-muted-foreground">The scan can&apos;t check this one. Set the status to Done once it&apos;s handled.</p>
+          )}
+          {item.setBy && (
+            <p className="text-[11px] text-muted-foreground">
+              Status set by {item.setBy}
+              {item.setAt ? ` · ${timeAgo(item.setAt)}` : ""}
+            </p>
           )}
         </div>
       )}
@@ -170,7 +213,7 @@ export default function PlaceholdersStage({ companyId, onSummary }) {
   const [row, setRow] = useState(null);
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
-  const [signing, setSigning] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [expanded, setExpanded] = useState(null);
 
@@ -252,23 +295,21 @@ export default function PlaceholdersStage({ companyId, onSummary }) {
     onSummary?.(summary);
   }, [summary, onSummary]);
 
-  const onSignoff = async (id, checked) => {
-    const current = { ...(row?.signoffs || {}) };
-    if (checked) {
-      const { data } = await supabase.auth.getUser();
-      current[id] = { at: new Date().toISOString(), by: data?.user?.email || "" };
-    } else {
-      delete current[id];
-    }
-    setSigning(true);
+  // Statuses live in the `signoffs` column: { "<check id>": { status, at, by } }.
+  const onStatus = async (id, status) => {
+    const previous = row?.signoffs || {};
+    const { data } = await supabase.auth.getUser();
+    const current = { ...previous, [id]: { status, at: new Date().toISOString(), by: data?.user?.email || "" } };
+    setRow((prev) => ({ ...(prev || {}), signoffs: current }));
+    setSaving(true);
     setError("");
     try {
       await saveSignoffs(companyId, current);
-      setRow((prev) => ({ ...(prev || {}), signoffs: current }));
     } catch (err) {
-      setError(err.message);
+      setRow((prev) => ({ ...(prev || {}), signoffs: previous }));
+      setError(`Status not saved: ${err.message}`);
     } finally {
-      setSigning(false);
+      setSaving(false);
     }
   };
 
@@ -299,19 +340,20 @@ export default function PlaceholdersStage({ companyId, onSummary }) {
     const sorted = [...summary.items].sort(
       (a, b) =>
         (a.level === "suggested") - (b.level === "suggested") ||
-        STATE_ORDER[a.state] - STATE_ORDER[b.state]
+        sortKey(a) - sortKey(b)
     );
     for (const item of sorted) {
       const name = item.level === "suggested" ? "Suggested" : item.group;
       let group = groups.find((g) => g.name === name);
       if (!group) groups.push((group = { name, items: [] }));
-      group.items.push({ ...item, signedBy: row?.signoffs?.[item.id]?.by || "" });
+      const entry = row?.signoffs?.[item.id];
+      group.items.push({ ...item, setBy: entry?.by || "", setAt: entry?.at || "" });
     }
     // Groups with open work first; Suggested last.
     groups.sort(
       (a, b) =>
         (a.name === "Suggested") - (b.name === "Suggested") ||
-        Math.min(...a.items.map((i) => STATE_ORDER[i.state])) - Math.min(...b.items.map((i) => STATE_ORDER[i.state]))
+        Math.min(...a.items.map(sortKey)) - Math.min(...b.items.map(sortKey))
     );
   }
 
@@ -322,10 +364,15 @@ export default function PlaceholdersStage({ companyId, onSummary }) {
           {summary ? (
             <p className="text-sm text-foreground">
               {summary.complete
-                ? "Every required placeholder is replaced and signed off."
-                : `${summary.requiredDone} of ${summary.requiredTotal} required items done${
-                    summary.openSignoffs ? ` · ${summary.openSignoffs} need sign-off` : ""
-                  }`}
+                ? "Every required placeholder is done."
+                : [
+                    `${summary.requiredDone} of ${summary.requiredTotal} required items done`,
+                    summary.wip ? `${summary.wip} WIP` : "",
+                    summary.blocked ? `${summary.blocked} blocked` : "",
+                    summary.openSignoffs ? `${summary.openSignoffs} need sign-off` : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
             </p>
           ) : (
             <p className="text-sm text-foreground">{scanning ? "Scanning the site repo…" : "Not scanned yet."}</p>
@@ -359,8 +406,8 @@ export default function PlaceholdersStage({ companyId, onSummary }) {
               item={item}
               expanded={expanded === item.id}
               onToggle={() => setExpanded(expanded === item.id ? null : item.id)}
-              onSignoff={onSignoff}
-              signing={signing}
+              onStatus={onStatus}
+              saving={saving}
             />
           ))}
         </div>
