@@ -9,6 +9,7 @@ import ConnectionsCheck from './audit/ConnectionsCheck'
 import CategoryGrid, { formatRunAt, formatCost } from './audit/CategoryGrid'
 import IssueList from './audit/IssueList'
 import AiVisibilityPanel from './audit/AiVisibilityPanel'
+import AeoPanel from './audit/AeoPanel'
 import { buildCategoryMarkdown, downloadFile, reportFilename } from './audit/report'
 import { useAuditRunner } from './audit/useAuditRunner'
 
@@ -51,6 +52,14 @@ const METRIC_LABELS = {
     ['competitorMedianRoots', 'Competitor median roots'],
     ['spamScore', 'Spam Score %'],
     ['pageAuthority', 'Home Page Authority'],
+  ],
+  aeo_readiness: [
+    ['aiSearchAllowed', 'AI search bots allowed'],
+    ['botsBlockedByServer', 'Bots blocked by server'],
+    ['snippetBlockedPages', 'Pages blocking snippets'],
+    ['thinHtmlPages', 'Thin-HTML articles'],
+    ['answerFirstShare', 'Answer-first articles'],
+    ['aiVisits30d', 'AI crawler visits (30d)'],
   ],
   ai_visibility: [
     ['shareOfVoice', 'Share of voice'],
@@ -321,6 +330,7 @@ function CategoryDetail({ categoryId, companyId, company, entry, pendingAccept, 
       {categoryId === 'clusters' ? <ClusterTable rows={metrics.clusters} /> : null}
       {categoryId === 'speed' ? <SpeedPages pages={metrics.pages} /> : null}
       {categoryId === 'authority' ? <AuthorityCompetitors metrics={metrics} /> : null}
+      {categoryId === 'aeo_readiness' ? <AeoPanel metrics={metrics} /> : null}
       {categoryId === 'ai_visibility' ? <AiVisibilityPanel metrics={metrics} companyId={companyId} /> : null}
 
       <RunNotes entry={entry} />
