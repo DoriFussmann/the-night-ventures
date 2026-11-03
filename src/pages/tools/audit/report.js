@@ -106,6 +106,43 @@ function categoryTables(categoryId, m) {
       )
     )
   }
+  if (categoryId === 'aeo_readiness') {
+    const kinds = { ai_search: 'AI search', ai_user: 'AI live fetch', search: 'Search engine', ai_training: 'AI training' }
+    if (m.bots?.length) {
+      out.push(
+        `### Crawler access (training policy: ${m.trainingPolicy || 'allow'} · llms.txt: ${m.llmsTxt || '—'})`,
+        table(
+          ['Crawler', 'Kind', 'robots.txt', 'Server response', 'Visits (30 days)', 'Last visit'],
+          m.bots.map((b) => [
+            b.bot,
+            kinds[b.kind] || b.kind,
+            b.robots,
+            b.serverNote || (b.httpStatus ? `HTTP ${b.httpStatus}` : 'robots token only'),
+            m.aiVisits30d === '—' ? '—' : b.visits30d,
+            b.lastVisit ? String(b.lastVisit).slice(0, 10) : '',
+          ])
+        )
+      )
+    }
+    if (m.pages?.length) {
+      out.push(
+        '### Article and pillar structure',
+        table(
+          ['Page', 'Kind', 'Words in HTML', 'Answer-first', 'Question headings', 'Lists / tables', 'Date', 'Snippet block'],
+          m.pages.map((p) => [
+            p.url,
+            p.kind,
+            p.words,
+            p.sections ? `${p.answerFirst} / ${p.sections}` : '',
+            p.sections ? `${p.questions} / ${p.sections}` : '',
+            p.listsTables,
+            p.hasDate ? 'Yes' : 'No',
+            p.snippetBlocked ? 'Yes' : 'No',
+          ])
+        )
+      )
+    }
+  }
   if (categoryId === 'ai_visibility') {
     const engines = Object.keys(ENGINE_LABELS)
     if (m.models) {
