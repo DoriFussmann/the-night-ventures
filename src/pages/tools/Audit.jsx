@@ -9,7 +9,7 @@ import ConnectionsCheck from './audit/ConnectionsCheck'
 import CategoryGrid, { formatRunAt, formatCost } from './audit/CategoryGrid'
 import IssueList from './audit/IssueList'
 import AiVisibilityPanel from './audit/AiVisibilityPanel'
-import { buildCategoryMarkdown, buildIssuesCsv, downloadFile, reportFilename } from './audit/report'
+import { buildCategoryMarkdown, downloadFile, reportFilename } from './audit/report'
 import { useAuditRunner } from './audit/useAuditRunner'
 
 /** Metrics shown per category: [metrics key, label]. */
@@ -289,18 +289,7 @@ function CategoryDetail({ categoryId, companyId, company, entry, pendingAccept, 
               title="Download this section as a Markdown report"
             >
               <Download className="h-3.5 w-3.5" aria-hidden="true" />
-              Report (.md)
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                downloadFile(reportFilename(company, meta, entry, 'csv'), buildIssuesCsv(entry), 'text/csv;charset=utf-8')
-              }
-              className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'h-7 text-xs')}
-              title="Download every issue (open, accepted, fixed) as CSV"
-            >
-              <Download className="h-3.5 w-3.5" aria-hidden="true" />
-              Issues (.csv)
+              Download report
             </button>
           </div>
         </div>
