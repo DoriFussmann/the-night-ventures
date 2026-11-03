@@ -1,4 +1,4 @@
-// Downloadable per-category audit report: Markdown (full section) and CSV (issues).
+// Downloadable per-category audit report: one Markdown file with the full section.
 // Pure string builders + a browser download helper.
 
 import { SEVERITY_LABELS } from '../../../../lib/audit/categories.js'
@@ -183,6 +183,22 @@ function categoryTables(categoryId, m) {
   return out.filter(Boolean)
 }
 
+/** Compact one-line evidence: "key: value; key: a, b". */
+function evidenceLine(evidence) {
+  if (!evidence || typeof evidence !== 'object') return ''
+  const parts = []
+  for (const [k, v] of Object.entries(evidence)) {
+    if (v == null || v === '' || (Array.isArray(v) && !v.length)) continue
+    const val = Array.isArray(v)
+      ? v.map((x) => (typeof x === 'object' ? JSON.stringify(x) : String(x))).join(', ')
+      : typeof v === 'object'
+        ? JSON.stringify(v)
+        : String(v)
+    parts.push(`${k}: ${val.replace(/\s+/g, ' ').slice(0, 300)}`)
+  }
+  return parts.join('; ')
+}
+
 /** @param {any[]} issues */
 function groupedIssues(issues) {
   const map = new Map()
@@ -250,6 +266,8 @@ export function buildCategoryMarkdown({ company, meta, entry, metricLabels }) {
         const where = i.url ? `${pathOf(i.url)} — ` : ''
         const tag = i.diff === 'new' ? ' **[new]**' : ''
         lines.push(`- ${where}${i.detail || i.title}${tag}`)
+        const ev = evidenceLine(i.evidence)
+        if (ev) lines.push(`    - Evidence: ${ev}`)
       }
     }
   }
@@ -261,24 +279,6 @@ export function buildCategoryMarkdown({ company, meta, entry, metricLabels }) {
     lines.push('', '## Accepted (excluded from the score)', '', ...entry.accepted.map((i) => `- ${i.title}${i.url ? ` — ${pathOf(i.url)}` : ''}`))
   }
   return lines.join('\n').replace(/\n{3,}/g, '\n\n') + '\n'
-}
-
-function csvCell(v) {
-  const s = v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v)
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-}
-
-/** Every issue (open, accepted, fixed) as one CSV row. @param {any} entry */
-export function buildIssuesCsv(entry) {
-  const rows = [
-    ...(entry.issues || []).map((i) => ({ ...i, status: i.diff === 'new' ? 'open (new)' : 'open' })),
-    ...(entry.accepted || []).map((i) => ({ ...i, status: 'accepted' })),
-    ...(entry.fixed || []).map((i) => ({ ...i, status: 'fixed' })),
-  ].sort((a, b) => (SEVERITY_RANK[a.severity] ?? 9) - (SEVERITY_RANK[b.severity] ?? 9))
-  const header = ['status', 'severity', 'check_id', 'title', 'detail', 'url', 'fix_hint', 'evidence']
-  return (
-    [header.join(','), ...rows.map((r) => header.map((h) => csvCell(r[h])).join(','))].join('\r\n') + '\r\n'
-  )
 }
 
 export function reportFilename(company, meta, entry, ext) {
