@@ -21,3 +21,19 @@ export async function scanLiveArticles(companyId) {
   if (!res.ok) throw new Error(data.error || 'Failed to scan live articles')
   return data
 }
+
+/**
+ * Copy every live article's content into the library (the live site is the
+ * source of truth). apply=false returns what would change without writing.
+ */
+export async function syncLibraryFromLive(companyId, { apply = true } = {}) {
+  const headers = await authHeaders()
+  const res = await fetch('/api/sync-from-live', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ companyId, apply }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || 'Failed to sync from the live site')
+  return data
+}

@@ -212,7 +212,7 @@ export default function ArticleCmsDialog({
     setNote("");
     setProgress(null);
     try {
-      const { row, asDraft } = await commitLibraryArticle({
+      const { row, asDraft, pullRequestUrl } = await commitLibraryArticle({
         companyId,
         destination,
         article,
@@ -226,9 +226,11 @@ export default function ArticleCmsDialog({
       setEditing(false);
       setForm(null);
       setNote(
-        asDraft
-          ? `Saved and committed as a draft to ${destination.owner}/${destination.repo}.`
-          : `Published to ${destination.owner}/${destination.repo} (${DEFAULT_PUBLISH_BRANCH}).`
+        pullRequestUrl
+          ? `This changes a live article, so it was opened as a pull request for review (not live yet): ${pullRequestUrl}`
+          : asDraft
+            ? `Saved and committed as a draft to ${destination.owner}/${destination.repo}.`
+            : `Published to ${destination.owner}/${destination.repo} (${DEFAULT_PUBLISH_BRANCH}).`
       );
     } catch (err) {
       setError(err?.message || "Commit failed");
