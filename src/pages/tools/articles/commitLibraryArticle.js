@@ -128,7 +128,14 @@ export async function commitLibraryArticle({
     return { row, result, asDraft: true };
   }
 
-  const publishedUrl = result.pullRequestUrl || row.published_url || "";
+  // A commit that changes an existing live file opens a PR instead of merging
+  // (see mergeOrOpenPr). Nothing is live yet, so leave the row's status and
+  // published URL as they are.
+  if (result.mergeStrategy === "open-pr" || result.pullRequestUrl) {
+    return { row, result, pullRequestUrl: result.pullRequestUrl || null };
+  }
+
+  const publishedUrl = row.published_url || "";
   const publishedPatch = {
     status: "published",
     draft: false,

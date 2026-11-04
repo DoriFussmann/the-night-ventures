@@ -162,7 +162,7 @@ export async function publishDrafts({
       }
 
       report(i, { ...base, phase: "publishing" });
-      const { row: published } = await commitLibraryArticle({
+      const { row: published, pullRequestUrl } = await commitLibraryArticle({
         companyId,
         destination,
         article: row,
@@ -172,12 +172,19 @@ export async function publishDrafts({
       });
       onRowUpdated?.(published);
 
-      const result = {
-        ...base,
-        outcome: "published",
-        imageGenerated,
-        message: imageGenerated ? "Image generated, published." : "Published.",
-      };
+      const result = pullRequestUrl
+        ? {
+            ...base,
+            outcome: "skipped",
+            imageGenerated,
+            message: `Changes an existing live file; opened for review: ${pullRequestUrl}`,
+          }
+        : {
+            ...base,
+            outcome: "published",
+            imageGenerated,
+            message: imageGenerated ? "Image generated, published." : "Published.",
+          };
       results.push(result);
       report(i, { ...result, phase: "done" });
     } catch (err) {

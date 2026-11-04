@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { Download, ExternalLink, Loader2, Radar, Search, Square, Upload, Wand2 } from "lucide-react";
+import { Download, ExternalLink, Loader2, Radar, RefreshCw, Search, Square, Upload, Wand2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
-import { scanLiveArticles } from "./articles/scanLiveApi";
+import { scanLiveArticles, syncLibraryFromLive } from "./articles/scanLiveApi";
 import FaceliftPanel from "./articles/FaceliftPanel";
 import ArticleCmsDialog from "./articles/ArticleCmsDialog";
 import { isLibraryDraft, publishDrafts } from "./articles/publishDrafts";
@@ -304,6 +304,9 @@ export default function Articles() {
   const [scanLoading, setScanLoading] = useState(false);
   const [scanError, setScanError] = useState("");
   const [scanResult, setScanResult] = useState(null);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncResult, setSyncResult] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [linkHealth, setLinkHealth] = useState(null);
   const [faceliftLiveRows, setFaceliftLiveRows] = useState([]);
 
@@ -379,7 +382,7 @@ export default function Articles() {
     return () => {
       cancelled = true;
     };
-  }, [companyId]);
+  }, [companyId, reloadKey]);
 
   const liveBySlug = useMemo(() => {
     const map = indexLiveRows(faceliftLiveRows);
@@ -487,6 +490,23 @@ export default function Articles() {
     setArticles((prev) => prev.filter((item) => item.id !== deleteTarget.id));
     if (selectedId === deleteTarget.id) setSelectedId(null);
     setDeleteId(null);
+  };
+
+  const runSyncFromLive = async () => {
+    if (!companyId || syncLoading) return;
+    setSyncLoading(true);
+    setScanError("");
+    setSyncResult(null);
+    try {
+      const result = await syncLibraryFromLive(companyId, { apply: true });
+      setSyncResult(result);
+      setReloadKey((key) => key + 1);
+    } catch (err) {
+      console.error(err);
+      setScanError(err?.message || "Failed to sync from the live site");
+    } finally {
+      setSyncLoading(false);
+    }
   };
 
   const runLiveScan = async () => {
@@ -669,7 +689,7 @@ export default function Articles() {
           <p className="text-sm text-muted-foreground">
             CMS for this company’s destination site. Open an article to edit,
             replace its image, save, or publish — each action commits to the
-            live repo. Scan Live updates this table from the published site.
+            live repo. Sync from live copies each published article back into this library, so the library always matches the site.
           </p>
         </div>
         <Button
@@ -687,7 +707,37 @@ export default function Articles() {
           )}
           {scanLoading ? "Scanning live site…" : "Scan Live"}
         </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-9 shrink-0"
+          disabled={!companyId || syncLoading || !isPublishDestinationMapped(publishDestination)}
+          onClick={runSyncFromLive}
+          title="Copy every live article's current content into this library. The live site is the source of truth."
+        >
+          {syncLoading ? (
+            <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+          ) : (
+            <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+          )}
+          {syncLoading ? "Syncing from live…" : "Sync from live"}
+        </Button>
       </div>
+
+      {syncResult ? (
+        <p className="text-sm text-muted-foreground">
+          Synced {syncResult.liveCount} live article{syncResult.liveCount === 1 ? "" : "s"} into the library:{" "}
+          {syncResult.updated?.length || 0} updated, {syncResult.added?.length || 0} added,{" "}
+          {syncResult.unchanged?.length || 0} already matched.
+          {syncResult.libraryOnly?.length
+            ? ` ${syncResult.libraryOnly.length} library row(s) have no live file (drafts or removed).`
+            : ""}
+          {syncResult.errors?.length
+            ? ` ${syncResult.errors.length} error(s): ${syncResult.errors.map((e) => e.slug).join(", ")}.`
+            : ""}
+        </p>
+      ) : null}
 
       {error && (
         <p className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
