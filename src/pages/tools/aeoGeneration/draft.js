@@ -11,6 +11,18 @@ import { OPEN_SCHEDULE_STATUSES, normalizeSettings, takenDays, todayIn } from ".
 import { browserTimezone } from "../articlesAutomation/publishSchedule";
 
 const PILLAR_WORDS = 2500;
+// The writer's server function stops at ~13 minutes, the image at 2.5; past
+// these limits the request is treated as stuck so a batch never hangs.
+const WRITE_TIMEOUT_MS = 14 * 60 * 1000;
+const HERO_TIMEOUT_MS = 4 * 60 * 1000;
+
+function withTimeout(promise, ms, what) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${what} took longer than ${Math.round(ms / 60000)} minutes and was stopped. Try again.`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 const SUPPORTING_WORDS = 1500;
 
 function fail(error, what) {
@@ -63,7 +75,7 @@ export async function makeHero({ companyId, slug, title, description, angle, out
 
 /** Replace a draft's hero image, optionally with a direction note. */
 export async function newHeroForDraft({ companyId, brief, draft, imageStyle, note }) {
-  const hero = await makeHero({
+  const hero = await withTimeout(makeHero({
     companyId,
     slug: draft.slug,
     title: draft.title,
@@ -72,7 +84,7 @@ export async function newHeroForDraft({ companyId, brief, draft, imageStyle, not
     outline: brief.outline,
     imageStyle,
     note,
-  });
+  }), HERO_TIMEOUT_MS, "The new image");
   const { error } = await supabase
     .from("generated_articles")
     .update({
@@ -167,12 +179,16 @@ export async function generateDraft({ companyId, brief, group, pillar, prompts, 
   if (!pillar?.topic_name) throw new Error("The pillar has no site topic name (AEO Playbook › Content Map).");
   const spec = articleSpecFromBrief({ brief, group, prompts, conversion: writer.brandFacts?.conversion });
   onStatus?.("Writing the article…");
-  const data = await generateOneArticle({
-    positioning: writer.positioning,
-    article: spec,
-    pillarKeyword: pillar.topic_name,
-    batchContext,
-  });
+  const data = await withTimeout(
+    generateOneArticle({
+      positioning: writer.positioning,
+      article: spec,
+      pillarKeyword: pillar.topic_name,
+      batchContext,
+    }),
+    WRITE_TIMEOUT_MS,
+    "Writing the article"
+  );
 
   // Never overwrite another article: the library upserts on slug.
   data.frontmatter.slug = await freeSlug(companyId, data.frontmatter.slug, brief);
@@ -180,15 +196,19 @@ export async function generateDraft({ companyId, brief, group, pillar, prompts, 
   onStatus?.("Finding a hero image…");
   let hero = null;
   try {
-    hero = await makeHero({
-      companyId,
-      slug: data.frontmatter.slug,
-      title: data.frontmatter.title,
-      description: data.frontmatter.description,
-      angle: brief.angle,
-      outline: brief.outline,
-      imageStyle: writer.brandFacts?.image_style || "",
-    });
+    hero = await withTimeout(
+      makeHero({
+        companyId,
+        slug: data.frontmatter.slug,
+        title: data.frontmatter.title,
+        description: data.frontmatter.description,
+        angle: brief.angle,
+        outline: brief.outline,
+        imageStyle: writer.brandFacts?.image_style || "",
+      }),
+      HERO_TIMEOUT_MS,
+      "The hero image"
+    );
   } catch (err) {
     console.warn("Hero image failed:", err);
   }
