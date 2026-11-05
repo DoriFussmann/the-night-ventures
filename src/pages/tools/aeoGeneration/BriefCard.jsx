@@ -41,6 +41,7 @@ export default function BriefCard({ companyId, brief, group, pillar, prompts, pe
   const [tool, setTool] = useState(brief.cta?.tool || "");
   const [suggesting, setSuggesting] = useState(false);
   const [open, setOpen] = useState(brief.status === "draft");
+  const [cardError, setCardError] = useState("");
 
   const save = async (values) => {
     try {
@@ -57,6 +58,7 @@ export default function BriefCard({ companyId, brief, group, pillar, prompts, pe
   const onSuggest = async () => {
     if (outlineText.trim() && !window.confirm("Replace the current title, angle and outline with a new suggestion?")) return;
     setSuggesting(true);
+    setCardError("");
     try {
       const s = await suggestOutline({ companyId, groupId: group.id, primaryKeyword: keyword });
       setTitle(s.title || title);
@@ -64,7 +66,7 @@ export default function BriefCard({ companyId, brief, group, pillar, prompts, pe
       setOutlineText(outlineToText(s.outline));
       await save({ title: s.title || title, angle: s.angle, article_type: s.articleType, outline: s.outline });
     } catch (err) {
-      onError?.(err?.message || "Could not suggest an outline");
+      setCardError(err?.message || "Could not suggest an outline");
     } finally {
       setSuggesting(false);
     }
@@ -122,6 +124,15 @@ export default function BriefCard({ companyId, brief, group, pillar, prompts, pe
             </ul>
           </details>
 
+          <div className="flex flex-wrap items-center gap-3 rounded-md border border-dashed border-border px-3 py-2">
+            <Button type="button" variant="outline" size="sm" disabled={suggesting} onClick={onSuggest}>
+              {suggesting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1.5 h-3.5 w-3.5" />}
+              {suggesting ? "Writing a suggestion… (about 30 seconds)" : "Suggest title, angle and outline"}
+            </Button>
+            <span className="text-[11px] text-muted-foreground">Fills the three fields below from the prompts and Brand Facts. Edit freely after.</span>
+            {cardError && <span className="w-full text-xs text-destructive">{cardError}</span>}
+          </div>
+
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Title">
               <Input value={title} onChange={(e) => setTitle(e.target.value)} onBlur={() => saveIfChanged("title", title, brief.title)} />
@@ -149,10 +160,6 @@ export default function BriefCard({ companyId, brief, group, pillar, prompts, pe
                     <option key={t} value={t}>{t}</option>
                   ))}
                 </select>
-                <Button type="button" variant="outline" size="sm" disabled={suggesting} onClick={onSuggest}>
-                  {suggesting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1.5 h-3.5 w-3.5" />}
-                  Suggest outline
-                </Button>
               </div>
             </div>
             <Textarea
