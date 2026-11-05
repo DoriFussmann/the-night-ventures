@@ -60,6 +60,7 @@ import {
 } from "./companyData/dataPoints";
 import { jsonAuthHeaders } from "@/lib/authHeaders";
 import IntelligenceBrief from "./companyData/IntelligenceBrief";
+import AeoPlaybookBox from "./companyData/AeoPlaybookBox";
 import PublishDestinationGuide from "./companyData/PublishDestinationGuide";
 import PublishDestinationCheck from "./companyData/PublishDestinationCheck";
 import {
@@ -2186,6 +2187,8 @@ export default function CompanyData() {
       </div>
 
       {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
+
+      <AeoPlaybookBox companyId={companyId} />
 
       <form onSubmit={handleSave} className="space-y-4">
         <IntelligenceBrief

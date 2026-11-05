@@ -34,6 +34,7 @@ import AudienceBuild from '@/pages/tools/AudienceBuild';
 import Integrations from '@/pages/tools/Integrations';
 import ArticleCompose from '@/pages/tools/ArticleCompose';
 import Analytics from '@/pages/tools/Analytics';
+import AeoPlaybook from '@/pages/tools/AeoPlaybook';
 
 function RedirectToClusterGeneration() {
   const { companyId } = useParams();
@@ -55,6 +56,7 @@ const AuthenticatedApp = () => {
           <Route path="/admin" element={<GlobalAdmin />} />
           <Route path="/admin/system-map" element={<SystemMap />} />
           <Route path="/company/:companyId/company-data" element={<CompanyData />} />
+          <Route path="/company/:companyId/aeo-playbook" element={<AeoPlaybook />} />
           <Route path="/company/:companyId/social-media-tracker" element={<SocialMediaTracker />} />
           <Route path="/company/:companyId/design-guide-builder" element={<DesignGuideBuilder />} />
           <Route path="/company/:companyId/site-content-build" element={<SiteContentBuild />} />
