@@ -23,6 +23,16 @@ import { rankNextUp } from "../../../lib/aeo/nextUp.js";
 const BATCH_SIZE = 5;
 const DONE = new Set(["published"]);
 
+function ElapsedTime({ since }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const secs = Math.max(0, Math.round((now - since) / 1000));
+  return <span className="ml-auto tabular-nums text-sky-700">{Math.floor(secs / 60)}:{String(secs % 60).padStart(2, "0")}</span>;
+}
+
 export default function AeoGeneration() {
   const { companyId } = useParams();
   const [data, setData] = useState(null);
@@ -37,6 +47,7 @@ export default function AeoGeneration() {
   const [genStatus, setGenStatus] = useState({});
   const [note, setNote] = useState("");
   const [taken, setTaken] = useState([]);
+  const [progress, setProgress] = useState(null);
 
   const reload = useCallback(async () => {
     if (!companyId) return;
@@ -126,6 +137,7 @@ export default function AeoGeneration() {
     } finally {
       setBusy(false);
       setGenStatus({});
+      setProgress(null);
       await reload();
     }
   };
@@ -139,6 +151,9 @@ export default function AeoGeneration() {
         const brief = list[i];
         const group = lookups.groupById.get(brief.group_id);
         const label = list.length > 1 ? `${i + 1} of ${list.length}: ` : "";
+        const batch = brief.batch_label || "Single articles";
+        const started = Date.now();
+        setProgress({ batch, text: `Article ${i + 1} of ${list.length} · ${brief.title} · starting…`, started });
         try {
           const res = await generateDraft({
             companyId,
@@ -148,9 +163,13 @@ export default function AeoGeneration() {
             prompts: lookups.promptsByGroup.get(brief.group_id) || [],
             writer,
             batchContext: context,
-            onStatus: (msg) => setGenStatus((m) => ({ ...m, [brief.id]: `${label}${msg}` })),
+            onStatus: (msg) => {
+              setGenStatus((m) => ({ ...m, [brief.id]: `${label}${msg}` }));
+              setProgress({ batch, text: `Article ${i + 1} of ${list.length} · ${brief.title} · ${msg}`, started });
+            },
           });
           context.push({ title: res.row.title, slug: res.row.slug, type: res.row.type, targetKeyword: res.row.target_keyword, oneLinerSummary: res.row.description });
+          setProgress({ batch, text: `Article ${i + 1} of ${list.length} done: ${res.row.title}`, started });
           if (res.heroMissing) problems.push(`"${res.row.title}": no hero image; add one in Articles.`);
         } catch (err) {
           problems.push(`"${brief.title}": ${err?.message || "writing failed"}`);
@@ -287,6 +306,13 @@ export default function AeoGeneration() {
                   )}
                 </div>
               </div>
+              {progress?.batch === label && (
+                <p className="flex items-center gap-2 rounded-md bg-sky-50 px-3 py-2 text-xs text-sky-900">
+                  <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                  {progress.text}
+                  <ElapsedTime since={progress.started} />
+                </p>
+              )}
               <div className="space-y-2">
                 {list.map((b) => {
                   const group = lookups.groupById.get(b.group_id);
