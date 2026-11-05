@@ -33,7 +33,7 @@ export function cleanH1(value, title) {
 }
 
 export const config = {
-  maxDuration: 300,
+  maxDuration: 800,
 }
 
 function resolveMode(value) {
