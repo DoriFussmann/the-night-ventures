@@ -5,14 +5,10 @@
 export function buildCompanyDataAllocatePrompt({
   companyName = "",
   customFieldNames = [],
-  industryNames = [],
   emptyFieldLabels = [],
 } = {}) {
   const name = String(companyName || "").trim() || "{Company Name}";
   const custom = (customFieldNames || [])
-    .map((item) => String(item || "").trim())
-    .filter(Boolean);
-  const industries = (industryNames || [])
     .map((item) => String(item || "").trim())
     .filter(Boolean);
   const empty = (emptyFieldLabels || [])
@@ -30,12 +26,6 @@ Also populate these extra fields using the same **Label:** format, with the exac
 ${custom.map((item) => `- **${item}:**`).join("\n")}
 `
       : "";
-
-  const categorySection =
-    industries.length > 0
-      ? `Pick 1–3 names from this exact list (copy spelling as-is):
-${industries.map((item) => `   - ${item}`).join("\n")}`
-      : `Pick 1–3 names that already exist in the app’s Category picker. Do not invent categories.`;
 
   const emptySection =
     empty.length > 0
@@ -110,17 +100,15 @@ Basics
 25. **SEO Language:** Language of the articles
 26. **SEO Search Competitors:**
     - domain.com
-27. **Out-of-scope Topics:** Topics the company will not write about
+27. **What We Are Not:** Topics and services the company does not cover or write about
 
 Specialized / leftover (only if the source has this and it does not belong above)
 28. **Product Name:** Primary product or brand name people search for
-29. **Category:**
-    A markdown list of 1–3 industry names. ${categorySection}
-30. **Pillar Keywords:**
+29. **Pillar Keywords:**
     Nested list with TWO SPACES before supporting bullets:
     - pillar keyword
       - supporting keyword
-31. **Social & Shops:**
+30. **Social & Shops:**
     Group under ### headings that are exactly one of: Social Media | Digital Store | Other
     ### Social Media
     - Account Name
@@ -129,7 +117,7 @@ Specialized / leftover (only if the source has this and it does not belong above
       - URL: https://...
       - Username: @handle
 
-Accepted aliases if you already used the old names: Short Description → What We Do; Long Description → Story & Mission; Target Description / Ideal Customer → Target Searcher; Scope / Boundaries / What We Are / Are Not → Out-of-scope Topics; Competitors & Alternatives → Competitors; Team Members → Team & Founder Credibility.
+Accepted aliases if you already used the old names: Short Description → What We Do; Long Description → Story & Mission; Target Description / Ideal Customer → Target Searcher; Scope / Boundaries / What We Are / Are Not / Out-of-scope Topics → What We Are Not; Competitors & Alternatives → Competitors; Team Members → Team & Founder Credibility.
 ${customSection}
 QUALITY BAR
 - Allocate each fact to the most specific brief field. Do not dump the whole file into What We Do, Story & Mission, or Abstract. Never invent facts for SEO Controls; leave a field out if the source does not support it.
