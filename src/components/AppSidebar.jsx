@@ -494,6 +494,14 @@ export default function AppSidebar({ user }) {
                   status: "New",
                 }}
               />
+              <NavItem
+                item={{
+                  label: "AEO Generation",
+                  path: `/company/${activeCompanyId}/aeo-generation`,
+                  icon: Compass,
+                  status: "New",
+                }}
+              />
             </div>
 
             <SectionRule />
