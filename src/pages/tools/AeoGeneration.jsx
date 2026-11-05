@@ -13,6 +13,7 @@ import {
   loadTakenDays,
   todayHere,
   loadWriterContext,
+  newHeroForDraft,
   resetToReady,
   scheduleBriefs,
   syncPublished,
@@ -334,6 +335,16 @@ export default function AeoGeneration() {
                       onGenerate={() => writeDrafts([b])}
                       onApprove={() => run(() => approveBrief(b))}
                       onUnapprove={() => run(() => unapproveBrief(b))}
+                      onNewImage={async (note) => {
+                        await newHeroForDraft({
+                          companyId,
+                          brief: b,
+                          draft: drafts.get(b.generated_article_id),
+                          imageStyle: data.playbook.brand_facts.image_style || "",
+                          note,
+                        });
+                        await reload();
+                      }}
                       onRedo={() => {
                         if (window.confirm("Write this article again from the brief? The current draft stays in the Articles library.")) {
                           run(() => resetToReady(b, group));

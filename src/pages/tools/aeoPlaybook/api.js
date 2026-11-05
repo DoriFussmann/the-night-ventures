@@ -13,6 +13,7 @@ export const EMPTY_BRAND_FACTS = Object.freeze({
   never_claims: [],
   competitors: [],
   open_items: [],
+  image_style: "",
 });
 
 export const BRAND_SECTIONS = [
@@ -22,6 +23,11 @@ export const BRAND_SECTIONS = [
   { key: "difference", label: "4 · The difference", helper: "Why this over competitors, DIY or doing nothing; what is never done." },
   { key: "proof", label: "5 · The proof", helper: "Who stands behind it, clients, results that can be stated, the database." },
   { key: "conversion", label: "6 · The conversion", helper: "What counts as a win and the next step after reading." },
+  {
+    key: "image_style",
+    label: "7 · Image style",
+    helper: "How article hero images should look. Each image gets a scene written for its article in this style. Leave empty to use the default (editorial desk still life, warm light).",
+  },
 ];
 
 export const TIERS = ["Buy", "Problem", "Learn"];

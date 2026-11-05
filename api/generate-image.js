@@ -2,7 +2,7 @@ import { rejectUnlessUser } from '../lib/http/requireUser.js'
 import { findStockImage } from '../lib/image-sourcing/run.js'
 
 export const config = {
-  maxDuration: 60,
+  maxDuration: 150,
 }
 
 function json(res, status, body) {
@@ -13,6 +13,7 @@ function json(res, status, body) {
 
 const MODEL = 'gpt-image-2'
 const ALLOWED_SIZES = new Set(['1024x1024', '1536x1024', '1024x1536'])
+const ALLOWED_QUALITY = new Set(['low', 'medium', 'high', 'auto'])
 
 function normalizeExcludeIds(value) {
   if (value == null) return []
@@ -116,6 +117,7 @@ export default async function handler(req, res) {
         prompt: assembledPrompt,
         size,
         n: 1,
+        ...(ALLOWED_QUALITY.has(String(body.quality || '')) ? { quality: String(body.quality) } : {}),
       }),
     })
 
