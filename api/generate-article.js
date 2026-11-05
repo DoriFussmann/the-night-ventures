@@ -993,6 +993,28 @@ export function keyMessageCoverageErrors(keyMessages, coverage, body) {
   ]
 }
 
+/**
+ * The editor's own points (expertInput) must lead: developed under the first
+ * or second H2 of the body and listed in keyMessageCoverage as "Editor points".
+ * Exported for tests.
+ */
+export const EDITOR_POINTS_LABEL = 'Editor points'
+
+export function editorPointsErrors(expertInput, coverage, body) {
+  if (!String(expertInput || '').trim()) return []
+  const h2 = String(body || '')
+    .split('\n')
+    .filter((line) => /^##\s/.test(line))
+    .map(headingKey)
+  const entry = (Array.isArray(coverage) ? coverage : []).find(
+    (c) => headingKey(c?.keyMessage) === EDITOR_POINTS_LABEL.toLowerCase()
+  )
+  if (entry && h2.slice(0, 2).includes(headingKey(entry.heading))) return []
+  return [
+    `Editor points: develop the editor's points (EXPERT INPUT) as the lead argument under the first or second H2 of the body, and add { "keyMessage": "${EDITOR_POINTS_LABEL}", "heading": "<that exact H2>" } as the LAST entry of keyMessageCoverage.`,
+  ]
+}
+
 function interpretGeneratedArticle(parsed, context) {
   const assignment = context.modelChoosesKeywords
     ? resolveKeywordAssignment(parsed?.frontmatter, context.keywordOptions)
@@ -1027,6 +1049,9 @@ function interpretGeneratedArticle(parsed, context) {
     ...(context.requireClaimSources ? claimSourceErrors(articleBody, claimSources) : []),
     ...(context.requireClaimSources
       ? keyMessageCoverageErrors(context.article.keyMessages, parsed?.frontmatter?.keyMessageCoverage, articleBody)
+      : []),
+    ...(context.requireClaimSources
+      ? editorPointsErrors(context.article.expertInput, parsed?.frontmatter?.keyMessageCoverage, articleBody)
       : []),
   ]
   return {

@@ -18,6 +18,7 @@ import {
   OPEN_SCHEDULE_STATUSES,
   addDays,
   formatDay,
+  friendlyError,
   itemLabel,
   normalizeSettings,
   openItems,
@@ -26,7 +27,7 @@ import {
   takenDays,
   todayIn,
 } from "../../../../lib/publish-schedule/plan.js";
-import { browserTimezone } from "./publishSchedule";
+import { browserTimezone, loadLastCronRun } from "./publishSchedule";
 
 const selectClass =
   "h-9 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground";
@@ -34,6 +35,7 @@ const selectClass =
 const LABEL_STYLES = {
   Live: "border-emerald-200 bg-emerald-50 text-emerald-700",
   Due: "border-foreground/30 bg-accent text-foreground",
+  Late: "border-amber-300 bg-amber-50 text-amber-800",
   Next: "border-foreground/30 bg-accent text-foreground",
   Scheduled: "border-border bg-muted/50 text-muted-foreground",
   Publishing: "border-border bg-muted/50 text-muted-foreground",
@@ -69,6 +71,10 @@ export function ScheduleDialog({ open, mode = "new", pillar, candidates, schedul
   const [settings, setSettings] = useState({ ...DEFAULT_SETTINGS, timezone: tz });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // Step 1: pick keywords and rhythm. Step 2: one card per article, with the
+  // editor's own points (saved to the keyword's spec as Expert notes).
+  const [step, setStep] = useState("pick");
+  const [points, setPoints] = useState({});
 
   const key = `${open}:${pillar?.keyword}:${(candidates || []).map((c) => c.clusterKeyword).join("|")}`;
   useEffect(() => {
@@ -80,6 +86,12 @@ export function ScheduleDialog({ open, mode = "new", pillar, candidates, schedul
     setSettings(schedule ? normalizeSettings(schedule.settings) : { ...DEFAULT_SETTINGS, timezone: tz });
     setError("");
     setBusy(false);
+    setStep("pick");
+    setPoints(
+      Object.fromEntries(
+        (candidates || []).map((c) => [c.clusterKeyword, String(c.supporting?.spec?.expertNotes || "")])
+      )
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
@@ -118,8 +130,17 @@ export function ScheduleDialog({ open, mode = "new", pillar, candidates, schedul
     setError("");
     try {
       const byKeyword = new Map((candidates || []).map((c) => [c.clusterKeyword, c]));
+      // Only send points that changed, so untouched specs are not rewritten.
+      const changedPoints = picked
+        .map((k) => ({ cluster: byKeyword.get(k), text: String(points[k] || "").trim() }))
+        .filter(({ cluster, text }) => cluster && text !== String(cluster.supporting?.spec?.expertNotes || "").trim());
       await onConfirm({
         keywords: picked.map((k) => ({ keyword: k, slug: byKeyword.get(k)?.clusterSlug || "" })),
+        points: changedPoints.map(({ cluster, text }) => ({
+          pillarKeyword: cluster.pillarKeyword,
+          keyword: cluster.clusterKeyword,
+          expertNotes: text,
+        })),
         settings: normalizeSettings(settings),
         start: effectiveStart,
       });
@@ -148,6 +169,16 @@ export function ScheduleDialog({ open, mode = "new", pillar, candidates, schedul
         </DialogHeader>
 
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-4">
+          {step === "points" ? (
+            <ArticlePointsCards
+              keywords={picked}
+              dates={dates}
+              candidates={candidates}
+              points={points}
+              onChange={(keyword, text) => setPoints((prev) => ({ ...prev, [keyword]: text }))}
+            />
+          ) : (
+          <>
           {mode === "new" ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
@@ -250,20 +281,81 @@ export function ScheduleDialog({ open, mode = "new", pillar, candidates, schedul
               uses moves to the next free day. Article dates are the day each one goes live.
             </p>
           </div>
+          </>
+          )}
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
         </div>
 
         <DialogFooter className="shrink-0 gap-2 border-t border-border px-6 py-4">
-          <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
-            Cancel
-          </Button>
-          <Button type="button" onClick={confirm} disabled={busy || picked.length === 0}>
-            {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CalendarClock className="mr-2 h-4 w-4" />}
-            Write &amp; schedule {picked.length} article{picked.length === 1 ? "" : "s"}
-          </Button>
+          {step === "points" ? (
+            <Button type="button" variant="outline" onClick={() => setStep("pick")} disabled={busy}>
+              Back
+            </Button>
+          ) : (
+            <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
+              Cancel
+            </Button>
+          )}
+          {step === "pick" ? (
+            <Button type="button" onClick={() => setStep("points")} disabled={picked.length === 0}>
+              Next: review articles
+            </Button>
+          ) : (
+            <Button type="button" onClick={confirm} disabled={busy || picked.length === 0}>
+              {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CalendarClock className="mr-2 h-4 w-4" />}
+              Write &amp; schedule {picked.length} article{picked.length === 1 ? "" : "s"}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * One card per article about to be written: what it will argue (angle and
+ * key messages from its spec) and a box for the editor's own points, which
+ * the writer leads with.
+ */
+export function ArticlePointsCards({ keywords, dates = [], candidates, points, onChange }) {
+  const byKeyword = new Map((candidates || []).map((c) => [c.clusterKeyword, c]));
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        Read what each article will cover and add your own points. The writer opens with your points
+        and builds the article around them, alongside the key messages; an article that leaves them
+        out is rewritten. Points are saved to the keyword, so a later rewrite keeps them.
+      </p>
+      {keywords.map((keyword, i) => {
+        const spec = byKeyword.get(keyword)?.supporting?.spec || {};
+        const messages = Array.isArray(spec.keyMessages) ? spec.keyMessages.filter(Boolean) : [];
+        return (
+          <div key={keyword} className="space-y-2 rounded-md border border-border px-3 py-3">
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="text-sm font-medium">{spec.primaryKeyword || keyword}</p>
+              {dates[i] ? (
+                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{formatDay(dates[i])}</span>
+              ) : null}
+            </div>
+            {spec.angle ? <p className="text-xs text-muted-foreground">Angle: {spec.angle}</p> : null}
+            {messages.length ? (
+              <ul className="list-disc space-y-0.5 pl-5 text-xs text-foreground/80">
+                {messages.map((m, j) => (
+                  <li key={j}>{m}</li>
+                ))}
+              </ul>
+            ) : null}
+            <textarea
+              className="min-h-[72px] w-full rounded-md border border-input bg-background px-2.5 py-2 text-sm"
+              placeholder="Your points (optional): your experience, a strong opinion, an example, what most articles get wrong…"
+              value={points[keyword] || ""}
+              onChange={(e) => onChange(keyword, e.target.value)}
+              aria-label={`Your points for ${keyword}`}
+            />
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -271,12 +363,19 @@ function nextLine(schedule, summary) {
   if (schedule.status === "paused") return "Paused";
   if (schedule.status === "cancelled") return "Cancelled — drafts kept in Articles";
   if (summary.done) return "All published";
-  if (summary.nextReason === "failed") return "A publish failed — retry or skip it";
+  const attention = summary.attention
+    ? ` · ${summary.attention} need${summary.attention === 1 ? "s" : ""} attention`
+    : "";
   const next = summary.next;
-  if (!next) return "";
-  if (summary.nextReason === "not_written") return `Next: “${next.keyword}” is not written yet`;
-  if (summary.nextReason === "needs_approval") return `Next: ${formatDay(next.publish_on)}, waiting for your approval`;
-  return `Next: ${formatDay(next.publish_on)}`;
+  if (!next) return attention.slice(3);
+  if (summary.nextReason === "failed" || summary.nextReason === "not_written") {
+    return `Nothing ready to publish${attention}`;
+  }
+  if (summary.nextReason === "publishing") return `Publishing “${next.keyword}”…${attention}`;
+  if (summary.nextReason === "needs_approval") {
+    return `Next: ${formatDay(next.publish_on)}, waiting for your approval${attention}`;
+  }
+  return `Next: ${formatDay(next.publish_on)}${attention}`;
 }
 
 function ItemRow({ item, schedule, today, companyId, writing, busy, onAction, isNext }) {
@@ -308,23 +407,23 @@ function ItemRow({ item, schedule, today, companyId, writing, busy, onAction, is
         <p className="mt-1 text-xs text-muted-foreground">{writing.message}</p>
       ) : null}
       {item.status === "to_write" && item.last_error && !isWriting ? (
-        <p className="mt-1 text-xs text-destructive">{item.last_error}</p>
+        <p className="mt-1 text-xs text-destructive">{friendlyError(item.last_error.replace(/^Writing failed:\s*/, ""))}</p>
       ) : null}
       {item.status === "failed" ? (
         <p className="mt-1 text-xs text-destructive">
-          Failed after {item.attempts} attempt{item.attempts === 1 ? "" : "s"}: {item.last_error}
+          Failed after {item.attempts} attempt{item.attempts === 1 ? "" : "s"}. {friendlyError(item.last_error)}
         </p>
       ) : null}
       {retrying ? (
         <p className="mt-1 text-xs text-amber-800">
-          Attempt {item.attempts} of {MAX_ATTEMPTS} failed: {item.last_error} It retries on the next daily run.
+          Attempt {item.attempts} of {MAX_ATTEMPTS} failed. {friendlyError(item.last_error)} It retries on the next daily run.
         </p>
       ) : null}
       {notes.length > 0 ? (
         <ul className="mt-1 space-y-0.5">
           {notes.map((note, i) => (
             <li key={i} className="text-xs text-amber-800">
-              Review: {note.message}
+              {note.kind === "late" ? note.message : `Review: ${note.message}`}
             </li>
           ))}
         </ul>
@@ -340,9 +439,9 @@ function ItemRow({ item, schedule, today, companyId, writing, busy, onAction, is
             Review draft
           </Link>
         ) : null}
-        {open && (item.status === "scheduled" || item.status === "failed") ? (
+        {open && (item.status === "scheduled" || item.status === "failed" || (item.status === "publishing" && label !== "Publishing")) ? (
           <button type="button" className={linkClass} disabled={busy} onClick={() => act("publish_now")}>
-            {item.status === "failed" ? "Retry now" : "Publish now"}
+            {item.status === "scheduled" ? "Publish now" : "Retry now"}
           </button>
         ) : null}
         {open && item.status === "scheduled" && normalizeSettings(schedule.settings).approval === "approve" && !item.approved_at ? (
@@ -399,7 +498,7 @@ function ScheduleCard({ schedule, companyId, writing, busy, onAction, onResumeWr
   const writingHere = writing?.scheduleId === schedule.id;
   const next = summary.next;
   const canPublishNext =
-    isOpen && next && next.status === "scheduled" && Boolean(next.generated_article_id) && summary.nextReason !== "failed";
+    isOpen && next && next.status === "scheduled" && Boolean(next.generated_article_id);
 
   return (
     <div className="space-y-3 rounded-lg border border-border bg-card px-4 py-4">
@@ -501,12 +600,56 @@ function ScheduleCard({ schedule, companyId, writing, busy, onAction, onResumeWr
   );
 }
 
+/** "Daily publisher: last ran …", with a warning when it has gone quiet. */
+function CronStatus({ run }) {
+  if (!run || run.unavailable) {
+    return run?.unavailable ? null : (
+      <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        The daily publisher has not reported a run yet. If an article is Late, check that CRON_SECRET is
+        set in Vercel (Production) and the app was redeployed after adding it.
+      </p>
+    );
+  }
+  const ranAt = new Date(run.ran_at);
+  const hours = (Date.now() - ranAt.getTime()) / 3600000;
+  const when = ranAt.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  const d = run.detail || {};
+  const outcome = run.ok
+    ? `published ${d.published ?? 0}${d.failed ? `, ${d.failed} failed` : ""}`
+    : `error: ${d.error || "unknown"}`;
+  const stale = hours > 26;
+  return (
+    <p
+      className={`rounded-md border px-3 py-2 text-xs ${
+        stale || !run.ok ? "border-amber-300 bg-amber-50 text-amber-800" : "border-border text-muted-foreground"
+      }`}
+    >
+      Daily publisher last ran {when}: {outcome}.
+      {stale ? " It should run every morning (about 8–9am Pacific); it has missed at least one day. Check CRON_SECRET and Cron Jobs in Vercel." : ""}
+    </p>
+  );
+}
+
 /** Every pillar with a schedule: progress, next date, and the controls. */
 export function SchedulePanel({ schedules, companyId, writing, busy, error, onAction, onResumeWriting, onAdd }) {
-  if (!schedules?.length) return null;
+  const [cronRun, setCronRun] = useState(undefined);
+  const hasSchedules = Boolean(schedules?.length);
+  useEffect(() => {
+    if (!hasSchedules) return undefined;
+    let cancelled = false;
+    loadLastCronRun()
+      .then((run) => !cancelled && setCronRun(run))
+      .catch(() => !cancelled && setCronRun({ unavailable: true }));
+    return () => {
+      cancelled = true;
+    };
+  }, [hasSchedules, schedules]);
+  if (!hasSchedules) return null;
+  const anyOpen = schedules.some((s) => OPEN_SCHEDULE_STATUSES.has(s.status));
   return (
     <section className="space-y-3">
       <h2 className="text-sm font-medium text-foreground">Scheduled publishing</h2>
+      {anyOpen && cronRun !== undefined ? <CronStatus run={cronRun} /> : null}
       {error ? (
         <p className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
       ) : null}

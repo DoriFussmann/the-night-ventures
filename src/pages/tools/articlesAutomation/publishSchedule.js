@@ -263,3 +263,19 @@ export async function publishItemNow(itemId) {
   if (!res.ok && !body?.error) throw new Error(`Publish failed (${res.status})`);
   return body;
 }
+
+/**
+ * Latest daily-publisher run, or null when none is recorded (or the
+ * cron_runs table does not exist yet — migration 074).
+ */
+export async function loadLastCronRun(job = "publish-schedule") {
+  const { data, error } = await supabase
+    .from("cron_runs")
+    .select("ran_at, ok, detail")
+    .eq("job", job)
+    .order("ran_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) return { unavailable: true };
+  return data || null;
+}
