@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { loadPlaybook } from "./aeoPlaybook/api";
-import { createBriefs, loadBriefs, nextMonday } from "./aeoGeneration/briefs";
+import { createBriefs, loadBriefs, nextFreeBatchLabel } from "./aeoGeneration/briefs";
 import BriefCard from "./aeoGeneration/BriefCard";
 import { rankNextUp } from "../../../lib/aeo/nextUp.js";
 
@@ -81,7 +81,7 @@ export default function AeoGeneration() {
     setCreating(true);
     setError("");
     try {
-      const label = mode === "batch" ? `Week of ${nextMonday()}` : "";
+      const label = mode === "batch" ? nextFreeBatchLabel(briefs) : "";
       await createBriefs(companyId, suggested, data, { batchLabel: label });
       await reload();
     } catch (err) {
@@ -146,7 +146,7 @@ export default function AeoGeneration() {
                 </div>
                 <Button type="button" size="sm" disabled={creating || !suggested.length} onClick={onCreate}>
                   {creating ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Plus className="mr-1.5 h-3.5 w-3.5" />}
-                  {mode === "batch" ? `Create ${suggested.length} briefs` : "Create brief"}
+                  {mode === "batch" ? `Create ${suggested.length} briefs · ${nextFreeBatchLabel(briefs)}` : "Create brief"}
                 </Button>
               </div>
             </div>
