@@ -1,25 +1,42 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { CalendarCheck, Check, ExternalLink, Loader2, RotateCcw, Undo2 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import { BookOpen, Check, ExternalLink, RotateCcw, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { heroPreviewUrl } from "../articleGeneration/heroImageStorage";
 
+function cleanBody(text) {
+  return String(text || "").replace(/<!--[\s\S]*?-->/g, "");
+}
+
 function wordCount(text) {
-  return String(text || "")
-    .replace(/<!--[\s\S]*?-->/g, " ")
-    .split(/\s+/)
-    .filter(Boolean).length;
+  return cleanBody(text).split(/\s+/).filter(Boolean).length;
 }
 
-function formatDay(day) {
+export function formatDay(day) {
   if (!day) return "";
-  return new Date(`${day}T12:00:00Z`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  return new Date(`${day}T12:00:00Z`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
 }
 
-/** Review of a written draft: read it, open it to edit, approve, schedule. */
-export default function DraftPanel({ companyId, brief, draft, busy, onApprove, onUnapprove, onRedo, onScheduleOne }) {
+const md = {
+  h1: (p) => <h1 className="mb-3 mt-6 text-xl font-semibold text-foreground" {...p} />,
+  h2: (p) => <h2 className="mb-2 mt-6 text-lg font-semibold text-foreground" {...p} />,
+  h3: (p) => <h3 className="mb-2 mt-4 text-base font-semibold text-foreground" {...p} />,
+  p: (p) => <p className="mb-3 leading-relaxed" {...p} />,
+  ul: (p) => <ul className="mb-3 list-disc space-y-1 pl-5" {...p} />,
+  ol: (p) => <ol className="mb-3 list-decimal space-y-1 pl-5" {...p} />,
+  a: (p) => <a className="text-sky-700 underline" target="_blank" rel="noreferrer" {...p} />,
+  blockquote: (p) => <blockquote className="mb-3 border-l-2 border-border pl-3 italic" {...p} />,
+  table: (p) => <table className="mb-3 w-full border-collapse text-xs" {...p} />,
+  th: (p) => <th className="border border-border px-2 py-1 text-left" {...p} />,
+  td: (p) => <td className="border border-border px-2 py-1" {...p} />,
+};
+
+/** Draft summary on the card, with the full review in a modal. */
+export default function DraftPanel({ companyId, brief, draft, busy, onApprove, onUnapprove, onRedo }) {
   const [heroUrl, setHeroUrl] = useState("");
-  const [showBody, setShowBody] = useState(false);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -36,20 +53,51 @@ export default function DraftPanel({ companyId, brief, draft, busy, onApprove, o
   if (!draft) {
     return <p className="text-xs text-muted-foreground">The draft for this brief was not found in the Articles library.</p>;
   }
-  const words = wordCount(draft.body);
   const noHero = !draft.hero_storage_path;
+  const words = wordCount(draft.body);
+
+  const actions = (
+    <>
+      <Button asChild variant="outline" size="sm">
+        <Link to={`/company/${companyId}/articles?slug=${encodeURIComponent(draft.slug)}`}>
+          <ExternalLink className="mr-1 h-3.5 w-3.5" /> Edit in Articles
+        </Link>
+      </Button>
+      {brief.status === "generated" && (
+        <>
+          <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => { setOpen(false); onRedo(); }}>
+            <RotateCcw className="mr-1 h-3.5 w-3.5" /> Rewrite from brief
+          </Button>
+          <Button type="button" size="sm" disabled={busy || noHero} onClick={() => { setOpen(false); onApprove(); }}>
+            <Check className="mr-1 h-3.5 w-3.5" /> Approve
+          </Button>
+        </>
+      )}
+      {brief.status === "approved" && (
+        <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => { setOpen(false); onUnapprove(); }}>
+          <Undo2 className="mr-1 h-3.5 w-3.5" /> Unapprove
+        </Button>
+      )}
+    </>
+  );
 
   return (
     <div className="space-y-3">
       <div className="flex gap-3">
         {heroUrl ? <img src={heroUrl} alt="" className="h-20 w-36 shrink-0 rounded object-cover" /> : null}
-        <div className="min-w-0 space-y-1">
+        <div className="min-w-0 flex-1 space-y-1">
           <p className="text-sm font-medium text-foreground">{draft.title}</p>
           <p className="text-xs text-muted-foreground">{draft.description}</p>
           <p className="text-[11px] text-muted-foreground">
             /articles/{draft.slug}/ · {words.toLocaleString()} words
+            {brief.status === "approved" ? " · approved, waiting to be scheduled" : ""}
+            {brief.status === "scheduled" ? ` · publishes ${formatDay(brief.publish_on)}` : ""}
+            {brief.status === "published" ? " · live" : ""}
           </p>
         </div>
+        <Button type="button" size="sm" variant={brief.status === "generated" ? "default" : "outline"} onClick={() => setOpen(true)}>
+          <BookOpen className="mr-1 h-3.5 w-3.5" /> {brief.status === "generated" ? "Review" : "Read"}
+        </Button>
       </div>
 
       {noHero && (
@@ -58,56 +106,22 @@ export default function DraftPanel({ companyId, brief, draft, busy, onApprove, o
         </p>
       )}
 
-      <div>
-        <button type="button" className="text-xs text-muted-foreground underline" onClick={() => setShowBody((v) => !v)}>
-          {showBody ? "Hide the article" : "Read the article here"}
-        </button>
-        {showBody && (
-          <pre className="mt-2 max-h-[28rem] overflow-auto whitespace-pre-wrap rounded-md bg-muted/40 p-3 font-sans text-xs leading-relaxed text-foreground">
-            {draft.body}
-          </pre>
-        )}
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
-        <div className="flex flex-wrap gap-2">
-          <Button asChild variant="outline" size="sm">
-            <Link to={`/company/${companyId}/articles?slug=${encodeURIComponent(draft.slug)}`}>
-              <ExternalLink className="mr-1 h-3.5 w-3.5" /> Edit in Articles
-            </Link>
-          </Button>
-          {brief.status === "generated" && (
-            <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={onRedo}>
-              <RotateCcw className="mr-1 h-3.5 w-3.5" /> Rewrite from brief
-            </Button>
-          )}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {brief.status === "generated" && (
-            <Button type="button" size="sm" disabled={busy || noHero} onClick={onApprove}>
-              <Check className="mr-1 h-3.5 w-3.5" /> Approve
-            </Button>
-          )}
-          {brief.status === "approved" && (
-            <>
-              <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={onUnapprove}>
-                <Undo2 className="mr-1 h-3.5 w-3.5" /> Unapprove
-              </Button>
-              {!brief.batch_label && (
-                <Button type="button" size="sm" disabled={busy} onClick={onScheduleOne}>
-                  {busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <CalendarCheck className="mr-1 h-3.5 w-3.5" />}
-                  Schedule (next workday)
-                </Button>
-              )}
-              {brief.batch_label && <span className="text-[11px] text-muted-foreground">Approved · schedule the week above</span>}
-            </>
-          )}
-          {brief.status === "scheduled" && (
-            <span className="text-xs text-foreground">Publishes {formatDay(brief.publish_on)}</span>
-          )}
-          {brief.status === "published" && <span className="text-xs text-emerald-700">Live</span>}
-        </div>
-      </div>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="flex max-h-[90vh] max-w-3xl flex-col gap-0 p-0">
+          <DialogHeader className="border-b border-border px-6 py-4">
+            <DialogTitle className="text-base">{draft.title}</DialogTitle>
+            <p className="text-xs text-muted-foreground">
+              /articles/{draft.slug}/ · {words.toLocaleString()} words · keyword: {brief.primary_keyword}
+            </p>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto px-6 py-4 text-sm text-foreground">
+            {heroUrl ? <img src={heroUrl} alt="" className="mb-4 w-full rounded object-cover" /> : null}
+            <p className="mb-4 text-muted-foreground">{draft.description}</p>
+            <ReactMarkdown components={md}>{cleanBody(draft.body)}</ReactMarkdown>
+          </div>
+          <DialogFooter className="flex flex-wrap gap-2 border-t border-border px-6 py-3 sm:justify-between">{actions}</DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

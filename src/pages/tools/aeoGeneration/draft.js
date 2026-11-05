@@ -210,12 +210,22 @@ async function loadOpenSchedules(companyId) {
  * schedule for its pillar, already approved (approval happened here), and the
  * daily publisher puts it live on its day.
  */
-export async function scheduleBriefs({ companyId, briefs, groupsById, pillarsById, draftsById, batchLabel = "" }) {
+/** Days other schedules of this site already publish on (one article per day). */
+export async function loadTakenDays(companyId) {
+  const { items } = await loadOpenSchedules(companyId);
+  return takenDays(items);
+}
+
+export function todayHere() {
+  return todayIn(browserTimezone());
+}
+
+export async function scheduleBriefs({ companyId, briefs, groupsById, pillarsById, draftsById, start = "" }) {
   if (!briefs.length) return [];
   const timezone = browserTimezone();
   const today = todayIn(timezone);
   const { schedules, items } = await loadOpenSchedules(companyId);
-  const days = planPublishDays(briefs.length, { today, batchLabel, taken: takenDays(items) });
+  const days = planPublishDays(briefs.length, { today, start, taken: takenDays(items) });
   const now = new Date().toISOString();
   const scheduleByPillar = new Map(schedules.map((s) => [s.pillar_slug, s]));
   const out = [];

@@ -1,14 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, CalendarCheck, Loader2, PenLine, Plus } from "lucide-react";
+import { ArrowLeft, Loader2, PenLine, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { loadPlaybook } from "./aeoPlaybook/api";
 import { createBriefs, loadBriefs, nextFreeBatchLabel } from "./aeoGeneration/briefs";
 import BriefCard from "./aeoGeneration/BriefCard";
+import SchedulePanel from "./aeoGeneration/SchedulePanel";
 import {
   approveBrief,
   generateDraft,
   loadDrafts,
+  loadTakenDays,
+  todayHere,
   loadWriterContext,
   resetToReady,
   scheduleBriefs,
@@ -33,6 +36,7 @@ export default function AeoGeneration() {
   const [busy, setBusy] = useState(false);
   const [genStatus, setGenStatus] = useState({});
   const [note, setNote] = useState("");
+  const [taken, setTaken] = useState([]);
 
   const reload = useCallback(async () => {
     if (!companyId) return;
@@ -46,6 +50,7 @@ export default function AeoGeneration() {
       setData(fresh);
       setBriefs(b);
       setDrafts(await loadDrafts(b.map((x) => x.generated_article_id).filter(Boolean)));
+      setTaken(await loadTakenDays(companyId).catch(() => []));
     } catch (err) {
       setError(
         /aeo_briefs|topic_name|primary_keyword/.test(err?.message || "")
@@ -154,7 +159,7 @@ export default function AeoGeneration() {
       setNote(problems.length ? `Done, with problems: ${problems.join(" ")}` : `Wrote ${list.length} draft${list.length === 1 ? "" : "s"}. Read and approve below.`);
     });
 
-  const schedule = (list, batchLabel) =>
+  const schedule = (list, start) =>
     run(async () => {
       const placed = await scheduleBriefs({
         companyId,
@@ -162,7 +167,7 @@ export default function AeoGeneration() {
         groupsById: lookups.groupById,
         pillarsById: lookups.pillarById,
         draftsById: drafts,
-        batchLabel,
+        start,
       });
       setNote(`Scheduled: ${placed.map((p) => `${p.day} · ${p.brief.title}`).join(" | ")}`);
     });
@@ -184,7 +189,7 @@ export default function AeoGeneration() {
         </h1>
         <p className="mt-0.5 max-w-3xl text-sm text-muted-foreground">
           What to write next, from the content map. Create briefs, add your key points and mark them ready; write the
-          drafts, read and approve them, then schedule the week: one article goes live per workday.
+          drafts, review and approve them, then pick a start day and schedule: one article goes live per workday.
         </p>
       </div>
 
@@ -250,6 +255,19 @@ export default function AeoGeneration() {
             )}
           </section>
 
+          <SchedulePanel
+            approved={openBriefs
+              .filter((b) => b.status === "approved")
+              .map((b) => {
+                const pillar = lookups.pillarById.get(lookups.groupById.get(b.group_id)?.pillar_id);
+                return { ...b, warn: pillar && !pillar.hub_path ? "topic page not built yet" : "" };
+              })}
+            today={todayHere()}
+            taken={taken}
+            busy={busy}
+            onSchedule={schedule}
+          />
+
           {[...batches.entries()].map(([label, list]) => (
             <section key={label} className="space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -265,21 +283,6 @@ export default function AeoGeneration() {
                     <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => writeDrafts(list.filter((b) => b.status === "ready"))}>
                       {busy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <PenLine className="mr-1.5 h-3.5 w-3.5" />}
                       Write {list.filter((b) => b.status === "ready").length} ready draft{list.filter((b) => b.status === "ready").length === 1 ? "" : "s"}
-                    </Button>
-                  )}
-                  {label !== "Single articles" && list.some((b) => b.status === "approved") && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={busy}
-                      onClick={() => {
-                        const approved = list.filter((b) => b.status === "approved");
-                        const waiting = list.filter((b) => !["approved", "scheduled", "published", "skipped"].includes(b.status)).length;
-                        if (waiting && !window.confirm(`${waiting} brief(s) in this week are not approved yet. Schedule the ${approved.length} approved now? The rest can follow later.`)) return;
-                        schedule(approved, label);
-                      }}
-                    >
-                      <CalendarCheck className="mr-1.5 h-3.5 w-3.5" /> Schedule {list.filter((b) => b.status === "approved").length} approved (one per workday)
                     </Button>
                   )}
                 </div>
@@ -310,7 +313,6 @@ export default function AeoGeneration() {
                           run(() => resetToReady(b, group));
                         }
                       }}
-                      onScheduleOne={() => schedule([b], "")}
                     />
                   );
                 })}
