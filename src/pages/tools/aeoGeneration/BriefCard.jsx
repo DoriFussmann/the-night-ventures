@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Check, Loader2, Sparkles, Trash2, X } from "lucide-react";
+import { Check, Loader2, PenLine, Sparkles, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,14 +12,21 @@ import {
   textToOutline,
   updateBrief,
 } from "./briefs";
+import DraftPanel from "./DraftPanel";
 
 const selectClass =
   "h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring";
+
+const REVIEW_STATUSES = new Set(["generated", "approved", "scheduled", "published"]);
 
 const STATUS_STYLE = {
   draft: "border-border bg-muted text-muted-foreground",
   ready: "border-emerald-300 bg-emerald-50 text-emerald-800",
   skipped: "border-border bg-muted text-muted-foreground line-through",
+  generated: "border-sky-300 bg-sky-50 text-sky-800",
+  approved: "border-emerald-400 bg-emerald-100 text-emerald-900",
+  scheduled: "border-violet-300 bg-violet-50 text-violet-800",
+  published: "border-emerald-500 bg-emerald-600 text-white",
 };
 
 function Field({ label, children, hint }) {
@@ -32,7 +39,23 @@ function Field({ label, children, hint }) {
   );
 }
 
-export default function BriefCard({ companyId, brief, group, pillar, prompts, personasById, onChanged, onError }) {
+export default function BriefCard({
+  companyId,
+  brief,
+  group,
+  pillar,
+  prompts,
+  personasById,
+  onChanged,
+  onError,
+  draft,
+  busy,
+  genStatus,
+  onGenerate,
+  onApprove,
+  onUnapprove,
+  onRedo,
+}) {
   const [title, setTitle] = useState(brief.title);
   const [keyword, setKeyword] = useState(brief.primary_keyword);
   const [angle, setAngle] = useState(brief.angle);
@@ -40,7 +63,7 @@ export default function BriefCard({ companyId, brief, group, pillar, prompts, pe
   const [keyPoints, setKeyPoints] = useState(brief.key_points);
   const [tool, setTool] = useState(brief.cta?.tool || "");
   const [suggesting, setSuggesting] = useState(false);
-  const [open, setOpen] = useState(brief.status === "draft");
+  const [open, setOpen] = useState(brief.status === "draft" || brief.status === "generated");
   const [cardError, setCardError] = useState("");
 
   const save = async (values) => {
@@ -108,7 +131,21 @@ export default function BriefCard({ companyId, brief, group, pillar, prompts, pe
         </span>
       </button>
 
-      {open && (
+      {open && REVIEW_STATUSES.has(brief.status) && (
+        <div className="border-t border-border p-3">
+          <DraftPanel
+            companyId={companyId}
+            brief={brief}
+            draft={draft}
+            busy={busy}
+            onApprove={onApprove}
+            onUnapprove={onUnapprove}
+            onRedo={onRedo}
+          />
+        </div>
+      )}
+
+      {open && !REVIEW_STATUSES.has(brief.status) && (
         <div className="space-y-3 border-t border-border p-3">
           <details className="rounded-md bg-muted/40 px-3 py-2 text-xs">
             <summary className="cursor-pointer text-muted-foreground">Prompts this article answers ({prompts.length})</summary>
@@ -237,9 +274,16 @@ export default function BriefCard({ companyId, brief, group, pillar, prompts, pe
               </Button>
             </div>
             {brief.status === "ready" ? (
-              <Button type="button" variant="outline" size="sm" onClick={() => save({ status: "draft" })}>
-                Back to draft
-              </Button>
+              <div className="flex items-center gap-2">
+                {genStatus && <span className="text-[11px] text-muted-foreground">{genStatus}</span>}
+                <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => save({ status: "draft" })}>
+                  Back to draft
+                </Button>
+                <Button type="button" size="sm" disabled={busy} onClick={onGenerate}>
+                  {genStatus ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <PenLine className="mr-1 h-3.5 w-3.5" />}
+                  Write draft
+                </Button>
+              </div>
             ) : (
               <div className="flex items-center gap-2">
                 {readyProblems.length > 0 && (

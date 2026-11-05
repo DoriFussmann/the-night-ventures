@@ -1,10 +1,23 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Loader2, Plus } from "lucide-react";
+import { ArrowLeft, Loader2, PenLine, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { loadPlaybook } from "./aeoPlaybook/api";
 import { createBriefs, loadBriefs, nextFreeBatchLabel } from "./aeoGeneration/briefs";
 import BriefCard from "./aeoGeneration/BriefCard";
+import SchedulePanel from "./aeoGeneration/SchedulePanel";
+import {
+  approveBrief,
+  generateDraft,
+  loadDrafts,
+  loadTakenDays,
+  todayHere,
+  loadWriterContext,
+  resetToReady,
+  scheduleBriefs,
+  syncPublished,
+  unapproveBrief,
+} from "./aeoGeneration/draft";
 import { rankNextUp } from "../../../lib/aeo/nextUp.js";
 
 const BATCH_SIZE = 5;
@@ -19,14 +32,25 @@ export default function AeoGeneration() {
   const [mode, setMode] = useState("batch");
   const [creating, setCreating] = useState(false);
   const [showAll, setShowAll] = useState(false);
+  const [drafts, setDrafts] = useState(new Map());
+  const [busy, setBusy] = useState(false);
+  const [genStatus, setGenStatus] = useState({});
+  const [note, setNote] = useState("");
+  const [taken, setTaken] = useState([]);
 
   const reload = useCallback(async () => {
     if (!companyId) return;
     setError("");
     try {
-      const [pb, b] = await Promise.all([loadPlaybook(companyId), loadBriefs(companyId)]);
-      setData(pb);
+      const [pb, first] = await Promise.all([loadPlaybook(companyId), loadBriefs(companyId)]);
+      const groupsById = new Map(pb.groups.map((g) => [g.id, g]));
+      const changed = await syncPublished(companyId, first, groupsById).catch(() => 0);
+      const b = changed ? await loadBriefs(companyId) : first;
+      const fresh = changed ? await loadPlaybook(companyId) : pb;
+      setData(fresh);
       setBriefs(b);
+      setDrafts(await loadDrafts(b.map((x) => x.generated_article_id).filter(Boolean)));
+      setTaken(await loadTakenDays(companyId).catch(() => []));
     } catch (err) {
       setError(
         /aeo_briefs|topic_name|primary_keyword/.test(err?.message || "")
@@ -91,6 +115,63 @@ export default function AeoGeneration() {
     }
   };
 
+  const run = async (fn) => {
+    setBusy(true);
+    setError("");
+    setNote("");
+    try {
+      await fn();
+    } catch (err) {
+      setError(err?.message || "Something went wrong");
+    } finally {
+      setBusy(false);
+      setGenStatus({});
+      await reload();
+    }
+  };
+
+  const writeDrafts = (list) =>
+    run(async () => {
+      const writer = { positioning: await loadWriterContext(companyId, data.playbook.brand_facts), brandFacts: data.playbook.brand_facts };
+      const context = [];
+      const problems = [];
+      for (let i = 0; i < list.length; i += 1) {
+        const brief = list[i];
+        const group = lookups.groupById.get(brief.group_id);
+        const label = list.length > 1 ? `${i + 1} of ${list.length}: ` : "";
+        try {
+          const res = await generateDraft({
+            companyId,
+            brief,
+            group,
+            pillar: lookups.pillarById.get(group?.pillar_id),
+            prompts: lookups.promptsByGroup.get(brief.group_id) || [],
+            writer,
+            batchContext: context,
+            onStatus: (msg) => setGenStatus((m) => ({ ...m, [brief.id]: `${label}${msg}` })),
+          });
+          context.push({ title: res.row.title, slug: res.row.slug, type: res.row.type, targetKeyword: res.row.target_keyword, oneLinerSummary: res.row.description });
+          if (res.heroMissing) problems.push(`"${res.row.title}": no hero image; add one in Articles.`);
+        } catch (err) {
+          problems.push(`"${brief.title}": ${err?.message || "writing failed"}`);
+        }
+      }
+      setNote(problems.length ? `Done, with problems: ${problems.join(" ")}` : `Wrote ${list.length} draft${list.length === 1 ? "" : "s"}. Read and approve below.`);
+    });
+
+  const schedule = (list, start) =>
+    run(async () => {
+      const placed = await scheduleBriefs({
+        companyId,
+        briefs: list,
+        groupsById: lookups.groupById,
+        pillarsById: lookups.pillarById,
+        draftsById: drafts,
+        start,
+      });
+      setNote(`Scheduled: ${placed.map((p) => `${p.day} · ${p.brief.title}`).join(" | ")}`);
+    });
+
   return (
     <div className="space-y-5">
       <div>
@@ -107,11 +188,12 @@ export default function AeoGeneration() {
           </span>
         </h1>
         <p className="mt-0.5 max-w-3xl text-sm text-muted-foreground">
-          What to write next, from the content map. Create a brief, add your key points, mark it ready. Drafting,
-          approval and publishing from a ready brief come in the next update.
+          What to write next, from the content map. Create briefs, add your key points and mark them ready; write the
+          drafts, review and approve them, then pick a start day and schedule: one article goes live per workday.
         </p>
       </div>
 
+      {note && <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-foreground">{note}</p>}
       {error && (
         <p className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
       )}
@@ -173,14 +255,38 @@ export default function AeoGeneration() {
             )}
           </section>
 
+          <SchedulePanel
+            approved={openBriefs
+              .filter((b) => b.status === "approved")
+              .map((b) => {
+                const pillar = lookups.pillarById.get(lookups.groupById.get(b.group_id)?.pillar_id);
+                return { ...b, warn: pillar && !pillar.hub_path ? "topic page not built yet" : "" };
+              })}
+            today={todayHere()}
+            taken={taken}
+            busy={busy}
+            onSchedule={schedule}
+          />
+
           {[...batches.entries()].map(([label, list]) => (
             <section key={label} className="space-y-2">
-              <h2 className="text-sm font-medium text-foreground">
-                {label}{" "}
-                <span className="text-xs font-normal text-muted-foreground">
-                  · {list.filter((b) => b.status === "ready").length}/{list.length} ready
-                </span>
-              </h2>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-sm font-medium text-foreground">
+                  {label}{" "}
+                  <span className="text-xs font-normal text-muted-foreground">
+                    · {list.filter((b) => b.status === "ready").length} ready · {list.filter((b) => b.status === "generated").length} to review ·{" "}
+                    {list.filter((b) => b.status === "approved").length} approved · {list.filter((b) => b.status === "scheduled").length} scheduled
+                  </span>
+                </h2>
+                <div className="flex gap-2">
+                  {list.some((b) => b.status === "ready") && (
+                    <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => writeDrafts(list.filter((b) => b.status === "ready"))}>
+                      {busy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <PenLine className="mr-1.5 h-3.5 w-3.5" />}
+                      Write {list.filter((b) => b.status === "ready").length} ready draft{list.filter((b) => b.status === "ready").length === 1 ? "" : "s"}
+                    </Button>
+                  )}
+                </div>
+              </div>
               <div className="space-y-2">
                 {list.map((b) => {
                   const group = lookups.groupById.get(b.group_id);
@@ -196,6 +302,17 @@ export default function AeoGeneration() {
                       personasById={lookups.personasById}
                       onChanged={reload}
                       onError={setError}
+                      draft={drafts.get(b.generated_article_id)}
+                      busy={busy}
+                      genStatus={genStatus[b.id]}
+                      onGenerate={() => writeDrafts([b])}
+                      onApprove={() => run(() => approveBrief(b))}
+                      onUnapprove={() => run(() => unapproveBrief(b))}
+                      onRedo={() => {
+                        if (window.confirm("Write this article again from the brief? The current draft stays in the Articles library.")) {
+                          run(() => resetToReady(b, group));
+                        }
+                      }}
                     />
                   );
                 })}
