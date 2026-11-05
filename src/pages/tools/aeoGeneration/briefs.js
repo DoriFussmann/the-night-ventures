@@ -57,6 +57,18 @@ export function nextMonday(date = new Date()) {
   return d.toISOString().slice(0, 10);
 }
 
+/** First Monday from next week on that no existing batch uses yet. */
+export function nextFreeBatchLabel(briefs, from = new Date()) {
+  const used = new Set(briefs.map((b) => b.batch_label).filter(Boolean));
+  let monday = nextMonday(from);
+  for (let i = 0; i < 104 && used.has(`Week of ${monday}`); i += 1) {
+    const d = new Date(`${monday}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + 7);
+    monday = d.toISOString().slice(0, 10);
+  }
+  return `Week of ${monday}`;
+}
+
 export async function createBriefs(companyId, groupItems, data, { batchLabel = "" } = {}) {
   const rows = groupItems.map(({ group }) => {
     const prompts = data.prompts.filter((p) => p.group_id === group.id);
