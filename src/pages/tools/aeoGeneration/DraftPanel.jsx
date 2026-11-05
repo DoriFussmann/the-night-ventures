@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
-import { BookOpen, Check, ExternalLink, RotateCcw, Undo2 } from "lucide-react";
+import { BookOpen, Check, ExternalLink, ImageIcon, Loader2, RotateCcw, Undo2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { heroPreviewUrl } from "../articleGeneration/heroImageStorage";
@@ -34,9 +35,25 @@ const md = {
 };
 
 /** Draft summary on the card, with the full review in a modal. */
-export default function DraftPanel({ companyId, brief, draft, busy, onApprove, onUnapprove, onRedo }) {
+export default function DraftPanel({ companyId, brief, draft, busy, onApprove, onUnapprove, onRedo, onNewImage }) {
   const [heroUrl, setHeroUrl] = useState("");
   const [open, setOpen] = useState(false);
+  const [imgNote, setImgNote] = useState("");
+  const [imgBusy, setImgBusy] = useState(false);
+  const [imgError, setImgError] = useState("");
+
+  const newImage = async () => {
+    setImgBusy(true);
+    setImgError("");
+    try {
+      await onNewImage(imgNote.trim());
+      setImgNote("");
+    } catch (err) {
+      setImgError(err?.message || "Image failed");
+    } finally {
+      setImgBusy(false);
+    }
+  };
 
   useEffect(() => {
     let alive = true;
@@ -83,7 +100,7 @@ export default function DraftPanel({ companyId, brief, draft, busy, onApprove, o
 
   return (
     <div className="space-y-3">
-      <div className="flex gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row">
         {heroUrl ? <img src={heroUrl} alt="" className="h-20 w-36 shrink-0 rounded object-cover" /> : null}
         <div className="min-w-0 flex-1 space-y-1">
           <p className="text-sm font-medium text-foreground">{draft.title}</p>
@@ -115,7 +132,23 @@ export default function DraftPanel({ companyId, brief, draft, busy, onApprove, o
             </p>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto px-6 py-4 text-sm text-foreground">
-            {heroUrl ? <img src={heroUrl} alt="" className="mb-4 w-full rounded object-cover" /> : null}
+            {heroUrl ? <img src={heroUrl} alt="" className={`mb-2 w-full rounded object-cover ${imgBusy ? "opacity-40" : ""}`} /> : null}
+            {brief.status !== "scheduled" && brief.status !== "published" && (
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                <Input
+                  className="h-8 flex-1 text-xs"
+                  placeholder="Optional direction, e.g. 'a printed investor list and a red pen, morning light'"
+                  value={imgNote}
+                  disabled={imgBusy}
+                  onChange={(e) => setImgNote(e.target.value)}
+                />
+                <Button type="button" variant="outline" size="sm" disabled={imgBusy || busy} onClick={newImage}>
+                  {imgBusy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="mr-1 h-3.5 w-3.5" />}
+                  {imgBusy ? "Making a new image… (about a minute)" : "New image"}
+                </Button>
+                {imgError && <span className="w-full text-xs text-destructive">{imgError}</span>}
+              </div>
+            )}
             <p className="mb-4 text-muted-foreground">{draft.description}</p>
             <ReactMarkdown components={md}>{cleanBody(draft.body)}</ReactMarkdown>
           </div>

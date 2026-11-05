@@ -1,5 +1,9 @@
 import { supabase } from "@/lib/supabase";
-import { generateHeroForArticle, generateOneArticle, loadCompanyPositioning } from "../articleGeneration/singleArticle";
+import { generateOneArticle, loadCompanyPositioning } from "../articleGeneration/singleArticle";
+import { generateOneImage, imageSrcFromResult } from "../aiImage/generateImageClient";
+import { cropImageTo16x9 } from "../aiImage/cropImage";
+import { finishHeroImage } from "../articleGeneration/heroImageStorage";
+import { jsonAuthHeaders } from "@/lib/authHeaders";
 import { saveGeneratedArticles } from "../articleGeneration/saveGeneratedArticles";
 import { groupStats } from "../../../../lib/aeo/nextUp.js";
 import { aeoScheduleSlug, ctaAngleFor, planPublishDays, searchIntentFor } from "../../../../lib/aeo/schedule.js";
@@ -27,6 +31,58 @@ async function patchGroup(id, values) {
     .update({ ...values, updated_at: new Date().toISOString() })
     .eq("id", id);
   fail(error, "Prompt group");
+}
+
+/**
+ * Hero image: Claude writes a concrete scene for this article in the
+ * company's image style, then the image model renders it (high quality).
+ */
+export async function makeHero({ companyId, slug, title, description, angle, outline, imageStyle, note = "" }) {
+  const res = await fetch("/api/aeo-hero-scene", {
+    method: "POST",
+    headers: await jsonAuthHeaders(),
+    body: JSON.stringify({
+      title,
+      description,
+      angle,
+      headings: (outline || []).map((s) => s.heading).filter(Boolean),
+      imageStyle,
+      note,
+    }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || !body.scene) throw new Error(body.error || `Image scene failed (${res.status})`);
+  const raw = await generateOneImage({ prompt: body.scene, size: "1536x1024", quality: "high" });
+  const src = imageSrcFromResult(raw);
+  if (!src) throw new Error("No image returned");
+  const cropped = await cropImageTo16x9(src);
+  const finished = await finishHeroImage({ companyId, slug, cropped });
+  if (!finished.storagePath) throw new Error(finished.storageError || "The image was not saved");
+  return { storagePath: finished.storagePath, scene: body.scene };
+}
+
+/** Replace a draft's hero image, optionally with a direction note. */
+export async function newHeroForDraft({ companyId, brief, draft, imageStyle, note }) {
+  const hero = await makeHero({
+    companyId,
+    slug: draft.slug,
+    title: draft.title,
+    description: draft.description,
+    angle: brief.angle,
+    outline: brief.outline,
+    imageStyle,
+    note,
+  });
+  const { error } = await supabase
+    .from("generated_articles")
+    .update({
+      hero_storage_path: hero.storagePath,
+      hero_source: { source: "openai", sourceId: null, attribution: null, scene: hero.scene, note: note || null },
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", draft.id);
+  fail(error, "Draft");
+  return hero;
 }
 
 /** Company positioning for the writer, with the AEO Brand Facts added. */
@@ -124,11 +180,14 @@ export async function generateDraft({ companyId, brief, group, pillar, prompts, 
   onStatus?.("Finding a hero image…");
   let hero = null;
   try {
-    hero = await generateHeroForArticle({
+    hero = await makeHero({
       companyId,
-      article: spec,
-      frontmatter: data.frontmatter,
-      styleContext: writer.positioning.imageryContext || "",
+      slug: data.frontmatter.slug,
+      title: data.frontmatter.title,
+      description: data.frontmatter.description,
+      angle: brief.angle,
+      outline: brief.outline,
+      imageStyle: writer.brandFacts?.image_style || "",
     });
   } catch (err) {
     console.warn("Hero image failed:", err);
@@ -148,7 +207,7 @@ export async function generateDraft({ companyId, brief, group, pillar, prompts, 
         body: data.body,
         whereThingsStandSources: data.whereThingsStandSources,
         heroStoragePath: hero?.storagePath || "",
-        heroSource: hero?.meta ? { source: hero.meta.source, sourceId: hero.meta.sourceId, attribution: hero.meta.attribution } : null,
+        heroSource: hero ? { source: "openai", sourceId: null, attribution: null, scene: hero.scene } : null,
       },
     ],
   });

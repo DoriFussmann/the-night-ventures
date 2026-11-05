@@ -19,11 +19,11 @@ export function imageSrcFromResult(result) {
   return "";
 }
 
-export async function generateOneImage({ prompt, size, styleContext }) {
+export async function generateOneImage({ prompt, size, styleContext, quality }) {
   const res = await fetch("/api/generate-image", {
     method: "POST",
     headers: await jsonAuthHeaders(),
-    body: JSON.stringify({ prompt, size, styleContext }),
+    body: JSON.stringify({ prompt, size, styleContext, ...(quality ? { quality } : {}) }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {

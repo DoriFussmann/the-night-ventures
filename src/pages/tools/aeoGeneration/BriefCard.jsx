@@ -55,6 +55,7 @@ export default function BriefCard({
   onApprove,
   onUnapprove,
   onRedo,
+  onNewImage,
 }) {
   const [title, setTitle] = useState(brief.title);
   const [keyword, setKeyword] = useState(brief.primary_keyword);
@@ -141,6 +142,7 @@ export default function BriefCard({
             onApprove={onApprove}
             onUnapprove={onUnapprove}
             onRedo={onRedo}
+            onNewImage={onNewImage}
           />
         </div>
       )}
