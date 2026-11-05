@@ -25,6 +25,29 @@ function groupStats(prompts, personasById) {
   return { count: prompts.length, dominant, impressions, best, personas: [...personaCodes].sort().join(", ") };
 }
 
+function TopicNameInput({ pillar, onChanged, onError }) {
+  const [value, setValue] = useState(pillar.topic_name || "");
+  const save = async () => {
+    if (value.trim() === (pillar.topic_name || "")) return;
+    try {
+      await updateRow("aeo_pillars", pillar.id, { topic_name: value.trim() });
+      onChanged?.();
+    } catch (err) {
+      onError?.(err?.message || "Save failed");
+    }
+  };
+  return (
+    <Input
+      className="h-7 w-52 text-xs"
+      value={value}
+      placeholder="Site topic name (exact)"
+      title="Must match the topic name on the live site exactly, or new articles drop out of the hub page"
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={save}
+    />
+  );
+}
+
 function GroupCard({ group, stats, pillars, onChanged, onError }) {
   const [name, setName] = useState(group.name);
   const [slug, setSlug] = useState(group.live_slug);
@@ -146,7 +169,8 @@ export default function ContentMapTab({ companyId, data, onChanged }) {
                 {pillar.name}
                 {pillar.is_new ? <span className="ml-2 text-[10px] uppercase tracking-wider text-emerald-700">New pillar</span> : null}
               </h2>
-              <span className="text-xs text-muted-foreground">
+              <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                <TopicNameInput pillar={pillar} onChanged={onChanged} onError={setError} />
                 {pillar.hub_path || "no hub page yet"}
                 {pillar.pillar_article_slug ? ` · pillar article: ${pillar.pillar_article_slug}` : ""} · {list.length} groups
               </span>

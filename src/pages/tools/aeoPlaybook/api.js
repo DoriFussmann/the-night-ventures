@@ -155,6 +155,7 @@ export async function importPlaybook(companyId, file, onProgress = () => {}) {
   const pillarRows = (file.pillars || []).map((p, i) => ({
     code: String(p.code), name: p.name || "", hub_path: p.hub_path || "",
     pillar_article_slug: p.pillar_article_slug || "", is_new: Boolean(p.is_new), sort: p.sort ?? i,
+    ...(p.topic_name !== undefined ? { topic_name: String(p.topic_name || "") } : {}),
   }));
   const pillarIds = new Map((await upsertMany("aeo_pillars", pillarRows)).map((r) => [r.code, r.id]));
   counts.pillars = pillarIds.size;
@@ -165,6 +166,7 @@ export async function importPlaybook(companyId, file, onProgress = () => {}) {
     page_type: PAGE_TYPES.includes(g.page_type) ? g.page_type : "supporting",
     live_slug: g.live_slug || "", status: GROUP_STATUSES.includes(g.status) ? g.status : "new",
     notes: g.notes || "", sort: g.sort ?? i,
+    ...(g.primary_keyword !== undefined ? { primary_keyword: String(g.primary_keyword || "") } : {}),
   }));
   const groupIds = new Map((await upsertMany("aeo_prompt_groups", groupRows)).map((r) => [r.code, r.id]));
   counts.groups = groupIds.size;
