@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
 import { supabase } from "@/lib/supabase";
-import {
+import { Compass,
   Database,
   Palette,
   LayoutTemplate,
@@ -45,6 +45,7 @@ const STATUS_STYLES = {
   Partial: "text-amber-700/80 bg-amber-500/10",
   Verify: "text-slate-500 bg-slate-500/10",
   "To Build": "text-violet-700/70 bg-violet-500/10",
+  New: "text-sky-700/80 bg-sky-500/10",
 };
 
 function StatusTag({ status }) {
@@ -485,6 +486,14 @@ export default function AppSidebar({ user }) {
           <>
             <div className="space-y-1.5 pt-1">
               <NavItem item={companyDataItem} />
+              <NavItem
+                item={{
+                  label: "AEO Playbook",
+                  path: `/company/${activeCompanyId}/aeo-playbook`,
+                  icon: Compass,
+                  status: "New",
+                }}
+              />
             </div>
 
             <SectionRule />
