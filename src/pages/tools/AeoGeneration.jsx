@@ -62,7 +62,15 @@ export default function AeoGeneration() {
   }, [data]);
 
   const suggested = ranked.slice(0, mode === "batch" ? BATCH_SIZE : 1);
-  const openBriefs = briefs.filter((b) => !DONE.has(b.status));
+  // Stable order: briefs in one batch share created_at, so tie-break on the
+  // group code; otherwise cards swap places on every save.
+  const openBriefs = briefs
+    .filter((b) => !DONE.has(b.status))
+    .sort(
+      (a, b) =>
+        String(a.created_at).localeCompare(String(b.created_at)) ||
+        String(lookups?.groupById.get(a.group_id)?.code || "").localeCompare(String(lookups?.groupById.get(b.group_id)?.code || ""))
+    );
   const batches = openBriefs.reduce((m, b) => {
     const key = b.batch_label || "Single articles";
     m.set(key, [...(m.get(key) || []), b]);
