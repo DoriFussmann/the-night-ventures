@@ -1002,14 +1002,17 @@ export const EDITOR_POINTS_LABEL = 'Editor points'
 
 export function editorPointsErrors(expertInput, coverage, body) {
   if (!String(expertInput || '').trim()) return []
+  // Compare headings on letters and digits only: the writer often varies
+  // punctuation (a trailing "?", a dash) between the body and the coverage list.
+  const loose = (value) => headingKey(value).replace(/[^a-z0-9]+/g, '')
   const h2 = String(body || '')
     .split('\n')
     .filter((line) => /^##\s/.test(line))
-    .map(headingKey)
+    .map(loose)
   const entry = (Array.isArray(coverage) ? coverage : []).find(
     (c) => headingKey(c?.keyMessage) === EDITOR_POINTS_LABEL.toLowerCase()
   )
-  if (entry && h2.slice(0, 2).includes(headingKey(entry.heading))) return []
+  if (entry && h2.slice(0, 3).includes(loose(entry.heading))) return []
   return [
     `Editor points: develop the editor's points (EXPERT INPUT) as the lead argument under the first or second H2 of the body, and add { "keyMessage": "${EDITOR_POINTS_LABEL}", "heading": "<that exact H2>" } as the LAST entry of keyMessageCoverage.`,
   ]
