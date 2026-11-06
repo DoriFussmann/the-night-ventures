@@ -214,11 +214,11 @@ export default function BriefCard({
             />
           </div>
 
-          <Field label="Your key points" hint="Your expert input: what you'd tell a founder. The writer leads with these.">
+          <Field label="Your key points" hint="Your expert input: what you'd tell a client. The writer leads with these.">
             <Textarea
               rows={5}
               value={keyPoints}
-              placeholder="e.g. Most founders send too few emails per investor. We see replies after the second follow-up…"
+              placeholder="e.g. A first-hand observation from client work that only you could write…"
               onChange={(e) => setKeyPoints(e.target.value)}
               onBlur={() => saveIfChanged("key_points", keyPoints, brief.key_points)}
             />
