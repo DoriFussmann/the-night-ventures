@@ -214,10 +214,12 @@ export default function CoreVersion() {
     setApplyErr('')
     try {
       const res = await applyCoreVersionUpdate({ ...destination, companyId })
-      if (res.ok) {
+      if (res.ok && res.merged) {
         setApplyMsg(
-          `Updated to v${res.updatedTo} (was v${res.previous}). Merged as ${String(res.mergeCommitSha || '').slice(0, 7)}. The site will rebuild on its own.`
+          `Updated to v${res.updatedTo} (was v${res.previous}). The preview build passed and the update is merged (${String(res.mergeCommitSha || '').slice(0, 7)}). The live site is rebuilding now.`
         )
+      } else if (res.ok) {
+        setApplyErr(`Not merged yet: open the pull request to finish. ${res.pullRequestUrl || ''}`.trim())
       } else {
         setApplyErr(res.error || res.reason || 'Nothing to update')
       }
@@ -316,7 +318,7 @@ export default function CoreVersion() {
                   >
                     {applying ? (
                       <>
-                        <Loader2 className="h-4 w-4 animate-spin mr-2" /> Updating…
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" /> Updating — waiting for the preview build (up to 4 min)…
                       </>
                     ) : (
                       <>Update to v{status.latest}</>
