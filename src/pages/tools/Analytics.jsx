@@ -121,20 +121,20 @@ export default function Analytics() {
             <div className="space-y-6">
               <Scorecard summary={summary} />
 
-              <Section title="Trend" description="Each source is shown through its latest complete day.">
+              <Section title="Trends" description="Each source is shown through its latest complete day.">
                 <TrendCharts summary={summary} />
               </Section>
 
-              <Section title="Sources" description="Where visitors come from (GA4).">
-                <SourcesSection traffic={summary.traffic} />
-              </Section>
-
-              <Section title="Pages" description="Top, winning and losing pages vs the previous period.">
-                <PagesSection key={`${companyId}-${days}`} pages={summary.pages} />
+              <Section title="Sources over time" description="Where visitors come from and how engaged they are (GA4).">
+                <SourcesSection traffic={summary.traffic} granularity={summary.granularity} />
               </Section>
 
               <Section title="AI visibility" description="AI-assistant traffic, AI Overview citations, mentions and AI crawlers.">
                 <AiSection summary={summary} onCheckAi={onCheckAi} checkingAi={busy === "ai"} />
+              </Section>
+
+              <Section title="Pages" description="Top, winning and losing pages vs the previous period.">
+                <PagesSection key={`${companyId}-${days}`} pages={summary.pages} />
               </Section>
 
               <Section title="Opportunities" description="What to do next to win more traffic — each opens the right tool.">
