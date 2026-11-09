@@ -28,6 +28,77 @@ function YesNo({ value }) {
   return <Pill tone={value ? "good" : "bad"}>{value ? "Yes" : "No"}</Pill>;
 }
 
+const EVIDENCE = {
+  cited: { label: "Cited in tests", tone: "good", title: "A source in an AI answer to a question we asked (audit buyer questions, DataForSEO, AI Overview checks)" },
+  read: { label: "Read live", tone: "info", title: "An AI assistant fetched it to answer someone" },
+  clicked: { label: "Clicked", tone: "muted", title: "Visitors arrived from an AI assistant" },
+};
+
+function AiCitations({ citations, checkedAt, botsInstalled, hasGa4 }) {
+  const gaps = [
+    !hasGa4 && "GA4 (visits)",
+    !botsInstalled && "crawler tracking (live reads)",
+    !checkedAt && "an AI Visibility audit run (buyer questions)",
+  ].filter(Boolean);
+  return (
+    <Sub
+      title="Where AI cites you"
+      description="Pages AI systems used. Visits and live reads are real traffic; citations come from questions we test (Audit → AI Visibility, DataForSEO, AI Overview checks). AI tools never pass the real question to your site."
+    >
+      <DataTable
+        rowKey={(r) => r.path}
+        rows={citations}
+        empty="No AI citations, live reads or AI-assistant visits found yet."
+        columns={[
+          { key: "path", label: "Page", className: "break-all", render: (r) => <PageLink url={r.url}>{r.path}</PageLink> },
+          {
+            key: "evidence",
+            label: "Evidence",
+            render: (r) => (
+              <span className="flex flex-wrap gap-1">
+                {r.evidence.map((e) => (
+                  <span key={e} title={EVIDENCE[e].title}>
+                    <Pill tone={EVIDENCE[e].tone}>{EVIDENCE[e].label}</Pill>
+                  </span>
+                ))}
+              </span>
+            ),
+          },
+          { key: "assistants", label: "AI systems", render: (r) => r.assistants.join(", ") },
+          { key: "visits", label: "Visits", align: "right", render: (r) => (r.visits ? fmtNum(r.visits) : "—") },
+          { key: "reads", label: "Live reads", align: "right", render: (r) => (r.liveReads ? fmtNum(r.liveReads) : "—") },
+          {
+            key: "questions",
+            label: "Questions",
+            className: "min-w-[14rem]",
+            render: (r) =>
+              r.questions.length ? (
+                <ul className="space-y-0.5">
+                  {r.questions.slice(0, 3).map((q) => (
+                    <li key={q.question} className="text-[11px]">
+                      <span className="line-clamp-2">{q.question}</span>
+                      <span className="text-muted-foreground">
+                        {q.sources.join(", ")}
+                        {q.brand ? " · brand question" : ""}
+                      </span>
+                    </li>
+                  ))}
+                  {r.questions.length > 3 ? <li className="text-[11px] text-muted-foreground">+{r.questions.length - 3} more</li> : null}
+                </ul>
+              ) : (
+                <span className="text-muted-foreground">—</span>
+              ),
+          },
+          { key: "last", label: "Last seen", render: (r) => (r.lastSeen ? fmtDate(r.lastSeen) : "In range") },
+        ]}
+      />
+      {gaps.length ? (
+        <p className="text-[11px] text-muted-foreground">Missing evidence sources: {gaps.join(", ")}.</p>
+      ) : null}
+    </Sub>
+  );
+}
+
 const PLATFORM_LABEL = { chat_gpt: "ChatGPT answers", google: "Google AI Overviews" };
 
 export default function AiSection({ summary, onCheckAi, checkingAi }) {
@@ -36,6 +107,8 @@ export default function AiSection({ summary, onCheckAi, checkingAi }) {
 
   return (
     <div className="space-y-8">
+      <AiCitations citations={ai.citations || []} checkedAt={ai.citationsCheckedAt} botsInstalled={bots.installed} hasGa4={Boolean(traffic)} />
+
       <div className="grid gap-6 lg:grid-cols-2">
         <Sub title="Visits from AI assistants" description="Real people clicking through from an AI answer (GA4).">
           {traffic ? (
@@ -53,30 +126,6 @@ export default function AiSection({ summary, onCheckAi, checkingAi }) {
                   render: (r) => (r.sessions > 0 ? fmtPct(r.engaged / r.sessions, 0) : "—"),
                 },
                 { key: "delta", label: "Δ", align: "right", render: (r) => <Delta value={sessionsChange(r)} /> },
-              ]}
-            />
-          ) : (
-            <p className="text-xs text-muted-foreground">Needs GA4 — see Setup.</p>
-          )}
-        </Sub>
-        <Sub title="Pages AI assistants send people to" description="Your pages that AI answers link to.">
-          {traffic ? (
-            <DataTable
-              rowKey={(r) => r.page}
-              rows={traffic.aiLanding}
-              empty="No AI-assistant landings in this period."
-              columns={[
-                { key: "page", label: "Landing page", className: "break-all" },
-                { key: "sessions", label: "Visits", align: "right", render: (r) => fmtNum(r.sessions) },
-                {
-                  key: "assistants",
-                  label: "From",
-                  render: (r) =>
-                    Object.entries(r.assistants)
-                      .sort((a, b) => b[1] - a[1])
-                      .map(([name]) => name)
-                      .join(", "),
-                },
               ]}
             />
           ) : (

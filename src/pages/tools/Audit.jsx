@@ -4,7 +4,7 @@ import { Download, Loader2, Play } from 'lucide-react'
 import { buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { CATEGORIES, categoryById } from '../../../lib/audit/categories.js'
-import ScoreGauge from './audit/ScoreGauge'
+import { ReadinessOverview, RecommendedActions, ChecksBySection } from './audit/Readiness'
 import ConnectionsCheck from './audit/ConnectionsCheck'
 import CategoryGrid, { formatRunAt, formatCost } from './audit/CategoryGrid'
 import IssueList from './audit/IssueList'
@@ -60,6 +60,14 @@ const METRIC_LABELS = {
     ['thinHtmlPages', 'Thin-HTML articles'],
     ['answerFirstShare', 'Answer-first articles'],
     ['aiVisits30d', 'AI crawler visits (30d)'],
+  ],
+  technical: [
+    ['pagesChecked', 'Pages checked'],
+    ['ttfbMs', 'Median TTFB (ms)'],
+    ['compression', 'Compression'],
+    ['tlsDaysLeft', 'Certificate days left'],
+    ['hreflangPages', 'Pages with hreflang'],
+    ['assetsChecked', 'Assets checked'],
   ],
   ai_visibility: [
     ['shareOfVoice', 'Share of voice'],
@@ -412,14 +420,18 @@ export default function Audit() {
         </div>
       ) : (
         <>
-          <section aria-label="Scores" className="flex flex-col gap-4 lg:flex-row">
-            <div className="flex shrink-0 flex-col items-center justify-center gap-1 rounded-lg border border-border bg-card/40 p-4 lg:w-48">
-              <ScoreGauge label="Overall" score={state?.overall ?? null} />
-              <p className="text-center text-[11px] text-muted-foreground">
-                Weighted across {scoredCount} of {CATEGORIES.length} categories
+          <ReadinessOverview readiness={state?.readiness || null} />
+          <RecommendedActions actions={state?.readiness?.actions || []} />
+          <ChecksBySection checks={state?.readiness?.checks || []} />
+
+          <section aria-label="Data collection runs" className="space-y-2">
+            <div>
+              <h2 className="text-sm font-semibold">Data collection runs</h2>
+              <p className="text-xs text-muted-foreground">
+                Each run collects data for a group of checks ({scoredCount} of {CATEGORIES.length} have results). The scores above are built from the latest run of each.
               </p>
             </div>
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0">
               <CategoryGrid
                 stateCategories={stateCategories}
                 liveRuns={audit.liveRuns}
