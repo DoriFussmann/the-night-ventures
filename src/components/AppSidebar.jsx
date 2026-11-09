@@ -16,7 +16,6 @@ import { Compass,
   LogOut,
   ArrowLeft,
   Construction,
-  Map,
   GitBranch,
   ChevronDown,
   PlugZap,
@@ -373,7 +372,6 @@ export default function AppSidebar({ user }) {
   ];
 
   const adminItems = [
-    { label: "System Map", path: `/admin/system-map`, icon: Map },
     { label: "Core Version", path: `/company/${activeCompanyId}/core-version`, icon: GitBranch },
     { label: "Integrations", path: `/company/${activeCompanyId}/integrations`, icon: PlugZap },
   ];

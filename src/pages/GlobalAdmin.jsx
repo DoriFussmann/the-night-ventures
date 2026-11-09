@@ -7,7 +7,6 @@ import {
   Download,
   GitBranch,
   Lightbulb,
-  Map,
   Pencil,
   PlugZap,
   Trash2,
@@ -1017,14 +1016,6 @@ export default function GlobalAdmin() {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <WorkspaceTasksCard />
         <WorkspaceFutureProjectsCard />
-
-        <ToolCard
-          as={Link}
-          to="/admin/system-map"
-          icon={Map}
-          title="System Map"
-          desc="Live map of pages, APIs, and destination-site wiring."
-        />
 
         <CoreVersionCompanyMenu />
 

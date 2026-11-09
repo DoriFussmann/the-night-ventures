@@ -23,7 +23,6 @@ import SiteBuildFlow from '@/pages/tools/SiteBuildFlow';
 import SeoAiAdvisor from '@/pages/tools/SeoAiAdvisor';
 import ExternalAuditSnapshot from '@/pages/tools/ExternalAuditSnapshot';
 import Audit from '@/pages/tools/Audit';
-import SystemMap from '@/pages/tools/SystemMap';
 import CoreVersion from '@/pages/tools/CoreVersion';
 import EmailCampaigns from '@/pages/tools/EmailCampaigns';
 import AudienceBuild from '@/pages/tools/AudienceBuild';
@@ -51,7 +50,6 @@ const AuthenticatedApp = () => {
         <Route element={<AppShell />}>
           <Route path="/" element={<Companies />} />
           <Route path="/admin" element={<GlobalAdmin />} />
-          <Route path="/admin/system-map" element={<SystemMap />} />
           <Route path="/company/:companyId/company-data" element={<CompanyData />} />
           <Route path="/company/:companyId/aeo-playbook" element={<AeoPlaybook />} />
           <Route path="/company/:companyId/aeo-generation" element={<AeoGeneration />} />
@@ -77,7 +75,6 @@ const AuthenticatedApp = () => {
           <Route path="/company/:companyId/pillar-automation" element={<PillarAutomation />} />
           <Route path="/company/:companyId/image-generator" element={<AiImageGenerator />} />
           <Route path="/company/:companyId/site-build-flow" element={<SiteBuildFlow />} />
-          <Route path="/company/:companyId/system-map" element={<SystemMap />} />
           <Route path="/company/:companyId/core-version" element={<CoreVersion />} />
           <Route path="/company/:companyId/email-campaigns" element={<EmailCampaigns />} />
           <Route path="/company/:companyId/audience-build" element={<AudienceBuild />} />
