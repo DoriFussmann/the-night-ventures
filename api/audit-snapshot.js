@@ -124,7 +124,7 @@ export default async function handler(req, res) {
         if (!siteUrl && !body.siteUrl) {
           return json(res, 400, {
             error:
-              'siteUrl is required (or set company domain in Company Data)',
+              'siteUrl is required (or set the company domain in AEO Playbook → Company)',
           })
         }
 
@@ -221,7 +221,7 @@ export default async function handler(req, res) {
       if (!siteUrl) {
         return json(res, 400, {
           error:
-            'siteUrl is required (or set company domain in Company Data)',
+            'siteUrl is required (or set the company domain in AEO Playbook → Company)',
         })
       }
 

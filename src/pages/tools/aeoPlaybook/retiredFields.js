@@ -1,5 +1,5 @@
 /**
- * Company Intelligence fields that nothing reads any more. Their content moved
+ * Old Company Intelligence fields that nothing reads any more. Their content moved
  * to the AEO Playbook (Brand Facts, ICP) or had no reader at all. The columns
  * stay in company_profiles so no data is lost; the page shows them read-only.
  */

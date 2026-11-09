@@ -1,7 +1,7 @@
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, Navigate, useParams } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider } from '@/lib/AuthContext';
 import ScrollToTop from './components/ScrollToTop';
@@ -13,8 +13,6 @@ import ResetPassword from '@/pages/ResetPassword';
 import AppShell from '@/components/AppShell';
 import Companies from '@/pages/Companies';
 import GlobalAdmin from '@/pages/GlobalAdmin';
-import CompanyData from '@/pages/tools/CompanyData';
-import SocialMediaTracker from '@/pages/tools/SocialMediaTracker';
 import Articles from '@/pages/tools/Articles';
 import AiImageGenerator from '@/pages/tools/AiImageGenerator';
 import SiteBuildFlow from '@/pages/tools/SiteBuildFlow';
@@ -25,6 +23,12 @@ import Integrations from '@/pages/tools/Integrations';
 import Analytics from '@/pages/tools/Analytics';
 import AeoPlaybook from '@/pages/tools/AeoPlaybook';
 import AeoGeneration from '@/pages/tools/AeoGeneration';
+
+/** Company Intelligence moved into the AEO Playbook's Company tab. */
+function RedirectToPlaybookCompany() {
+  const { companyId } = useParams();
+  return <Navigate to={`/company/${companyId}/aeo-playbook?tab=company`} replace />;
+}
 
 const AuthenticatedApp = () => {
   // Keep public auth routes mounted while session/profile settles.
@@ -39,10 +43,9 @@ const AuthenticatedApp = () => {
         <Route element={<AppShell />}>
           <Route path="/" element={<Companies />} />
           <Route path="/admin" element={<GlobalAdmin />} />
-          <Route path="/company/:companyId/company-data" element={<CompanyData />} />
+          <Route path="/company/:companyId/company-data" element={<RedirectToPlaybookCompany />} />
           <Route path="/company/:companyId/aeo-playbook" element={<AeoPlaybook />} />
           <Route path="/company/:companyId/aeo-generation" element={<AeoGeneration />} />
-          <Route path="/company/:companyId/social-media-tracker" element={<SocialMediaTracker />} />
           <Route path="/company/:companyId/external-audit-snapshot" element={<ExternalAuditSnapshot />} />
           <Route path="/company/:companyId/audit" element={<Audit />} />
           <Route path="/company/:companyId/articles" element={<Articles />} />

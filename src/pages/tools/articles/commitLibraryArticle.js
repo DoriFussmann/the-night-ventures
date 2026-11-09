@@ -51,7 +51,7 @@ export async function commitLibraryArticle({
     throw new Error("Missing article");
   }
   if (!isPublishDestinationMapped(destination)) {
-    throw new Error("Set Publish Destination in Company Data first");
+    throw new Error("Set Publish Destination in AEO Playbook → Company first");
   }
 
   const now = new Date().toISOString();

@@ -141,7 +141,7 @@ export default function AiSection({ summary, onCheckAi, checkingAi }) {
             ? `Weekly check of your core keywords (US, desktop). Last run ${fmtDate(setup.aiCheckedAt)}.`
             : summary.keywordCount
               ? "Not checked yet. Runs weekly; you can run it now."
-              : "Add core keywords in the Advisor / Company Intelligence first."
+              : "Add pillars in the AEO Playbook Content Map first."
         }
         actions={
           <Button

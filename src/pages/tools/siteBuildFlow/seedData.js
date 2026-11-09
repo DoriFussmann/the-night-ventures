@@ -43,7 +43,7 @@ export const STAGES = [
 const FILL_FIELDS_PROMPT =
   "Help me fill the missing fields for the new company, based on what I have provided you with - ask me all the questions you need to complete the fields. Give me in each turn a summary % completion, how many done and how many we have left. Be thorough, precise and super professional. Available to download as .md file";
 
-const PUBLISH_DESTINATION_INSTRUCTIONS = `Open Company Data → Publish Destination. The guide at the top of that dialog walks through all three parts; Check Connection confirms each one before you save.
+const PUBLISH_DESTINATION_INSTRUCTIONS = `Open AEO Playbook → Company → Publish Destination. The guide (Workspace Admin → GitHub access) walks through all three parts; Check Connection confirms each one before you save.
 
 ${publishGuideText()}`;
 
@@ -64,8 +64,8 @@ export const PREDEFINED_ITEMS = {
       description:
         "In Company Intelligence, once you have added all the details you have, click Download as Markdown.",
       prompts: [],
-      linkTo: "/company/:companyId/company-data",
-      linkLabel: "Open Company Intelligence →",
+      linkTo: "/company/:companyId/aeo-playbook?tab=company",
+      linkLabel: "Open AEO Playbook → Company →",
     },
     {
       item_key: "fill-missing-fields-in-chatgpt",
@@ -85,8 +85,8 @@ export const PREDEFINED_ITEMS = {
       description:
         "Drag and drop the completed ChatGPT Company Intelligence .md file onto Company Intelligence and let it fill the missing fields.",
       prompts: [],
-      linkTo: "/company/:companyId/company-data",
-      linkLabel: "Open Company Intelligence →",
+      linkTo: "/company/:companyId/aeo-playbook?tab=company",
+      linkLabel: "Open AEO Playbook → Company →",
     },
     {
       item_key: "create-github-repo-from-template",
@@ -128,8 +128,8 @@ export const PREDEFINED_ITEMS = {
       title: "Set Publish Destination",
       description: PUBLISH_DESTINATION_INSTRUCTIONS,
       prompts: [],
-      linkTo: "/company/:companyId/company-data",
-      linkLabel: "Open Company Intelligence →",
+      linkTo: "/company/:companyId/aeo-playbook?tab=company",
+      linkLabel: "Open AEO Playbook → Company →",
     },
     {
       item_key: "update-core-version",

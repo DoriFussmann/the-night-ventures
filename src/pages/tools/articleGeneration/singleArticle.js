@@ -47,7 +47,7 @@ export function buildArticleImagePrompt(article, frontmatter) {
 
 /**
  * What the writer knows about the company: Brand Facts and ICP from the AEO
- * Playbook, plus domain, market, language and imagery from Company Intelligence.
+ * Playbook, plus domain, market, language and imagery from the company settings.
  */
 export async function loadCompanyPositioning(companyId) {
   const [playbook, profile] = await Promise.all([

@@ -292,7 +292,7 @@ function PromptSet({ companyId }) {
       {prompts === null ? (
         <p className="text-xs text-muted-foreground">Loading prompts…</p>
       ) : prompts.length === 0 ? (
-        <p className="text-xs text-muted-foreground">No prompts yet — the first run generates them from Company Intelligence.</p>
+        <p className="text-xs text-muted-foreground">No prompts yet — the first run generates them from the AEO Playbook.</p>
       ) : (
         <ol className="space-y-1">
           {prompts.map((p) => (

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Loader2, Upload } from "lucide-react";
+import { useParams, useSearchParams } from "react-router-dom";
+import { Loader2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { importPlaybook, loadPlaybook } from "./aeoPlaybook/api";
@@ -8,8 +8,9 @@ import BrandFactsTab from "./aeoPlaybook/BrandFactsTab";
 import PersonasTab from "./aeoPlaybook/PersonasTab";
 import PromptsTab from "./aeoPlaybook/PromptsTab";
 import ContentMapTab from "./aeoPlaybook/ContentMapTab";
+import CompanyTab from "./aeoPlaybook/CompanyTab";
 
-const TAB_IDS = ["brand", "personas", "prompts", "map"];
+const TAB_IDS = ["company", "brand", "personas", "prompts", "map"];
 
 export default function AeoPlaybook() {
   const { companyId } = useParams();
@@ -83,21 +84,12 @@ export default function AeoPlaybook() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <Link
-            to={`/company/${companyId}/company-data`}
-            className="mb-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="h-3 w-3" /> Company Intelligence
-          </Link>
           <h1 className="flex items-center gap-2 text-lg font-medium text-foreground">
             AEO Playbook
-            <span className="rounded border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-emerald-800">
-              New
-            </span>
           </h1>
           <p className="mt-0.5 max-w-3xl text-sm text-muted-foreground">
-            Brand Facts, ICP and personas, the prompt universe and the content map: everything articles say about the
-            company.
+            Company settings, Brand Facts, ICP and personas, the prompt universe and the content map: everything TNV
+            knows about the company.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -121,11 +113,15 @@ export default function AeoPlaybook() {
       ) : data ? (
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
+            <TabsTrigger value="company">Company</TabsTrigger>
             <TabsTrigger value="brand">Brand Facts</TabsTrigger>
             <TabsTrigger value="personas">ICP &amp; Personas ({data.personas.length})</TabsTrigger>
             <TabsTrigger value="prompts">Prompts ({data.prompts.length})</TabsTrigger>
             <TabsTrigger value="map">Content Map ({data.groups.length})</TabsTrigger>
           </TabsList>
+          <TabsContent value="company">
+            <CompanyTab companyId={companyId} />
+          </TabsContent>
           <TabsContent value="brand">
             <BrandFactsTab companyId={companyId} playbook={data.playbook} onSaved={reload} />
           </TabsContent>
