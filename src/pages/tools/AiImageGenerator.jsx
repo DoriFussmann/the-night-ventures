@@ -29,7 +29,7 @@ import {
   loadSavedPrompts,
   savePrompt,
 } from "./aiImage/savedPrompts";
-import { slugify } from "./clusterImage/slugify";
+import { slugify } from "./aiImage/slugify";
 
 const NONE_VALUE = "__none__";
 

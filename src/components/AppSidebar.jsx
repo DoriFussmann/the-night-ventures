@@ -9,7 +9,6 @@ import { Compass,
   Lightbulb,
   BookOpen,
   Mail,
-  Image,
   Sparkles,
   MessageSquareText,
   ClipboardCheck,
@@ -371,7 +370,6 @@ export default function AppSidebar({ user }) {
   const tbcNav = [
     { label: "Advisor", path: `/company/${activeCompanyId}/seo-ai-advisor`, icon: MessageSquareText, status: "Done" },
     { label: "Image Generation", path: `/company/${activeCompanyId}/image-generator`, icon: Sparkles, status: "Done" },
-    { label: "Cluster Image..", path: `/company/${activeCompanyId}/cluster-image-generator`, icon: Image, status: "Done" },
   ];
 
   const adminItems = [
@@ -565,7 +563,9 @@ export default function AppSidebar({ user }) {
             <SectionRule />
             <SectionHeader label="Admin" />
             <div className="space-y-1.5">
-              <NavDropdown label="Admin" icon={Map} items={adminItems} />
+              {adminItems.map((item) => (
+                <NavItem key={item.path} item={item} />
+              ))}
             </div>
           </>
         )}

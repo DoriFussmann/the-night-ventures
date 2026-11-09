@@ -18,7 +18,6 @@ import SocialMediaTracker from '@/pages/tools/SocialMediaTracker';
 import ClusterGeneration from '@/pages/tools/ClusterGeneration';
 import Articles from '@/pages/tools/Articles';
 import PillarAutomation from '@/pages/tools/PillarAutomation';
-import ClusterImageGenerator from '@/pages/tools/ClusterImageGenerator';
 import AiImageGenerator from '@/pages/tools/AiImageGenerator';
 import SiteBuildFlow from '@/pages/tools/SiteBuildFlow';
 import SeoAiAdvisor from '@/pages/tools/SeoAiAdvisor';
@@ -76,7 +75,6 @@ const AuthenticatedApp = () => {
           <Route path="/company/:companyId/articles" element={<Articles />} />
           <Route path="/company/:companyId/analytics" element={<Analytics />} />
           <Route path="/company/:companyId/pillar-automation" element={<PillarAutomation />} />
-          <Route path="/company/:companyId/cluster-image-generator" element={<ClusterImageGenerator />} />
           <Route path="/company/:companyId/image-generator" element={<AiImageGenerator />} />
           <Route path="/company/:companyId/site-build-flow" element={<SiteBuildFlow />} />
           <Route path="/company/:companyId/system-map" element={<SystemMap />} />

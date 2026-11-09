@@ -41,16 +41,3 @@ export function getImageryContext(designGuideRaw) {
   );
   return lines.join("\n");
 }
-
-/** fg, bg, accent, highlight from the guide, or null when they are not all hex. */
-export function getImageryPalette(designGuideRaw) {
-  const tokens = parseDesignTokens(designGuideRaw);
-  const colors = tokens?.colors;
-  if (!colors) return null;
-  const fg = normalizeHex(colors.fg);
-  const bg = normalizeHex(colors.bg);
-  const accent = normalizeHex(colors.accent);
-  const highlight = normalizeHex(colors.highlight);
-  if (!fg || !bg || !accent || !highlight) return null;
-  return { fg, bg, accent, highlight };
-}
