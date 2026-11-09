@@ -187,7 +187,7 @@ export function useAuditRunner(companyId) {
     (categoryId) => {
       const meta = categoryById(categoryId)
       return Boolean(
-        meta?.implemented &&
+        meta &&
           (state?.implemented || []).includes(categoryId) &&
           blockedBy(categoryId).length === 0
       )

@@ -1,7 +1,9 @@
-// Downloadable per-category audit report: one Markdown file with the full section.
-// Pure string builders + a browser download helper.
+// Downloadable audit reports (Markdown): the full audit and the recommended
+// actions. Pure string builders + a browser download helper.
 
-import { SEVERITY_LABELS } from '../../../../lib/audit/categories.js'
+import { CATEGORIES, SEVERITY_LABELS } from '../../../../lib/audit/categories.js'
+import { SECTIONS, SECTION_ORDER, KIND_LABELS, EFFORT_LABELS } from '../../../../lib/audit/catalog.js'
+import { METRIC_LABELS } from './metrics.js'
 
 const SEVERITY_RANK = { critical: 0, high: 1, medium: 2, low: 3 }
 const ENGINE_LABELS = { chat_gpt: 'ChatGPT', claude: 'Claude', gemini: 'Gemini', perplexity: 'Perplexity' }
@@ -252,22 +254,18 @@ function groupedIssues(issues) {
 }
 
 /**
- * @param {{
- *   company: { name?: string, siteUrl?: string } | null,
- *   meta: { id: string, label: string, description?: string, paid?: boolean },
- *   entry: any,
- *   metricLabels: Array<[string, string]>,
- * }} input
+ * One data source's section (headings start at ##).
+ * @param {{ meta: { id: string, label: string, description?: string, paid?: boolean }, entry: any }} input
  */
-export function buildCategoryMarkdown({ company, meta, entry, metricLabels }) {
+function sourceMarkdown({ meta, entry }) {
   const latest = entry.latest || {}
   const m = latest.metrics || {}
   const issues = entry.issues || []
+  const metricLabels = METRIC_LABELS[meta.id] || []
   const lines = [
-    `# ${company?.name ? `${company.name} — ` : ''}${meta.label} audit`,
+    `## ${meta.label}`,
     '',
     [
-      company?.siteUrl ? `Site: ${company.siteUrl}` : '',
       `Run: ${isoDate(latest.finished_at || latest.started_at)}`,
       entry.previous ? `Compared with: ${isoDate(entry.previous.started_at)}` : 'First run (baseline)',
       meta.paid ? `Cost: ${money(latest.cost_usd)}` : '',
@@ -277,26 +275,26 @@ export function buildCategoryMarkdown({ company, meta, entry, metricLabels }) {
     '',
     meta.description || '',
     '',
-    `**Score: ${typeof entry.score === 'number' ? `${entry.score}/100` : '—'}** · ${issues.length} open issue(s)` +
+    `${issues.length} open issue(s)` +
       (entry.diffCounts ? ` · ${entry.diffCounts.new} new, ${entry.diffCounts.persisting} persisting, ${entry.diffCounts.fixed} fixed` : '') +
       (entry.accepted?.length ? ` · ${entry.accepted.length} accepted` : ''),
   ]
 
   if (metricLabels.length) {
-    lines.push('', '## Key metrics', '', table(['Metric', 'Value'], metricLabels.map(([key, label]) => [label, m[key]])))
+    lines.push('', '### Key metrics', '', table(['Metric', 'Value'], metricLabels.map(([key, label]) => [label, m[key]])))
   }
 
   const extra = categoryTables(meta.id, m)
-  if (extra.length) lines.push('', '## Details', '', extra.join('\n\n'))
+  if (extra.length) lines.push('', '### Details', '', extra.join('\n\n').replace(/^### /gm, '#### '))
 
-  if (m.warnings?.length) lines.push('', '## Notes', '', ...m.warnings.map((w) => `- ${w}`))
+  if (m.warnings?.length) lines.push('', '### Notes', '', ...m.warnings.map((w) => `- ${w}`))
 
-  lines.push('', '## Issues')
+  lines.push('', '### Issues')
   if (!issues.length) {
     lines.push('', 'No open issues.')
   } else {
     for (const g of groupedIssues(issues)) {
-      lines.push('', `### ${SEVERITY_LABELS[g.severity] || g.severity}: ${g.title} (${g.items.length})`)
+      lines.push('', `#### ${SEVERITY_LABELS[g.severity] || g.severity}: ${g.title} (${g.items.length})`)
       if (g.fixHint) lines.push('', `**Fix:** ${g.fixHint}`)
       lines.push('')
       for (const i of g.items) {
@@ -310,17 +308,132 @@ export function buildCategoryMarkdown({ company, meta, entry, metricLabels }) {
   }
 
   if (entry.fixed?.length) {
-    lines.push('', '## Fixed since the previous run', '', ...entry.fixed.map((i) => `- ${i.title}${i.url ? ` — ${pathOf(i.url)}` : ''}`))
+    lines.push('', '### Fixed since the previous run', '', ...entry.fixed.map((i) => `- ${i.title}${i.url ? ` — ${pathOf(i.url)}` : ''}`))
   }
   if (entry.accepted?.length) {
-    lines.push('', '## Accepted (excluded from the score)', '', ...entry.accepted.map((i) => `- ${i.title}${i.url ? ` — ${pathOf(i.url)}` : ''}`))
+    lines.push('', '### Accepted (excluded from the score)', '', ...entry.accepted.map((i) => `- ${i.title}${i.url ? ` — ${pathOf(i.url)}` : ''}`))
   }
+  return lines.join('\n')
+}
+
+const STATUS_WORDS = { fail: 'Fail', warning: 'Warning', pass: 'Pass', not_tested: 'Not tested', na: 'N/A' }
+const TIER_TITLES = {
+  fix_first: 'Fix first',
+  next: 'Fix next',
+  improve: 'Improvements & experiments',
+  outside: 'Content, AI visibility & authority (not in the scores)',
+}
+
+function finish(lines) {
   return lines.join('\n').replace(/\n{3,}/g, '\n\n') + '\n'
 }
 
-export function reportFilename(company, meta, entry, ext) {
-  const date = String(entry.latest?.finished_at || entry.latest?.started_at || new Date().toISOString()).slice(0, 10)
-  return `${slug(company?.name)}-audit-${slug(meta.id)}-${date}.${ext}`
+function header(company, title) {
+  return [
+    `# ${company?.name ? `${company.name} — ` : ''}${title}`,
+    '',
+    [company?.siteUrl ? `Site: ${company.siteUrl}` : '', `Generated: ${isoDate(new Date().toISOString())}`].filter(Boolean).join(' · '),
+  ]
+}
+
+function scoreLines(readiness) {
+  const prev = readiness.previous
+  const delta = (now, before) =>
+    typeof now === 'number' && typeof before === 'number' && now !== before ? ` (${now > before ? '+' : ''}${now - before})` : ''
+  return [
+    `**Website readiness: ${readiness.overall ?? '—'}/100${delta(readiness.overall, prev?.overall)}** · ${readiness.checksTested} of ${readiness.checksTotal} checks tested` +
+      (readiness.overallCapped ? ' · capped by a critical issue' : ''),
+    '',
+    table(
+      ['Score', 'Value', 'Checks tested', 'Fails', 'Warnings'],
+      readiness.scores.map((s) => [
+        s.label,
+        s.score == null ? '—' : `${s.score}${delta(s.score, prev?.scores?.[s.id])}`,
+        `${s.checksTested}/${s.checksTotal}`,
+        s.fails,
+        s.warnings,
+      ])
+    ),
+  ]
+}
+
+function actionLines(actions) {
+  const lines = []
+  for (const tier of Object.keys(TIER_TITLES)) {
+    const items = actions.filter((a) => a.tier === tier)
+    if (!items.length) continue
+    lines.push('', `## ${TIER_TITLES[tier]} (${items.length})`)
+    items.forEach((a, n) => {
+      const where = a.siteWide ? 'Site-wide' : `${a.affected} page${a.affected === 1 ? '' : 's'}`
+      lines.push(
+        '',
+        `### ${n + 1}. ${a.title || a.label}`,
+        '',
+        `${SEVERITY_LABELS[a.severity] || a.severity} · ${KIND_LABELS[a.kind] || a.kind} · ${SECTIONS[a.section] || a.section} · ${where} · ${EFFORT_LABELS[a.effort] || a.effort}`
+      )
+      if (a.detail) lines.push('', a.detail)
+      lines.push('', `- **Why it matters:** ${a.why}`)
+      if (a.fix) lines.push(`- **Fix:** ${a.fix}`)
+      lines.push(`- **How to verify:** ${a.verify}`)
+      if (a.urls?.length) {
+        lines.push('', ...a.urls.map((u) => `- ${u}`))
+        if (a.affected > a.urls.length) lines.push(`- …and ${a.affected - a.urls.length} more`)
+      }
+    })
+  }
+  return lines
+}
+
+/** Recommended actions only, in priority order. */
+export function buildActionsMarkdown({ company, readiness }) {
+  const actions = readiness?.actions || []
+  const lines = [...header(company, 'Recommended actions')]
+  if (readiness) lines.push('', ...scoreLines(readiness))
+  if (!actions.length) lines.push('', 'Nothing to fix in the checks that ran.')
+  else lines.push(...actionLines(actions))
+  return finish(lines)
+}
+
+/** The full audit: scores, actions, every check by section, then each data source's details. */
+export function buildAuditMarkdown({ company, readiness, categories }) {
+  const lines = [...header(company, 'SEO & AEO audit')]
+  if (readiness) {
+    lines.push('', ...scoreLines(readiness))
+    if (readiness.actions?.length) lines.push('', '# Recommended actions', ...actionLines(readiness.actions))
+    lines.push('', '# All checks by section')
+    for (const section of SECTION_ORDER) {
+      const rows = (readiness.checks || []).filter((c) => c.section === section)
+      if (!rows.length) continue
+      lines.push(
+        '',
+        `## ${/^[A-L]$/.test(section) ? `${section} · ` : ''}${SECTIONS[section]}`,
+        '',
+        table(
+          ['Check', 'Result', 'Detail'],
+          rows.map((c) => [
+            c.label,
+            STATUS_WORDS[c.status] || c.status,
+            c.status === 'fail' || c.status === 'warning'
+              ? `${c.siteWide ? 'Site-wide' : `${c.affected} page(s)`}${c.detail ? ` — ${c.detail}` : ''}`
+              : c.status === 'pass'
+                ? ''
+                : c.reason,
+          ])
+        )
+      )
+    }
+  }
+  const sources = CATEGORIES.filter((c) => categories?.[c.id]?.latest)
+  if (sources.length) {
+    lines.push('', '# Data sources')
+    for (const meta of sources) lines.push('', sourceMarkdown({ meta, entry: categories[meta.id] }))
+  }
+  return finish(lines)
+}
+
+/** e.g. "rupert-audit-2026-11-09.md" */
+export function reportFilename(company, kind) {
+  return `${slug(company?.name)}-${kind}-${new Date().toISOString().slice(0, 10)}.md`
 }
 
 /** Trigger a browser download. */

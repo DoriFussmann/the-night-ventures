@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React from 'react'
 import { useParams } from 'react-router-dom'
 import { Download, Loader2, Play } from 'lucide-react'
 import { buttonVariants } from '@/components/ui/button'
@@ -6,351 +6,42 @@ import { cn } from '@/lib/utils'
 import { CATEGORIES, categoryById } from '../../../lib/audit/categories.js'
 import { ReadinessOverview, RecommendedActions, ChecksBySection } from './audit/Readiness'
 import ConnectionsCheck from './audit/ConnectionsCheck'
-import CategoryGrid, { formatRunAt, formatCost } from './audit/CategoryGrid'
-import IssueList from './audit/IssueList'
-import AiVisibilityPanel from './audit/AiVisibilityPanel'
-import AeoPanel from './audit/AeoPanel'
-import { buildCategoryMarkdown, downloadFile, reportFilename } from './audit/report'
+import SourcePanels from './audit/SourcePanels'
+import { buildAuditMarkdown, buildActionsMarkdown, downloadFile, reportFilename } from './audit/report'
 import { useAuditRunner } from './audit/useAuditRunner'
 
-/** Metrics shown per category: [metrics key, label]. */
-const METRIC_LABELS = {
-  crawl: [
-    ['pagesCrawled', 'Pages crawled'],
-    ['indexablePages', 'Indexable pages'],
-    ['nonIndexablePages', 'Non-indexable'],
-    ['sitemapUrlCount', 'Sitemap URLs'],
-    ['maxClickDepth', 'Max click depth'],
-    ['onpageScore', 'DataForSEO on-page score'],
-  ],
-  schema: [
-    ['pagesChecked', 'Pages checked'],
-    ['pagesWithJsonLd', 'Pages with JSON-LD'],
-    ['articlePages', 'Article pages'],
-    ['articlesWithSchema', 'Articles with Article schema'],
-  ],
-  clusters: [
-    ['clusterCount', 'Clusters'],
-    ['pillarsPublished', 'Pillars published'],
-    ['articleCount', 'Supporting articles'],
-    ['pillarLinkCoverage', 'Pillar → article links %'],
-    ['backLinkCoverage', 'Article → pillar links %'],
-    ['pagesChecked', 'Pages checked'],
-  ],
-  speed: [
-    ['homePerformance', 'Home · mobile perf'],
-    ['pillarPerformance', 'Pillar · mobile perf'],
-    ['articlePerformance', 'Article · mobile perf'],
-    ['fieldLcp', 'Real-user LCP (p75)'],
-    ['fieldInp', 'Real-user INP (p75)'],
-    ['fieldCls', 'Real-user CLS (p75)'],
-  ],
-  authority: [
-    ['domainAuthority', 'Domain Authority'],
-    ['competitorMedianDa', 'Competitor median DA'],
-    ['linkingRootDomains', 'Linking root domains'],
-    ['competitorMedianRoots', 'Competitor median roots'],
-    ['spamScore', 'Spam Score %'],
-    ['pageAuthority', 'Home Page Authority'],
-  ],
-  aeo_readiness: [
-    ['aiSearchAllowed', 'AI search bots allowed'],
-    ['botsBlockedByServer', 'Bots blocked by server'],
-    ['snippetBlockedPages', 'Pages blocking snippets'],
-    ['thinHtmlPages', 'Thin-HTML articles'],
-    ['answerFirstShare', 'Answer-first articles'],
-    ['aiVisits30d', 'AI crawler visits (30d)'],
-  ],
-  technical: [
-    ['pagesChecked', 'Pages checked'],
-    ['ttfbMs', 'Median TTFB (ms)'],
-    ['compression', 'Compression'],
-    ['tlsDaysLeft', 'Certificate days left'],
-    ['hreflangPages', 'Pages with hreflang'],
-    ['assetsChecked', 'Assets checked'],
-  ],
-  ai_visibility: [
-    ['shareOfVoice', 'Share of voice'],
-    ['citedShare', 'Answers citing you'],
-    ['enginesNaming', 'Engines naming you'],
-    ['brandRecognized', 'Engines that know the brand'],
-    ['aioCited', 'AI Overviews citing you'],
-    ['aiModeCited', 'AI Mode citing you'],
-  ],
-}
+const MARKDOWN = 'text/markdown;charset=utf-8'
 
-const TH = 'px-3 py-1.5 text-left text-[11px] font-medium text-muted-foreground'
-const TD = 'px-3 py-1.5 tabular-nums'
-
-/** @param {number | null | undefined} score */
-function perfClass(score) {
-  if (typeof score !== 'number') return ''
-  if (score >= 90) return 'text-emerald-600 dark:text-emerald-400'
-  if (score >= 50) return 'text-amber-600 dark:text-amber-400'
-  return 'text-red-600 dark:text-red-400'
-}
-
-/** @param {string} url */
-function shortPath(url) {
-  try {
-    return new URL(url).pathname || '/'
-  } catch {
-    return url
-  }
-}
-
-/** Per-template PageSpeed results. @param {{ pages: any[] }} props */
-function SpeedPages({ pages }) {
-  if (!pages?.length) return null
+/** Live status of the current Run all / single run: step, message, progress bar. */
+function RunStatus({ batch, liveRuns }) {
+  const categoryId = batch ? batch.categories[batch.index] : Object.keys(liveRuns)[0]
+  if (!categoryId) return null
+  const progress = liveRuns[categoryId]?.progress || {}
+  const total = Number(progress.total) || 0
+  const pct = total > 0 ? Math.min(100, Math.round(((Number(progress.done) || 0) / total) * 100)) : null
+  const step = batch ? `Step ${batch.index + 1} of ${batch.categories.length} · ` : ''
   return (
-    <div className="overflow-x-auto rounded-md border border-border">
-      <table className="w-full text-xs">
-        <thead className="bg-muted/40">
-          <tr>
-            <th className={TH}>Template</th>
-            <th className={TH}>Page</th>
-            <th className={TH}>Perf</th>
-            <th className={TH}>SEO</th>
-            <th className={TH}>A11y</th>
-            <th className={TH}>Lab LCP</th>
-            <th className={TH}>Lab CLS</th>
-          </tr>
-        </thead>
-        <tbody>
-          {pages.map((p) => (
-            <tr key={p.url} className="border-t border-border">
-              <td className={`${TD} capitalize`}>{p.kind}</td>
-              <td className={`${TD} max-w-[18rem] truncate`}>
-                <a href={p.url} target="_blank" rel="noreferrer" className="hover:underline" title={p.url}>
-                  {shortPath(p.url)}
-                </a>
-              </td>
-              {p.error ? (
-                <td colSpan={5} className={`${TD} text-red-600 dark:text-red-400`}>
-                  {p.error}
-                </td>
-              ) : (
-                <>
-                  <td className={cn(TD, 'font-semibold', perfClass(p.performance))}>{p.performance ?? '—'}</td>
-                  <td className={TD}>{p.seo ?? '—'}</td>
-                  <td className={TD}>{p.accessibility ?? '—'}</td>
-                  <td className={TD}>{p.labLcpMs != null ? `${(p.labLcpMs / 1000).toFixed(1)} s` : '—'}</td>
-                  <td className={TD}>{p.labCls != null ? Number(p.labCls).toFixed(2) : '—'}</td>
-                </>
-              )}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-/** One row per cluster. @param {{ rows: any[] }} props */
-function ClusterTable({ rows }) {
-  if (!rows?.length) return null
-  return (
-    <div className="overflow-x-auto rounded-md border border-border">
-      <table className="w-full text-xs">
-        <thead className="bg-muted/40">
-          <tr>
-            <th className={TH}>Pillar</th>
-            <th className={TH}>Pillar page</th>
-            <th className={TH}>Articles</th>
-            <th className={TH} title="Supporting articles the pillar links to">Pillar → articles</th>
-            <th className={TH} title="Articles that link back to the pillar">Articles → pillar</th>
-            <th className={TH} title="Articles linking to at least one sibling (clusters of 3+)">Sibling links</th>
-            <th className={TH}>Unpublished planned</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.id} className="border-t border-border">
-              <td className={`${TD} font-medium`}>{r.keyword}</td>
-              <td className={`${TD} max-w-[16rem] truncate`}>
-                {r.pillarUrl ? (
-                  <a href={r.pillarUrl} target="_blank" rel="noreferrer" className="hover:underline" title={r.pillarUrl}>
-                    {shortPath(r.pillarUrl)}
-                  </a>
-                ) : (
-                  <span className="text-red-600 dark:text-red-400">Not published</span>
-                )}
-              </td>
-              <td className={TD}>{r.articles}</td>
-              <td className={TD}>{r.pillarLinksOut ?? '—'}</td>
-              <td className={TD}>{r.linksBack ?? '—'}</td>
-              <td className={TD}>{r.siblingLinked ?? '—'}</td>
-              <td className={TD}>{r.plannedUnpublished || '—'}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-/** Site vs competitors (Moz). @param {{ metrics: any }} props */
-function AuthorityCompetitors({ metrics }) {
-  const competitors = metrics?.competitors || []
-  if (!competitors.length) return null
-  const rows = [
-    {
-      key: '__site',
-      name: 'You',
-      domain: metrics.target,
-      domainAuthority: metrics.domainAuthority,
-      linkingRootDomains: metrics.linkingRootDomains,
-      spamScore: metrics.spamScore,
-      self: true,
-    },
-    ...competitors.map((c) => ({ ...c, key: c.domain })),
-  ]
-  return (
-    <div className="overflow-x-auto rounded-md border border-border">
-      <table className="w-full text-xs">
-        <thead className="bg-muted/40">
-          <tr>
-            <th className={TH}>Site</th>
-            <th className={TH}>Domain</th>
-            <th className={TH}>DA</th>
-            <th className={TH}>Linking roots</th>
-            <th className={TH}>Spam %</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.key} className={cn('border-t border-border', r.self && 'bg-accent/40 font-medium')}>
-              <td className={TD}>{r.name}</td>
-              <td className={`${TD} text-muted-foreground`}>{r.domain || '—'}</td>
-              {r.error ? (
-                <td colSpan={3} className={`${TD} text-muted-foreground`}>
-                  {r.error}
-                </td>
-              ) : (
-                <>
-                  <td className={TD}>{r.domainAuthority ?? '—'}</td>
-                  <td className={TD}>{r.linkingRootDomains?.toLocaleString?.() ?? '—'}</td>
-                  <td className={TD}>{r.spamScore ?? '—'}</td>
-                </>
-              )}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-/** @param {{ entry: any }} props */
-function RunNotes({ entry }) {
-  const metrics = entry.latest?.metrics || {}
-  const notes = []
-  if (metrics.crawlStopReason === 'limit_exceeded') notes.push('Crawl stopped at the 150-page cap.')
-  if (metrics.urlsCapped) notes.push(`Checked the first 150 of ${metrics.urlsFound} URLs found.`)
-  if (metrics.pagesFailed) notes.push(`${metrics.pagesFailed} page(s) could not be fetched.`)
-  if (entry.latest?.category === 'speed' && metrics.hasFieldData === false) {
-    notes.push('No real-user (CrUX) data for this site yet — speed findings are from lab runs only.')
-  }
-  for (const warning of metrics.warnings || []) notes.push(warning)
-  if (!notes.length) return null
-  return (
-    <ul className="space-y-0.5 rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-      {notes.map((note) => (
-        <li key={note}>{note}</li>
-      ))}
-    </ul>
-  )
-}
-
-/**
- * @param {{
- *   categoryId: string,
- *   companyId: string,
- *   company: any,
- *   entry: any,
- *   pendingAccept: Set<string>,
- *   onToggleAccepted: (issues: any[], accepted: boolean) => void,
- * }} props
- */
-function CategoryDetail({ categoryId, companyId, company, entry, pendingAccept, onToggleAccepted }) {
-  const meta = categoryById(categoryId)
-  const latest = entry.latest
-  const metrics = latest?.metrics || {}
-  const labels = METRIC_LABELS[categoryId] || []
-  const typeCounts = categoryId === 'schema' ? Object.entries(metrics.typeCounts || {}) : []
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="space-y-0.5">
-          <h2 className="text-sm font-semibold">{meta?.label}</h2>
-          <p className="text-xs text-muted-foreground">{meta?.description}</p>
-        </div>
-        <div className="flex flex-col items-end gap-1.5">
-          <p className="text-xs text-muted-foreground">
-            Last run {formatRunAt(latest?.finished_at || latest?.started_at)}
-            {meta?.paid ? ` · ${formatCost(latest?.cost_usd)}` : ''}
-            {entry.previous ? ` · compared with ${formatRunAt(entry.previous.started_at)}` : ' · first run (baseline)'}
-          </p>
-          <div className="flex gap-1.5">
-            <button
-              type="button"
-              onClick={() =>
-                downloadFile(
-                  reportFilename(company, meta, entry, 'md'),
-                  buildCategoryMarkdown({ company, meta, entry, metricLabels: labels }),
-                  'text/markdown;charset=utf-8'
-                )
-              }
-              className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'h-7 text-xs')}
-              title="Download this section as a Markdown report"
-            >
-              <Download className="h-3.5 w-3.5" aria-hidden="true" />
-              Download report
-            </button>
-          </div>
-        </div>
+    <div className="space-y-1.5 rounded-lg border border-border px-4 py-3" aria-live="polite">
+      <p className="text-xs">
+        <span className="font-medium">
+          {step}
+          {categoryById(categoryId)?.label}
+        </span>
+        <span className="text-muted-foreground"> — {progress.message || 'Starting…'}</span>
+      </p>
+      <div
+        className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={pct ?? undefined}
+        aria-label="Run progress"
+      >
+        <div
+          className={cn('h-full rounded-full bg-primary transition-all', pct == null && 'w-1/3 animate-pulse')}
+          style={pct == null ? undefined : { width: `${pct}%` }}
+        />
       </div>
-
-      {labels.length ? (
-        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          {labels.map(([key, label]) => (
-            <div key={key} className="rounded-md border border-border px-3 py-2">
-              <dt className="text-[11px] text-muted-foreground">{label}</dt>
-              <dd className="text-base font-semibold tabular-nums">{metrics[key] ?? '—'}</dd>
-            </div>
-          ))}
-        </dl>
-      ) : null}
-
-      {typeCounts.length ? (
-        <div className="flex flex-wrap gap-1.5" aria-label="Schema types found">
-          {typeCounts
-            .sort((a, b) => Number(b[1]) - Number(a[1]))
-            .map(([type, count]) => (
-              <span key={type} className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground">
-                {type} · {String(count)}
-              </span>
-            ))}
-        </div>
-      ) : null}
-
-      {categoryId === 'clusters' ? <ClusterTable rows={metrics.clusters} /> : null}
-      {categoryId === 'speed' ? <SpeedPages pages={metrics.pages} /> : null}
-      {categoryId === 'authority' ? <AuthorityCompetitors metrics={metrics} /> : null}
-      {categoryId === 'aeo_readiness' ? <AeoPanel metrics={metrics} /> : null}
-      {categoryId === 'ai_visibility' ? <AiVisibilityPanel metrics={metrics} companyId={companyId} /> : null}
-
-      <RunNotes entry={entry} />
-
-      <IssueList
-        issues={entry.issues || []}
-        fixed={entry.fixed || []}
-        accepted={entry.accepted || []}
-        hasPrevious={Boolean(entry.previous)}
-        pendingAccept={pendingAccept}
-        onToggleAccepted={onToggleAccepted}
-      />
     </div>
   )
 }
@@ -359,53 +50,60 @@ export default function Audit() {
   const { companyId } = useParams()
   const audit = useAuditRunner(companyId)
   const { state, loading, batch } = audit
-  const [selected, setSelected] = useState('')
-
+  const company = state?.company || null
+  const readiness = state?.readiness || null
   const stateCategories = state?.categories || {}
-  const withResults = CATEGORIES.filter((c) => stateCategories[c.id]?.latest)
+  const hasResults = CATEGORIES.some((c) => stateCategories[c.id]?.latest)
   const runnableCount = CATEGORIES.filter((c) => audit.runnable(c.id)).length
-
-  useEffect(() => {
-    if (!withResults.length) return
-    if (!selected || !stateCategories[selected]?.latest) setSelected(withResults[0].id)
-  }, [withResults, selected, stateCategories])
-
-  const scoredCount = CATEGORIES.filter((c) => typeof stateCategories[c.id]?.score === 'number').length
-  const batchLabel = batch
-    ? `Running ${batch.index + 1}/${batch.categories.length} — ${categoryById(batch.categories[batch.index])?.label || ''}`
-    : ''
+  const downloadClass = cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'h-9')
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-wrap items-start justify-between gap-4">
+    <div className="space-y-4">
+      <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
-          <h1 className="text-xl font-semibold tracking-tight">
-            {state?.company?.name ? `${state.company.name} — Audit` : 'Audit'}
-          </h1>
+          <h1 className="text-xl font-semibold tracking-tight">{company?.name ? `${company.name} — Audit` : 'Audit'}</h1>
           <p className="break-all text-sm text-muted-foreground">
-            {state?.company?.siteUrl || (loading ? 'Loading…' : 'No domain set — add it in Company Intelligence')}
+            {company?.siteUrl || (loading ? 'Loading…' : 'No domain set — add it in Company Intelligence')}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => audit.runAll()}
-          disabled={audit.busy || audit.connectionsChecking || runnableCount === 0}
-          className={cn(buttonVariants({ variant: 'default' }), 'shrink-0')}
-        >
-          {batch ? (
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-          ) : (
-            <Play className="h-4 w-4" aria-hidden="true" />
-          )}
-          {batch ? batchLabel : `Run all (${runnableCount})`}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={!hasResults}
+            onClick={() =>
+              downloadFile(reportFilename(company, 'audit'), buildAuditMarkdown({ company, readiness, categories: stateCategories }), MARKDOWN)
+            }
+            className={downloadClass}
+            title="Full audit: scores, actions, every check and each data source"
+          >
+            <Download className="h-3.5 w-3.5" aria-hidden="true" />
+            Report
+          </button>
+          <button
+            type="button"
+            disabled={!readiness}
+            onClick={() => downloadFile(reportFilename(company, 'audit-actions'), buildActionsMarkdown({ company, readiness }), MARKDOWN)}
+            className={downloadClass}
+            title="Recommended actions in priority order"
+          >
+            <Download className="h-3.5 w-3.5" aria-hidden="true" />
+            Actions
+          </button>
+          <button
+            type="button"
+            onClick={() => audit.runAll()}
+            disabled={audit.busy || audit.connectionsChecking || runnableCount === 0}
+            className={cn(buttonVariants({ variant: 'default' }), 'h-9')}
+          >
+            {batch ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Play className="h-4 w-4" aria-hidden="true" />}
+            {batch ? `Running ${batch.index + 1}/${batch.categories.length}` : `Run all (${runnableCount})`}
+          </button>
+        </div>
       </header>
 
-      <ConnectionsCheck
-        connections={audit.connections}
-        checking={audit.connectionsChecking}
-        onRecheck={audit.checkConnections}
-      />
+      <RunStatus batch={batch} liveRuns={audit.liveRuns} />
+
+      <ConnectionsCheck connections={audit.connections} checking={audit.connectionsChecking} onRecheck={audit.checkConnections} />
 
       {audit.error ? (
         <p role="alert" className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">
@@ -420,79 +118,30 @@ export default function Audit() {
         </div>
       ) : (
         <>
-          <ReadinessOverview readiness={state?.readiness || null} />
-          <RecommendedActions actions={state?.readiness?.actions || []} />
-          <ChecksBySection checks={state?.readiness?.checks || []} />
-
-          <section aria-label="Data collection runs" className="space-y-2">
-            <div>
-              <h2 className="text-sm font-semibold">Data collection runs</h2>
-              <p className="text-xs text-muted-foreground">
-                Each run collects data for a group of checks ({scoredCount} of {CATEGORIES.length} have results). The scores above are built from the latest run of each.
-              </p>
-            </div>
-            <div className="min-w-0">
-              <CategoryGrid
-                stateCategories={stateCategories}
-                liveRuns={audit.liveRuns}
-                runErrors={audit.runErrors}
-                busy={audit.busy || audit.connectionsChecking}
-                runnable={audit.runnable}
-                blockedBy={audit.blockedBy}
-                onRun={audit.runOne}
-                onCancel={audit.cancel}
-                onSelect={setSelected}
-                selected={selected}
-              />
-            </div>
-          </section>
-
-          {withResults.length ? (
-            <section aria-label="Category results" className="space-y-4">
-              <div role="tablist" aria-label="Categories" className="flex flex-wrap gap-1 border-b border-border">
-                {withResults.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    role="tab"
-                    id={`audit-tab-${c.id}`}
-                    aria-selected={selected === c.id}
-                    aria-controls={`audit-panel-${c.id}`}
-                    onClick={() => setSelected(c.id)}
-                    className={cn(
-                      '-mb-px border-b-2 px-3 py-2 text-sm transition-colors',
-                      selected === c.id
-                        ? 'border-primary font-medium text-foreground'
-                        : 'border-transparent text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    {c.short}
-                    {stateCategories[c.id]?.issues?.length ? (
-                      <span className="ml-1.5 text-xs text-muted-foreground">
-                        {stateCategories[c.id].issues.length}
-                      </span>
-                    ) : null}
-                  </button>
-                ))}
-              </div>
-              {selected && stateCategories[selected]?.latest ? (
-                <div role="tabpanel" id={`audit-panel-${selected}`} aria-labelledby={`audit-tab-${selected}`}>
-                  <CategoryDetail
-                    categoryId={selected}
-                    companyId={companyId}
-                    company={state?.company || null}
-                    entry={stateCategories[selected]}
-                    pendingAccept={audit.pendingAccept}
-                    onToggleAccepted={audit.toggleAccepted}
-                  />
-                </div>
-              ) : null}
-            </section>
+          {hasResults ? (
+            <>
+              <ReadinessOverview readiness={readiness} />
+              <RecommendedActions actions={readiness?.actions || []} />
+              <ChecksBySection checks={readiness?.checks || []} />
+            </>
           ) : (
             <p className="rounded-md border border-dashed border-border px-3 py-8 text-center text-sm text-muted-foreground">
-              No results yet. Run all categories, or run one from its card.
+              No results yet. Click Run all to audit the site.
             </p>
           )}
+          <SourcePanels
+            stateCategories={stateCategories}
+            companyId={companyId}
+            liveRuns={audit.liveRuns}
+            runErrors={audit.runErrors}
+            busy={audit.busy || audit.connectionsChecking}
+            runnable={audit.runnable}
+            blockedBy={audit.blockedBy}
+            onRun={audit.runOne}
+            onCancel={audit.cancel}
+            pendingAccept={audit.pendingAccept}
+            onToggleAccepted={audit.toggleAccepted}
+          />
         </>
       )}
     </div>
