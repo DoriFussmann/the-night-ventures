@@ -373,26 +373,26 @@ export async function scheduleBriefs({ companyId, briefs, groupsById, pillarsByI
 }
 
 /**
- * Briefs whose scheduled article went live: mark the brief published and the
- * group live with its slug, so Next up and the content map stay current.
+ * Briefs whose article is live on the site — published by the schedule or
+ * from Articles: mark the brief published and the group live with its slug,
+ * so Next up and the content map stay current.
  */
 export async function syncPublished(companyId, briefs, groupsById) {
-  const waiting = briefs.filter((b) => b.status === "scheduled" && b.generated_article_id);
+  const waiting = briefs.filter((b) => b.status !== "published" && b.status !== "skipped" && b.generated_article_id);
   if (!waiting.length) return 0;
   const { data, error } = await supabase
-    .from("publish_schedule_items")
-    .select("generated_article_id, status, supporting_slug")
-    .eq("company_id", companyId)
-    .in("generated_article_id", waiting.map((b) => b.generated_article_id));
-  fail(error, "Schedule items");
-  const live = new Map((data || []).filter((i) => i.status === "published").map((i) => [i.generated_article_id, i]));
+    .from("generated_articles")
+    .select("id, slug, status, published_at")
+    .in("id", waiting.map((b) => b.generated_article_id));
+  fail(error, "Articles");
+  const live = new Map((data || []).filter((a) => a.published_at || a.status === "published").map((a) => [a.id, a]));
   let changed = 0;
   for (const brief of waiting) {
-    const item = live.get(brief.generated_article_id);
-    if (!item) continue;
+    const article = live.get(brief.generated_article_id);
+    if (!article) continue;
     await patchBrief(brief.id, { status: "published" });
     const group = groupsById.get(brief.group_id);
-    if (group) await patchGroup(group.id, { status: "live", live_slug: item.supporting_slug || group.live_slug });
+    if (group) await patchGroup(group.id, { status: "live", live_slug: article.slug || group.live_slug });
     changed += 1;
   }
   return changed;

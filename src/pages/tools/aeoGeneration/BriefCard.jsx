@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   ARTICLE_TYPES,
+  BRIEF_STATUS_LABELS,
   CTA_PRIMARY,
   deleteBrief,
   outlineToText,
@@ -134,7 +135,7 @@ export default function BriefCard({
           ) : null}
         </div>
         <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider ${STATUS_STYLE[brief.status] || STATUS_STYLE.draft}`}>
-          {brief.status}
+          {BRIEF_STATUS_LABELS[brief.status] || brief.status}
         </span>
       </button>
 

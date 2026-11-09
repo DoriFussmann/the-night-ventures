@@ -3,6 +3,17 @@ import { jsonAuthHeaders } from "@/lib/authHeaders";
 import { defaultCta, groupStats, primaryKeywordFor } from "../../../../lib/aeo/nextUp.js";
 
 export const BRIEF_STATUSES = ["draft", "ready", "generated", "approved", "scheduled", "published", "skipped"];
+
+/** What each stage means to a person (stored values stay the same). */
+export const BRIEF_STATUS_LABELS = {
+  draft: "Brief",
+  ready: "Ready to write",
+  generated: "Written · review",
+  approved: "Approved",
+  scheduled: "Scheduled",
+  published: "Live",
+  skipped: "Skipped",
+};
 export const ARTICLE_TYPES = ["comprehensive", "howto", "comparison", "faq", "flex"];
 export const CTA_PRIMARY = [
   { value: "consultation", label: "Book a call (Buy)" },

@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Loader2, PenLine, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { loadPlaybook } from "./aeoPlaybook/api";
-import { createBriefs, loadBriefs, nextFreeBatchLabel } from "./aeoGeneration/briefs";
+import { BRIEF_STATUS_LABELS, createBriefs, loadBriefs, nextFreeBatchLabel } from "./aeoGeneration/briefs";
 import BriefCard from "./aeoGeneration/BriefCard";
 import SchedulePanel from "./aeoGeneration/SchedulePanel";
 import {
@@ -23,6 +23,16 @@ import { rankNextUp } from "../../../lib/aeo/nextUp.js";
 
 const BATCH_SIZE = 5;
 const DONE = new Set(["published"]);
+
+const STAGE_ORDER = ["draft", "ready", "generated", "approved", "scheduled", "skipped"];
+
+/** e.g. "2 Ready to write · 3 Written · review · 1 Scheduled" (stages present only). */
+function stageCounts(list) {
+  return STAGE_ORDER.map((status) => [status, list.filter((b) => b.status === status).length])
+    .filter(([, n]) => n > 0)
+    .map(([status, n]) => `${n} ${BRIEF_STATUS_LABELS[status]}`)
+    .join(" · ");
+}
 
 function ElapsedTime({ since }) {
   const [now, setNow] = useState(Date.now());
@@ -100,6 +110,7 @@ export default function AeoGeneration() {
     };
   }, [data]);
 
+  const liveCount = briefs.filter((b) => b.status === "published").length;
   const suggested = ranked.slice(0, mode === "batch" ? BATCH_SIZE : 1);
   // Stable order: briefs in one batch share created_at, so tie-break on the
   // group code; otherwise cards swap places on every save.
@@ -213,6 +224,16 @@ export default function AeoGeneration() {
         <p className="mt-0.5 max-w-3xl text-sm text-muted-foreground">
           What to write next, from the content map. Create briefs, add your key points and mark them ready; write the
           drafts, review and approve them, then pick a start day and schedule: one article goes live per workday.
+          {liveCount > 0 ? (
+            <>
+              {" "}
+              {liveCount} {liveCount === 1 ? "article is" : "articles are"} live — find {liveCount === 1 ? "it" : "them"} in{" "}
+              <Link to={`/company/${companyId}/articles`} className="underline underline-offset-2 hover:text-foreground">
+                Articles
+              </Link>
+              .
+            </>
+          ) : null}
         </p>
       </div>
 
@@ -297,8 +318,7 @@ export default function AeoGeneration() {
                 <h2 className="text-sm font-medium text-foreground">
                   {label}{" "}
                   <span className="text-xs font-normal text-muted-foreground">
-                    · {list.filter((b) => b.status === "ready").length} ready · {list.filter((b) => b.status === "generated").length} to review ·{" "}
-                    {list.filter((b) => b.status === "approved").length} approved · {list.filter((b) => b.status === "scheduled").length} scheduled
+                    · {stageCounts(list)}
                   </span>
                 </h2>
                 <div className="flex gap-2">
