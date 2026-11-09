@@ -13,17 +13,7 @@ import {
   publishArticlesToSite,
 } from "./publishToSite";
 import { jsonAuthHeaders } from "@/lib/authHeaders";
-
-function normalizeCompetitors(value) {
-  if (!Array.isArray(value)) return [];
-  return value
-    .filter((item) => item && typeof item === "object")
-    .map((item) => ({
-      name: String(item.name || "").trim(),
-      url: String(item.url || "").trim(),
-    }))
-    .filter((item) => item.name || item.url);
-}
+import { positioningFromPlaybook } from "../../../../lib/aeo/positioning.js";
 
 export function buildArticleImagePrompt(article, frontmatter) {
   const title = String(frontmatter?.title || article?.title || "").trim();
@@ -55,47 +45,29 @@ export function buildArticleImagePrompt(article, frontmatter) {
   return parts.filter(Boolean).join(" ");
 }
 
+/**
+ * What the writer knows about the company: Brand Facts and ICP from the AEO
+ * Playbook, plus domain, market, language and imagery from Company Intelligence.
+ */
 export async function loadCompanyPositioning(companyId) {
-  const { data, error } = await supabase
-    .from("company_profiles")
-    .select(
-      "abstract, short_description, competitors, target_audience, design_guide_raw, domain"
-    )
-    .eq("company_id", companyId)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(error.message || "Failed to load company profile");
-  }
-
-  // SEO Controls (migration 065). Loaded separately so generation still works without them.
-  const seo = await supabase
-    .from("company_profiles")
-    .select(
-      "seo_primary_offer, seo_buyer_problems, seo_content_edge, seo_conversion_action, seo_commercial_url, scope_boundaries, seo_market, seo_language"
-    )
-    .eq("company_id", companyId)
-    .maybeSingle();
-  const seoRow = seo.error ? {} : seo.data || {};
+  const [playbook, profile] = await Promise.all([
+    supabase.from("aeo_playbook").select("brand_facts, icp").eq("company_id", companyId).maybeSingle(),
+    supabase
+      .from("company_profiles")
+      .select("domain, design_guide_raw, seo_market, seo_language")
+      .eq("company_id", companyId)
+      .maybeSingle(),
+  ]);
+  if (playbook.error) throw new Error(playbook.error.message || "Failed to load the AEO Playbook");
+  if (profile.error) throw new Error(profile.error.message || "Failed to load company profile");
 
   return {
-    abstract: data?.abstract || "",
-    shortDescription: data?.short_description || "",
-    competitors: normalizeCompetitors(data?.competitors),
-    audience: String(data?.target_audience || "").trim(),
-    imageryContext: getImageryContext(data?.design_guide_raw),
-    domain: String(data?.domain || "").trim(),
-    seoControls: {
-      primaryOffer: seoRow.seo_primary_offer || "",
-      targetSearcher: String(data?.target_audience || "").trim(),
-      buyerProblems: seoRow.seo_buyer_problems || "",
-      contentEdge: seoRow.seo_content_edge || "",
-      outOfScope: seoRow.scope_boundaries || "",
-      conversionAction: seoRow.seo_conversion_action || "",
-      commercialUrl: seoRow.seo_commercial_url || "",
-      market: seoRow.seo_market || "",
-      language: seoRow.seo_language || "",
-    },
+    ...positioningFromPlaybook({
+      brandFacts: playbook.data?.brand_facts,
+      icp: playbook.data?.icp,
+      settings: profile.data || {},
+    }),
+    imageryContext: getImageryContext(profile.data?.design_guide_raw),
   };
 }
 

@@ -1,7 +1,7 @@
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { BrowserRouter as Router, Route, Routes, Navigate, useParams } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider } from '@/lib/AuthContext';
 import ScrollToTop from './components/ScrollToTop';
@@ -15,27 +15,16 @@ import Companies from '@/pages/Companies';
 import GlobalAdmin from '@/pages/GlobalAdmin';
 import CompanyData from '@/pages/tools/CompanyData';
 import SocialMediaTracker from '@/pages/tools/SocialMediaTracker';
-import ClusterGeneration from '@/pages/tools/ClusterGeneration';
 import Articles from '@/pages/tools/Articles';
-import PillarAutomation from '@/pages/tools/PillarAutomation';
 import AiImageGenerator from '@/pages/tools/AiImageGenerator';
 import SiteBuildFlow from '@/pages/tools/SiteBuildFlow';
-import SeoAiAdvisor from '@/pages/tools/SeoAiAdvisor';
 import ExternalAuditSnapshot from '@/pages/tools/ExternalAuditSnapshot';
 import Audit from '@/pages/tools/Audit';
 import CoreVersion from '@/pages/tools/CoreVersion';
-import EmailCampaigns from '@/pages/tools/EmailCampaigns';
-import AudienceBuild from '@/pages/tools/AudienceBuild';
 import Integrations from '@/pages/tools/Integrations';
-import ArticleCompose from '@/pages/tools/ArticleCompose';
 import Analytics from '@/pages/tools/Analytics';
 import AeoPlaybook from '@/pages/tools/AeoPlaybook';
 import AeoGeneration from '@/pages/tools/AeoGeneration';
-
-function RedirectToClusterGeneration() {
-  const { companyId } = useParams();
-  return <Navigate to={`/company/${companyId}/article-generation`} replace />;
-}
 
 const AuthenticatedApp = () => {
   // Keep public auth routes mounted while session/profile settles.
@@ -54,30 +43,13 @@ const AuthenticatedApp = () => {
           <Route path="/company/:companyId/aeo-playbook" element={<AeoPlaybook />} />
           <Route path="/company/:companyId/aeo-generation" element={<AeoGeneration />} />
           <Route path="/company/:companyId/social-media-tracker" element={<SocialMediaTracker />} />
-          <Route path="/company/:companyId/seo-ai-advisor" element={<SeoAiAdvisor />} />
           <Route path="/company/:companyId/external-audit-snapshot" element={<ExternalAuditSnapshot />} />
           <Route path="/company/:companyId/audit" element={<Audit />} />
-          <Route path="/company/:companyId/article-generation" element={<ClusterGeneration />} />
-          <Route
-            path="/company/:companyId/article-modify"
-            element={<ArticleCompose key="modify" mode="modify" />}
-          />
-          <Route
-            path="/company/:companyId/article-idea"
-            element={<ArticleCompose key="idea" mode="idea" />}
-          />
-          <Route
-            path="/company/:companyId/articles-automation"
-            element={<RedirectToClusterGeneration />}
-          />
           <Route path="/company/:companyId/articles" element={<Articles />} />
           <Route path="/company/:companyId/analytics" element={<Analytics />} />
-          <Route path="/company/:companyId/pillar-automation" element={<PillarAutomation />} />
           <Route path="/company/:companyId/image-generator" element={<AiImageGenerator />} />
           <Route path="/company/:companyId/site-build-flow" element={<SiteBuildFlow />} />
           <Route path="/company/:companyId/core-version" element={<CoreVersion />} />
-          <Route path="/company/:companyId/email-campaigns" element={<EmailCampaigns />} />
-          <Route path="/company/:companyId/audience-build" element={<AudienceBuild />} />
           <Route path="/company/:companyId/integrations" element={<Integrations />} />
         </Route>
       </Route>

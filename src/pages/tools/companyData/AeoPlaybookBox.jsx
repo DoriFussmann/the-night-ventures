@@ -13,9 +13,8 @@ async function countRows(table, companyId) {
 }
 
 /**
- * The AEO Playbook box on Company Intelligence: a separate, clearly marked
- * section that links to the playbook editor. The older fields below are left
- * exactly as they are, so the two can be compared before anything is retired.
+ * The AEO Playbook box on Company Intelligence: links to the playbook editor,
+ * which holds everything articles say about the company.
  */
 export default function AeoPlaybookBox({ companyId }) {
   const [state, setState] = useState({ loading: true, error: "", counts: null });
@@ -63,13 +62,10 @@ export default function AeoPlaybookBox({ companyId }) {
         <div>
           <h2 className="flex items-center gap-2 text-sm font-medium text-foreground">
             AEO Playbook
-            <span className="rounded border border-sky-300 bg-white px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-sky-800">
-              New
-            </span>
           </h2>
           <p className="mt-0.5 max-w-3xl text-xs text-muted-foreground">
-            The new source of truth for content: Brand Facts, ICP and personas, prompts, and the content map. The older fields
-            below are unchanged, so they can be compared and retired one by one.
+            The source of truth for content: Brand Facts, ICP and personas, prompts, and the content map. Article writing, the
+            AI-visibility audit and internal links all read from here.
           </p>
         </div>
         <Link to={base} className="inline-flex items-center gap-1 text-xs font-medium text-sky-800 hover:underline">

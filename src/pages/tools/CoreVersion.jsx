@@ -187,7 +187,7 @@ export default function CoreVersion() {
         ])
         if (cancelled) return
         setCompanyName(String(company?.name || ''))
-        const hasRepo = dest?.owner && dest?.repo && dest?.tokenKey
+        const hasRepo = dest?.owner && dest?.repo
         if (!hasRepo) {
           setDestination(null)
           setLoading(false)

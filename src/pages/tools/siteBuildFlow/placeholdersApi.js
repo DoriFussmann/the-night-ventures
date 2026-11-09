@@ -25,7 +25,7 @@ export async function scanSitePlaceholders(destination) {
   const owner = String(destination?.owner || "").trim();
   const repo = String(destination?.repo || "").trim();
   const tokenKey = String(destination?.tokenKey || "").trim().toUpperCase();
-  if (!owner || !repo || !tokenKey) throw new Error("No Publish Destination set for this company.");
+  if (!owner || !repo) throw new Error("No Publish Destination set for this company.");
   const token = await sessionToken();
   const res = await fetch("/api/site-placeholders", {
     method: "POST",

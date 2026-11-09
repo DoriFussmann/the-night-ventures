@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ErrorLine, Loading, Section } from "./emailCampaigns/ui";
+import { ErrorLine, Loading, Section } from "@/components/SectionBlocks";
 import { getAnalyticsSummary, refreshAnalytics, saveAnalyticsSettings } from "./analytics/api";
 import { fmtDate } from "./analytics/format";
 import { Segmented } from "./analytics/parts";

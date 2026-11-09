@@ -159,7 +159,7 @@ export default function AeoGeneration() {
 
   const writeDrafts = (list) =>
     run(async () => {
-      const writer = { positioning: await loadWriterContext(companyId, data.playbook.brand_facts), brandFacts: data.playbook.brand_facts };
+      const writer = { positioning: await loadWriterContext(companyId), brandFacts: data.playbook.brand_facts };
       const context = [];
       const problems = [];
       for (let i = 0; i < list.length; i += 1) {

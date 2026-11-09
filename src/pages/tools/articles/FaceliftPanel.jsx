@@ -76,7 +76,7 @@ function ResultCell({ entry }) {
 
 export default function FaceliftPanel({ companyId, destination, onHealthChange }) {
   const dest = destFrom(destination, companyId);
-  const mapped = Boolean(dest.owner && dest.repo && dest.tokenKey);
+  const mapped = Boolean(dest.owner && dest.repo);
 
   const [open, setOpen] = useState(false);
   const [phase, setPhase] = useState("idle");

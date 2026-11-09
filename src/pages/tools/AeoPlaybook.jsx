@@ -96,8 +96,8 @@ export default function AeoPlaybook() {
             </span>
           </h1>
           <p className="mt-0.5 max-w-3xl text-sm text-muted-foreground">
-            Brand Facts, ICP and personas, the prompt universe and the content map. Kept separate from the older
-            Company Intelligence fields so they can be compared and retired one by one.
+            Brand Facts, ICP and personas, the prompt universe and the content map: everything articles say about the
+            company.
           </p>
         </div>
         <div className="flex items-center gap-2">

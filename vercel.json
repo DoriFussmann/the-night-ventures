@@ -31,17 +31,6 @@
         {
           "type": "query",
           "key": "action",
-          "value": "wire-internal-links"
-        }
-      ],
-      "destination": "/api/wire-internal-links"
-    },
-    {
-      "source": "/api/check-article-update",
-      "has": [
-        {
-          "type": "query",
-          "key": "action",
           "value": "propose-external-links"
         }
       ],
@@ -75,17 +64,6 @@
         {
           "type": "query",
           "key": "action",
-          "value": "company-data-import"
-        }
-      ],
-      "destination": "/api/company-data-import"
-    },
-    {
-      "source": "/api/check-article-update",
-      "has": [
-        {
-          "type": "query",
-          "key": "action",
           "value": "audit-summary"
         }
       ],
@@ -108,43 +86,10 @@
         {
           "type": "query",
           "key": "action",
-          "value": "instantly"
-        }
-      ],
-      "destination": "/api/instantly"
-    },
-    {
-      "source": "/api/check-article-update",
-      "has": [
-        {
-          "type": "query",
-          "key": "action",
-          "value": "instantly-webhook"
-        }
-      ],
-      "destination": "/api/instantly-webhook"
-    },
-    {
-      "source": "/api/check-article-update",
-      "has": [
-        {
-          "type": "query",
-          "key": "action",
           "value": "integrations"
         }
       ],
       "destination": "/api/integrations"
-    },
-    {
-      "source": "/api/check-article-update",
-      "has": [
-        {
-          "type": "query",
-          "key": "action",
-          "value": "suggest-target-keyword"
-        }
-      ],
-      "destination": "/api/suggest-target-keyword"
     },
     {
       "source": "/api/check-article-update",
@@ -169,28 +114,6 @@
       "destination": "/api/publish-schedule"
     },
     {
-      "source": "/api/check-article-update",
-      "has": [
-        {
-          "type": "query",
-          "key": "action",
-          "value": "audience-build"
-        }
-      ],
-      "destination": "/api/audience-build"
-    },
-    {
-      "source": "/api/check-article-update",
-      "has": [
-        {
-          "type": "query",
-          "key": "action",
-          "value": "analyze-writer-article"
-        }
-      ],
-      "destination": "/api/analyze-writer-article"
-    },
-    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
@@ -203,19 +126,6 @@
     {
       "path": "/api/publish-schedule",
       "schedule": "0 16 * * *"
-    },
-    {
-      "path": "/api/audience-build",
-      "schedule": "0 11 * * 1"
-    },
-    {
-      "path": "/api/audience-build?job=daily-pull",
-      "schedule": "0 12 * * 1-5"
     }
-  ],
-  "functions": {
-    "api/audience-build.js": {
-      "includeFiles": "lib/audience-build/data/**"
-    }
-  }
+  ]
 }

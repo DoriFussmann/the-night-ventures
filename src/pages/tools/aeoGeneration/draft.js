@@ -97,34 +97,9 @@ export async function newHeroForDraft({ companyId, brief, draft, imageStyle, not
   return hero;
 }
 
-/** Company positioning for the writer, with the AEO Brand Facts added. */
-export async function loadWriterContext(companyId, brandFacts) {
-  const positioning = await loadCompanyPositioning(companyId);
-  const bf = brandFacts || {};
-  const facts = [
-    bf.offer && `Offer: ${bf.offer}`,
-    bf.customer && `Customer: ${bf.customer}`,
-    bf.difference && `Difference: ${bf.difference}`,
-    bf.proof && `Proof: ${bf.proof}`,
-    (bf.approved_claims || []).length && `Approved claims (the only claims to make about the company): ${bf.approved_claims.join("; ")}`,
-  ].filter(Boolean);
-  const never = (bf.never_claims || []).length ? `Never claim: ${bf.never_claims.join("; ")}` : "";
-  const known = new Set(positioning.competitors.map((c) => c.name.toLowerCase()));
-  const competitors = [
-    ...positioning.competitors,
-    ...(bf.competitors || [])
-      .filter((c) => c?.name && !known.has(String(c.name).toLowerCase()))
-      .map((c) => ({ name: String(c.name), url: String(c.url || "") })),
-  ];
-  return {
-    ...positioning,
-    abstract: [positioning.abstract, facts.length ? `\nBrand Facts (approved):\n${facts.join("\n")}` : ""].filter(Boolean).join("\n"),
-    competitors,
-    seoControls: {
-      ...positioning.seoControls,
-      outOfScope: [positioning.seoControls.outOfScope, never].filter(Boolean).join("\n"),
-    },
-  };
+/** Company positioning for the writer. It reads the AEO Playbook directly. */
+export async function loadWriterContext(companyId) {
+  return loadCompanyPositioning(companyId);
 }
 
 /** The writer's article spec, built from a brief. */

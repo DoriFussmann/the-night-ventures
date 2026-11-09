@@ -4,15 +4,9 @@ import { useAuth } from "@/lib/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Compass,
   Database,
-  PenLine,
-  FileEdit,
-  Lightbulb,
   BookOpen,
-  Mail,
   Sparkles,
-  MessageSquareText,
   ClipboardCheck,
-  Layers,
   LogOut,
   ArrowLeft,
   Construction,
@@ -22,7 +16,6 @@ import { Compass,
   Settings,
   TriangleAlert,
   ChartLine,
-  Crosshair,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -95,47 +88,6 @@ function SectionRule() {
   return <div className="mx-1 mt-3 border-t border-border" role="separator" />;
 }
 
-function NavDropdown({ label, icon: Icon, items }) {
-  const location = useLocation();
-  const childActive = items.some((item) => location.pathname === item.path);
-  const [open, setOpen] = useState(childActive);
-
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        className={`w-full flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors ${
-          childActive
-            ? "border-border bg-accent text-foreground"
-            : "border-border text-foreground/80 hover:bg-accent hover:text-foreground"
-        }`}
-      >
-        <Icon className="w-3.5 h-3.5 shrink-0" />
-        <span className="min-w-0 flex-1 truncate leading-tight">{label}</span>
-        <ChevronDown
-          className={`w-3 h-3 shrink-0 text-muted-foreground transition-transform duration-200 ease-out ${
-            open ? "rotate-180" : ""
-          }`}
-        />
-      </button>
-      <div
-        className={`grid transition-[grid-template-rows] duration-200 ease-out ${
-          open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
-        }`}
-      >
-        <div className="overflow-hidden">
-          <div className="mt-1.5 ml-2 space-y-1.5 border-l border-border pl-2">
-            {items.map((item) => (
-              <NavItem key={item.path} item={item} />
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 const LAST_COMPANY_ID_KEY = "lastCompanyId";
 
@@ -330,8 +282,6 @@ export default function AppSidebar({ user }) {
   const location = useLocation();
   const { companyId: routeCompanyId } = useParams();
   const [companyName, setCompanyName] = useState("");
-  const [emailEnabled, setEmailEnabled] = useState(false);
-  const [unreadReplies, setUnreadReplies] = useState(0);
 
   useEffect(() => {
     if (routeCompanyId) {
@@ -355,19 +305,12 @@ export default function AppSidebar({ user }) {
     status: "Done",
   };
 
-  const generationItems = [
-    { label: "Pillar", path: `/company/${activeCompanyId}/pillar-automation`, icon: Layers, status: "Done" },
-    { label: "Cluster", path: `/company/${activeCompanyId}/article-generation`, icon: PenLine, status: "Done" },
-    { label: "Article Modify", path: `/company/${activeCompanyId}/article-modify`, icon: FileEdit, status: "Done" },
-    { label: "Article Idea", path: `/company/${activeCompanyId}/article-idea`, icon: Lightbulb, status: "Done" },
-  ];
 
   const buildNav = [
     { label: "Build Blueprint", path: `/company/${activeCompanyId}/site-build-flow`, icon: Construction, status: "Done" },
   ];
 
   const tbcNav = [
-    { label: "Advisor", path: `/company/${activeCompanyId}/seo-ai-advisor`, icon: MessageSquareText, status: "Done" },
     { label: "Image Generation", path: `/company/${activeCompanyId}/image-generator`, icon: Sparkles, status: "Done" },
   ];
 
@@ -382,13 +325,12 @@ export default function AppSidebar({ user }) {
     async function loadCompany() {
       if (!activeCompanyId) {
         setCompanyName("");
-        setEmailEnabled(false);
         return;
       }
 
       const { data, error } = await supabase
         .from("companies")
-        .select("name, email_campaigns_enabled")
+        .select("name")
         .eq("id", activeCompanyId)
         .maybeSingle();
 
@@ -397,12 +339,10 @@ export default function AppSidebar({ user }) {
       if (error) {
         console.error("Failed to load company:", error);
         setCompanyName("");
-        setEmailEnabled(false);
         return;
       }
 
       setCompanyName(data?.name || "");
-      setEmailEnabled(Boolean(data?.email_campaigns_enabled));
     }
 
     loadCompany();
@@ -413,30 +353,6 @@ export default function AppSidebar({ user }) {
     };
   }, [activeCompanyId]);
 
-  // Unread campaign replies → badge on the Email Campaigns nav item.
-  useEffect(() => {
-    if (!activeCompanyId || !emailEnabled) {
-      setUnreadReplies(0);
-      return;
-    }
-    let cancelled = false;
-    const load = async () => {
-      const { count, error } = await supabase
-        .from("email_replies")
-        .select("id", { count: "exact", head: true })
-        .eq("company_id", activeCompanyId)
-        .is("read_at", null);
-      if (!cancelled && !error) setUnreadReplies(count || 0);
-    };
-    load();
-    const timer = setInterval(load, 60000);
-    window.addEventListener("email-replies-read", load);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-      window.removeEventListener("email-replies-read", load);
-    };
-  }, [activeCompanyId, emailEnabled]);
 
   const handleLogout = () => {
     logout("/login");
@@ -522,7 +438,6 @@ export default function AppSidebar({ user }) {
                   icon: ChartLine,
                 }}
               />
-              <NavDropdown label="Generation" icon={Layers} items={generationItems} />
               <NavItem
                 item={{
                   label: "Audit",
@@ -531,23 +446,6 @@ export default function AppSidebar({ user }) {
                   status: "Partial",
                 }}
               />
-              <NavItem
-                item={{
-                  label: "Audience Build",
-                  path: `/company/${activeCompanyId}/audience-build`,
-                  icon: Crosshair,
-                }}
-              />
-              {emailEnabled && (
-                <NavItem
-                  item={{
-                    label: "Email Campaigns",
-                    path: `/company/${activeCompanyId}/email-campaigns`,
-                    icon: Mail,
-                    count: unreadReplies,
-                  }}
-                />
-              )}
             </div>
 
             <SectionRule />
