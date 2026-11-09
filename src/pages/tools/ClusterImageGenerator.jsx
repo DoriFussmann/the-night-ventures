@@ -23,6 +23,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { getImageryContext, getImageryPalette } from "@/lib/design/getImageryContext";
+import ImageryStyleCard from "./aiImage/ImageryStyleCard";
 import {
   DEFAULT_STYLE_SPEC,
   IMAGE_HEIGHT,
@@ -94,6 +95,7 @@ export default function ClusterImageGenerator() {
   const [companyName, setCompanyName] = useState("");
   const [productName, setProductName] = useState("");
   const [domain, setDomain] = useState("");
+  const [guideRaw, setGuideRaw] = useState("");
   const [imageryContext, setImageryContext] = useState("");
   const [palette, setPalette] = useState(null);
   const [pillars, setPillars] = useState([]);
@@ -168,6 +170,7 @@ export default function ClusterImageGenerator() {
     setProductName(profileResult.data?.product_name || "");
     setDomain(profileResult.data?.domain || "");
     const guide = profileResult.data?.design_guide_raw;
+    setGuideRaw(guide || "");
     setImageryContext(getImageryContext(guide));
     setPalette(getImageryPalette(guide));
 
@@ -355,17 +358,15 @@ export default function ClusterImageGenerator() {
         </p>
       </div>
 
-      {!imageryContext && (
-        <div className="rounded-lg border border-dashed border-border px-4 py-4 text-sm">
-          <p className="text-foreground">
-            No Design Guide (Imagery) set for this company yet — add one in Design
-            for on-brand results
-          </p>
-          <Button asChild variant="outline" size="sm" className="mt-3">
-            <Link to={`/company/${companyId}/design-guide-builder`}>Design</Link>
-          </Button>
-        </div>
-      )}
+      <ImageryStyleCard
+        companyId={companyId}
+        guideRaw={guideRaw}
+        onSaved={(raw) => {
+          setGuideRaw(raw);
+          setImageryContext(getImageryContext(raw));
+          setPalette(getImageryPalette(raw));
+        }}
+      />
 
       {pillars.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border px-4 py-10 text-center">

@@ -106,44 +106,8 @@ export const PREDEFINED_ITEMS = {
       item_key: "clone-repo-and-add-design-guide",
       title: "Clone the repo",
       description:
-        "Open a new Cursor project for that folder. Tell the agent to git clone the GitHub URL into the folder root (not a subfolder). Leave site/Design Guide.md as it is for now — the design is applied after the content. Run npm run build to confirm it passes, then commit and push.",
+        "Open a new Cursor project for that folder. Tell the agent to git clone the GitHub URL into the folder root (not a subfolder). Run npm run build to confirm it passes, then commit and push.",
       prompts: [],
-    },
-    {
-      item_key: "follow-narrative-composer",
-      title: "Write the site content in ChatGPT",
-      description:
-        "Open Narrative Composer, copy the ChatGPT prompt, attach company-data.md and send. Save the full response.",
-      prompts: [],
-      linkTo: "/company/:companyId/site-content-builder",
-      linkLabel: "Open Narrative Composer →",
-    },
-    {
-      item_key: "paste-site-content-into-cursor",
-      title: "Implement the content in Cursor",
-      description:
-        "Open Implement content, copy the Cursor prompt, paste it into Cursor with ChatGPT's full response below it. Wait for a clean build and the report.",
-      prompts: [],
-      linkTo: "/company/:companyId/site-content-build",
-      linkLabel: "Open Implement content →",
-    },
-    {
-      item_key: "pick-design",
-      title: "Pick your design and generate the guide",
-      description:
-        "Open Design. Pick one of the 6 directions, optionally tick Force Inter and/or Force no bold, set the brand accent and wordmark if needed, and check the preview. Click Generate design guide. Download DESIGN_GUIDE.md and copy the Cursor prompt.",
-      prompts: [],
-      linkTo: "/company/:companyId/design-guide-builder",
-      linkLabel: "Open Design →",
-    },
-    {
-      item_key: "apply-design-in-cursor",
-      title: "Apply the design in Cursor",
-      description:
-        "Drag DESIGN_GUIDE.md into the repository root (next to the site/ folder, not inside it). Paste the Cursor prompt from Design into Cursor and send. Wait for a clean npm run build and the report, check the site at mobile and desktop width, then commit and push.",
-      prompts: [],
-      linkTo: "/company/:companyId/design-guide-builder",
-      linkLabel: "Open Design →",
     },
     {
       item_key: "review-and-remove-pages",
@@ -343,15 +307,6 @@ export const PREDEFINED_ITEMS = {
     },
   ],
   "site-activation": [
-    {
-      item_key: "build-site-content-from-chatgpt",
-      title: "Write and implement the site content",
-      description:
-        "Open Narrative Composer, copy the ChatGPT prompt, attach company-data.md and send. Save the full response. Then open Implement content, copy the Cursor prompt, and paste it into Cursor with ChatGPT's full response below it. Wait for a clean build and the report.",
-      prompts: [],
-      linkTo: "/company/:companyId/site-content-builder",
-      linkLabel: "Open Narrative Composer →",
-    },
     {
       item_key: "confirm-default-author-on-site",
       title: "Set the real author on the site",

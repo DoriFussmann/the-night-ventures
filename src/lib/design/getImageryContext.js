@@ -1,4 +1,4 @@
-import { normalizeHex } from "./contrast.js";
+import { normalizeHex } from "./hex.js";
 
 const FENCE = /```tokens\s*\n([\s\S]*?)\n```/;
 

@@ -4,8 +4,6 @@ import { useAuth } from "@/lib/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Compass,
   Database,
-  Palette,
-  LayoutTemplate,
   PenLine,
   FileEdit,
   Lightbulb,
@@ -368,8 +366,6 @@ export default function AppSidebar({ user }) {
 
   const buildNav = [
     { label: "Build Blueprint", path: `/company/${activeCompanyId}/site-build-flow`, icon: Construction, status: "Done" },
-    { label: "Design", path: `/company/${activeCompanyId}/design-guide-builder`, icon: Palette, status: "Done" },
-    { label: "Narrative Composer", path: `/company/${activeCompanyId}/site-content-builder`, icon: LayoutTemplate, status: "Done" },
   ];
 
   const tbcNav = [

@@ -15,9 +15,6 @@ import Companies from '@/pages/Companies';
 import GlobalAdmin from '@/pages/GlobalAdmin';
 import CompanyData from '@/pages/tools/CompanyData';
 import SocialMediaTracker from '@/pages/tools/SocialMediaTracker';
-import DesignGuideBuilder from '@/pages/tools/DesignGuideBuilder';
-import SiteContentBuild from '@/pages/tools/SiteContentBuild';
-import SiteContentBuilder from '@/pages/tools/SiteContentBuilder';
 import ClusterGeneration from '@/pages/tools/ClusterGeneration';
 import Articles from '@/pages/tools/Articles';
 import PillarAutomation from '@/pages/tools/PillarAutomation';
@@ -60,9 +57,6 @@ const AuthenticatedApp = () => {
           <Route path="/company/:companyId/aeo-playbook" element={<AeoPlaybook />} />
           <Route path="/company/:companyId/aeo-generation" element={<AeoGeneration />} />
           <Route path="/company/:companyId/social-media-tracker" element={<SocialMediaTracker />} />
-          <Route path="/company/:companyId/design-guide-builder" element={<DesignGuideBuilder />} />
-          <Route path="/company/:companyId/site-content-build" element={<SiteContentBuild />} />
-          <Route path="/company/:companyId/site-content-builder" element={<SiteContentBuilder />} />
           <Route path="/company/:companyId/seo-ai-advisor" element={<SeoAiAdvisor />} />
           <Route path="/company/:companyId/external-audit-snapshot" element={<ExternalAuditSnapshot />} />
           <Route path="/company/:companyId/audit" element={<Audit />} />

@@ -1,11 +1,10 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { Download, Loader2, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Select,
   SelectContent,
@@ -15,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { getImageryContext } from "@/lib/design/getImageryContext";
+import ImageryStyleCard from "./aiImage/ImageryStyleCard";
 import {
   IMAGE_SIZES,
   appendKeywordContext,
@@ -140,6 +140,7 @@ export default function AiImageGenerator() {
   const [error, setError] = useState("");
   const [saveMessage, setSaveMessage] = useState("");
 
+  const [guideRaw, setGuideRaw] = useState("");
   const [imageryContext, setImageryContext] = useState("");
   const [prompt, setPrompt] = useState("");
   const [extraGuidelines, setExtraGuidelines] = useState("");
@@ -195,6 +196,7 @@ export default function AiImageGenerator() {
     }
 
     setCompanyName(companyResult.data?.name || "");
+    setGuideRaw(profileResult.data?.design_guide_raw || "");
     setImageryContext(getImageryContext(profileResult.data?.design_guide_raw));
     const fromCoverage = normalizePillarsFromCoverage(coverageResult.data?.pillars);
     const fromCore = normalizePillarsFromCoreKeywords(
@@ -211,7 +213,6 @@ export default function AiImageGenerator() {
     loadCompanyData();
   }, [loadCompanyData]);
 
-  const designGuideMissing = !imageryContext.trim();
   const previewSrc = imageSrcFromResult(result);
 
   const handleSavePrompt = () => {
@@ -337,32 +338,14 @@ export default function AiImageGenerator() {
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
-      {designGuideMissing && (
-        <Alert variant="destructive">
-          <AlertDescription>
-            No Design Guide (Imagery) set — generated images will not follow brand
-            direction. Set this in{" "}
-            <Link
-              to={`/company/${companyId}/design-guide-builder`}
-              className="font-medium underline underline-offset-2"
-            >
-              Design
-            </Link>{" "}
-            first for on-brand results.
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {!designGuideMissing && (
-        <div className="space-y-2 rounded-lg border border-border p-4">
-          <p className="text-xs font-medium text-muted-foreground">
-            Design Guide (Imagery)
-          </p>
-          <p className="text-sm text-foreground whitespace-pre-wrap max-h-40 overflow-auto">
-            {imageryContext}
-          </p>
-        </div>
-      )}
+      <ImageryStyleCard
+        companyId={companyId}
+        guideRaw={guideRaw}
+        onSaved={(raw) => {
+          setGuideRaw(raw);
+          setImageryContext(getImageryContext(raw));
+        }}
+      />
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
