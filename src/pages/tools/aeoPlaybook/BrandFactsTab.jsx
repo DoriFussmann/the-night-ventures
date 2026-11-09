@@ -28,7 +28,7 @@ function Section({ title, helper, children, badge }) {
 
 export default function BrandFactsTab({ companyId, playbook, onSaved }) {
   const [facts, setFacts] = useState(playbook.brand_facts);
-  const [claims, setClaims] = useState({ approved: "", never: "", open: "" });
+  const [claims, setClaims] = useState({ approved: "", never: "", out: "", open: "" });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -37,6 +37,7 @@ export default function BrandFactsTab({ companyId, playbook, onSaved }) {
     setClaims({
       approved: (playbook.brand_facts.approved_claims || []).join("\n"),
       never: (playbook.brand_facts.never_claims || []).join("\n"),
+      out: (playbook.brand_facts.out_of_scope || []).join("\n"),
       open: (playbook.brand_facts.open_items || []).join("\n"),
     });
   }, [playbook]);
@@ -60,6 +61,7 @@ export default function BrandFactsTab({ companyId, playbook, onSaved }) {
           ...facts,
           approved_claims: linesToList(claims.approved),
           never_claims: linesToList(claims.never),
+          out_of_scope: linesToList(claims.out),
           open_items: linesToList(claims.open),
         },
       });
@@ -97,12 +99,32 @@ export default function BrandFactsTab({ companyId, playbook, onSaved }) {
 
       {BRAND_SECTIONS.map((s) => (
         <Section key={s.key} title={s.label} helper={s.helper}>
+          {s.key === "conversion" ? (
+            <div className="mb-2 grid gap-2 md:grid-cols-[1fr_2fr]">
+              <div>
+                <p className="mb-1 text-xs font-medium text-foreground">Call to action</p>
+                <Input
+                  value={facts.conversion_action || ""}
+                  placeholder="Book a call."
+                  onChange={(e) => set("conversion_action", e.target.value)}
+                />
+              </div>
+              <div>
+                <p className="mb-1 text-xs font-medium text-foreground">Conversion page URL (every article links here once)</p>
+                <Input
+                  value={facts.conversion_url || ""}
+                  placeholder="https://www.example.com/book-call/"
+                  onChange={(e) => set("conversion_url", e.target.value)}
+                />
+              </div>
+            </div>
+          ) : null}
           <Textarea rows={6} value={facts[s.key] || ""} onChange={(e) => set(s.key, e.target.value)} />
         </Section>
       ))}
 
-      <Section title="Claims" helper="One per line. Writers use the approved list as written and never use the other.">
-        <div className="grid gap-3 md:grid-cols-2">
+      <Section title="Claims and scope" helper="One per line. Writers use the approved list as written, never use the second, and never write about the third.">
+        <div className="grid gap-3 md:grid-cols-3">
           <div>
             <p className="mb-1 text-xs font-medium text-foreground">Approved (use as written)</p>
             <Textarea rows={8} value={claims.approved} onChange={(e) => setClaims((c) => ({ ...c, approved: e.target.value }))} />
@@ -110,6 +132,10 @@ export default function BrandFactsTab({ companyId, playbook, onSaved }) {
           <div>
             <p className="mb-1 text-xs font-medium text-foreground">Never claim</p>
             <Textarea rows={8} value={claims.never} onChange={(e) => setClaims((c) => ({ ...c, never: e.target.value }))} />
+          </div>
+          <div>
+            <p className="mb-1 text-xs font-medium text-foreground">Out of scope topics</p>
+            <Textarea rows={8} value={claims.out} onChange={(e) => setClaims((c) => ({ ...c, out: e.target.value }))} />
           </div>
         </div>
       </Section>
