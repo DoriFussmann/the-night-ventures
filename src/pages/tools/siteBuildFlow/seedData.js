@@ -4,7 +4,6 @@
  * To change the checklist, use "Edit checklist" on the Site Build Flow page.
  */
 
-import { publishGuideText } from "../../../../lib/publish-destination/guide.js";
 
 export const STATUSES = ["open", "done"];
 
@@ -31,551 +30,149 @@ export function nextStatus(current) {
 }
 
 export const STAGES = [
-  { stage_key: "code-setup", name: "Code Setup", order_index: 0 },
-  { stage_key: "seed-articles-content", name: "Seed Articles Content", order_index: 1 },
-  { stage_key: "deployment", name: "Deployment", order_index: 2 },
-  { stage_key: "site-activation", name: "Site Activation", order_index: 3 },
+  { stage_key: "code-setup", name: "Site Setup", order_index: 0 },
+  { stage_key: "deployment", name: "Deployment", order_index: 1 },
+  { stage_key: "aeo-playbook", name: "AEO Playbook", order_index: 2 },
+  { stage_key: "seed-articles-content", name: "Seed Articles Content", order_index: 3 },
   { stage_key: "connection-layer", name: "Connection Layer", order_index: 4 },
-  { stage_key: "links-wiring", name: "Links Wiring", order_index: 5 },
-  { stage_key: "seed-qa", name: "Initial Seed Content QA", order_index: 6 },
 ];
 
-const FILL_FIELDS_PROMPT =
-  "Help me fill the missing fields for the new company, based on what I have provided you with - ask me all the questions you need to complete the fields. Give me in each turn a summary % completion, how many done and how many we have left. Be thorough, precise and super professional. Available to download as .md file";
-
-const PUBLISH_DESTINATION_INSTRUCTIONS = `Open AEO Playbook → Company → Publish Destination. The guide (Workspace Admin → GitHub access) walks through all three parts; Check Connection confirms each one before you save.
-
-${publishGuideText()}`;
-
+/** The default checklist: the same steps as the live template (setup_flow_template_*). */
 export const PREDEFINED_ITEMS = {
   "code-setup": [
     {
       item_key: "add-new-company",
-      title: "Add a new company and the details you have",
-      description:
-        "In The Night Ventures, add a new company and enter the basic details you already have.",
+      title: "Add a new company",
+      description: "In The Night Ventures, add the new company.",
       prompts: [],
       linkTo: "/",
       linkLabel: "Open Companies →",
     },
     {
-      item_key: "download-company-intelligence",
-      title: "Download Company Intelligence as Markdown",
-      description:
-        "In Company Intelligence, once you have added all the details you have, click Download as Markdown.",
-      prompts: [],
-      linkTo: "/company/:companyId/aeo-playbook?tab=company",
-      linkLabel: "Open AEO Playbook → Company →",
-    },
-    {
-      item_key: "fill-missing-fields-in-chatgpt",
-      title: "Fill the missing fields in ChatGPT",
-      description:
-        "Upload the Company Intelligence markdown to ChatGPT and run the prompt. ChatGPT asks the questions it needs to complete the fields. The output is a markdown file you download.",
-      prompts: [
-        {
-          label: "LLM prompt to help fill fields",
-          text: FILL_FIELDS_PROMPT,
-        },
-      ],
-    },
-    {
-      item_key: "upload-completed-company-intelligence",
-      title: "Upload the completed Company Intelligence file",
-      description:
-        "Drag and drop the completed ChatGPT Company Intelligence .md file onto Company Intelligence and let it fill the missing fields.",
-      prompts: [],
-      linkTo: "/company/:companyId/aeo-playbook?tab=company",
-      linkLabel: "Open AEO Playbook → Company →",
-    },
-    {
       item_key: "create-github-repo-from-template",
-      title: "Create a GitHub repo from the SEO Blueprint template",
-      description:
-        "On GitHub, create a new repository from the SEO Blueprint template.",
-      prompts: [],
-    },
-    {
-      item_key: "create-local-project-folder",
-      title: "Create a local project folder",
-      description:
-        "On your desktop, create a new folder under your development Cursor zone.",
+      title: "Create an empty GitHub repo",
+      description: "On GitHub, create a new, empty repository for the site (no README, no template). Claude asks for it in the next step.",
       prompts: [],
     },
     {
       item_key: "clone-repo-and-add-design-guide",
-      title: "Clone the repo",
-      description:
-        "Open a new Cursor project for that folder. Tell the agent to git clone the GitHub URL into the folder root (not a subfolder). Run npm run build to confirm it passes, then commit and push.",
-      prompts: [],
-    },
-    {
-      item_key: "review-and-remove-pages",
-      title: "Review pages and clean up",
-      description:
-        "Run the site locally and read every page. Delete pages you don't want: remove site/src/content/pages/<page>.yaml and its link from NAV or the footer in site/src/config/site.ts. Never remove Articles, Privacy or Terms. Replace testimonial placeholders with real quotes or delete the Testimonials page. Have Privacy and Terms reviewed. Resolve every [GAP] line. For each image brief, generate or source the image, save it in site/src/assets/, and add its path as src next to the brief in the page YAML. Build, commit and push.",
+      title: "Clone the newest site into the new repo",
+      description: "Open Claude and ask it to clone the most recent, most complete site — pick by design and completeness; every site gets core updates from seo-core. When Claude asks for the repo, give it the new one.\n\nThen have Claude replace the previous company's content with the new company's: articles, pages, team and author, logo, social share image, SAME_AS profiles and site config. Build, commit and push.",
       prompts: [],
     },
     {
       item_key: "replace-brand-assets",
-      title: "Replace the logo, social image and brand profiles",
-      description:
-        "Replace three template placeholders. (1) site/public/logo.png: the brand logo as PNG, JPEG or WebP, square, at least 112×112px. Search engines show it for the brand, and the build fails on an SVG, a favicon or anything smaller. (2) site/public/og-default.png: a 1200×675 branded image, shown when a page is shared and has no image of its own. (3) SAME_AS in site/src/config/site.ts: the brand's official profiles (LinkedIn company page, Crunchbase, X). The build warns while it is empty. Run npm run build, then commit and push.",
+      title: "Run the readiness report and fill every gap",
+      description: "Ask Claude, in the site repo, to run the readiness report below. Then fill every gap with it: company facts come from the AEO Playbook (Company tab and Brand Facts), never invented; the assets only you have are listed under Owner inputs needed.\n\nGoal: list everything on this site that is still a placeholder, missing, broken or unfinished, so the owner can fill it in. Check the source AND the built/rendered site.\n\n1. Build the site and run the dev server. Crawl every route the site generates (sitemap, routes, content collections, dynamic pages), including 404 and legal pages.\n\n2. Find, per page and per component:\n   - Placeholder text: [PLACEHOLDER…], TODO, TBD, FIXME, lorem ipsum, \"Primary positioning phrase\", [YOUR …], [00], example@, 555 numbers, template or demo strings, duplicated filler copy, and anything still about the company this site was cloned from.\n   - Images: slots with no src, missing files, broken paths, image briefs or alt text describing an image that doesn't exist yet, empty or generic alt text (\"image\", \"photo\"), wrong aspect for its frame, oversized files (>500 KB).\n   - Brand: missing logo, favicon set, apple-touch icon, OG/social share image, wordmark.\n   - People: team members, authors, testimonials or quotes with missing name, role, photo, bio or source.\n   - Links: href=\"#\", empty hrefs, links to routes that 404, broken external links (check status codes), placeholder social or profile URLs, mailto/tel with dummy values, buttons that go nowhere.\n   - Clients / logos / partners: sections expecting logos with none supplied.\n   - SEO & metadata: missing or duplicate page titles and meta descriptions, missing canonical, OG/Twitter tags, empty JSON-LD fields (e.g. sameAs, address, logo), missing sitemap entries, robots issues.\n   - Contact & legal: missing contact email/phone/address, privacy policy, terms, cookie notice, copyright year/name.\n   - Forms: forms with no endpoint or handler, missing success/error messages.\n   - Articles/content: missing cover image, author, date, excerpt, category, fewer than the expected number of items in any listing.\n   - Config & env: required environment variables or site settings that are empty or still defaults (site URL, analytics IDs, form keys).\n   - Anything the design guide's \"Not implemented\" or placeholder table depends on.\n\n3. Write the report to CONTENT_TODO.md at the repository root:\n   - A summary table: category | count | priority (Blocker = visible broken or placeholder on a live page; Important = missing but not visible, e.g. SEO, alt text; Nice to have).\n   - Then one checklist item per issue: [ ] page URL — component/section — what is missing — exact file and line where it is filled in — what the owner needs to provide (e.g. \"4:5 photo, ≥1600px wide\", \"client logo SVG\", \"LinkedIn URL\").\n   - Group by page, Blockers first.\n   - A final section \"Owner inputs needed\" listing every asset and fact to collect in one place (images, logos, names, URLs, copy).\n\n4. Do not guess or fill anything in. If unsure whether something is a placeholder, list it under \"Needs confirmation\".",
       prompts: [],
+      linkTo: "/company/:companyId/aeo-playbook?tab=brand",
+      linkLabel: "Open Brand Facts →",
     },
     {
       item_key: "set-publish-destination",
       title: "Set Publish Destination",
-      description: PUBLISH_DESTINATION_INSTRUCTIONS,
+      description: "On GitHub, open the tnv-publish fine-grained token → Edit → Repository access → add the new repo → Update. The token value does not change, so nothing changes in Vercel.\n\nIn TNV, open AEO Playbook → Company → Publish Destination, enter the GitHub owner and repo, and click Check Connection. Save when every line is green.",
       prompts: [],
       linkTo: "/company/:companyId/aeo-playbook?tab=company",
       linkLabel: "Open AEO Playbook → Company →",
     },
     {
       item_key: "update-core-version",
-      title: "Update Core Version",
-      description:
-        "Go to Admin → Core Version, wait for the scan on the live deployed site, and update the version. One-click updates cover minor versions only. A major version (for example 0.x → 1.0) shows as 'Migration required' and needs a Cursor patch for this site first.",
+      title: "Check Core Version",
+      description: "Once the site is live: Admin → Core Version. A clone of the newest site is usually current already; update if a newer minor version shows. A major version (for example 0.x → 1.0) shows as 'Migration required' and needs a patch for this site first.",
       prompts: [],
       linkTo: "/company/:companyId/core-version",
       linkLabel: "Open Core Version →",
     },
-    {
-      item_key: "website-ready",
-      title: "You have a website",
-      description:
-        "That's it. You now have a website locally, with content and design based on your input, and the ability to publish and update from TNV.",
-      prompts: [],
-    },
   ],
-  "seed-articles-content": [
-    {
-      item_key: "advisor-general-seo-research",
-      title: "Run general SEO research and the approach",
-      description:
-        "Use the Advisor tool to conduct general SEO research about the site, and the SEO approach.",
-      prompts: [],
-      linkTo: "/company/:companyId/seo-ai-advisor",
-      linkLabel: "Open Advisor →",
-    },
-    {
-      item_key: "advisor-pillar-research",
-      title: "Research, confirm, and save pillars",
-      description:
-        "Use the Advisor tool to conduct research on the Pillar Articles. Confirm and save each pillar.",
-      prompts: [],
-      linkTo: "/company/:companyId/seo-ai-advisor",
-      linkLabel: "Open Advisor →",
-    },
-    {
-      item_key: "advisor-cluster-research",
-      title: "Research, confirm, and save clusters",
-      description:
-        "Use the Advisor tool to conduct research on the Clusters and Supporting Keywords. Do them one by one. Confirm and save one by one.",
-      prompts: [],
-      linkTo: "/company/:companyId/seo-ai-advisor",
-      linkLabel: "Open Advisor →",
-    },
-    {
-      item_key: "generate-publish-all-pillars",
-      title: "Generate and publish all pillar articles",
-      description:
-        "Go to Generation in Build → Pillar, and click Generate & publish all. One click plans, generates, and publishes a pillar article for every pillar that doesn’t have one yet.",
-      prompts: [],
-      linkTo: "/company/:companyId/pillar-automation",
-      linkLabel: "Open Pillar Generation →",
-    },
-    {
-      item_key: "generate-publish-all-clusters",
-      title: "Generate and publish all cluster articles",
-      description:
-        "Go to Generation in Build → Cluster, and click Generate & publish all. One click plans, generates, and publishes one supporting cluster for each published pillar that doesn’t have one yet.",
-      prompts: [],
-      linkTo: "/company/:companyId/article-generation",
-      linkLabel: "Open Cluster Generation →",
-    },
-    {
-      item_key: "review-articles-locally",
-      title: "Review the articles locally",
-      description:
-        "Run npm run dev on the new site, navigate to articles, and check them out. Confirm everything looks legit.",
-      prompts: [],
-    },
-  ],
-  deployment: [
-    {
-      item_key: "push-to-github",
-      title: "Push to GitHub",
-      description:
-        "The remote already exists from the template clone. In Cursor, commit remaining local changes and push to that repo.",
-      prompts: [
-        {
-          label: "Push command (edit URL if needed)",
-          text: "Push to GitHub, https://github.com/[your-username]/[your-repo-name]",
-        },
-      ],
-    },
+  "deployment": [
     {
       item_key: "create-vercel-project",
       title: "Create Vercel project",
-      description:
-        "Go to Vercel, Add New > Project. It should auto-detect the pushed repo. In the project's Settings, set Node.js Version to 24.x (the template requires Node 24).",
-      prompts: [],
-    },
-    {
-      item_key: "create-supabase-database",
-      title: "Create Supabase database",
-      description:
-        "Once deployed, go to Vercel Storage, Create Database > Supabase.",
-      prompts: [],
-    },
-    {
-      item_key: "copy-supabase-env-variables",
-      title: "Copy Supabase env variables",
-      description:
-        "From Vercel Storage, go to Getting Started, copy the .env variables for Supabase.",
-      prompts: [],
-    },
-    {
-      item_key: "scaffold-env-local",
-      title: "Scaffold .env.local with Cursor",
-      description:
-        "Have Cursor scan the site's codebase and pre-create .env.local with every environment variable the project actually reads, so you only fill in values.",
-      prompts: [
-        {
-          label: "Scaffold .env.local prompt",
-          text: "Scaffold my .env.local for this site. Scan the codebase for every environment variable this project actually reads (Vite client vars, server/serverless vars, build scripts, and the CMS). For each one, add a line to .env.local with the variable name and an empty or placeholder value, grouped with a short comment saying what it's for and whether it's public (VITE_-prefixed, browser-exposed) or server-only. I know this site uses Supabase, and it may use Anthropic and/or OpenAI for API calls — include those if the code references them, but do not invent variables the code doesn't use. Also confirm .env.local is gitignored. List the variables you found and where each is used.",
-        },
-      ],
-    },
-    {
-      item_key: "add-env-local-confirm-cursor",
-      title: "Add .env.local and confirm with Cursor",
-      description:
-        "Create a .env.local file in your project root, paste the variables in.",
-      prompts: [
-        {
-          label: "Confirm setup prompt",
-          text: "Can you check .env.local? I deployed to GitHub, Vercel and connected Supabase.",
-        },
-      ],
-    },
-    {
-      item_key: "check-run-sql-migrations",
-      title: "Check for and run SQL migrations",
-      description:
-        "Ask Cursor whether a migration needs running. Most template sites do: the migration creates the empty tables (e.g. team_members, articles, services) with RLS that the code already expects. It runs before any content exists because schema always precedes data. If Cursor says there's no migration, skip the next step.",
-      prompts: [
-        {
-          label: "Migration check prompt",
-          text: "OK, now we have a database — is there an SQL Editor migration I need to run in Supabase? If so, can it be a file in the root I can copy and paste the content from?",
-        },
-      ],
-    },
-    {
-      item_key: "run-migration-in-supabase",
-      title: "Run migration in Supabase",
-      description:
-        "Open the migration file at the repo root (e.g. supabase-migration.sql), copy the whole file, paste into Supabase → SQL Editor → New query, and Run. Success looks like 'Success. No rows returned.' Confirm the tables appear under Table Editor.",
+      description: "In Vercel, Add New → Project and pick the new repo. Set the Node.js version in the project's Settings to match the site's package.json.",
       prompts: [],
     },
     {
       item_key: "add-custom-domain-in-vercel",
-      title: "Add custom domain in Vercel",
-      description: "Go to Vercel, add your custom domain.",
-      prompts: [],
-    },
-    {
-      item_key: "update-dns-records",
-      title: "Update DNS records",
-      description:
-        "Paste the DNS records Vercel gives you into your domain host's settings.",
-      prompts: [],
-    },
-    {
-      item_key: "commit-and-push",
-      title: "Commit and push",
-      description: "Commit any remaining changes and push.",
-      prompts: [],
-    },
-    {
-      item_key: "verify-live-deployment",
-      title: "Verify live deployment",
-      description:
-        "Confirm the site loads on your custom domain with SSL active.",
+      title: "Add the custom domain and DNS",
+      description: "In the Vercel project, add the custom domain and set the DNS records it asks for. Confirm the site loads on the domain.",
       prompts: [],
     },
   ],
-  "site-activation": [
+  "aeo-playbook": [
     {
-      item_key: "confirm-default-author-on-site",
-      title: "Set the real author on the site",
-      description:
-        "The template ships a placeholder author (site/src/content/team/site-author.md) that fails the live build until it is replaced. Rename it to the author's slug (for example jane-doe.md), fill in name, role, bio and photo, and update author in the demo articles or delete them. When publishing, TNV uses the article's author if the site has that team member, otherwise the site's first team member.",
+      item_key: "playbook-company",
+      title: "Fill the Company tab",
+      description: "Name, domain, product name (only if it differs from the company name), search market, language and AI training crawler policy.",
       prompts: [],
+      linkTo: "/company/:companyId/aeo-playbook?tab=company",
+      linkLabel: "Open Company →",
     },
     {
-      item_key: "plan-topics-in-topic-generator",
-      title: "Plan clusters in Cluster Generation",
-      description:
-        "In TNV → Cluster Generation, pillar and supporting keywords from Company Data appear as the pillar→cluster tree. Plan the clusters you want to seed; coverage is the input for generation.",
+      item_key: "playbook-brand-facts",
+      title: "Fill Brand Facts",
+      description: "Offer, customer, problem, difference, proof, conversion (with the call to action and the conversion page URL every article links to), voice & tone, image style, approved and never claims, out-of-scope topics and competitors. The writer and the Audit read only what is here.",
       prompts: [],
-      linkTo: "/company/:companyId/article-generation",
-      linkLabel: "Open Cluster Generation →",
+      linkTo: "/company/:companyId/aeo-playbook?tab=brand",
+      linkLabel: "Open Brand Facts →",
     },
     {
-      item_key: "generate-and-publish-articles",
-      title: "Generate articles (with images) and publish",
-      description:
-        "In TNV → Cluster Generation, select a supporting cluster and click Generate (pillar article must already be published). Images are on by default. When generation completes, the run commits to the site automatically, then offers to wire internal links.",
+      item_key: "playbook-audience-prompts",
+      title: "Add ICP, personas, prompts and the content map",
+      description: "Fill the ICP and personas, the prompt universe and the content map (pillars and prompt groups), or import a playbook JSON file with Import playbook file.",
       prompts: [],
-      linkTo: "/company/:companyId/article-generation",
-      linkLabel: "Open Cluster Generation →",
+      linkTo: "/company/:companyId/aeo-playbook?tab=personas",
+      linkLabel: "Open ICP & Personas →",
     },
+  ],
+  "seed-articles-content": [
     {
-      item_key: "verify-articles-live",
-      title: "Verify articles are live",
-      description:
-        "After the merge and rebuild, confirm: the articles appear on the live site, each has its hero image, the author resolves (no broken author link), and the articles are present in the sitemap and RSS. Check the publish result for any 'skipped' entries (missing hero or body) and re-run those if needed.",
+      item_key: "aeo-generate-and-schedule",
+      title: "Generate and schedule articles in AEO Generation",
+      description: "Pick the next prompt groups, create briefs, draft the articles with their hero images and schedule them. The daily publisher commits each article to the site and wires internal links automatically.",
       prompts: [],
-    },
-    {
-      item_key: "commit-and-push",
-      title: "Commit and push",
-      description: "Commit and push the changes.",
-      prompts: [],
-    },
-    {
-      item_key: "review-the-live-site",
-      title: "Review the live site",
-      description:
-        "Visit your live custom domain and do a quick visual review.",
-      prompts: [],
-    },
-    {
-      item_key: "determine-supporting-keywords",
-      title: "Determine supporting keywords",
-      description:
-        "For each pillar, work out supporting keywords (currently a manual process via Claude) and add them under the relevant pillar in Company Data.",
-      prompts: [],
-    },
-    {
-      item_key: "plan-both-clusters",
-      title: "Plan both clusters",
-      description:
-        "In Cluster Generation, choose one supporting-keyword cluster per pillar and click Plan for both, pasting the matching Keyword Slip results into 'Keyword data (optional)' for each.",
-      prompts: [],
-    },
-    {
-      item_key: "save-and-download-both-clusters",
-      title: "Save and download both clusters",
-      description:
-        "Confirm each cluster, Save it, and also use the Save option in the top-right of the page. Download the .md for both clusters.",
-      prompts: [],
-    },
-    {
-      item_key: "plan-and-save-both-pillar-articles",
-      title: "Plan and save both pillar articles",
-      description:
-        "Do the same Plan → Save → Download flow for both Pillar Articles (no keyword data needed for these).",
-      prompts: [],
-    },
-    {
-      item_key: "generate-all-articles",
-      title: "Generate all articles",
-      description:
-        "In Cluster Generation, generate each supporting cluster and both pillar articles via Pillar Generation — expect roughly 10 total files (2 pillar articles + supporting cluster articles).",
-      prompts: [],
-    },
-    {
-      item_key: "generate-hero-images",
-      title: "Generate hero images",
-      description:
-        "Use the image generation tool to create hero image(s) for both pillar articles and for each cluster (one image can cover all articles within a single cluster).",
-      prompts: [],
-    },
-    {
-      item_key: "add-real-team-member-in-cms",
-      title: "Add a real team member in the CMS",
-      description:
-        "Run npm run cms in the site's terminal. Go to Team first and add a real team member before publishing any articles.",
-      prompts: [],
-    },
-    {
-      item_key: "publish-all-articles-through-cms",
-      title: "Publish all articles through the CMS",
-      description:
-        "For all ~10 articles: drag & drop the .md, choose the real author, upload the hero image, generate, and publish.",
-      prompts: [],
-    },
-    {
-      item_key: "commit-and-push-seed",
-      title: "Commit and push",
-      description: "Commit and push all changes.",
-      prompts: [],
+      linkTo: "/company/:companyId/aeo-generation",
+      linkLabel: "Open AEO Generation →",
     },
   ],
   "connection-layer": [
     {
       item_key: "verify-google-search-console",
       title: "Verify Google Search Console",
-      description:
-        "Add and verify a Domain property in Google Search Console for your live domain (verified through DNS). If you use a URL-prefix property with the HTML tag method instead, put the tag's token in Vercel → Settings → Environment Variables as PUBLIC_SEARCH_CONSOLE_VERIFICATION (Production), redeploy, then click Verify.",
+      description: "Add and verify a Domain property in Google Search Console for your live domain (verified through DNS). If you use a URL-prefix property with the HTML tag method instead, put the tag's token in Vercel → Settings → Environment Variables as PUBLIC_SEARCH_CONSOLE_VERIFICATION (Production), redeploy, then click Verify.",
       prompts: [],
     },
     {
       item_key: "submit-sitemap-google-search-console",
       title: "Submit sitemap to Google Search Console",
-      description:
-        "In Search Console, go to Sitemaps, submit sitemap.xml (e.g. https://yourdomain.com/sitemap.xml). Confirm it shows 'Success' status and a discovered URL count roughly matching your published page count.",
+      description: "In Search Console, go to Sitemaps, submit sitemap.xml (e.g. https://yourdomain.com/sitemap.xml). Confirm it shows 'Success' status and a discovered URL count roughly matching your published page count.",
       prompts: [],
     },
     {
       item_key: "verify-bing-webmaster-tools",
       title: "Verify Bing Webmaster Tools",
-      description:
-        "Add your site to Bing Webmaster Tools — can import directly from Search Console.",
+      description: "Add your site to Bing Webmaster Tools — can import directly from Search Console.",
       prompts: [],
     },
     {
       item_key: "submit-sitemap-bing-webmaster-tools",
       title: "Submit sitemap to Bing Webmaster Tools",
-      description:
-        "In Bing Webmaster Tools, submit the same sitemap.xml URL. If you imported from Search Console, check whether the sitemap carried over automatically — if not, add it manually.",
+      description: "In Bing Webmaster Tools, submit the same sitemap.xml URL. If you imported from Search Console, check whether the sitemap carried over automatically — if not, add it manually.",
       prompts: [],
     },
     {
       item_key: "install-analytics",
       title: "Install Analytics",
-      description:
-        "Part 1 — put the GA4 tag on the site (you, in GA4 and Vercel): (1) GA4 → Admin → Data streams → the Web stream for the live domain (create one if missing; its URL must be the exact live domain) → copy the Measurement ID (G-…). (2) Vercel → THIS SITE's project (not TNV) → Settings → Environment Variables → add PUBLIC_ANALYTICS_ID = the G-… ID (Production) → Save → Deployments → latest → ⋯ → Redeploy. Alternative to (2), for sites whose site/src/config/site.ts has GA4_MEASUREMENT_ID: set it there to the G-… ID, commit and push. (3) Check: open the live site → View Page Source → search for the G- ID. Then GA4 → Reports → Realtime shows you as 1 user (use an Incognito window without ad blockers). Part 2 — let TNV read the data: (4) TNV → this company → Analytics → Setup (bottom of the page) → copy the service account email. (5) GA4 → Admin → Property access management → + → Add users → paste the email → role Viewer → untick Notify → Add. (6) TNV → Analytics → Refresh: GA4 shows Connected.",
+      description: "For Google Analytics 4: create a web data stream for the live domain, copy its measurement ID (G-…), add it in Vercel → Settings → Environment Variables as PUBLIC_ANALYTICS_ID (Production) and redeploy. The template adds the tag to every page. Confirm visits appear in GA4 Realtime. For another tool, install it and confirm it receives real traffic.",
       prompts: [],
     },
     {
-      item_key: "run-pagespeed-baseline",
-      title: "Run a Google PageSpeed Insights baseline",
-      description:
-        "Run your live homepage and one article through pagespeed.web.dev and record the scores as a baseline.",
+      item_key: "share-properties-with-tnv",
+      title: "Connect Search Console, GA4 and Bing to TNV",
+      description: "Add TNV's service account as a user on the Search Console property and as a Viewer on the GA4 property (the address is shown in Integrations). Bing works through the workspace API key once the site is verified in the same Bing account. Then check the company in Integrations and Analytics.",
       prompts: [],
-    },
-    {
-      item_key: "install-microsoft-clarity",
-      title: "Install Microsoft Clarity (optional)",
-      description:
-        "If you want session recording/heatmaps, install the Clarity tracking snippet.",
-      prompts: [],
-    },
-    {
-      item_key: "run-gtmetrix-baseline",
-      title: "Run a GTmetrix baseline",
-      description:
-        "Run your live site through GTmetrix and record the baseline scores.",
-      prompts: [],
-    },
-  ],
-  "links-wiring": [
-    {
-      item_key: "go-to-seo-destination-site",
-      title: "Go to SEO Destination Site",
-      description:
-        "Open the destination SEO site project (local repo) that you are wiring links for.",
-      prompts: [],
-    },
-    {
-      item_key: "run-npm-run-cms",
-      title: "Run npm run cms",
-      description:
-        "In the destination site terminal, run npm run cms and open the CMS URL it gives you.",
-      prompts: [],
-    },
-    {
-      item_key: "go-to-articles-health-tools",
-      title: "Go to Articles Health Tools",
-      description: "In the CMS, open Articles Health Tools.",
-      prompts: [],
-    },
-    {
-      item_key: "scan-and-wire-links",
-      title: "Scan articles and wire all Internal Links and External Links",
-      description:
-        "Scan articles and wire all Internal Links and External Links so every article is fully linked.",
-      prompts: [],
-    },
-    {
-      item_key: "publish",
-      title: "Publish",
-      description: "Publish all articles after links have been wired.",
-      prompts: [],
-    },
-    {
-      item_key: "commit-and-push",
-      title: "Commit and Push",
-      description: "Commit the link wiring changes and push to the remote repo.",
-      prompts: [],
-    },
-    {
-      item_key: "deploy",
-      title: "Deploy",
-      description: "Deploy so the wired links go live (or confirm the push triggered a deploy).",
-      prompts: [],
-    },
-    {
-      item_key: "quick-check-live-site",
-      title: "Quick Check on live site",
-      description:
-        "Spot-check the live site: open a few articles and confirm internal and external links work as expected.",
-      prompts: [],
-    },
-  ],
-  "seed-qa": [
-    {
-      item_key: "check-title-h1-hero",
-      title: "Check title, H1, and hero on every article",
-      description:
-        "For each published article: confirm the browser tab title, the on-page H1, and the hero image all render correctly and match the article.",
-      prompts: [],
-    },
-    {
-      item_key: "check-meta-tags",
-      title: "Check meta tags on every article",
-      description:
-        "View-source each article: confirm meta description, canonical URL, OG tags, and robots tag are all present and correct.",
-      prompts: [],
-    },
-    {
-      item_key: "run-rich-results-test",
-      title: "Run the Rich Results Test",
-      description:
-        "Paste at least one live article URL into search.google.com/test/rich-results and confirm it passes with zero errors.",
-      prompts: [],
-    },
-    {
-      item_key: "click-through-internal-links",
-      title: "Click through every internal link",
-      description:
-        "On each article, click every internal link and confirm it resolves (200), not a 404.",
-      prompts: [],
-    },
-    {
-      item_key: "click-through-external-links",
-      title: "Click through every external link",
-      description:
-        "On each article, click every external source link and confirm it opens correctly.",
-      prompts: [],
-    },
-    {
-      item_key: "confirm-sitemap-inclusion",
-      title: "Confirm sitemap inclusion",
-      description:
-        "Check that every published article appears in sitemap.xml with a sensible lastmod date.",
-      prompts: [],
-    },
-    {
-      item_key: "confirm-articles-listing",
-      title: "Confirm articles listing",
-      description:
-        "Confirm every published article appears correctly on the site's /articles/ listing page.",
-      prompts: [],
+      linkTo: "/company/:companyId/integrations",
+      linkLabel: "Open Integrations →",
     },
   ],
 };
