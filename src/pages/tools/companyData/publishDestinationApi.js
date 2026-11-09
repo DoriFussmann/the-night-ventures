@@ -20,7 +20,7 @@ export async function checkPublishDestination({ owner, repo, tokenKey }) {
       check: "publish-destination",
       owner: owner.trim(),
       repo: repo.trim(),
-      tokenKey: tokenKey.trim().toUpperCase(),
+      tokenKey: String(tokenKey || "").trim().toUpperCase(),
     }),
   });
   const body = await res.json().catch(() => ({}));

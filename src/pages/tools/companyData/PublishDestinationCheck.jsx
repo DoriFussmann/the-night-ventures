@@ -14,9 +14,9 @@ const STATUS = {
 /**
  * Check Connection button and step-by-step result for the Publish Destination dialog.
  * Checks the values currently typed in the dialog, saved or not.
- * @param {{ owner: string, repo: string, tokenKey: string, disabled?: boolean }} props
+ * @param {{ owner: string, repo: string, tokenKey?: string, disabled?: boolean }} props
  */
-export default function PublishDestinationCheck({ owner, repo, tokenKey, disabled = false }) {
+export default function PublishDestinationCheck({ owner, repo, tokenKey = "", disabled = false }) {
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
@@ -27,7 +27,7 @@ export default function PublishDestinationCheck({ owner, repo, tokenKey, disable
     setError("");
   }, [owner, repo, tokenKey]);
 
-  const ready = owner.trim() && repo.trim() && tokenKey.trim();
+  const ready = owner.trim() && repo.trim();
 
   const runCheck = async () => {
     setChecking(true);
@@ -68,7 +68,7 @@ export default function PublishDestinationCheck({ owner, repo, tokenKey, disable
       </div>
 
       {!ready && !result ? (
-        <p className="text-xs text-muted-foreground">Fill in all three fields to run the check.</p>
+        <p className="text-xs text-muted-foreground">Fill in owner and repo to run the check.</p>
       ) : null}
 
       <div aria-live="polite">

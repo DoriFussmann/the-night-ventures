@@ -36,7 +36,7 @@ function destBody(destination) {
   const branch =
     String(destination?.branch || DEFAULT_PUBLISH_BRANCH).trim() ||
     DEFAULT_PUBLISH_BRANCH;
-  if (!owner || !repo || !tokenKey) {
+  if (!owner || !repo) {
     throw new Error("No destination repo set for this company.");
   }
   return {

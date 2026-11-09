@@ -12,7 +12,7 @@ export const DEFAULT_AUTHOR = "dori-fussmann";
 
 export function isPublishDestinationMapped(destination) {
   return Boolean(
-    destination?.owner && destination?.repo && destination?.tokenKey
+    destination?.owner && destination?.repo
   );
 }
 

@@ -260,7 +260,7 @@ export default function PlaceholdersStage({ companyId, onSummary }) {
       try {
         const dest = await loadCompanyPublishDestination(companyId);
         if (cancelled) return;
-        const hasRepo = dest?.owner && dest?.repo && dest?.tokenKey;
+        const hasRepo = dest?.owner && dest?.repo;
         setDestination(hasRepo ? dest : null);
         let saved = null;
         try {
