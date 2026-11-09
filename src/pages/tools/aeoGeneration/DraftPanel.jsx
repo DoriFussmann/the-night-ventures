@@ -20,6 +20,14 @@ export function formatDay(day) {
   return new Date(`${day}T12:00:00Z`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
 }
 
+/** e.g. "Mon, Nov 10, 2026 · 8:00 AM PST", in the viewer's timezone. */
+export function formatPublishAt(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
+  const day = date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+  const time = date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+  return `${day} · ${time}`;
+}
+
 const md = {
   h1: (p) => <h1 className="mb-3 mt-6 text-xl font-semibold text-foreground" {...p} />,
   h2: (p) => <h2 className="mb-2 mt-6 text-lg font-semibold text-foreground" {...p} />,
@@ -35,7 +43,7 @@ const md = {
 };
 
 /** Draft summary on the card, with the full review in a modal. */
-export default function DraftPanel({ companyId, brief, draft, busy, onApprove, onUnapprove, onRedo, onNewImage }) {
+export default function DraftPanel({ companyId, brief, draft, publishAt, busy, onApprove, onUnapprove, onRedo, onNewImage }) {
   const [heroUrl, setHeroUrl] = useState("");
   const [open, setOpen] = useState(false);
   const [imgNote, setImgNote] = useState("");
@@ -108,7 +116,9 @@ export default function DraftPanel({ companyId, brief, draft, busy, onApprove, o
           <p className="text-[11px] text-muted-foreground">
             /articles/{draft.slug}/ · {words.toLocaleString()} words
             {brief.status === "approved" ? " · approved, waiting to be scheduled" : ""}
-            {brief.status === "scheduled" ? ` · publishes ${formatDay(brief.publish_on)}` : ""}
+            {brief.status === "scheduled"
+              ? ` · publishes ${publishAt ? formatPublishAt(publishAt) : formatDay(brief.publish_on)}`
+              : ""}
             {brief.status === "published" ? " · live" : ""}
           </p>
         </div>

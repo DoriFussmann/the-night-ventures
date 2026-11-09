@@ -10,7 +10,7 @@ import {
   approveBrief,
   generateDraft,
   loadDrafts,
-  loadTakenDays,
+  loadPublishing,
   todayHere,
   loadWriterContext,
   newHeroForDraft,
@@ -48,6 +48,7 @@ export default function AeoGeneration() {
   const [genStatus, setGenStatus] = useState({});
   const [note, setNote] = useState("");
   const [taken, setTaken] = useState([]);
+  const [publishAt, setPublishAt] = useState(new Map());
   const [progress, setProgress] = useState(null);
 
   const reload = useCallback(async () => {
@@ -62,7 +63,9 @@ export default function AeoGeneration() {
       setData(fresh);
       setBriefs(b);
       setDrafts(await loadDrafts(b.map((x) => x.generated_article_id).filter(Boolean)));
-      setTaken(await loadTakenDays(companyId).catch(() => []));
+      const publishing = await loadPublishing(companyId).catch(() => ({ taken: [], publishAt: new Map() }));
+      setTaken(publishing.taken);
+      setPublishAt(publishing.publishAt);
     } catch (err) {
       setError(
         /aeo_briefs|topic_name|primary_keyword/.test(err?.message || "")
@@ -330,6 +333,7 @@ export default function AeoGeneration() {
                       onChanged={reload}
                       onError={setError}
                       draft={drafts.get(b.generated_article_id)}
+                      publishAt={b.status === "scheduled" ? publishAt.get(b.generated_article_id) || null : null}
                       busy={busy}
                       genStatus={genStatus[b.id]}
                       onGenerate={() => writeDrafts([b])}

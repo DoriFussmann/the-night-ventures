@@ -12,7 +12,7 @@ import {
   textToOutline,
   updateBrief,
 } from "./briefs";
-import DraftPanel from "./DraftPanel";
+import DraftPanel, { formatPublishAt } from "./DraftPanel";
 
 const selectClass =
   "h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring";
@@ -49,6 +49,7 @@ export default function BriefCard({
   onChanged,
   onError,
   draft,
+  publishAt,
   busy,
   genStatus,
   onGenerate,
@@ -126,6 +127,11 @@ export default function BriefCard({
           <p className="mt-0.5 text-xs text-muted-foreground">
             {group.code} · {pillar?.name || "No pillar"} · {prompts.length} prompts · keyword: {keyword || "—"}
           </p>
+          {publishAt ? (
+            <p className="mt-0.5 text-xs font-medium text-violet-800 dark:text-violet-300">
+              Publishes {formatPublishAt(publishAt)}
+            </p>
+          ) : null}
         </div>
         <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider ${STATUS_STYLE[brief.status] || STATUS_STYLE.draft}`}>
           {brief.status}
@@ -138,6 +144,7 @@ export default function BriefCard({
             companyId={companyId}
             brief={brief}
             draft={draft}
+            publishAt={publishAt}
             busy={busy}
             onApprove={onApprove}
             onUnapprove={onUnapprove}

@@ -7,7 +7,7 @@ import { jsonAuthHeaders } from "@/lib/authHeaders";
 import { saveGeneratedArticles } from "../articleGeneration/saveGeneratedArticles";
 import { groupStats } from "../../../../lib/aeo/nextUp.js";
 import { aeoScheduleSlug, ctaAngleFor, planPublishDays, searchIntentFor } from "../../../../lib/aeo/schedule.js";
-import { OPEN_SCHEDULE_STATUSES, normalizeSettings, takenDays, todayIn } from "../../../../lib/publish-schedule/plan.js";
+import { OPEN_SCHEDULE_STATUSES, normalizeSettings, publishMoment, takenDays, todayIn } from "../../../../lib/publish-schedule/plan.js";
 import { browserTimezone } from "../articlesAutomation/publishSchedule";
 
 const PILLAR_WORDS = 2500;
@@ -289,10 +289,20 @@ async function loadOpenSchedules(companyId) {
  * schedule for its pillar, already approved (approval happened here), and the
  * daily publisher puts it live on its day.
  */
-/** Days other schedules of this site already publish on (one article per day). */
-export async function loadTakenDays(companyId) {
-  const { items } = await loadOpenSchedules(companyId);
-  return takenDays(items);
+/**
+ * Days this site already publishes on (one article per day), and when each
+ * scheduled draft goes live: generated_article_id → Date.
+ */
+export async function loadPublishing(companyId) {
+  const { schedules, items } = await loadOpenSchedules(companyId);
+  const timezoneById = new Map(schedules.map((s) => [s.id, normalizeSettings(s.settings).timezone]));
+  const publishAt = new Map();
+  for (const item of items) {
+    if (item.status !== "scheduled" || !item.generated_article_id) continue;
+    const at = publishMoment(item.publish_on, timezoneById.get(item.schedule_id));
+    if (at) publishAt.set(item.generated_article_id, at);
+  }
+  return { taken: takenDays(items), publishAt };
 }
 
 export function todayHere() {
