@@ -115,7 +115,7 @@ export default function Analytics() {
         <>
           {error ? <ErrorLine>{error}</ErrorLine> : null}
           {!summary.domain ? (
-            <ErrorLine>No domain set for this company — add it in Company Intelligence.</ErrorLine>
+            <ErrorLine>No domain set for this company — add it in AEO Playbook → Company.</ErrorLine>
           ) : null}
           <div className={loading ? "pointer-events-none opacity-60 transition-opacity" : "transition-opacity"} aria-busy={loading}>
             <div className="space-y-6">

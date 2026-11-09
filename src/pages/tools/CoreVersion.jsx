@@ -254,7 +254,7 @@ export default function CoreVersion() {
         <Alert>
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription>
-            No destination repo is set for this company. Add it in Company Data
+            No destination repo is set for this company. Add it in AEO Playbook → Company
             first.
           </AlertDescription>
         </Alert>

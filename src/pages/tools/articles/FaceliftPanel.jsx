@@ -227,7 +227,7 @@ export default function FaceliftPanel({ companyId, destination, onHealthChange }
         ))}
         {!mapped && (
           <p className="text-sm text-muted-foreground">
-            Set a destination repo in Company Data to enable Facelift.
+            Set a destination repo in AEO Playbook → Company to enable Facelift.
           </p>
         )}
       </div>

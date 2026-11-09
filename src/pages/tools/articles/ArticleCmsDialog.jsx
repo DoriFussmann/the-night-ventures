@@ -531,7 +531,7 @@ export default function ArticleCmsDialog({
               ) : null}
               {!destinationMapped ? (
                 <p className="text-xs text-muted-foreground">
-                  Set Publish Destination in Company Data to save or publish.
+                  Set Publish Destination in AEO Playbook → Company to save or publish.
                 </p>
               ) : null}
               <div className="flex flex-wrap items-center gap-2">

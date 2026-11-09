@@ -432,7 +432,7 @@ export async function upsertComposedCoverage({
  * @param {string} [opts.publishedUrl]
  * @returns {Promise<{ updated: number, unmatched: number, pillars: object[], warning?: string }>}
  */
-/** https://<domain> from Company Intelligence, for building live article URLs. */
+/** https://<domain> from the company settings, for building live article URLs. */
 async function loadSiteBase(companyId) {
   const { data } = await supabase
     .from("company_profiles")

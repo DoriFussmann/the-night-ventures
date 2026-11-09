@@ -63,7 +63,7 @@ export default function Audit() {
         <div className="min-w-0 space-y-1">
           <h1 className="text-xl font-semibold tracking-tight">{company?.name ? `${company.name} — Audit` : 'Audit'}</h1>
           <p className="break-all text-sm text-muted-foreground">
-            {company?.siteUrl || (loading ? 'Loading…' : 'No domain set — add it in Company Intelligence')}
+            {company?.siteUrl || (loading ? 'Loading…' : 'No domain set — add it in AEO Playbook → Company')}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

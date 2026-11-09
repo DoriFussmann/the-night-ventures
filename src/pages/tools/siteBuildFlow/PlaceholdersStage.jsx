@@ -329,7 +329,7 @@ export default function PlaceholdersStage({ companyId, onSummary }) {
           This stage reads the site&apos;s GitHub repo live, so it needs the company&apos;s Publish Destination.
         </p>
         <Button asChild variant="outline" size="sm">
-          <Link to={`/company/${companyId}/company-data`}>Set Publish Destination →</Link>
+          <Link to={`/company/${companyId}/aeo-playbook?tab=company`}>Set Publish Destination →</Link>
         </Button>
       </div>
     );

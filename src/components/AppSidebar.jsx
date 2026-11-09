@@ -3,7 +3,6 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Compass,
-  Database,
   BookOpen,
   Sparkles,
   ClipboardCheck,
@@ -298,12 +297,6 @@ export default function AppSidebar({ user }) {
   const isCompanyPicker = location.pathname === "/";
   const activeCompanyId = routeCompanyId || (isCompanyPicker ? "" : readLastCompanyId());
 
-  const companyDataItem = {
-    label: "Company Intelligence",
-    path: `/company/${activeCompanyId}/company-data`,
-    icon: Database,
-    status: "Done",
-  };
 
 
   const buildNav = [
@@ -393,7 +386,6 @@ export default function AppSidebar({ user }) {
         {activeCompanyId && (
           <>
             <div className="space-y-1.5 pt-1">
-              <NavItem item={companyDataItem} />
               <NavItem
                 item={{
                   label: "AEO Playbook",

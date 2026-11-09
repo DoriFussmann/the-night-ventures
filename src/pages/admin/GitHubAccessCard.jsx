@@ -9,8 +9,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import PublishDestinationGuide from "@/pages/tools/companyData/PublishDestinationGuide";
-import { checkPublishDestination } from "@/pages/tools/companyData/publishDestinationApi";
+import PublishDestinationGuide from "@/pages/tools/publishDestination/PublishDestinationGuide";
+import { checkPublishDestination } from "@/pages/tools/publishDestination/publishDestinationApi";
 
 /**
  * Workspace Admin: the one GitHub token (GITHUB_TOKEN in Vercel) that every

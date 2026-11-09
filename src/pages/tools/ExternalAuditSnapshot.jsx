@@ -1110,7 +1110,7 @@ export default function ExternalAuditSnapshot() {
               disabled={running || loading}
             />
             <p className="text-[11px] text-muted-foreground">
-              Defaults to Company Data domain (www host preferred).
+              Defaults to the company domain (www host preferred).
             </p>
           </div>
           <div className="space-y-1.5">

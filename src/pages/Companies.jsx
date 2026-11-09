@@ -217,7 +217,7 @@ export default function Companies() {
               ) : (
                 <div className="flex items-center gap-1.5">
                   <Link
-                    to={`/company/${company.id}/company-data`}
+                    to={`/company/${company.id}/aeo-playbook`}
                     className="flex h-9 min-w-0 flex-1 items-center rounded-md border border-border px-3 text-sm text-foreground transition-colors hover:bg-muted/50"
                   >
                     <span className="truncate">{company.name}</span>
