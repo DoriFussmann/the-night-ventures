@@ -114,6 +114,12 @@ export async function loadPlaybook(companyId) {
       brand_facts: normalizeBrandFacts(row?.brand_facts),
       icp: row?.icp || "",
       shared_traits: Array.isArray(row?.shared_traits) ? row.shared_traits : [],
+      // Full documents pushed from the ICP & Persona Builder; read-only in the app.
+      icp_strategic_md: row?.icp_strategic_md || "",
+      icp_operational_md: row?.icp_operational_md || "",
+      icp_pushed_at: row?.icp_pushed_at || null,
+      personas_md: row?.personas_md || "",
+      personas_pushed_at: row?.personas_pushed_at || null,
       updated_at: row?.updated_at || null,
     },
     personas: check(personas, "Personas") || [],

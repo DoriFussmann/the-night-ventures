@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { deleteRow, nextCode, savePlaybook, updateRow, upsertRow } from "./api";
+import BuilderDocuments from "./BuilderDocuments";
 
 const FIELDS = [
   { key: "stage", label: "Stage", rows: 1 },
@@ -136,6 +137,8 @@ export default function PersonasTab({ companyId, playbook, personas, onChanged }
           {message ? <span className="text-sm text-muted-foreground">{message}</span> : null}
         </div>
       </section>
+
+      <BuilderDocuments playbook={playbook} />
 
       {personas.map((p) => (
         <PersonaCard key={p.id} persona={p} onSaved={onChanged} onDelete={removePersona} />
