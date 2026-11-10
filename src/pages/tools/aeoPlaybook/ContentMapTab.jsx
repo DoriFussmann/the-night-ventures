@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { GROUP_STATUSES, PAGE_TYPES, deleteRow, nextCode, updateRow, upsertRow } from "./api";
@@ -15,6 +15,31 @@ const TIERS = [
 ];
 const STATUS_LABELS = { new: "to write", money: "money" };
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/** Groups whose article is on the site: shown as done, not editable. */
+const DONE_STATUSES = new Set(["live", "published"]);
+
+function DoneRow({ group, stats, onUnlock }) {
+  return (
+    <li className="flex items-start gap-2.5 px-3 py-2">
+      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" aria-hidden="true" />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm text-foreground">
+          <span className="mr-1.5 text-[11px] tabular-nums text-muted-foreground">{group.code}</span>
+          {group.name}
+        </p>
+        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+          {group.live_slug ? `/${group.live_slug.replace(/^\/+|\/+$/g, "")}/ · ` : ""}
+          {group.page_type} · {stats.count} prompts · mostly {stats.dominant}
+        </p>
+      </div>
+      <span className="mt-0.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">Live</span>
+      <Button type="button" variant="ghost" size="sm" className="h-6 px-1.5 text-muted-foreground" title="Unlock to edit" aria-label={`Unlock ${group.code} to edit`} onClick={onUnlock}>
+        <Pencil className="h-3 w-3" />
+      </Button>
+    </li>
+  );
+}
 
 function tierCounts(prompts) {
   const counts = { Buy: 0, Problem: 0, Learn: 0 };
@@ -245,20 +270,34 @@ export default function ContentMapTab({ companyId, data, onChanged }) {
   const totals = tierCounts(prompts);
   const allOpen = pillars.length > 0 && pillars.every((p) => openIds.has(p.id));
 
-  const cards = (list) => (
-    <div className="grid gap-2 lg:grid-cols-2">
-      {list.map((g) => (
-        <GroupCard
-          key={`${g.id}-${g.updated_at}`}
-          group={g}
-          stats={groupStats(promptsByGroup.get(g.id) || [], personasById)}
-          pillars={pillars}
-          onChanged={onChanged}
-          onError={setError}
-        />
-      ))}
-    </div>
-  );
+  const [unlocked, setUnlocked] = useState(() => new Set());
+  const statsFor = (g) => groupStats(promptsByGroup.get(g.id) || [], personasById);
+
+  const cards = (list) => {
+    const done = list.filter((g) => DONE_STATUSES.has(g.status) && !unlocked.has(g.id));
+    const open = list.filter((g) => !done.includes(g));
+    return (
+      <>
+        {open.length ? (
+          <div className="grid gap-2 lg:grid-cols-2">
+            {open.map((g) => (
+              <GroupCard key={`${g.id}-${g.updated_at}`} group={g} stats={statsFor(g)} pillars={pillars} onChanged={onChanged} onError={setError} />
+            ))}
+          </div>
+        ) : null}
+        {done.length ? (
+          <div>
+            <p className="mb-1 mt-3 text-xs font-medium text-muted-foreground">Done · live on the site ({done.length})</p>
+            <ul className="divide-y divide-border rounded-lg border border-border bg-muted/30">
+              {done.map((g) => (
+                <DoneRow key={g.id} group={g} stats={statsFor(g)} onUnlock={() => setUnlocked((prev) => new Set(prev).add(g.id))} />
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </>
+    );
+  };
 
   return (
     <div className="mt-4 space-y-4">
