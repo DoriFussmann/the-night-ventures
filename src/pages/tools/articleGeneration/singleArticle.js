@@ -54,7 +54,7 @@ export async function loadCompanyPositioning(companyId) {
     supabase.from("aeo_playbook").select("brand_facts, icp").eq("company_id", companyId).maybeSingle(),
     supabase
       .from("company_profiles")
-      .select("domain, design_guide_raw, seo_market, seo_language")
+      .select("domain, design_guide_raw, seo_market, seo_language, gtm_customer_evidence, image_style")
       .eq("company_id", companyId)
       .maybeSingle(),
   ]);

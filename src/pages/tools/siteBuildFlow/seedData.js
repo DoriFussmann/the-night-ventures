@@ -103,7 +103,7 @@ export const PREDEFINED_ITEMS = {
     {
       item_key: "playbook-company",
       title: "Fill the Company tab",
-      description: "Name, domain, product name (only if it differs from the company name), search market, language and AI training crawler policy.",
+      description: "Name, domain, product name (only if it differs from the company name), search market, language and AI training crawler policy. Then Commercial and sales (deal size, sales motion, customer evidence & proof, where to find them, operating constraints) and the image style for article images.",
       prompts: [],
       linkTo: "/company/:companyId/aeo-playbook?tab=company",
       linkLabel: "Open Company →",
@@ -111,7 +111,7 @@ export const PREDEFINED_ITEMS = {
     {
       item_key: "playbook-brand-facts",
       title: "Fill Brand Facts",
-      description: "Offer, customer, problem, difference, proof, conversion (with the call to action and the conversion page URL every article links to), voice & tone, image style, approved and never claims, out-of-scope topics and competitors. The writer and the Audit read only what is here.",
+      description: "Offer, customer qualification & fit, customer problem & impact, buying triggers & timing, observable signals, difference, conversion (with the call to action and the conversion page URL every article links to), voice & tone, approved and never claims, out-of-scope topics and competitors. The writer and the Audit read only what is here.",
       prompts: [],
       linkTo: "/company/:companyId/aeo-playbook?tab=brand",
       linkLabel: "Open Brand Facts →",

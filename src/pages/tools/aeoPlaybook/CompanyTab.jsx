@@ -8,10 +8,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import PublishDestinationCheck from "../publishDestination/PublishDestinationCheck";
 import { ownerRepoIssue } from "../../../../lib/publish-destination/tokenKey.js";
-import { COMMERCIAL_FIELDS } from "./api";
+import { COMMERCIAL_FIELDS, IMAGE_STYLE_FIELD } from "./api";
 import { RETIRED_FIELDS, retiredWithContent } from "./retiredFields";
 
-/** Company settings on company_profiles. Everything articles say lives in the other tabs. */
+/** Company settings and objective business facts on company_profiles. Approved messaging lives in Brand Facts. */
 const PROFILE_FIELDS = [
   { key: "domain", label: "Domain", placeholder: "www.example.com", hint: "The live site. Audits, analytics and links use it." },
   {
@@ -24,8 +24,8 @@ const PROFILE_FIELDS = [
   { key: "seo_language", label: "Language", placeholder: "English", hint: "Language the articles are written in." },
 ];
 
-/** Text fields saved to company_profiles: the basics plus Commercial and sales. */
-const SAVED_FIELDS = [...PROFILE_FIELDS, ...COMMERCIAL_FIELDS];
+/** Text fields saved to company_profiles: the basics, Commercial and sales, and the image style. */
+const SAVED_FIELDS = [...PROFILE_FIELDS, ...COMMERCIAL_FIELDS, IMAGE_STYLE_FIELD];
 
 const TRAINING_POLICIES = [
   { value: "allow", label: "Allow AI training crawlers" },
@@ -197,7 +197,7 @@ export default function CompanyTab({ companyId }) {
 
       <Section
         title="Commercial and sales"
-        description="How the company sells and what limits it. Internal context for the ICP and personas; articles do not quote it."
+        description="How the company sells, the evidence behind it and what limits it. Articles take their proof from Customer evidence & proof; the rest is internal context for the ICP and personas."
       >
         <div className="grid gap-4 md:grid-cols-2">
           {COMMERCIAL_FIELDS.map((f) => (
@@ -213,6 +213,17 @@ export default function CompanyTab({ companyId }) {
             </div>
           ))}
         </div>
+      </Section>
+
+      <Section title="Article images">
+        <Field id={IMAGE_STYLE_FIELD.key} label={IMAGE_STYLE_FIELD.label} hint={IMAGE_STYLE_FIELD.hint}>
+          <Textarea
+            id={IMAGE_STYLE_FIELD.key}
+            rows={IMAGE_STYLE_FIELD.rows}
+            value={profile[IMAGE_STYLE_FIELD.key] || ""}
+            onChange={(e) => setProfile((prev) => ({ ...prev, [IMAGE_STYLE_FIELD.key]: e.target.value }))}
+          />
+        </Field>
       </Section>
 
       <Section

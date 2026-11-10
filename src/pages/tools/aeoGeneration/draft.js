@@ -74,7 +74,10 @@ export async function makeHero({ companyId, slug, title, description, angle, out
 }
 
 /** Replace a draft's hero image, optionally with a direction note. */
-export async function newHeroForDraft({ companyId, brief, draft, imageStyle, note }) {
+export async function newHeroForDraft({ companyId, brief, draft, note }) {
+  const profile = await supabase.from("company_profiles").select("image_style").eq("company_id", companyId).maybeSingle();
+  fail(profile.error, "Company profile");
+  const imageStyle = String(profile.data?.image_style || "").trim();
   const hero = await withTimeout(makeHero({
     companyId,
     slug: draft.slug,
@@ -179,7 +182,7 @@ export async function generateDraft({ companyId, brief, group, pillar, prompts, 
         description: data.frontmatter.description,
         angle: brief.angle,
         outline: brief.outline,
-        imageStyle: writer.brandFacts?.image_style || "",
+        imageStyle: writer.positioning?.imageStyle || "",
       }),
       HERO_TIMEOUT_MS,
       "The hero image"
