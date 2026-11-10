@@ -364,7 +364,6 @@ export default function AeoGeneration() {
                           companyId,
                           brief: b,
                           draft: drafts.get(b.generated_article_id),
-                          imageStyle: data.playbook.brand_facts.image_style || "",
                           note,
                         });
                         await reload();

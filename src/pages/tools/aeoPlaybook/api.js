@@ -6,8 +6,9 @@ export const EMPTY_BRAND_FACTS = Object.freeze({
   offer: "",
   customer: "",
   problem: "",
+  triggers: "",
+  signals: "",
   difference: "",
-  proof: "",
   conversion: "",
   conversion_action: "",
   conversion_url: "",
@@ -17,63 +18,80 @@ export const EMPTY_BRAND_FACTS = Object.freeze({
   out_of_scope: [],
   competitors: [],
   open_items: [],
-  image_style: "",
-  fit_size_band: "",
-  fit_ability_to_pay: "",
-  fit_floor_ceiling: "",
-  fit_problem_cost: "",
-  fit_buying_window: "",
-  fit_signals: "",
-  fit_environment: "",
 });
+
+/** Keys that used to live in Brand Facts. Proof and image style moved to the Company tab. */
+const MOVED_TO_COMPANY = { proof: "gtm_customer_evidence", image_style: "image_style" };
+const REMOVED_BRAND_KEYS = [
+  ...Object.keys(MOVED_TO_COMPANY),
+  "fit_size_band", "fit_ability_to_pay", "fit_floor_ceiling", "fit_problem_cost", "fit_buying_window", "fit_signals", "fit_environment",
+];
+
+export const BRAND_FACTS_NOTE =
+  "Approved messaging lives here. Pricing, customer evidence and proof, and operating constraints live in the Company tab.";
 
 export const BRAND_SECTIONS = [
   { key: "offer", label: "1 · The offer", helper: "What exactly is sold, the price model, what the customer gets step by step." },
-  { key: "customer", label: "2 · The customer", helper: "Who buys today, who it is not for, markets and stages served." },
-  { key: "problem", label: "3 · The problem", helper: "The problem, the moment that triggers the purchase, the cost of doing nothing." },
-  { key: "difference", label: "4 · The difference", helper: "Why this over competitors, DIY or doing nothing; what is never done." },
-  { key: "proof", label: "5 · The proof", helper: "Who stands behind it, clients, results that can be stated, the database." },
-  { key: "conversion", label: "6 · The conversion", helper: "What counts as a win and the next step after reading. The call to action and page below are what articles link to." },
-  { key: "voice", label: "7 · Voice & tone", helper: "How articles should sound: register, sentence style, words to use and avoid. The writer follows this." },
   {
-    key: "image_style",
-    label: "8 · Image style",
-    helper: "How article hero images should look. Each image gets a scene written for its article in this style. Leave empty to use the default (editorial desk still life, warm light).",
+    key: "customer",
+    label: "2 · Customer qualification & fit",
+    helper: "Who buys today and who it is not for; markets and stages served; tools or prerequisites the customer must have, and what rules them out.",
+  },
+  {
+    key: "problem",
+    label: "3 · Customer problem & impact",
+    helper: "The problem, and what it costs the customer in money or time if unsolved. Qualitative is fine; no invented numbers.",
+  },
+  {
+    key: "triggers",
+    label: "4 · Buying triggers & timing",
+    helper: "The moment that triggers the purchase, how recent it must be, and how long the window stays open.",
+  },
+  { key: "signals", label: "5 · Observable signals", helper: "Public evidence that the trigger has happened." },
+  { key: "difference", label: "6 · The difference", helper: "Why this over competitors, DIY or doing nothing; what is never done." },
+  { key: "conversion", label: "7 · The conversion", helper: "What counts as a win and the next step after reading. The call to action and page below are what articles link to." },
+  {
+    key: "voice",
+    label: "8 · Voice & tone",
+    helper: "How articles should sound: register, sentence style, words and framings to use and avoid. The writer follows this. Claims that must never be made go under Never claim.",
   },
 ];
 
-/** Brand Facts, "Customer fit and timing": who qualifies and when they buy. Keys live in brand_facts. */
-export const FIT_FIELDS = [
-  { key: "fit_size_band", label: "Size band", hint: "Smallest and largest customer you'd take, in whatever unit fits (employees, revenue, funding stage)." },
-  { key: "fit_ability_to_pay", label: "Ability to pay", hint: "What must be true for the customer to afford it." },
-  { key: "fit_floor_ceiling", label: "Floor and ceiling", hint: "Who is too small, who is too large, and why." },
-  { key: "fit_problem_cost", label: "Cost of the problem", hint: "What it costs the customer in money or time if unsolved." },
-  { key: "fit_buying_window", label: "Buying window", hint: "How recent the trigger must be, and how long the window stays open." },
-  { key: "fit_signals", label: "Observable signals", hint: "Public evidence that the trigger has happened." },
-  { key: "fit_environment", label: "Required environment", hint: "Tools or prerequisites the customer must have, and what rules them out." },
-];
-
-/** Company tab, "Commercial and sales": how the company sells and what limits it. Columns on company_profiles. */
+/** Company tab, "Commercial and sales": how the company sells, its evidence and what limits it. Columns on company_profiles. */
 export const COMMERCIAL_FIELDS = [
   { key: "gtm_deal_size", label: "Deal size", rows: 2, hint: "Typical price or contract value, as a band." },
   { key: "gtm_sales_motion", label: "Sales motion", rows: 2, hint: "Sales model, cycle length, how many people are involved. The Persona Builder needs this too." },
   {
     key: "gtm_customer_evidence",
-    label: "Customer evidence",
-    rows: 5,
+    label: "Customer evidence & proof",
+    rows: 8,
     wide: true,
-    hint: "Best customers and what they share; worst or churned and why; lost deals and why. Proxy evidence if pre-launch.",
+    hint: "Who stands behind it, credentials, clients, results that can be stated, the database. Best customers and what they share; worst or churned and why; lost deals and why. Proxy evidence if pre-launch. Keep the founder's earlier results apart from the company's own. Articles take their proof from here.",
   },
   { key: "gtm_where_to_find", label: "Where to find them", rows: 3, hint: "Databases, lists, communities, channels." },
-  { key: "gtm_constraints", label: "Constraints", rows: 3, hint: "Legal, regulatory or ownership limits; delivery capacity." },
+  {
+    key: "gtm_constraints",
+    label: "Operating constraints",
+    rows: 3,
+    hint: "Legal, regulatory or ownership limits; delivery capacity. What articles must not say goes in Brand Facts (Never claim, Voice & tone).",
+  },
 ];
+
+/** Company tab, "Article images". Column on company_profiles; article generation reads it. */
+export const IMAGE_STYLE_FIELD = {
+  key: "image_style",
+  label: "Image style",
+  rows: 4,
+  hint: "How article hero images should look. Each image gets a scene written for its article in this style. Leave empty to use the default (editorial desk still life, warm light).",
+};
 
 export const TIERS = ["Buy", "Problem", "Learn"];
 export const GROUP_STATUSES = ["new", "planned", "drafted", "scheduled", "published", "live", "money"];
 export const PAGE_TYPES = ["pillar", "supporting", "money"];
 
 function normalizeBrandFacts(value) {
-  const v = value && typeof value === "object" ? value : {};
+  const v = { ...(value && typeof value === "object" ? value : {}) };
+  for (const key of REMOVED_BRAND_KEYS) delete v[key];
   return { ...EMPTY_BRAND_FACTS, ...v };
 }
 
@@ -162,6 +180,16 @@ export async function importPlaybook(companyId, file, onProgress = () => {}) {
   const counts = { personas: 0, pillars: 0, groups: 0, prompts: 0 };
 
   onProgress("Brand Facts and ICP");
+  // Older playbook files keep proof and image style in brand_facts; they now live on the company profile.
+  const moved = Object.fromEntries(
+    Object.entries(MOVED_TO_COMPANY)
+      .map(([from, to]) => [to, String(file.brand_facts?.[from] || "").trim()])
+      .filter(([, value]) => value)
+  );
+  if (Object.keys(moved).length) {
+    const { error } = await supabase.from("company_profiles").update(moved).eq("company_id", companyId);
+    if (error) throw new Error(`Company profile: ${error.message}`);
+  }
   await savePlaybook(companyId, {
     brand_facts: normalizeBrandFacts(file.brand_facts),
     icp: String(file.icp || ""),

@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { downloadMarkdown } from "../siteBuildFlow/buildFlowMarkdown";
-import { BRAND_SECTIONS, COMMERCIAL_FIELDS, FIT_FIELDS } from "./api";
+import { BRAND_FACTS_NOTE, BRAND_SECTIONS, COMMERCIAL_FIELDS, IMAGE_STYLE_FIELD } from "./api";
 import { RETIRED_FIELDS, retiredWithContent } from "./retiredFields";
 
 /** One downloadable .md per AEO Playbook tab. Everything is the saved data, not unsaved edits. */
@@ -67,7 +67,7 @@ async function companyMarkdown(companyId) {
     supabase
       .from("company_profiles")
       .select(
-        `domain, product_name, seo_market, seo_language, ai_training_bot_policy, ${[...COMMERCIAL_FIELDS, ...RETIRED_FIELDS].map((f) => f.key).join(", ")}`
+        `domain, product_name, seo_market, seo_language, ai_training_bot_policy, ${[...COMMERCIAL_FIELDS, IMAGE_STYLE_FIELD, ...RETIRED_FIELDS].map((f) => f.key).join(", ")}`
       )
       .eq("company_id", companyId)
       .maybeSingle(),
@@ -88,6 +88,9 @@ async function companyMarkdown(companyId) {
     ].join("\n"),
     "## Commercial and sales",
     ...COMMERCIAL_FIELDS.flatMap((f) => [`### ${f.label}`, orEmpty(p[f.key])]),
+    "## Article images",
+    `### ${IMAGE_STYLE_FIELD.label}`,
+    orEmpty(p[IMAGE_STYLE_FIELD.key]),
     "## Publish Destination",
     [`- **GitHub owner:** ${orEmpty(c.github_owner)}`, `- **GitHub repo:** ${orEmpty(c.github_repo)}`].join("\n"),
   ];
@@ -101,7 +104,7 @@ async function companyMarkdown(companyId) {
 
 function brandMarkdown({ playbook }) {
   const facts = playbook.brand_facts;
-  const parts = ["## Live wording (frozen)"];
+  const parts = [`_${BRAND_FACTS_NOTE}_`, "## Live wording (frozen)"];
   const live = (facts.live_wording || []).filter((r) => text(r?.where) || text(r?.text));
   parts.push(live.length ? live.map((r) => `- **${orEmpty(r.where)}:** ${orEmpty(r.text)}`).join("\n") : EMPTY);
 
@@ -114,9 +117,6 @@ function brandMarkdown({ playbook }) {
     }
     parts.push(orEmpty(facts[s.key]));
   }
-
-  parts.push("## Customer fit and timing");
-  for (const f of FIT_FIELDS) parts.push(`### ${f.label}`, orEmpty(facts[f.key]));
 
   parts.push(
     "## Claims and scope",
