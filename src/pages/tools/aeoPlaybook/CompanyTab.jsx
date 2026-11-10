@@ -4,9 +4,11 @@ import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import PublishDestinationCheck from "../publishDestination/PublishDestinationCheck";
 import { ownerRepoIssue } from "../../../../lib/publish-destination/tokenKey.js";
+import { COMMERCIAL_FIELDS } from "./api";
 import { RETIRED_FIELDS, retiredWithContent } from "./retiredFields";
 
 /** Company settings on company_profiles. Everything articles say lives in the other tabs. */
@@ -21,6 +23,9 @@ const PROFILE_FIELDS = [
   { key: "seo_market", label: "Search market", placeholder: "United States", hint: "Country or region the content targets. Sets spelling and data lookups." },
   { key: "seo_language", label: "Language", placeholder: "English", hint: "Language the articles are written in." },
 ];
+
+/** Text fields saved to company_profiles: the basics plus Commercial and sales. */
+const SAVED_FIELDS = [...PROFILE_FIELDS, ...COMMERCIAL_FIELDS];
 
 const TRAINING_POLICIES = [
   { value: "allow", label: "Allow AI training crawlers" },
@@ -79,7 +84,7 @@ export default function CompanyTab({ companyId }) {
       supabase.from("companies").select("name, github_owner, github_repo, github_token_key").eq("id", companyId).maybeSingle(),
       supabase
         .from("company_profiles")
-        .select(`id, ai_training_bot_policy, ${PROFILE_FIELDS.map((f) => f.key).join(", ")}`)
+        .select(`id, ai_training_bot_policy, ${SAVED_FIELDS.map((f) => f.key).join(", ")}`)
         .eq("company_id", companyId)
         .maybeSingle(),
       supabase.from("company_profiles").select(RETIRED_SELECT).eq("company_id", companyId).maybeSingle(),
@@ -94,7 +99,7 @@ export default function CompanyTab({ companyId }) {
     setTokenKey(c.github_token_key || "");
     const p = profileRes.data || {};
     setProfileId(p.id || null);
-    setProfile(Object.fromEntries(PROFILE_FIELDS.map((f) => [f.key, p[f.key] || ""])));
+    setProfile(Object.fromEntries(SAVED_FIELDS.map((f) => [f.key, p[f.key] || ""])));
     setPolicy(p.ai_training_bot_policy || "allow");
     setRetired(retiredRes.error ? {} : retiredRes.data || {});
     setLoading(false);
@@ -112,7 +117,7 @@ export default function CompanyTab({ companyId }) {
     setMessage("");
     try {
       const payload = {
-        ...Object.fromEntries(PROFILE_FIELDS.map((f) => [f.key, String(profile[f.key] || "").trim() || null])),
+        ...Object.fromEntries(SAVED_FIELDS.map((f) => [f.key, String(profile[f.key] || "").trim() || null])),
         ai_training_bot_policy: policy,
       };
       const profileRes = profileId
@@ -187,6 +192,26 @@ export default function CompanyTab({ companyId }) {
               ))}
             </select>
           </Field>
+        </div>
+      </Section>
+
+      <Section
+        title="Commercial and sales"
+        description="How the company sells and what limits it. Internal context for the ICP and personas; articles do not quote it."
+      >
+        <div className="grid gap-4 md:grid-cols-2">
+          {COMMERCIAL_FIELDS.map((f) => (
+            <div key={f.key} className={f.wide ? "md:col-span-2" : undefined}>
+              <Field id={f.key} label={f.label} hint={f.hint}>
+                <Textarea
+                  id={f.key}
+                  rows={f.rows}
+                  value={profile[f.key] || ""}
+                  onChange={(e) => setProfile((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                />
+              </Field>
+            </div>
+          ))}
         </div>
       </Section>
 
