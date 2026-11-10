@@ -18,6 +18,13 @@ export const EMPTY_BRAND_FACTS = Object.freeze({
   competitors: [],
   open_items: [],
   image_style: "",
+  fit_size_band: "",
+  fit_ability_to_pay: "",
+  fit_floor_ceiling: "",
+  fit_problem_cost: "",
+  fit_buying_window: "",
+  fit_signals: "",
+  fit_environment: "",
 });
 
 export const BRAND_SECTIONS = [
@@ -33,6 +40,32 @@ export const BRAND_SECTIONS = [
     label: "8 · Image style",
     helper: "How article hero images should look. Each image gets a scene written for its article in this style. Leave empty to use the default (editorial desk still life, warm light).",
   },
+];
+
+/** Brand Facts, "Customer fit and timing": who qualifies and when they buy. Keys live in brand_facts. */
+export const FIT_FIELDS = [
+  { key: "fit_size_band", label: "Size band", hint: "Smallest and largest customer you'd take, in whatever unit fits (employees, revenue, funding stage)." },
+  { key: "fit_ability_to_pay", label: "Ability to pay", hint: "What must be true for the customer to afford it." },
+  { key: "fit_floor_ceiling", label: "Floor and ceiling", hint: "Who is too small, who is too large, and why." },
+  { key: "fit_problem_cost", label: "Cost of the problem", hint: "What it costs the customer in money or time if unsolved." },
+  { key: "fit_buying_window", label: "Buying window", hint: "How recent the trigger must be, and how long the window stays open." },
+  { key: "fit_signals", label: "Observable signals", hint: "Public evidence that the trigger has happened." },
+  { key: "fit_environment", label: "Required environment", hint: "Tools or prerequisites the customer must have, and what rules them out." },
+];
+
+/** Company tab, "Commercial and sales": how the company sells and what limits it. Columns on company_profiles. */
+export const COMMERCIAL_FIELDS = [
+  { key: "gtm_deal_size", label: "Deal size", rows: 2, hint: "Typical price or contract value, as a band." },
+  { key: "gtm_sales_motion", label: "Sales motion", rows: 2, hint: "Sales model, cycle length, how many people are involved. The Persona Builder needs this too." },
+  {
+    key: "gtm_customer_evidence",
+    label: "Customer evidence",
+    rows: 5,
+    wide: true,
+    hint: "Best customers and what they share; worst or churned and why; lost deals and why. Proxy evidence if pre-launch.",
+  },
+  { key: "gtm_where_to_find", label: "Where to find them", rows: 3, hint: "Databases, lists, communities, channels." },
+  { key: "gtm_constraints", label: "Constraints", rows: 3, hint: "Legal, regulatory or ownership limits; delivery capacity." },
 ];
 
 export const TIERS = ["Buy", "Problem", "Learn"];

@@ -3,7 +3,7 @@ import { Loader2, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { BRAND_SECTIONS, savePlaybook } from "./api";
+import { BRAND_SECTIONS, FIT_FIELDS, savePlaybook } from "./api";
 
 const linesToList = (text) =>
   String(text || "")
@@ -122,6 +122,21 @@ export default function BrandFactsTab({ companyId, playbook, onSaved }) {
           <Textarea rows={6} value={facts[s.key] || ""} onChange={(e) => set(s.key, e.target.value)} />
         </Section>
       ))}
+
+      <Section
+        title="Customer fit and timing"
+        helper="Who qualifies as a customer and when they buy. The ICP and personas are built from these."
+      >
+        <div className="grid gap-3 md:grid-cols-2">
+          {FIT_FIELDS.map((f) => (
+            <label key={f.key} className="block">
+              <span className="mb-1 block text-xs font-medium text-foreground">{f.label}</span>
+              <Textarea rows={3} value={facts[f.key] || ""} onChange={(e) => set(f.key, e.target.value)} />
+              <span className="mt-1 block text-xs text-muted-foreground">{f.hint}</span>
+            </label>
+          ))}
+        </div>
+      </Section>
 
       <Section title="Claims and scope" helper="One per line. Writers use the approved list as written, never use the second, and never write about the third.">
         <div className="grid gap-3 md:grid-cols-3">

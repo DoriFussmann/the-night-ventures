@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { downloadMarkdown } from "../siteBuildFlow/buildFlowMarkdown";
-import { BRAND_SECTIONS } from "./api";
+import { BRAND_SECTIONS, COMMERCIAL_FIELDS, FIT_FIELDS } from "./api";
 import { RETIRED_FIELDS, retiredWithContent } from "./retiredFields";
 
 /** One downloadable .md per AEO Playbook tab. Everything is the saved data, not unsaved edits. */
@@ -66,7 +66,9 @@ async function companyMarkdown(companyId) {
     supabase.from("companies").select("name, github_owner, github_repo").eq("id", companyId).maybeSingle(),
     supabase
       .from("company_profiles")
-      .select(`domain, product_name, seo_market, seo_language, ai_training_bot_policy, ${RETIRED_FIELDS.map((f) => f.key).join(", ")}`)
+      .select(
+        `domain, product_name, seo_market, seo_language, ai_training_bot_policy, ${[...COMMERCIAL_FIELDS, ...RETIRED_FIELDS].map((f) => f.key).join(", ")}`
+      )
       .eq("company_id", companyId)
       .maybeSingle(),
   ]);
@@ -84,6 +86,8 @@ async function companyMarkdown(companyId) {
       `- **Language:** ${orEmpty(p.seo_language)}`,
       `- **AI training crawlers:** ${TRAINING_POLICY_LABELS[p.ai_training_bot_policy || "allow"] || p.ai_training_bot_policy}`,
     ].join("\n"),
+    "## Commercial and sales",
+    ...COMMERCIAL_FIELDS.flatMap((f) => [`### ${f.label}`, orEmpty(p[f.key])]),
     "## Publish Destination",
     [`- **GitHub owner:** ${orEmpty(c.github_owner)}`, `- **GitHub repo:** ${orEmpty(c.github_repo)}`].join("\n"),
   ];
@@ -110,6 +114,9 @@ function brandMarkdown({ playbook }) {
     }
     parts.push(orEmpty(facts[s.key]));
   }
+
+  parts.push("## Customer fit and timing");
+  for (const f of FIT_FIELDS) parts.push(`### ${f.label}`, orEmpty(facts[f.key]));
 
   parts.push(
     "## Claims and scope",
