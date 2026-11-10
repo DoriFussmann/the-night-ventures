@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import { Loader2, Upload } from "lucide-react";
+import { Download, Loader2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { importPlaybook, loadPlaybook } from "./aeoPlaybook/api";
@@ -9,6 +9,7 @@ import PersonasTab from "./aeoPlaybook/PersonasTab";
 import PromptsTab from "./aeoPlaybook/PromptsTab";
 import ContentMapTab from "./aeoPlaybook/ContentMapTab";
 import CompanyTab from "./aeoPlaybook/CompanyTab";
+import { SECTION_LABELS, downloadSectionMarkdown } from "./aeoPlaybook/sectionMarkdown";
 
 const TAB_IDS = ["company", "brand", "personas", "prompts", "map"];
 
@@ -21,6 +22,7 @@ export default function AeoPlaybook() {
   const [error, setError] = useState("");
   const [importing, setImporting] = useState("");
   const [importNote, setImportNote] = useState("");
+  const [downloading, setDownloading] = useState(false);
   const fileRef = useRef(null);
 
   const reload = useCallback(async () => {
@@ -74,6 +76,18 @@ export default function AeoPlaybook() {
     }
   };
 
+  const onDownload = async () => {
+    setError("");
+    setDownloading(true);
+    try {
+      await downloadSectionMarkdown(tab, companyId, data);
+    } catch (err) {
+      setError(err?.message || "Download failed");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   const setTab = (next) => {
     const params = new URLSearchParams(searchParams);
     params.set("tab", next);
@@ -112,13 +126,26 @@ export default function AeoPlaybook() {
         </p>
       ) : data ? (
         <Tabs value={tab} onValueChange={setTab}>
-          <TabsList>
-            <TabsTrigger value="company">Company</TabsTrigger>
-            <TabsTrigger value="brand">Brand Facts</TabsTrigger>
-            <TabsTrigger value="personas">ICP &amp; Personas ({data.personas.length})</TabsTrigger>
-            <TabsTrigger value="prompts">Prompts ({data.prompts.length})</TabsTrigger>
-            <TabsTrigger value="map">Content Map ({data.groups.length})</TabsTrigger>
-          </TabsList>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <TabsList>
+              <TabsTrigger value="company">Company</TabsTrigger>
+              <TabsTrigger value="brand">Brand Facts</TabsTrigger>
+              <TabsTrigger value="personas">ICP &amp; Personas ({data.personas.length})</TabsTrigger>
+              <TabsTrigger value="prompts">Prompts ({data.prompts.length})</TabsTrigger>
+              <TabsTrigger value="map">Content Map ({data.groups.length})</TabsTrigger>
+            </TabsList>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={downloading}
+              title="Downloads the saved data in this section. Save any edits first."
+              onClick={onDownload}
+            >
+              {downloading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-1.5 h-3.5 w-3.5" />}
+              Download {SECTION_LABELS[tab]} .md
+            </Button>
+          </div>
           <TabsContent value="company">
             <CompanyTab companyId={companyId} />
           </TabsContent>
