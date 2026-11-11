@@ -1,15 +1,13 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { ChevronDown, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import PublishDestinationCheck from "../publishDestination/PublishDestinationCheck";
 import { ownerRepoIssue } from "../../../../lib/publish-destination/tokenKey.js";
 import { COMMERCIAL_FIELDS, IMAGE_STYLE_FIELD } from "./api";
-import { RETIRED_FIELDS, retiredWithContent } from "./retiredFields";
 
 /** Company settings and objective business facts on company_profiles. Approved messaging lives in Brand Facts. */
 const PROFILE_FIELDS = [
@@ -32,8 +30,6 @@ const TRAINING_POLICIES = [
   { value: "block", label: "Block AI training crawlers" },
   { value: "any", label: "No preference" },
 ];
-
-const RETIRED_SELECT = RETIRED_FIELDS.map((f) => f.key).join(", ");
 
 function Section({ title, description, children }) {
   return (
@@ -70,8 +66,6 @@ export default function CompanyTab({ companyId }) {
   const [owner, setOwner] = useState("");
   const [repo, setRepo] = useState("");
   const [tokenKey, setTokenKey] = useState("");
-  const [retired, setRetired] = useState({});
-  const [retiredOpen, setRetiredOpen] = useState(false);
 
   const ownerIssue = ownerRepoIssue("owner", owner);
   const repoIssue = ownerRepoIssue("repo", repo);
@@ -80,14 +74,13 @@ export default function CompanyTab({ companyId }) {
     if (!companyId) return;
     setLoading(true);
     setError("");
-    const [companyRes, profileRes, retiredRes] = await Promise.all([
+    const [companyRes, profileRes] = await Promise.all([
       supabase.from("companies").select("name, github_owner, github_repo, github_token_key").eq("id", companyId).maybeSingle(),
       supabase
         .from("company_profiles")
         .select(`id, ai_training_bot_policy, ${SAVED_FIELDS.map((f) => f.key).join(", ")}`)
         .eq("company_id", companyId)
         .maybeSingle(),
-      supabase.from("company_profiles").select(RETIRED_SELECT).eq("company_id", companyId).maybeSingle(),
     ]);
     if (companyRes.error || profileRes.error) {
       setError((companyRes.error || profileRes.error).message || "Failed to load company settings");
@@ -101,7 +94,6 @@ export default function CompanyTab({ companyId }) {
     setProfileId(p.id || null);
     setProfile(Object.fromEntries(SAVED_FIELDS.map((f) => [f.key, p[f.key] || ""])));
     setPolicy(p.ai_training_bot_policy || "allow");
-    setRetired(retiredRes.error ? {} : retiredRes.data || {});
     setLoading(false);
   }, [companyId]);
 
@@ -152,8 +144,6 @@ export default function CompanyTab({ companyId }) {
       </p>
     );
   }
-
-  const retiredFilled = retiredWithContent(retired);
 
   return (
     <form onSubmit={save} className="mt-4 space-y-4">
@@ -242,28 +232,6 @@ export default function CompanyTab({ companyId }) {
           <PublishDestinationCheck owner={owner} repo={repo} tokenKey={tokenKey} disabled={Boolean(ownerIssue || repoIssue)} />
         </div>
       </Section>
-
-      {retiredFilled.length > 0 ? (
-        <Collapsible open={retiredOpen} onOpenChange={setRetiredOpen} className="rounded-lg border border-dashed border-border p-4">
-          <CollapsibleTrigger className="flex w-full items-center justify-between text-left text-sm text-muted-foreground hover:text-foreground">
-            Retired fields with data ({retiredFilled.length}), read only
-            <ChevronDown className={`h-4 w-4 transition-transform ${retiredOpen ? "rotate-180" : ""}`} />
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Old Company Intelligence fields. Nothing reads them; they are kept so nothing is lost.
-            </p>
-            <dl className="mt-3 space-y-3">
-              {retiredFilled.map((f) => (
-                <div key={f.key}>
-                  <dt className="text-xs font-medium text-foreground">{f.label}</dt>
-                  <dd className="whitespace-pre-wrap break-words text-xs text-muted-foreground">{f.text}</dd>
-                </div>
-              ))}
-            </dl>
-          </CollapsibleContent>
-        </Collapsible>
-      ) : null}
 
       <div className="sticky bottom-0 flex items-center gap-3 border-t border-border bg-background py-3">
         <Button type="submit" disabled={saving || Boolean(ownerIssue || repoIssue)}>

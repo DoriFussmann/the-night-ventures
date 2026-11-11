@@ -1,7 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { downloadMarkdown } from "../siteBuildFlow/buildFlowMarkdown";
 import { BRAND_FACTS_NOTE, BRAND_SECTIONS, COMMERCIAL_FIELDS, IMAGE_STYLE_FIELD } from "./api";
-import { RETIRED_FIELDS, retiredWithContent } from "./retiredFields";
 
 /** One downloadable .md per AEO Playbook tab. Everything is the saved data, not unsaved edits. */
 export const SECTION_LABELS = {
@@ -67,7 +66,7 @@ async function companyMarkdown(companyId) {
     supabase
       .from("company_profiles")
       .select(
-        `domain, product_name, seo_market, seo_language, ai_training_bot_policy, ${[...COMMERCIAL_FIELDS, IMAGE_STYLE_FIELD, ...RETIRED_FIELDS].map((f) => f.key).join(", ")}`
+        `domain, product_name, seo_market, seo_language, ai_training_bot_policy, ${[...COMMERCIAL_FIELDS, IMAGE_STYLE_FIELD].map((f) => f.key).join(", ")}`
       )
       .eq("company_id", companyId)
       .maybeSingle(),
@@ -94,11 +93,6 @@ async function companyMarkdown(companyId) {
     "## Publish Destination",
     [`- **GitHub owner:** ${orEmpty(c.github_owner)}`, `- **GitHub repo:** ${orEmpty(c.github_repo)}`].join("\n"),
   ];
-  const retired = retiredWithContent(p);
-  if (retired.length) {
-    parts.push("## Retired fields (read only)", "Old Company Intelligence fields. Nothing reads them; they are kept so nothing is lost.");
-    for (const f of retired) parts.push(`### ${f.label}`, f.text.replace(/^• /gm, "- "));
-  }
   return parts;
 }
 
