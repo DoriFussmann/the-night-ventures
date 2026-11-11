@@ -8,10 +8,11 @@ import BrandFactsTab from "./aeoPlaybook/BrandFactsTab";
 import PersonasTab from "./aeoPlaybook/PersonasTab";
 import PromptsTab from "./aeoPlaybook/PromptsTab";
 import ContentMapTab from "./aeoPlaybook/ContentMapTab";
+import PromptTestsTab from "./aeoPlaybook/PromptTestsTab";
 import CompanyTab from "./aeoPlaybook/CompanyTab";
 import { SECTION_LABELS, downloadSectionMarkdown } from "./aeoPlaybook/sectionMarkdown";
 
-const TAB_IDS = ["company", "brand", "personas", "prompts", "map"];
+const TAB_IDS = ["company", "brand", "personas", "prompts", "tests", "map"];
 
 export default function AeoPlaybook() {
   const { companyId } = useParams();
@@ -132,19 +133,22 @@ export default function AeoPlaybook() {
               <TabsTrigger value="brand">Brand Facts</TabsTrigger>
               <TabsTrigger value="personas">ICP &amp; Personas ({data.personas.length})</TabsTrigger>
               <TabsTrigger value="prompts">Prompts ({data.prompts.length})</TabsTrigger>
+              <TabsTrigger value="tests">Prompt Tests</TabsTrigger>
               <TabsTrigger value="map">Content Map ({data.groups.length})</TabsTrigger>
             </TabsList>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={downloading}
-              title="Downloads the saved data in this section. Save any edits first."
-              onClick={onDownload}
-            >
-              {downloading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-1.5 h-3.5 w-3.5" />}
-              Download {SECTION_LABELS[tab]} .md
-            </Button>
+            {SECTION_LABELS[tab] && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={downloading}
+                title="Downloads the saved data in this section. Save any edits first."
+                onClick={onDownload}
+              >
+                {downloading ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-1.5 h-3.5 w-3.5" />}
+                Download {SECTION_LABELS[tab]} .md
+              </Button>
+            )}
           </div>
           <TabsContent value="company">
             <CompanyTab companyId={companyId} />
@@ -157,6 +161,9 @@ export default function AeoPlaybook() {
           </TabsContent>
           <TabsContent value="prompts">
             <PromptsTab companyId={companyId} data={data} onChanged={reload} />
+          </TabsContent>
+          <TabsContent value="tests">
+            <PromptTestsTab companyId={companyId} />
           </TabsContent>
           <TabsContent value="map">
             <ContentMapTab companyId={companyId} data={data} onChanged={reload} />
