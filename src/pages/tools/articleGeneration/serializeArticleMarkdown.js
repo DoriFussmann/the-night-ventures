@@ -70,7 +70,18 @@ export function serializeArticleMarkdown(frontmatter, body, options = {}) {
   }
 
   lines.push(`draft: ${draft ? "true" : "false"}`);
-  lines.push("internalLinks: []");
+  const internalLinks = (Array.isArray(fm.internalLinks) ? fm.internalLinks : []).filter(
+    (link) => link && typeof link === "object" && String(link.slug || "").trim() && String(link.anchor || "").trim()
+  );
+  if (internalLinks.length > 0) {
+    lines.push("internalLinks:");
+    for (const link of internalLinks) {
+      lines.push(`  - slug: ${String(link.slug).trim()}`);
+      lines.push(`    anchor: ${yamlEscape(String(link.anchor).trim())}`);
+    }
+  } else {
+    lines.push("internalLinks: []");
+  }
   const externalLinks = Array.isArray(fm.externalLinks) ? fm.externalLinks : [];
   lines.push(
     externalLinks.length > 0
