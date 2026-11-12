@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ICP Builder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;400&display=swap" rel="stylesheet">
+<style>
+/* Top-Line design guide: calm, editorial, airy. Navy and warm off-white do the work; teal = structure and input, orange = output and attention.
+   One font (Inter), weight 200 for titles and headers, 400 for everything else, never bold. Single light theme by choice. */
+:root{
+  color-scheme:light;
+  --page:#F4F2EC; --navy:#16233A; --teal:#1F7A6B; --orange:#E59A4B;
+  --mint:#CFE8E1; --mint-ink:#0E4D42; --teal-mid:#5FB3A1;
+  --calc:#E3E6EA; --card2:#E6EEF0; --card:#FFFFFF; --line:#D9DCE1;
+  --body:#4A5568; --muted:#6A7179; --on-navy:#F4F2EC; --on-navy-soft:#BFCAD9;
+  --font:"Inter","Helvetica Neue",Arial,sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:16px}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--page);color:var(--body);font:400 15px/1.45 var(--font)}
+h1,h2,h3{font-weight:200;color:var(--navy);text-wrap:balance;margin:0;line-height:1.1}
+b,strong,th{font-weight:400}
+strong{color:var(--navy)}
+button,select,textarea,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+[hidden]{display:none!important}
+.wrap{max-width:1180px;margin:0 auto;padding:0 20px}
+.eyebrow{margin:0 0 6px;font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--teal)}
+
+header.top{margin:20px 0 24px;padding:36px 40px;background:var(--navy);border-radius:16px;display:flex;flex-wrap:wrap;gap:20px 32px;align-items:flex-end;justify-content:space-between}
+header.top .eyebrow{color:var(--orange)}
+header.top h1{font-size:52px;line-height:1.05;color:var(--on-navy);letter-spacing:-.01em}
+header.top p.lede{margin:12px 0 0;color:var(--on-navy-soft);max-width:58ch;font-size:16px}
+.tabs{display:flex;gap:4px;border:1px solid rgba(191,202,217,.35);border-radius:12px;padding:4px}
+.tabs a{padding:8px 18px;border-radius:9px;text-decoration:none;color:var(--on-navy-soft)}
+.tabs a:hover{color:var(--on-navy)}
+.tabs a[aria-current="page"]{background:var(--on-navy);color:var(--navy)}
+.tabs a:focus-visible{outline-color:var(--orange)}
+
+.btn{border:1px solid var(--line);background:var(--card);color:var(--navy);border-radius:10px;padding:8px 14px;cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--teal)}
+.btn.primary{background:var(--orange);border-color:var(--orange);color:var(--navy);padding:10px 20px}
+.btn.primary:hover{filter:brightness(1.06)}
+.btn.quiet{border-color:transparent;background:transparent;color:var(--muted)}
+.btn.quiet:hover{color:var(--navy);border-color:var(--line)}
+.btn:disabled{opacity:.5;cursor:default}
+
+.panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px 24px}
+.setup{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr);gap:20px;margin-bottom:36px}
+.panel h2{font-size:26px;margin-bottom:6px}
+.panel p.sub{margin:0 0 14px;color:var(--body);font-size:14px}
+.seg{display:flex;flex-wrap:wrap;gap:8px}
+.seg label{flex:1 1 auto;border:1px solid var(--line);border-radius:10px;padding:8px 14px;cursor:pointer;text-align:center;color:var(--navy)}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg label:has(input:checked){background:var(--mint);border-color:var(--mint);color:var(--mint-ink)}
+.seg label:has(input:focus-visible){outline:2px solid var(--teal);outline-offset:2px}
+.drop{border:1.5px dashed var(--teal-mid);border-radius:12px;padding:14px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--card2)}
+.drop.over{background:var(--mint);border-color:var(--teal)}
+.drop span{color:var(--body);font-size:14px;flex:1 1 180px}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+#pastebox{margin-top:10px;display:flex;flex-direction:column;gap:8px}
+#pastebox textarea{min-height:130px;font-size:13px}
+.note{margin-top:12px;font-size:14px;padding:10px 14px;border-radius:10px;background:var(--mint);color:var(--mint-ink)}
+.note.warn,.note.bad{background:var(--card);color:var(--navy);border:1px solid var(--orange);border-left-width:4px}
+
+.work{display:grid;grid-template-columns:230px minmax(0,1fr);gap:32px;align-items:start}
+nav.rail{position:sticky;top:16px;display:flex;flex-direction:column;gap:2px;max-height:calc(100vh - 110px);overflow:auto}
+nav.rail a{display:flex;gap:8px;align-items:baseline;justify-content:space-between;padding:7px 10px;border-radius:10px;text-decoration:none;color:var(--muted);font-size:14px;line-height:1.3}
+nav.rail a:hover{background:var(--card2);color:var(--navy)}
+nav.rail a .c{font-size:12px;font-variant-numeric:tabular-nums;flex:none}
+nav.rail a.has{color:var(--navy)}
+nav.rail a.has .c{color:var(--teal)}
+nav.rail a.miss .c{background:var(--orange);color:var(--navy);border-radius:6px;padding:0 5px}
+
+section.sec{margin-bottom:44px}
+section.sec>h2{font-size:34px;text-transform:capitalize}
+section.sec>p.desc{margin:8px 0 14px;color:var(--body);max-width:65ch}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}
+.chips button{border:0;background:var(--mint);color:var(--mint-ink);border-radius:10px;padding:5px 12px;font-size:13px;cursor:pointer}
+.chips button:hover{background:var(--teal-mid);color:var(--navy)}
+.rows{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.row{display:grid;grid-template-columns:minmax(0,250px) minmax(0,1fr) 138px;gap:16px;padding:12px 20px;border-top:1px solid var(--line);align-items:start;border-left:4px solid transparent}
+.row:first-child{border-top:0}
+.row label{display:flex;flex-direction:column;gap:2px;cursor:pointer}
+.row .lab{color:var(--navy);line-height:1.3}
+.row .hint{color:var(--muted);font-size:13px;line-height:1.35}
+.req{display:inline-block;font-size:10px;letter-spacing:.14em;text-transform:uppercase;background:var(--orange);color:var(--navy);border-radius:6px;padding:1px 6px;margin-left:8px;vertical-align:1px}
+.row.flag{border-left-color:var(--orange);background:var(--page)}
+textarea,select{border:1px solid var(--line);border-radius:10px;background:var(--page);padding:8px 12px;width:100%;color:var(--navy)}
+textarea{resize:vertical;min-height:38px;line-height:1.4;display:block}
+textarea:focus,select:focus{border-color:var(--teal);outline:none;box-shadow:0 0 0 3px var(--mint)}
+.row select{font-size:13px;padding:8px 6px;color:var(--muted);background:var(--card)}
+.row select.set{color:var(--mint-ink);background:var(--mint);border-color:var(--mint)}
+
+.bar{position:sticky;bottom:12px;margin-top:8px;background:var(--navy);border-radius:16px;padding:14px 20px 14px 24px;display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;justify-content:space-between;box-shadow:0 8px 24px rgba(22,35,58,.25)}
+.bar .stat{display:flex;flex-wrap:wrap;gap:6px 20px;font-size:14px;color:var(--on-navy-soft);align-items:center}
+.bar .stat b{color:var(--on-navy);font-variant-numeric:tabular-nums;margin-left:4px}
+.bar #st-msg{color:var(--orange)}
+.meter{width:120px;height:6px;border-radius:9px;background:rgba(191,202,217,.25);overflow:hidden}
+.meter i{display:block;height:100%;background:var(--teal-mid);width:0}
+.bar .btn:focus-visible{outline-color:var(--on-navy)}
+
+.outbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:16px}
+.outbar .sp{flex:1}
+.doc{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:40px 44px 48px}
+.doc h1{font-size:48px;line-height:1.05;margin-bottom:14px}
+.doc h2{font-size:30px;margin:44px 0 12px}
+.doc h3{font-size:21px;margin:22px 0 6px}
+.doc p,.doc li{max-width:72ch}
+.doc p{margin:8px 0}
+.doc ul,.doc ol{margin:8px 0;padding-left:22px}
+.doc li::marker{color:var(--teal)}
+.doc code{background:var(--calc);color:var(--navy);padding:1px 6px;border-radius:6px;font-family:inherit;font-size:.93em}
+.doc .tw{overflow-x:auto;margin:14px 0;border-radius:12px}
+.doc table{border-collapse:collapse;width:100%;font-size:14px}
+.doc th{text-align:left;background:var(--navy);color:var(--on-navy);padding:10px 14px;white-space:nowrap}
+.doc td{padding:10px 14px;vertical-align:top;font-variant-numeric:tabular-nums;background:var(--card)}
+.doc tbody tr:nth-child(even) td{background:var(--page)}
+.pill{display:inline-block;border-radius:10px;padding:2px 10px;font-size:12px;white-space:nowrap}
+.pill.m{background:var(--navy);color:var(--on-navy)}
+.pill.s,.pill.v{background:var(--mint);color:var(--mint-ink)}
+.pill.p,.pill.o{background:var(--calc);color:var(--navy)}
+.pill.h,.pill.d{background:var(--orange);color:var(--navy)}
+.pill.u{background:var(--card);color:var(--muted);border:1px solid var(--line)}
+.empty{color:var(--muted);padding:20px 0}
+.status{color:var(--muted);font-size:14px}
+#toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:var(--navy);color:var(--on-navy);border:1px solid var(--teal-mid);padding:9px 18px;border-radius:10px;font-size:14px;z-index:20;max-width:calc(100% - 32px)}
+dialog{border:1px solid var(--line);border-radius:16px;background:var(--card);color:var(--navy);width:min(640px,calc(100% - 32px));padding:20px}
+dialog textarea{min-height:240px;font-size:13px;margin:10px 0}
+dialog::backdrop{background:rgba(22,35,58,.55)}
+
+@media (max-width:860px){
+  .setup{grid-template-columns:1fr}
+  .work{grid-template-columns:1fr}
+  nav.rail{position:static;flex-direction:row;overflow-x:auto;max-height:none;padding-bottom:6px}
+  nav.rail a{flex:none;border:1px solid var(--line);background:var(--card)}
+  .row{grid-template-columns:1fr;gap:8px;padding:12px 14px}
+  .row select{max-width:180px}
+  .doc{padding:24px 18px 32px}
+  .doc h1{font-size:34px}
+  header.top{padding:24px 20px}
+  header.top h1{font-size:38px}
+  section.sec>h2{font-size:28px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <p class="eyebrow">Ideal Customer Profile</p>
+      <h1>ICP Builder</h1>
+      <p class="lede">Describe the business and its market, then generate two documents: a Strategic ICP (who the customer is and why they buy) and an Operational ICP (eligibility, fit, buying intent and how to find them).</p>
+    </div>
+    <nav class="tabs" aria-label="Views">
+      <a href="#inputs" id="tab-inputs">1 · Inputs</a>
+      <a href="#icp" id="tab-icp">2 · ICP</a>
+    </nav>
+  </header>
+
+  <main id="view-inputs">
+    <div class="setup">
+      <div class="panel">
+        <p class="eyebrow">Input</p>
+        <h2>Who Is the Customer?</h2>
+        <p class="sub">Sets the wording of the inputs and the shape of the ICP.</p>
+        <div class="seg" role="radiogroup" aria-label="Customer type">
+          <label><input type="radio" name="mode" id="mode-org" value="org">Organizations</label>
+          <label><input type="radio" name="mode" id="mode-ind" value="ind">Individuals</label>
+          <label><input type="radio" name="mode" id="mode-both" value="both">Both</label>
+        </div>
+        <div class="actions">
+          <button class="btn quiet" id="btn-example" type="button">Load example</button>
+        </div>
+      </div>
+      <div class="panel">
+        <p class="eyebrow">Input</p>
+        <h2>Import Inputs From Markdown</h2>
+        <p class="sub">Upload the filled template or any documents about the business, one or several. Template rows and sections whose headings match a field are imported directly. Select Analyse to have Claude read all of them and allocate their content to every relevant field.</p>
+        <div class="drop" id="drop">
+          <span>Drop one or more .md files here</span>
+          <input type="file" id="file" accept=".md,.markdown,.txt,text/markdown,text/plain" multiple hidden>
+          <button class="btn" id="btn-file" type="button">Choose files</button>
+          <button class="btn" id="btn-paste" type="button">Paste markdown</button>
+        </div>
+        <div id="pastebox" hidden>
+          <label for="paste" class="status">Paste the filled template or any notes</label>
+          <textarea id="paste" spellcheck="false"></textarea>
+          <div><button class="btn primary" id="btn-import" type="button">Import pasted markdown</button></div>
+        </div>
+        <div id="upbox" class="upbox" hidden>
+          <div class="doclist" id="uplist" style="margin:0"></div>
+          <button class="btn primary" id="btn-analyse" type="button">Analyse</button>
+          <span class="status" id="an-status" role="status"></span>
+        </div>
+        <div class="actions">
+          <button class="btn" id="btn-tpl-dl" type="button" hidden>Download blank template</button>
+          <button class="btn" id="btn-tpl-copy" type="button">Copy blank template</button>
+          <button class="btn" id="btn-exp-dl" type="button" hidden>Download my inputs</button>
+          <button class="btn" id="btn-exp-copy" type="button">Copy my inputs</button>
+        </div>
+        <div id="import-note" class="note" hidden></div>
+      </div>
+    </div>
+
+    <div class="work">
+      <nav class="rail" id="rail" aria-label="Sections"></nav>
+      <div>
+        <form id="form" novalidate></form>
+        <div class="bar">
+          <div class="stat">
+            <span>Required <b id="st-req">0/8</b></span>
+            <span>All inputs <b id="st-all">0/0</b></span>
+            <span class="meter" aria-hidden="true"><i id="st-meter"></i></span>
+            <span id="st-msg"></span>
+          </div>
+          <div class="baract"><label class="chk"><input type="checkbox" id="with-op" checked> Include Operational ICP</label><button class="btn" id="btn-clear" type="button">Reset</button><button class="btn primary" id="btn-generate" type="button">Generate ICP</button></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <main id="view-icp" hidden>
+    <div class="outbar">
+      <button class="btn primary" id="btn-regen" type="button">Regenerate</button>
+      <button class="btn" id="btn-stop" type="button" hidden>Stop</button>
+      <button class="btn" id="btn-continue" type="button" hidden>Continue output</button>
+      <span class="status" id="out-status" role="status"></span>
+      <span class="sp"></span>
+      <button class="btn" id="btn-out-copy" type="button">Copy this document</button>
+      <button class="btn" id="btn-out-copy-all" type="button">Copy both</button>
+      <button class="btn" id="btn-out-dl" type="button" hidden>Download this document</button>
+      <button class="btn" id="btn-out-dl-all" type="button" hidden>Download both</button>
+    </div>
+    <div id="fallback" class="panel" hidden style="margin-bottom:16px">
+      <h2>Claude Is Not Available in This View</h2>
+      <p class="sub">Generation runs through Claude. Open this page in claude.ai and allow it to ask Claude, or copy the full prompt and paste it into a Claude chat.</p>
+      <button class="btn" id="btn-prompt-copy" type="button">Copy prompt</button>
+    </div>
+    <div class="otabs" role="group" aria-label="Document"><button class="btn" id="otab-s" type="button" aria-pressed="true">Strategic ICP</button><button class="btn" id="otab-o" type="button" aria-pressed="false">Operational ICP</button></div>
+    <article class="doc" id="doc"></article>
+  </main>
+</div>
+<div id="toast" role="status" aria-live="polite" hidden></div>
+<dialog id="dlg">
+  <span>Copy was blocked. Select and copy the text below.</span>
+  <textarea id="dlg-text" readonly></textarea>
+  <button class="btn" id="dlg-close" type="button">Close</button>
+</dialog>
+
+<script>
+"use strict";
+/* ---------- Field model: [label, hint, individualLabel, individualHint]; individualLabel null = organizations only ---------- */
+const SECTIONS = [
+{n:1,t:"Business & offering context",d:"What the business sells and the value it delivers.",f:[
+ ["Company name","Name of the business offering the product or service"],
+ ["Product / Service","What exactly is being sold?",undefined,undefined,["The offer"]],
+ ["Product category","What market category does it belong to?"],
+ ["Core value proposition","What fundamental value does it deliver?"],
+ ["Problems addressed","What problems does it solve?"],
+ ["Expected outcomes","What measurable improvements does it create?"],
+ ["Delivery model","SaaS, managed service, consulting, product, hybrid, etc."],
+ ["Pricing model","Subscription, project-based, usage-based, retainer, etc."],
+ ["Typical contract value","Typical price or customer value, as a band, if it is defined","Typical customer value","Typical spend per customer, as a band, if it is defined",["Minimum contract value","Ideal contract value","Minimum customer value","Ideal customer value","Deal size"]],
+ ["Implementation requirements","What does a customer need to adopt the solution?"],
+ ["Competitive alternatives","What would a customer use instead?",undefined,undefined,["Competitors"]]]},
+{n:2,t:"Customer & market",d:"Who the customer is and the market they belong to.",f:[
+ ["Primary industries","Target industries, segments or customer types, in order of priority","Primary customer groups","Groups of people to target, in order of priority",["Secondary industries","Secondary customer groups","The customer","Customer","Target customer","Customer definition"]],
+ ["Sub-industries","Specific verticals or niches","Niches","Specific sub-groups or communities"],
+ ["Excluded industries","Industries or segments that are out of scope","Excluded groups","Groups that are out of scope"],
+ ["Business model","B2B, B2C, marketplace, manufacturing, etc., and who the customer sells to","Occupation / life situation","Employed, self-employed, student, retired, parent, etc.",["Customer market","Who they buy for"]],
+ ["Market characteristics","What is true of this market now: regulated, fragmented, competitive, why now",undefined,undefined,["Market maturity","Why now"]],
+ ["Geographic markets","Markets you can serve and markets you prioritize for acquisition, stated separately; plus any excluded",undefined,undefined,["Geography","Countries of operation","Countries of residence","Regions served","Regions","Headquarters location","Home location type","Geographic exclusions"]]]},
+{n:3,t:"Customer qualification & fit",d:"What makes a customer a fit or not. Include size, revenue, funding or budget only where they decide fit; leave them out when they do not.",f:[
+ ["Good fit","Who is a good fit: stage, situation, what they already have and what they lack",undefined,undefined,["Customer fit","Customer qualification & fit","Customer qualification and fit","A good fit","Company maturity","Life / career stage","Growth stage","Current phase","Existing capabilities","Existing skills & resources","Funding status & stage","Funding status","Funding stage","Income source & household","Size band","Employee range","Age range","Minimum employee count","Ideal employee range","Maximum employee count","Annual revenue range","Annual income range","Minimum annual revenue","Ideal annual revenue","Maximum annual revenue","ARR / MRR","Ability to pay","Capital availability","Budget suitability"]],
+ ["Required environment","Tools, systems or prerequisites the customer must have",undefined,undefined,["Required technology","Required devices & accounts","Prerequisites","Operational dependencies","Existing infrastructure","Relevant software","CRM / ERP","Integration requirements"]],
+ ["Not a fit","Who should be ruled out, and why",undefined,undefined,["Not fit","Disqualifiers","Floor and ceiling","Too small","Too large","Below threshold","Above threshold","Operational limitations","Practical limitations","Problem mismatch","Other disqualifiers","Business model exclusions","Situation exclusions","Financial limitations","Technology exclusions","Technology limitations","Legacy infrastructure"]]]},
+{n:4,t:"Customer problem & impact",d:"The problem that makes someone a customer and what it costs them. Qualitative impact is fine; do not invent financial estimates.",f:[
+ ["Customer problem & impact","The central problem and what it costs the customer in time, money or growth",undefined,undefined,["Customer problem and impact","Customer problem","The problem","Primary business problem","Primary problem","Cost of the problem","Cost of inaction","Financial impact","Operational impact","Strategic impact","Day-to-day impact","Long-term impact"]],
+ ["Secondary problems","Additional problems the solution can solve"],
+ ["Existing gaps","Why the current alternatives are insufficient",undefined,undefined,["Current alternatives","The difference"]],
+ ["Desired outcomes","What the customer wants to achieve",undefined,undefined,["Desired business outcomes"]]]},
+{n:5,t:"Buying triggers & timing",d:"Events or conditions that indicate a customer may need the solution, and when.",
+ chips:{org:["Recent funding or capital investment","Significant hiring activity","Rapid employee growth","Geographic expansion","New product launches","Mergers and acquisitions","Restructuring","New market entry","Declining business performance","Technology migration","Regulatory changes","Increased operational complexity","Changes in business strategy"],
+        ind:["New job or promotion","Relocation","Marriage or partnership","New child","Graduation","Home purchase","Retirement","Change in income","Health event","Starting a business","Regulatory or tax changes"]},f:[
+ ["Buying triggers & timing","Events that create demand, how recent they must be, and how long the buying window stays open",undefined,undefined,["Buying triggers and timing","Buying triggers","Trigger","Triggers","Buying window","Primary triggers","Secondary triggers","Trigger timing"]],
+ ["Observable indicators","Public evidence that the trigger has happened",undefined,"Evidence you can observe: searches, posts, purchases, registrations",["Observable signals"]]]},
+{n:6,t:"Commercial fit & sales motion",d:"How the customer buys.",f:[
+ ["Sales model","Inbound, outbound, self-service, enterprise sales, hybrid",undefined,undefined,["Sales motion"]],
+ ["Sales cycle & complexity","Time to close, the steps, and how many people are involved","Purchase cycle & complexity","Time from first touch to purchase, and who else is involved",["Sales cycle","Sales complexity","Purchase cycle"]],
+ ["Retention & expansion","How long customers stay and what else they can buy",undefined,undefined,["Retention potential","Expansion potential"]]]},
+{n:7,t:"Constraints",d:"Operational and service constraints. Messaging and claim restrictions belong in the brand facts, not here.",f:[
+ ["Constraints","Capacity limits, legal or regulatory limits, what the service does not do",undefined,undefined,["Operational constraints","Service constraints","Commercial constraints","Legal or regulatory restrictions","Delivery capacity","Scalability","Commercial exclusions","Ownership & structure","Who pays","Operating constraints"]]]},
+{n:8,t:"Customer evidence & proof",d:"What supports the claims. Keep the company's own customer results separate from the track record of its founders or team.",f:[
+ ["Customer evidence & proof","Best customers and what they share, results, credentials, proxy evidence",undefined,undefined,["Customer evidence and proof","Customer evidence","Results & customer proof","Results and customer proof","Reasons to believe","The proof","Proof","Best existing customers","Highest-value customers","Longest-retained customers","Fastest-converting customers","Most successful implementations","Common characteristics","Customer concentration"]],
+ ["Lost or churned customers","Who left or did not convert, and why. Optional",undefined,undefined,["Worst or churned customers","Worst existing customers","Churned customers","Failed opportunities"]]]},
+{n:9,t:"Where to find them",d:"How ideal customers can be identified and who else is after them.",f:[
+ ["Identification sources","Databases, lists, directories, communities, channels",undefined,"Ad platform audiences, communities, creators, marketplaces, events, referral partners",["Where to find them"]],
+ ["Competitive density","Competing providers targeting the same customers"]]},
+{n:10,t:"Additional context",d:"Anything that does not fit above. Unstructured markdown you import lands here.",f:[
+ ["Notes","Free text: strategy notes, customer lists, research excerpts"]]}
+];
+const REQUIRED = ["1.1","1.2","1.4","1.5","1.7","1.8","2.1","2.6"];
+const EVIDENCE = ["Confirmed","Inferred","Hypothesized","Unknown"];
+const MODE_NAME = {org:"Organizations",ind:"Individuals",both:"Both"};
+const STORE = "icp-builder-v3";
+
+const state = {mode:"org", vals:{}, ev:{}, out:"", example:false, uploads:[], auto:{}};
+const $ = id => document.getElementById(id);
+const norm = s => String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function save(){ try{ localStorage.setItem(STORE, JSON.stringify(state)); }catch(e){} }
+function load(){ try{ const s = JSON.parse(localStorage.getItem(STORE)||"null"); if(s && s.vals){ Object.assign(state, s); } }catch(e){} }
+
+function fieldView(sec, i, mode){
+  const [l,h,il,ih] = sec.f[i];
+  const key = sec.n+"."+(i+1);
+  if(mode==="ind"){ if(il===null) return null; return {key, label: il||l, hint: ih||h}; }
+  if(mode==="both"){
+    const label = il && il!==l ? l+" / "+il : l;
+    const hint = (ih && ih!==h) ? "Organizations: "+h+". Individuals: "+ih+"." : h;
+    return {key, label, hint};
+  }
+  return {key, label:l, hint:h};
+}
+function secTitle(sec, mode){ return mode==="ind" ? (sec.it||sec.t) : mode==="both" ? (sec.nt||sec.t) : sec.t; }
+function visible(mode){
+  const out=[];
+  for(const sec of SECTIONS){ const fs=[]; sec.f.forEach((_,i)=>{ const v=fieldView(sec,i,mode); if(v) fs.push(v); }); out.push({sec, title:secTitle(sec,mode), fields:fs}); }
+  return out;
+}
+
+/* ---------- Form ---------- */
+function autosize(t){ t.style.height="auto"; t.style.height=Math.max(36,t.scrollHeight+2)+"px"; }
+function renderForm(){
+  const v = visible(state.mode); let h="", r="";
+  for(const {sec,title,fields} of v){
+    h += `<section class="sec" id="s${sec.n}"><p class="eyebrow">Section ${String(sec.n).padStart(2,"0")}</p><h2>${esc(title)}</h2><p class="desc">${esc(sec.d)}</p>`;
+    if(sec.chips){
+      const list = state.mode==="org" ? sec.chips.org : state.mode==="ind" ? sec.chips.ind : sec.chips.org.concat(sec.chips.ind);
+      h += `<div class="chips" aria-label="Add an example trigger">`+list.map(c=>`<button type="button" data-chip="${esc(c)}">+ ${esc(c)}</button>`).join("")+`</div>`;
+    }
+    h += `<div class="rows">`;
+    for(const f of fields){
+      const id=f.key.replace(".","-"), req=REQUIRED.includes(f.key), ev=state.ev[f.key]||"";
+      h += `<div class="row" data-k="${f.key}"><label for="f-${id}"><span class="lab">${esc(f.label)}${req?'<span class="req">required</span>':""}${state.auto[f.key]?'<span class="tag">from document</span>':""}</span><span class="hint">${esc(f.hint)}</span></label>`+
+           `<textarea id="f-${id}" rows="1" data-k="${f.key}">${esc(state.vals[f.key]||"")}</textarea>`+
+           `<select id="e-${id}" data-e="${f.key}" class="${ev?"set":""}" aria-label="Evidence for ${esc(f.label)}"><option value="">Evidence</option>`+
+           EVIDENCE.map(e=>`<option${e===ev?" selected":""}>${e}</option>`).join("")+`</select></div>`;
+    }
+    h += `</div></section>`;
+    r += `<a href="#s${sec.n}" data-s="${sec.n}"><span>${esc(title)}</span><span class="c"></span></a>`;
+  }
+  $("form").innerHTML=h; $("rail").innerHTML=r;
+  document.querySelectorAll("#form textarea").forEach(autosize);
+  $("mode-"+state.mode).checked=true;
+  updateStats();
+}
+function updateStats(){
+  const v = visible(state.mode); let all=0, filled=0;
+  for(const {sec,fields} of v){
+    const n = fields.filter(f=>(state.vals[f.key]||"").trim()).length;
+    all+=fields.length; filled+=n;
+    const a = document.querySelector(`#rail a[data-s="${sec.n}"]`);
+    if(a){ a.querySelector(".c").textContent=n+"/"+fields.length;
+      a.classList.toggle("has",n>0);
+      a.classList.toggle("miss",fields.some(f=>REQUIRED.includes(f.key)&&!(state.vals[f.key]||"").trim())); }
+  }
+  const req = REQUIRED.filter(k=>(state.vals[k]||"").trim()).length;
+  $("st-req").textContent=req+"/"+REQUIRED.length;
+  $("st-all").textContent=filled+"/"+all;
+  $("st-meter").style.width=(all?Math.round(filled/all*100):0)+"%";
+  $("st-msg").textContent = state.example ? "Example data loaded" : "";
+}
+$("rail").addEventListener("click",e=>{ const a=e.target.closest("a"); if(!a) return; e.preventDefault(); const el=$("s"+a.dataset.s); if(el) el.scrollIntoView(); });
+$("form").addEventListener("input",e=>{
+  const t=e.target;
+  if(t.dataset.k){ state.vals[t.dataset.k]=t.value; autosize(t); t.closest(".row").classList.remove("flag"); if(state.auto[t.dataset.k]){ delete state.auto[t.dataset.k]; const tg=t.closest(".row").querySelector(".tag"); if(tg) tg.remove(); } }
+  if(t.dataset.e){ state.ev[t.dataset.e]=t.value; t.classList.toggle("set",!!t.value); }
+  state.example=false; updateStats(); save();
+});
+$("form").addEventListener("click",e=>{
+  const c=e.target.closest("[data-chip]"); if(!c) return;
+  const cur=(state.vals["5.1"]||"").trim(); const add=c.dataset.chip;
+  if(cur.toLowerCase().includes(add.toLowerCase())) return;
+  state.vals["5.1"]=cur?cur+"; "+add:add;
+  const t=$("f-5-1"); t.value=state.vals["5.1"]; autosize(t); updateStats(); save();
+});
+$("form").addEventListener("submit",e=>e.preventDefault());
+document.querySelectorAll('input[name="mode"]').forEach(r=>r.addEventListener("change",()=>{ state.mode=r.value; renderForm(); save(); }));
+
+/* ---------- Markdown template: export and import ---------- */
+const cell = s => String(s||"").replace(/\r?\n/g,"<br>").replace(/\|/g,"\\|");
+function toMarkdown(withValues){
+  const L=["# ICP inputs","","Customer type: "+MODE_NAME[state.mode],"(Options: Organizations, Individuals, Both)","",
+   "Fill in the \"Your answer\" column. Rows marked * are required. Evidence is optional: Confirmed, Inferred, Hypothesized or Unknown. Use <br> for line breaks inside a cell.",""];
+  for(const {sec,title,fields} of visible(state.mode)){
+    L.push(`## ${sec.n}. ${title}`,"","| Input | What to provide | Your answer | Evidence |","|---|---|---|---|");
+    for(const f of fields) L.push(`| ${cell(f.label)}${REQUIRED.includes(f.key)?" *":""} | ${cell(f.hint)} | ${withValues?cell(state.vals[f.key]):""} | ${withValues?(state.ev[f.key]||""):""} |`);
+    L.push("");
+  }
+  return L.join("\n");
+}
+const LOOKUP = (()=>{ const bySec={}, all={}, alias={};
+  for(const sec of SECTIONS){ bySec[sec.n]={}; sec.f.forEach((f,i)=>{ const key=sec.n+"."+(i+1);
+    const names=[f[0]]; if(f[2]) names.push(f[2], f[0]+" / "+f[2]);
+    for(const nm of names){ const k=norm(nm); bySec[sec.n][k]=key; all[k]=all[k]||key; }
+    for(const nm of (f[4]||[])){ const k=norm(nm); if(!(k in alias)) alias[k]=key; } }); }
+  return {bySec, all, alias}; })();
+const HINTS = (()=>{ const m={}; for(const sec of SECTIONS) sec.f.forEach((f,i)=>{ m[sec.n+"."+(i+1)]=[f[1],f[3]].filter(Boolean).map(norm); }); return m; })();
+const splitRow = line => line.trim().replace(/^\|/,"").replace(/\|\s*$/,"").split(/(?<!\\)\|/).map(c=>c.trim().replace(/\\\|/g,"|"));
+/* The Night Ventures exports write "_Empty_" where a field has no content. It is not an answer. */
+const EMPTY_MARK = /^_empty_$/i;
+/* Fields with one value by nature: a later document replaces the earlier answer. Every other field keeps both. */
+const LAST_WINS = ["1.1"];
+const cleanVal = s => String(s||"").replace(/<br\s*\/?>/gi,"\n").split("\n").filter(l=>{ const t=l.trim(); return !EMPTY_MARK.test(t) && !EMPTY_MARK.test(t.replace(/^(?:[-*+]\s+)?.{0,80}?:\**\s*/,"")); }).join("\n").trim();
+function parseEvidence(s){ const c=norm(s)[0]; return {c:"Confirmed",v:"Confirmed",i:"Inferred",o:"Inferred",h:"Hypothesized",u:"Unknown"}[c]||""; }
+let batch=[];
+function importMarkdown(text,name){
+  let cur=null, ansCol=1, evCol=-1, matched=0; const unknown=[]; let mode=null;
+  const mm = text.match(/customer type\W+(organi[sz]ations?|individuals?|both)/i);
+  if(mm){ const w=mm[1].toLowerCase(); mode = w[0]==="o"?"org":w[0]==="i"?"ind":"both"; }
+  const wrote=new Set(); let aliasLabel=""; const src=name||"Uploaded document"; if(!state.from) state.from={};
+  const HEAD=/^(?:From [^\n]+|Existing answer):\n/;
+  { const i=state.uploads.findIndex(u=>u.name===src), u={name:src,text:String(text)}; if(i>=0) state.uploads[i]=u; else state.uploads.push(u); }
+  const partsOf=key=>{ const prev=(state.vals[key]||"").trim(), f=state.from[key]; if(!prev) return [];
+    if(HEAD.test(prev)) return prev.split(/\n\n(?=(?:From [^\n]+|Existing answer):\n)/).map(b=>{ const i=b.indexOf("\n"), h=b.slice(0,i); return {n:h==="Existing answer:"?null:h.slice(5,-1),t:b.slice(i+1)}; });
+    if(f&&f.v===prev) return [{n:f.parts?f.parts[0].n:f.n,t:prev}];
+    return [{n:null,t:prev}]; };
+  const setParts=(key,parts)=>{ if(!parts.length){ delete state.vals[key]; delete state.from[key]; return; }
+    const v=parts.length===1 ? parts[0].t : parts.map(p=>(p.n===null?"Existing answer:":"From "+p.n+":")+"\n"+p.t).join("\n\n");
+    state.vals[key]=v; state.from[key]={parts,v}; };
+  /* Same file name as an earlier upload: take that upload's blocks out first, remembering where each sat. */
+  const slot={};
+  for(const key of Object.keys(state.vals)){ const parts=partsOf(key), i=parts.findIndex(p=>p.n===src); if(i>=0){ parts.splice(i,1); slot[key]=i; setParts(key,parts); } }
+  const find = label => { const clean=label.replace(/\*+\s*$/,"").replace(/\*\*/g,"").trim(), k=norm(clean);
+    const direct=(cur&&LOOKUP.bySec[cur]&&LOOKUP.bySec[cur][k]) || LOOKUP.all[k]; if(direct) return direct;
+    if(LOOKUP.alias[k]){ aliasLabel=clean; return LOOKUP.alias[k]; } };
+  const put = (key,val,ev) => { val=cleanVal(val); if(!val) return; const nv=norm(val);
+    if(HINTS[key].includes(nv) || HINTS[key].some(h=>nv===norm("Organizations: ")+h)) return;
+    if(aliasLabel){ val=aliasLabel+": "+val; aliasLabel=""; }
+    /* A field keeps one block per document (and one for an answer typed by hand). A document uploaded again replaces its own block. */
+    let parts=partsOf(key); const mine=parts.find(p=>p.n===src);
+    if(wrote.has(key) && mine){ if(!mine.t.includes(val)) mine.t+="\n"+val; }
+    else if(LAST_WINS.includes(key)) parts=[{n:src,t:val}];
+    else if(!parts.some(p=>norm(p.t)===nv || p.t.includes(val))){
+      const at=key in slot ? Math.min(slot[key],parts.length) : parts.length; parts.splice(at,0,{n:src,t:val}); delete slot[key];
+    }
+    setParts(key,parts);
+    wrote.add(key); const e=parseEvidence(ev); if(e) state.ev[key]=e; matched++; };
+  let headKey=null, headBuf=[], headDepth=0, sub=null, skipDepth=0;
+  /* A sub-heading that is not a field, under a heading that is one (for example "### Waveup" under "## Competitors"), is kept as one line of the parent field: name, then its labelled bullets. */
+  const closeSub=()=>{ if(sub){ headBuf.push(sub.name+(sub.parts.length?" — "+sub.parts.join("; "):"")); sub=null; } };
+  const flushHead=()=>{ closeSub(); if(headKey){ const body=headBuf.join("\n").trim(); if(body){ aliasLabel=""; put(headKey,body,""); } } headKey=null; headBuf=[]; };
+  for(const raw of text.split(/\r?\n/)){
+    const line=raw.trim(); if(!line){ if(headKey&&headBuf.length&&!sub) headBuf.push(""); continue; }
+    const hh=line.match(/^#{1,6}\s+(.*)$/);
+    if(skipDepth && !hh) continue;
+    if(hh){
+      const depth=line.match(/^#+/)[0].length;
+      /* The Company export ends with old fields that nothing reads any more. None of it is imported. */
+      if(skipDepth && depth>skipDepth) continue;
+      skipDepth=0;
+      if(/^retired fields\b/i.test(hh[1].replace(/[*_`]/g,"").trim())){ flushHead(); skipDepth=depth; continue; }
+      const hd=line.match(/^#{1,6}\s*(\d{1,2})[.)]\s/);
+      const title=hh[1].replace(/^\d{1,2}\s*[.)·:–-]\s*/,"").replace(/[*_`]/g,"").trim();
+      if(!hd && headKey && depth>headDepth){ aliasLabel=""; const known=find(title); aliasLabel=""; if(!known && title){ closeSub(); sub={name:title,parts:[]}; continue; } }
+      flushHead();
+      if(hd){ cur=+hd[1]; ansCol=1; evCol=-1; }
+      aliasLabel=""; const hk=find(title); aliasLabel=""; if(hk && hk!=="10.1"){ headKey=hk; headBuf=[]; headDepth=depth; }
+      continue;
+    }
+    if(line.startsWith("|")){
+      const c=splitRow(line);
+      if(c.every(x=>/^:?-{2,}:?$/.test(x)||x==="")) continue;
+      if(["input","field","question","criterion","inputs"].includes(norm(c[0]))){
+        ansCol=c.findIndex(x=>/answer|value|response/i.test(x)); evCol=c.findIndex(x=>/evidence|status|confidence/i.test(x));
+        if(ansCol<0) ansCol = (c.length===2 && /information required|what to provide/i.test(c[1])) ? -1 : 1;
+        continue;
+      }
+      aliasLabel=""; const key=find(c[0]);
+      if(!key){ if(c[0] && (c[ansCol]||"").trim()) unknown.push(c[0]); continue; }
+      if(ansCol>=0) put(key,c[ansCol],evCol>=0?c[evCol]:"");
+      continue;
+    }
+    const kv=line.match(/^(?:[-*+]\s+)?\**\s*([^:|*]{2,70}?)\s*\**\s*:\**\s*(.+)$/);
+    let kvKey=null; if(kv){ aliasLabel=""; kvKey=find(kv[1]); if(kvKey && kvKey!==headKey) put(kvKey,kv[2].replace(/\*\*$/,""),""); else kvKey=null; aliasLabel=""; }
+    if(!kvKey && headKey){
+      if(sub){ const t=(kv?kv[1].trim()+": "+kv[2].replace(/\*\*$/,"").trim():line.replace(/^[-*+]\s+/,"")); if(!/^_Empty_$/.test(kv?kv[2].trim():t)) sub.parts.push(t); }
+      else headBuf.push(line);
+    }
+  }
+  flushHead();
+  if(mode) state.mode=mode;
+  let msg, cls="";
+  if(matched===0){
+    const prev=(state.vals["10.1"]||"").trim();
+    state.vals["10.1"]=(prev?prev+"\n\n":"")+text.trim();
+    msg="No fields or section headings were recognized, so the text was added to Additional context (the last section). Select Analyse to allocate its content to the right fields.";
+    cls="warn";
+  } else {
+    msg=`Imported ${matched} answer${matched===1?"":"s"}`+(mode?` and set customer type to ${MODE_NAME[mode]}`:"")+".";
+    msg+=" Select Analyse to fill further fields from the rest of the document.";
+    if(unknown.length){ msg+=` ${unknown.length} row${unknown.length===1?"":"s"} not recognized: ${unknown.slice(0,6).join(", ")}${unknown.length>6?"…":""}.`; cls="warn"; }
+  }
+  state.example=false; renderForm(); renderUpload(); save();
+  batch.push({msg:(name?name+": ":"")+msg,cls});
+  const n=$("import-note"); n.textContent=batch.map(b=>b.msg).join("\n"); n.style.whiteSpace="pre-line"; n.className="note "+(batch.some(b=>b.cls)?"warn":""); n.hidden=false;
+}
+function readFile(f){ if(!f) return; if(f.size>2e6){ note(f.name+" is over 2 MB. Upload markdown or text files.","bad"); return; }
+  const r=new FileReader(); r.onload=()=>importMarkdown(String(r.result),f.name); r.onerror=()=>note("The file could not be read. Try pasting its contents instead.","bad"); r.readAsText(f); }
+function note(msg,cls){ const n=$("import-note"); n.textContent=msg; n.className="note "+(cls||""); n.hidden=false; }
+$("btn-file").onclick=()=>$("file").click();
+$("file").onchange=e=>{ batch=[]; [...e.target.files].forEach(readFile); e.target.value=""; };
+const drop=$("drop");
+["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{ e.preventDefault(); drop.classList.add("over"); }));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{ e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop",e=>{ batch=[]; [...e.dataTransfer.files].forEach(readFile); });
+$("btn-paste").onclick=()=>{ const p=$("pastebox"); p.hidden=!p.hidden; if(!p.hidden) $("paste").focus(); };
+$("btn-import").onclick=()=>{ const t=$("paste").value; if(!t.trim()){ note("Paste some markdown first.","warn"); return; } batch=[]; importMarkdown(t,"Pasted markdown"+(state.uploads.length?" "+(state.uploads.length+1):"")); $("paste").value=""; $("pastebox").hidden=true; };
+
+/* ---------- Analyse an uploaded document with Claude ---------- */
+function renderUpload(){
+  const U=state.uploads; $("upbox").hidden=!U.length; $("an-status").textContent="";
+  $("uplist").innerHTML=U.map((u,i)=>`<span class="docchip">${esc(u.name)} · ${u.text.length.toLocaleString()} characters<button type="button" data-uprm="${i}" aria-label="Remove ${esc(u.name)}">×</button></span>`).join("");
+  $("btn-analyse").textContent = U.length>1 ? "Analyse "+U.length+" documents" : "Analyse";
+}
+$("uplist").addEventListener("click",e=>{ const b=e.target.closest("[data-uprm]"); if(!b) return; state.uploads.splice(+b.dataset.uprm,1); renderUpload(); save(); });
+function analysePrompt(){
+  const rows=[];
+  for(const {sec,title,fields} of visible("both")){ if(sec.n===10) continue; rows.push("# "+sec.n+". "+title); for(const f of fields) rows.push(f.key+" | "+f.label+" | "+f.hint); }
+  return `Read the documents at the end and allocate their content to the input fields of an Ideal Customer Profile worksheet.
+
+Return JSON only, with no text around it and no code fence, in this shape:
+{"customer_type":"organizations" | "individuals" | "both" | null,"fields":{"<field key>":{"v":"answer","e":"Hypothesized" | "Unknown" | ""}}}
+
+Rules
+- Go through every field below and check whether the document has an answer for it. Include a key only when it does.
+- Use only what the document states or makes clearly evident. Never invent, estimate or fill gaps from general knowledge.
+- Keep the document's own numbers, names and wording. One phrase or up to two sentences per field; separate list items with semicolons.
+- A fact may go into more than one field when it fits each of them.
+- "e" is the evidence status: "Hypothesized" when the document words it as an assumption, a plan, a belief or something not yet validated; "Unknown" when the document says it is undecided or not known; otherwise "".
+- When documents disagree, use the more specific statement and note the disagreement in the answer.
+- customer_type: whether the seller's customers are organizations, individuals or both; null when the document does not say.
+
+Fields (key | label | what belongs there)
+${rows.join("\n")}
+
+${state.uploads.map(u=>"### Document: "+u.name+"\n"+u.text).join("\n\n")}`;
+}
+$("btn-analyse").onclick=async function(){
+  if(!state.uploads.length) return;
+  const st=$("an-status"); this.disabled=true; st.textContent=state.uploads.length>1?"Reading "+state.uploads.length+" documents…":"Reading the document…";
+  try{
+    const sample=await sampleP;
+    if(!sample){ st.textContent="Claude is not available in this view, so the document cannot be analysed here."; return; }
+    const prompt=analysePrompt(); let out="", input=prompt;
+    for(let k=0;k<3;k++){
+      const base=out, r=await sample(input,{modelTier:"default",cache:false,onText:({text})=>{ st.textContent="Allocating content to fields… "+(base+text).length.toLocaleString()+" characters"; }});
+      out=base+(r.text||""); if(!r.truncated) break;
+      input=[{role:"user",content:prompt},{role:"assistant",content:out},{role:"user",content:"Continue exactly where you stopped. Do not repeat anything."}];
+    }
+    const a=out.indexOf("{"), b=out.lastIndexOf("}"); const j=JSON.parse(out.slice(a,b+1));
+    const valid=new Set(); for(const sec of SECTIONS) sec.f.forEach((_,i)=>valid.add(sec.n+"."+(i+1)));
+    let n=0, kept=0;
+    for(const [key,raw] of Object.entries(j.fields||{})){
+      if(!valid.has(key)||key==="10.1") continue;
+      const v=String(raw&&typeof raw==="object"?raw.v||"":raw||"").trim(); if(!v) continue;
+      if((state.vals[key]||"").trim()){ kept++; continue; }
+      state.vals[key]=v; state.auto[key]=true; n++;
+      const e=raw&&typeof raw==="object"?parseEvidence(raw.e):""; if(e&&e!=="Unknown") state.ev[key]=e;
+    }
+    const ct=String(j.customer_type||"").toLowerCase(); const m=ct.startsWith("org")?"org":ct.startsWith("ind")?"ind":ct==="both"?"both":null;
+    if(m) state.mode=m;
+    state.example=false; renderForm(); save();
+    const miss=REQUIRED.filter(k=>!(state.vals[k]||"").trim()).length;
+    st.textContent=`Filled ${n} field${n===1?"":"s"} from the document`+(kept?`; ${kept} already had an answer and ${kept===1?"was":"were"} left unchanged`:"")+". "+(miss?`${miss} required field${miss===1?" is":"s are"} still empty.`:"All required fields are filled.")+" Fields marked \"from document\" are worth a check.";
+  }catch(e){
+    const code=e&&e.code;
+    st.textContent = code==="rate_limited" ? "Claude is rate limited right now. Wait a minute, then select Analyse again."
+      : code==="not_granted" ? "Analysing needs permission to ask Claude. Select Analyse again and allow it."
+      : "The analysis could not be read. Select Analyse to try again.";
+  }finally{ this.disabled=false; }
+};
+
+/* ---------- Copy, download, toast ---------- */
+let toastT;
+function toast(m){ const t=$("toast"); t.textContent=m; t.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>t.hidden=true,2600); }
+async function copy(text,what){
+  try{ await navigator.clipboard.writeText(text); toast(what+" copied"); }
+  catch(e){ $("dlg-text").value=text; $("dlg").showModal(); $("dlg-text").select(); }
+}
+$("dlg-close").onclick=()=>$("dlg").close();
+let downloads=null, sampleP=Promise.resolve(null);
+if(window.claude && typeof window.claude.use==="function"){
+  sampleP = window.claude.use("sample").catch(()=>null);
+  window.claude.use("downloads").then(d=>{ if(!d) return; downloads=d; ["btn-tpl-dl","btn-exp-dl","btn-out-dl","btn-out-dl-all"].forEach(id=>$(id).hidden=false); }).catch(()=>{});
+}
+async function download(filename,data){
+  if(!downloads) return;
+  try{ await downloads.save({filename,data}); toast("Saved "+filename); }
+  catch(e){ if(e && e.code==="declined") return; toast("Download is not available here. Use Copy instead."); }
+}
+const slug = () => (norm(state.vals["1.1"])||"company").slice(0,40);
+$("btn-tpl-copy").onclick=()=>copy(toMarkdown(false),"Blank template");
+$("btn-tpl-dl").onclick=()=>download("icp-inputs-template.md",toMarkdown(false));
+$("btn-exp-copy").onclick=()=>copy(toMarkdown(true),"Inputs");
+$("btn-exp-dl").onclick=()=>download("icp-inputs-"+slug()+".md",toMarkdown(true));
+$("btn-out-copy").onclick=()=>{ const m=curMd(); if(m) copy(m,state.tab==="o"?"Operational ICP":"Strategic ICP"); else toast("Nothing to copy on this tab yet"); };
+$("btn-out-dl").onclick=()=>{ const m=curMd(); if(m) download("icp-"+(state.tab==="o"?"operational":"strategic")+"-"+slug()+".md",m); else toast("Nothing to download on this tab yet"); };
+const bothMd=()=>{ if(!state.outS||!state.outO){ toast(state.outS?"The Operational ICP is not written yet. Select Write the Operational ICP first.":"No ICP generated yet"); return ""; } return state.outS+"\n\n---\n\n"+state.outO; };
+$("btn-out-copy-all").onclick=()=>{ const m=bothMd(); if(m) copy(m,"Strategic and Operational ICP"); };
+$("btn-out-dl-all").onclick=()=>{ const m=bothMd(); if(m) download("icp-"+slug()+".md",m); };
+$("btn-prompt-copy").onclick=()=>copy(buildPrompt(),"Prompt");
+
+/* ---------- Example and clear ---------- */
+const EXAMPLE = {mode:"org", vals:{
+ "1.1":"Ledgerline (example company)","1.2":"Accounts-payable automation platform: invoice capture, approval routing, payment runs, ERP sync","1.3":"AP automation / finance operations software",
+ "1.4":"Cuts invoice processing time and errors so a small finance team can handle growing invoice volume without hiring","1.5":"Manual invoice entry, slow approvals, late-payment fees, duplicate payments, poor cash visibility",
+ "1.6":"Invoice cycle time from 12 days to 3; cost per invoice down about 60%","1.7":"SaaS","1.8":"Annual subscription tiered by invoice volume","1.9":"EUR 18k to 45k per year",
+ "1.10":"Cloud ERP with an open API; 2 to 4 week onboarding with a finance owner","1.11":"Spreadsheets and email approvals, native ERP AP module, outsourced bookkeeping, larger suites such as Coupa",
+ "2.1":"Wholesale distribution, light manufacturing, multi-site hospitality; then logistics and construction suppliers","2.3":"Banks, public sector, pure software companies with few supplier invoices","2.6":"Netherlands, Belgium, Germany",
+ "3.1":"100 to 500 employees, EUR 20M to 150M revenue, 3 or more legal entities, finance team of 4 to 15 with no AP tooling","3.2":"Exact Online, NetSuite or Microsoft Dynamics 365 Business Central","3.3":"Fewer than 500 supplier invoices per month; on-premise ERP without API access",
+ "4.1":"The finance team cannot keep up with supplier invoice volume, which causes late fees and month-end delays","5.1":"Hiring an AP clerk or finance operations role; ERP migration; within the last 6 months",
+ "6.1":"Outbound plus ERP partner referrals","6.2":"6 to 10 weeks, 3 to 5 people involved",
+ "8.1":"Best customers have 3+ legal entities and a controller who owns the tooling budget","9.1":"Apollo, LinkedIn Sales Navigator, KvK and Handelsregister data, ERP partner directories"},
+ ev:{"1.6":"Hypothesized","3.1":"Hypothesized","8.1":"Confirmed"}};
+
+$("btn-example").onclick=()=>{ state.mode=EXAMPLE.mode; state.vals={...EXAMPLE.vals}; state.ev={...EXAMPLE.ev}; state.auto={}; state.example=true; renderForm(); save(); note("Example data loaded. It describes an invented company. Replace it with your own or select Reset."); };
+let clearArmed=false;
+$("btn-clear").onclick=function(){
+  if(!clearArmed){ clearArmed=true; this.textContent="Click again to reset everything"; setTimeout(()=>{ clearArmed=false; this.textContent="Reset"; },4000); return; }
+  clearArmed=false; this.textContent="Reset"; state.mode="org"; state.out=""; state.outS=""; state.outO=""; state.tab="s"; state.savedName=""; state.vals={}; state.ev={}; state.auto={}; state.uploads=[]; renderUpload(); state.example=false; $("import-note").hidden=true; renderForm(); save(); toast("Everything was reset");
+};
+
+/* ---------- Prompts ---------- */
+function promptParts(){
+  const m=state.mode, given=[], missing=[];
+  for(const {sec,title,fields} of visible(m)){
+    const rows=[];
+    for(const f of fields){ const v=(state.vals[f.key]||"").trim();
+      if(v) rows.push(`- ${f.label}: ${v.replace(/\n+/g," / ")} [evidence: ${state.ev[f.key]||"not stated"}]`);
+      else if(sec.n!==10) missing.push(f.label); }
+    if(rows.length) given.push(`### ${sec.n}. ${title}\n`+rows.join("\n"));
+  }
+  const who = m==="org" ? "organizations (companies and other organizations)" : m==="ind" ? "individuals (people who buy for themselves or their household)" : "both organizations and individuals";
+  const typeRules = {
+    org:"Describe customers by the attributes that decide fit for this business. Do not write job-title or buyer personas.",
+    ind:"Describe customers by the life-stage, situational and behavioural attributes that decide fit. Do not use protected characteristics (ethnicity, religion, health, sexual orientation and similar) as criteria unless the offering lawfully and inherently depends on one.",
+    both:"Treat organizations and individuals as separate customer types and label criteria for each. For organizations, no job-title personas. For individuals, do not use protected characteristics as criteria unless the offering lawfully and inherently depends on one."}[m];
+  const sources = m==="org" ? "company databases, registries, industry directories, LinkedIn and the company's own inbound channels" : m==="ind" ? "ad platform audiences, communities, marketplaces, creators, referral partners and the company's own inbound channels" : "company databases and registries for organizations; ad platform audiences and communities for individuals; the company's own inbound channels for both";
+  const inputs=`Inputs\nCustomer type: ${MODE_NAME[m]}\n\n${given.join("\n\n")}\n\nInputs not provided: ${missing.length?missing.join("; "):"none"}. A missing input is not a request to fill the gap: leave the attribute out, or mark it Unknown if it matters.`;
+  return {who,typeRules,sources,inputs};
+}
+const RULES=`Rules
+- Evidence status, used on every important statement: Confirmed = explicitly established by the company inputs. Inferred = reasonably derived from confirmed information. Hypothesized = plausible but not validated. Unknown = insufficient information.
+- Inputs marked [evidence: X] keep X. Unmarked inputs are Confirmed only where they state the company's own offering, pricing, scope, process or decisions. Unmarked statements about how customers behave, what they prefer, conversion, retention, segment attractiveness or market size are Hypothesized unless the inputs contain customer or campaign data.
+- Never turn an assumption into a fact, silently or otherwise. The track record of founders or team is team credibility, not customer evidence.
+- Do not invent qualification criteria. No company-size, headcount, revenue, funding, budget or ability-to-pay criteria unless the inputs establish them. Criteria must follow from this business model and this customer definition, not from what ICP templates usually contain.
+- When the inputs say an attribute does not matter (for example company size, or fixed pricing for every customer), carry that through everything: definition, segments, fit, signals and filters. Do not reintroduce it as a proxy for customer quality.
+- Do not exclude prospects on your own assumptions: not for using a competitor or alternative, not for their industry, not for missing data, not for lacking something the inputs do not require.
+- When inputs contradict each other or leave a decision open, keep it open and say what needs deciding. Do not pick a side.
+- This ICP also feeds a later step that writes the questions buyers type into AI assistants. The unit for that step is persona × situation × stage (Learn, Problem, Buy), so describe buyers by what they are in the middle of and in their own words, not only by company type.
+- No false precision: no numerical weights, scores, percentages, thresholds, rankings or market-size figures unless the inputs supply the data behind them. Classify in words, explain the rule, and mark it Provisional when it is not validated. The one exception is the stage weight of a buyer situation, which is a rough planning estimate and carries that situation's confidence.
+- Do not invent data sources, and do not claim a criterion is externally observable when it is not.
+- An incomplete but accurate ICP is better than a complete one filled with assumptions. Leave irrelevant attributes out. Be specific; no filler and no generic advice.`;
+const STRATEGIC_FORMAT=`Output format
+Markdown only, no preamble. Start with "# Strategic ICP: <company name>" and one sentence stating who the ideal customer is. Then exactly these sections, in this order:
+
+## Blocking Unknowns
+Facts that are missing or undecided and block Buy-stage content (for example unpublished pricing, or an unresolved conflict about where the company sells). Table: Unknown | Why it blocks | Decision or fact needed. Write "None" if there are none. Do not bury these inside other tables.
+
+## 1. Ideal Customer
+A short paragraph, then a table: Attribute | Profile | Evidence. Only attributes that decide fit for this business.
+
+## 2. Problem & Reasons to Buy
+The problem, its impact on the customer, why current alternatives fall short, and what makes them look for a solution.
+
+## 3. What Defines Fit
+Two lists. "Criteria": what makes a customer a good fit, each with its evidence status. "Not criteria": attributes that do not decide fit for this business, including each one the inputs rule out and any common ICP attribute the inputs give no basis for.
+
+## 4. Segments
+The ICP defines the overall target customer; segments are meaningful variations within it, by type of customer. Create a segment only where the need, the buying context or the acquisition approach is distinct. There is no target number, and "no segments" is a valid answer. Table: Segment | Distinct need | Buying context | Acquisition approach | Priority. Priority is "Unvalidated" unless the inputs contain customer or campaign data that supports a ranking.
+
+## 5. Buyer Situations
+Situations describe what the buyer is in the middle of, not what type of customer they are. They sit alongside the segments. Give each a stable ID (S1, S2, ...). There is no target number; create as many as the inputs support. One table with exactly these columns: ID | Situation | Trigger moment | Already tried | Deciding between | Stage weight | Confidence. The ID cell holds the ID only. Trigger moment is the specific event that makes them look for help, concrete and observable from the buyer's side. Already tried is what they did before looking. Deciding between is the choice in front of them now. Stage weight is the rough share of their questions at Learn / Problem / Buy (Learn = understanding the topic; Problem = stuck on something specific; Buy = comparing options, providers, prices and risks), written as "Learn 10%, Problem 50%, Buy 40%". Confidence is the evidence status.
+
+## 6. Alternatives
+Every option the buyer weighs, including doing nothing and doing it themselves. Table: Category | Named examples | Why buyers pick it | Why they leave or avoid it. Use real names only where the inputs give them; otherwise leave the cell as "Not named in the inputs". The Named examples cell holds names only, separated by semicolons: no brackets and no pricing, claims or descriptions after a name. What the inputs say about a named option (what it is, how it charges, what it claims) goes in the last two columns where a buyer would weigh it, or in a short note under the table. Write the last two columns in the buyer's terms, not the seller's.
+
+## 7. Question Variables
+The details buyers put into their questions when they ask for help (for example stage, sector, geography, deal or round size, business model). Table: Variable | Values buyers mention | Notes. Where the inputs say an attribute does not decide fit (for example sector-agnostic), add below the table a shortlist of 5 to 8 priority values for content, each with a one-line reason. These are content priorities, not qualification criteria, and are Hypothesized unless the inputs support them.
+
+## 8. Challenges to the Inputs
+Contradictions between inputs, weak or untested assumptions, and distinctions that need clarifying. Table: Issue | Where it appears | Why it matters | Decision needed. Write "None found" if there are none.
+
+## 9. Evidence & Validation
+Table: Statement | Status | Basis, covering every important statement above. Status is exactly one of Confirmed, Inferred, Hypothesized, Unknown. Then four short lists: "What we know", "What we believe", "What we need to test" (each with how: customer conversations, sales outcomes or campaign results) and "Results so far" (only results the inputs report; otherwise "None recorded yet").
+
+## 10. Open Questions
+At most five questions whose answers would materially change this ICP. Do not ask about details that would not change it.`;
+const operationalFormat=sources=>`Output format
+Markdown only, no preamble. Start with "# Operational ICP: <company name>" and one sentence on what it is for. It must stay consistent with the Strategic ICP and add no new criteria. Then exactly these sections:
+
+## 1. Eligibility
+Pass or fail: can this prospect be served at all? Table: Rule | How to check | Evidence. Include disqualifiers. Missing data about a prospect is never a fail by itself.
+
+## 2. ICP Fit
+How closely an eligible prospect matches the ideal customer. Table: Criterion | Strong fit looks like | Weak fit looks like | Evidence. Then state in words how to classify a prospect as Strong, Partial or Weak fit, so a reader can see why a prospect gets its classification. Mark the rule Provisional unless the inputs validate it.
+
+## 3. Buying Intent
+Evidence of a current need or purchasing opportunity. Intent is about timing, not fit. Table: Signal | Directness | Strength | Recency | Reliability | Source | Establishes | Does not establish. Directness is exactly Direct (the prospect's own action or stated need) or Indirect (a circumstance that often precedes need). A signal never qualifies a prospect by itself.
+
+## 4. Combining the Three
+Eligibility, fit and intent stay separate and are never merged into one score. Table: Eligibility | Fit | Intent | Action, covering the main combinations, including a strong-fit prospect with no current intent and a prospect with clear intent that is a poor fit or not eligible.
+
+## 5. Prospecting Filters
+Table: Filter | Value | Source | Observable. Observable is exactly Yes, Partly or No (No means it must be established in conversation). Possible sources include ${sources}; name a source only if it really carries that attribute. Then a short list "Do not filter on": attributes that must not be used to include or exclude prospects.
+
+## 6. Market Sizing Approach
+How to count the addressable market: the method and the sources. Give a number only if the inputs contain one; otherwise say it is not yet established.
+
+## 7. Provisional Rules
+The rules above that rest on hypotheses, each with the result that would confirm or change it.`;
+function strategicPrompt(){
+  const p=promptParts();
+  return `You are a go-to-market strategist. Write the Strategic ICP for the business described in the inputs: who the ideal customer is, what problems they have, why they buy, what makes them a good fit and what distinguishes the segments. How to find them is a separate, optional document for sales operations; do not include buying signals, prospecting filters, scoring or data sources here.
+
+The ideal customers are ${p.who}. ${p.typeRules}
+
+${RULES}
+
+${STRATEGIC_FORMAT}
+
+${p.inputs}`;
+}
+function operationalPrompt(){
+  const p=promptParts();
+  return `You are a go-to-market strategist. Write the Operational ICP for the business described below: how to find the customers defined in the Strategic ICP, using three separate components (eligibility, ICP fit, buying intent), plus filters and sources a prospecting engine could use.
+
+The ideal customers are ${p.who}. ${p.typeRules}
+
+${RULES}
+
+${operationalFormat(p.sources)}
+
+Strategic ICP (already written; stay consistent with it)
+${state.outS}
+
+${p.inputs}`;
+}
+function buildPrompt(){
+  const p=promptParts();
+  return strategicPrompt()+"\n\n==========\nAfter the Strategic ICP, write a second, separate document under the same rules.\n\n"+operationalFormat(p.sources);
+}
+
+/* ---------- Markdown rendering ---------- */
+const PILL={"confirmed":"v","inferred":"p","direct":"m","indirect":"p","provisional":"h","unvalidated":"h","yes":"v","partly":"p","no":"u","strong":"v","moderate":"p","weak":"u","high":"v","medium":"p","low":"u","mandatory":"m","strong indicator":"s","supporting indicator":"p","disqualifier":"d","validated":"v","observed":"o","hypothesized":"h","unknown":"u","primary":"s","secondary":"p"};
+function inline(s){
+  return esc(s).replace(/&lt;br\s*\/?&gt;/g,"<br>").replace(/`([^`]+)`/g,"<code>$1</code>").replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>").replace(/(^|[^*\w])\*([^*\s][^*]*?)\*(?!\w)/g,"$1<em>$2</em>");
+}
+function tdHtml(c){ const k=c.replace(/\*\*/g,"").trim().toLowerCase(); return PILL[k] ? `<span class="pill ${PILL[k]}">${esc(c.replace(/\*\*/g,"").trim())}</span>` : inline(c); }
+function renderMd(md){
+  const L=md.split(/\r?\n/); let h="", i=0, para=[];
+  const flush=()=>{ if(para.length){ h+="<p>"+inline(para.join(" "))+"</p>"; para=[]; } };
+  while(i<L.length){
+    const line=L[i], t=line.trim();
+    if(!t){ flush(); i++; continue; }
+    let m;
+    if((m=t.match(/^(#{1,4})\s+(.*)$/))){ flush(); const n=Math.min(m[1].length,3); h+=`<h${n}>${inline(m[2])}</h${n}>`; i++; continue; }
+    if(/^(-{3,}|\*{3,})$/.test(t)){ flush(); i++; continue; }
+    if(t.startsWith("|")){
+      flush(); const rows=[]; while(i<L.length && L[i].trim().startsWith("|")){ rows.push(splitRow(L[i])); i++; }
+      const sep=rows.length>1 && rows[1].every(x=>/^:?-+:?$/.test(x)||x==="");
+      h+='<div class="tw"><table>';
+      if(sep){ h+="<thead><tr>"+rows[0].map(c=>"<th>"+inline(c)+"</th>").join("")+"</tr></thead>"; }
+      h+="<tbody>"+rows.slice(sep?2:0).map(r=>"<tr>"+r.map(c=>"<td>"+tdHtml(c)+"</td>").join("")+"</tr>").join("")+"</tbody></table></div>";
+      continue;
+    }
+    if(/^([-*+]|\d+[.)])\s+/.test(t)){
+      flush(); const ord=/^\d/.test(t); h+=ord?"<ol>":"<ul>";
+      while(i<L.length && /^\s*([-*+]|\d+[.)])\s+/.test(L[i])){ h+="<li>"+inline(L[i].replace(/^\s*([-*+]|\d+[.)])\s+/,""))+"</li>"; i++; }
+      h+=ord?"</ol>":"</ul>"; continue;
+    }
+    para.push(t); i++;
+  }
+  flush(); return h;
+}
+let genBusy=false;
+const curMd=()=> state.tab==="o" ? state.outO : state.outS;
+const sync=()=>{ state.out=[state.outS,state.outO].filter(Boolean).join("\n\n---\n\n"); };
+function showOut(){
+  const o=state.tab==="o";
+  $("otab-s").setAttribute("aria-pressed",String(!o)); $("otab-o").setAttribute("aria-pressed",String(o));
+  if(!genBusy){ const c=$("btn-continue"); c.textContent="Write the Operational ICP"; c.hidden=!(state.outS && !state.outO); }
+  const md=curMd();
+  $("doc").innerHTML = md ? renderMd(md) : `<p class="empty">${o&&state.outS ? "The Operational ICP (buying signals, prospecting filters, fit rules) is an optional module and has not been written. Select Write the Operational ICP to add it." : "No ICP yet. Fill in the required inputs on the Inputs tab, then select Generate ICP."}</p>`;
+}
+$("otab-s").onclick=()=>{ state.tab="s"; showOut(); };
+$("otab-o").onclick=()=>{ state.tab="o"; showOut(); };
+
+/* ---------- Generation ---------- */
+let ctrl=null, raf=0;
+function setBusy(b){ genBusy=b; $("btn-stop").hidden=!b; $("btn-regen").disabled=b; $("btn-generate").disabled=b; const c=$("btn-continue"); c.textContent="Write the Operational ICP"; c.hidden = b || !(state.outS && !state.outO); }
+function checkRequired(){
+  const miss=REQUIRED.filter(k=>!(state.vals[k]||"").trim());
+  document.querySelectorAll(".row.flag").forEach(r=>r.classList.remove("flag"));
+  if(!miss.length) return true;
+  location.hash="inputs";
+  miss.forEach(k=>{ const r=document.querySelector(`.row[data-k="${k}"]`); if(r) r.classList.add("flag"); });
+  const first=$("f-"+miss[0].replace(".","-")); if(first){ first.scrollIntoView({block:"center"}); first.focus({preventScroll:true}); }
+  toast(miss.length+" required input"+(miss.length===1?" is":"s are")+" missing");
+  return false;
+}
+async function ask(sample,prompt,onT){
+  let out="", input=prompt;
+  for(let k=0;k<3;k++){
+    const base=out;
+    const r=await sample(input,{modelTier:"complex",signal:ctrl.signal,cache:false,onText:({text})=>onT(base+text)});
+    out=base+(r.text||""); if(!r.truncated) break;
+    input=[{role:"user",content:prompt},{role:"assistant",content:out},{role:"user",content:"Continue exactly where you stopped. Do not repeat anything and do not add commentary."}];
+  }
+  return out.trim();
+}
+async function generate(fresh, forceOp){
+  if(!checkRequired()) return;
+  location.hash="icp"; $("fallback").hidden=true;
+  const st=$("out-status"); st.textContent="Connecting to Claude…";
+  if(fresh){ state.outS=""; state.outO=""; state.out=""; state.tab="s"; showOut(); }
+  setBusy(true);
+  const sample = await sampleP;
+  if(!sample){ setBusy(false); st.textContent=""; $("fallback").hidden=false; showOut(); return; }
+  ctrl=new AbortController(); let part="s";
+  const live=k=>t=>{ state[k]=t; if(!raf) raf=requestAnimationFrame(()=>{ raf=0; showOut(); }); };
+  try{
+    if(!state.outS){ state.tab="s"; showOut(); st.textContent=(state.withOp!==false?"Part 1 of 2 · ":"")+"Strategic ICP…"; state.outS=await ask(sample,strategicPrompt(),live("outS")); sync(); save(); }
+    part="o";
+    const wantOp=forceOp||state.withOp!==false;
+    if(wantOp && !state.outO){ state.tab="o"; showOut(); st.textContent="Part 2 of 2 · Operational ICP…"; state.outO=await ask(sample,operationalPrompt(),live("outO")); sync(); save(); }
+    st.textContent=(state.outO?"Done. Two documents: Strategic ICP and Operational ICP.":"Done. Strategic ICP only; the Operational ICP was switched off.")+" Check the blocking unknowns and the Hypothesized rows before using it.";
+    sync(); save(); if(typeof afterGenerate==="function") afterGenerate();
+  }catch(e){
+    if(part==="s") state.outS=""; else state.outO="";
+    const code=e&&e.code, again=part==="o"?"Write the Operational ICP":"Regenerate";
+    if(ctrl.signal.aborted) st.textContent="Stopped. Select "+again+" to continue.";
+    else if(code==="not_granted"){ st.textContent=""; $("fallback").hidden=false; }
+    else if(code==="rate_limited") st.textContent="Claude is rate limited right now. Wait a minute, then select "+again+".";
+    else st.textContent="Generation failed"+(e&&e.message?": "+e.message:"")+". Select "+again+" to try again.";
+  }
+  sync(); setBusy(false); showOut(); save();
+}
+$("btn-generate").onclick=()=>generate(true);
+$("btn-regen").onclick=()=>generate(true);
+$("btn-continue").onclick=()=>generate(false,true);
+$("with-op").onchange=e=>{ state.withOp=e.target.checked; save(); };
+$("btn-stop").onclick=()=>{ if(ctrl) ctrl.abort(); };
+
+/* ---------- Views ---------- */
+function route(){
+  const icp = location.hash==="#icp";
+  $("view-inputs").hidden=icp; $("view-icp").hidden=!icp;
+  $("tab-inputs").toggleAttribute("aria-current",false); $("tab-icp").toggleAttribute("aria-current",false);
+  (icp?$("tab-icp"):$("tab-inputs")).setAttribute("aria-current","page");
+  if(icp) showOut(); else document.querySelectorAll("#form textarea").forEach(autosize);
+}
+window.addEventListener("hashchange",route);
+load(); $("with-op").checked=state.withOp!==false; state.auto=state.auto||{}; state.outS=state.outS||(state.outO?"":state.out)||""; state.outO=state.outO||""; state.tab=state.tab||"s"; for(const k in state.ev) state.ev[k]=parseEvidence(state.ev[k]); state.uploads=state.uploads||(state.upload?[state.upload]:[]); delete state.upload; renderForm(); renderUpload(); route();
+</script>
+</body>
+</html>
