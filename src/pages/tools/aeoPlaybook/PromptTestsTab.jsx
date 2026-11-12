@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Download, Loader2, Play, Square } from "lucide-react";
+import { BarChart3, Download, Loader2, Play, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -11,6 +11,7 @@ import {
   startPromptTest,
   stepPromptTest,
 } from "./promptTestsApi";
+import PromptTestsSummary, { formatDuration } from "./PromptTestsSummary";
 
 const STEP_SIZE = 10;
 const STAGES = ["Learn", "Problem", "Buy"];
@@ -112,7 +113,18 @@ export default function PromptTestsTab({ companyId }) {
   const [filters, setFilters] = useState({ persona: "", stage: "", type: "", outcome: "" });
   const [plan, setPlan] = useState(null);
   const [run, setRun] = useState(null);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
   const stopRef = useRef(false);
+  const running = Boolean(run && !run.finished);
+
+  // Tick once a second while a test runs, for the elapsed time and the estimate.
+  useEffect(() => {
+    if (!running) return undefined;
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [running]);
 
   const reload = useCallback(async () => {
     try {
@@ -184,7 +196,8 @@ export default function PromptTestsTab({ companyId }) {
       let done = 0;
       let failed = 0;
       let spent = 0;
-      setRun({ total: calls.length, done, failed, spent, note: "" });
+      const startedAt = Date.now();
+      setRun({ total: calls.length, done, failed, spent, note: "", startedAt });
       for (let i = 0; i < calls.length && !stopRef.current; i += STEP_SIZE) {
         const res = await stepPromptTest(companyId, cycleId, calls.slice(i, i + STEP_SIZE));
         if (res.capReached) {
@@ -195,14 +208,14 @@ export default function PromptTestsTab({ companyId }) {
         done += res.results.length;
         failed += res.results.filter((x) => x.status === "failed").length;
         spent += res.results.reduce((a, x) => a + Number(x.cost || 0), 0);
-        setRun({ total: calls.length, done, failed, spent, note: "" });
+        setRun({ total: calls.length, done, failed, spent, note: "", startedAt });
       }
       await finishPromptTest(companyId, cycleId, stopRef.current);
-      setRun((r) => ({ ...r, finished: true, note: r.note || (stopRef.current ? "Stopped. Completed calls are saved." : "") }));
+      setRun((r) => ({ ...r, finished: true, endedAt: Date.now(), note: r.note || (stopRef.current ? "Stopped. Completed calls are saved." : "") }));
     } catch (err) {
       setError(err?.message || "The test stopped unexpectedly. Completed calls are saved.");
       if (cycleId) finishPromptTest(companyId, cycleId, true).catch(() => {});
-      setRun((r) => (r ? { ...r, finished: true } : null));
+      setRun((r) => (r ? { ...r, finished: true, endedAt: Date.now() } : null));
     }
     reload();
   };
@@ -244,7 +257,10 @@ export default function PromptTestsTab({ companyId }) {
   }
   if (!data) return <p className="text-sm text-red-600">{error}</p>;
 
-  const busy = Boolean(run && !run.finished);
+  const busy = running;
+  const elapsed = run?.startedAt ? (run.endedAt || now) - run.startedAt : 0;
+  // Time left, from the pace so far. Shown once a first step is done.
+  const remaining = run && !run.finished && run.done > 0 ? (elapsed / run.done) * (run.total - run.done) : null;
   const engineSummaries = Object.entries(data.summary.engines);
   const lastCycle = data.cycles[0];
   const stale = lastCycle && Date.now() - new Date(lastCycle.created_at).getTime() > 30 * 86400000;
@@ -252,6 +268,7 @@ export default function PromptTestsTab({ companyId }) {
   return (
     <div className="space-y-5">
       {error && <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>}
+      <PromptTestsSummary open={summaryOpen} onOpenChange={setSummaryOpen} data={data} />
 
       <section className="rounded-lg border border-border bg-card p-4">
         <h2 className="text-sm font-medium text-foreground">Prompt tests</h2>
@@ -286,7 +303,12 @@ export default function PromptTestsTab({ companyId }) {
 
       {engineSummaries.length > 0 && (
         <section className="space-y-2">
-          <h2 className="text-sm font-medium text-foreground">Latest results by engine</h2>
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-sm font-medium text-foreground">Latest results by engine</h2>
+            <Button type="button" size="sm" onClick={() => setSummaryOpen(true)}>
+              <BarChart3 className="mr-1.5 h-3.5 w-3.5" />Summary
+            </Button>
+          </div>
           {engineSummaries.map(([id, s]) => (<EngineSummary key={id} id={id} s={s} />))}
         </section>
       )}
@@ -361,6 +383,17 @@ export default function PromptTestsTab({ companyId }) {
             <p className="mt-2 tabular-nums text-foreground">
               {run.finished ? "Finished" : "Running"}: {run.done} of {run.total} calls, {run.failed} failed, {money(run.spent)} spent. {run.note}
             </p>
+            {run.startedAt ? (
+              <p className="tabular-nums text-foreground">
+                {run.finished ? `Took ${formatDuration(elapsed)}.` : `Elapsed ${formatDuration(elapsed)}`}
+                {remaining != null ? ` · about ${formatDuration(remaining)} left` : ""}
+              </p>
+            ) : null}
+            {run.finished && engineSummaries.length > 0 ? (
+              <Button type="button" size="sm" className="mt-2" onClick={() => setSummaryOpen(true)}>
+                <BarChart3 className="mr-1.5 h-3.5 w-3.5" />View summary
+              </Button>
+            ) : null}
             {!run.finished && <p className="text-muted-foreground">Keep this tab open. Each step of {STEP_SIZE} calls takes about half a minute.</p>}
           </div>
         )}
