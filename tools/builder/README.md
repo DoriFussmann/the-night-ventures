@@ -3,7 +3,6 @@
 The source of the builder page that feeds this app: ICP Builder, Persona Builder and Prompt Builder in one published Claude artifact. The app does not import anything from this folder and the app's build does not touch it. It is kept here because the page pushes into this app's database and reads this app's export format, so a change on either side should be visible next to the other.
 
 - Published page: https://claude.ai/artifact/2mefk9XaCJfayJKbWTGVUM (artifact slug `0e551409-6db3-45b4-b912-8848cef27bba`)
-- Explainer deck: https://claude.ai/artifact/9iqs1c27vA3Bz7838zK5y4 (artifact slug `46a0b75e-2771-4f98-ac68-64442ab62603`)
 
 ## What is here
 
@@ -18,7 +17,6 @@ The source of the builder page that feeds this app: ICP Builder, Persona Builder
 | `tests/unit.test.mjs` | Node tests of import, parsing, brand merge, persona mix and trim |
 | `tests/browser_test.py` | Browser test of the built page with stand-in Claude and Supabase replies |
 | `tests/fixtures/` | Made-up sample files in the shape of the real exports and ICP |
-| `deck/gen.py` | Generates the explainer deck's slide files |
 
 ## Build and test
 
