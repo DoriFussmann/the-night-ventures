@@ -1,0 +1,79 @@
+
+    <header class="top">
+      <div>
+        <p class="eyebrow">AI Assistant Prompts</p>
+        <h1>Prompt Builder</h1>
+        <p class="lede">Turn each persona into the prompts that person would type into an AI assistant, then review and approve them. Every prompt belongs to one persona, one buyer situation and one stage.</p>
+      </div>
+    </header>
+
+    <div class="setup" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr)">
+      <div class="panel">
+        <p class="eyebrow">Input</p>
+        <h2>Saved Personas</h2>
+        <p class="sub">Pick the saved persona set to write prompts for. Its ICP supplies the buyer situations, alternatives and question variables.</p>
+        <div id="q-sources" class="savedlist"></div>
+        <p class="status" id="q-srcmsg" role="status" style="margin:8px 0 0"></p>
+      </div>
+      <div class="panel">
+        <p class="eyebrow">Output</p>
+        <h2>Saved Prompt Sets</h2>
+        <p class="sub">Work in progress is kept in this browser. Save a set to keep it with the page and reopen it later.</p>
+        <div class="upbox" style="margin-top:0">
+          <input type="text" id="q-setname" placeholder="Name for this prompt set" maxlength="80" autocomplete="off" style="flex:1 1 220px;margin:0" aria-label="Name for this prompt set">
+          <button class="btn primary" id="q-save" type="button">Save Prompts</button>
+        </div>
+        <div id="q-sets" class="savedlist" style="margin-top:10px"></div>
+        <p class="status" id="q-setmsg" role="status" style="margin:8px 0 0"></p>
+      </div>
+    </div>
+
+    <div id="q-work" hidden>
+      <section class="sec">
+        <p class="eyebrow">Input · Once Per Brand</p>
+        <h2>Tracked Brands</h2>
+        <p class="desc">The company itself and its competitors. The own brand's name patterns are banned from prompts. Domains and exclude patterns are used later, when prompts are tested. Separate several values with commas.</p>
+        <div class="rows" id="q-brands"></div>
+        <div class="actions"><button class="btn" id="q-addbrand" type="button">Add a brand</button></div>
+      </section>
+
+      <section class="sec">
+        <p class="eyebrow">Summary</p>
+        <h2 id="q-sumtitle">Prompts</h2>
+        <div class="panel" id="q-summary"></div>
+        <div class="actions">
+          <button class="btn" id="q-copyjson" type="button">Copy as JSON</button>
+          <button class="btn" id="q-dljson" type="button" hidden>Download JSON</button>
+          <button class="btn" id="q-dlcsv" type="button" hidden>Download CSV</button>
+          <button class="btn" id="q-checkamb" type="button">Check existing prompts</button>
+          <button class="btn" id="q-approveall" type="button">Approve all drafts</button>
+          <button class="btn primary" id="q-push" type="button">Push to The Night Ventures</button>
+          <button class="btn quiet" id="q-reset" type="button">Reset prompts</button>
+        </div>
+        <p class="status" id="q-checkmsg" aria-live="polite"></p>
+        <div class="panel" style="margin-top:14px">
+          <label for="q-style" style="color:var(--navy)">Prompts in your own style (optional)</label>
+          <p class="status" style="margin:4px 0 8px">Paste a few prompts written the way you would type them into an AI assistant, one per line, up to 10. Claude copies their length, tone and how much context they give. It does not take topics from them: the persona, situation and stage mix still decides what each prompt is about. Leave empty to generate as before.</p>
+          <textarea id="q-style" rows="5" placeholder="One prompt per line"></textarea>
+          <p class="status" id="q-stylenote" style="margin:6px 0 0" aria-live="polite"></p>
+        </div>
+        <details class="panel" style="margin-top:14px">
+          <summary style="cursor:pointer;color:var(--navy)">Generation settings</summary>
+          <div id="q-settings" class="setgrid"></div>
+          <p class="status" style="margin:10px 0 0">Duplicates are judged by Claude against every prompt for the brand, across all personas. There is no numeric similarity threshold in this page.</p>
+        </details>
+      </section>
+
+      <section class="sec">
+        <p class="eyebrow">Personas</p>
+        <h2>Prompts by Persona</h2>
+        <p class="desc">One column per persona. Coverage shows prompts you have against the target for each situation and stage. Rejected prompts stay stored so they are not written again.</p>
+        <div class="panel" style="margin-bottom:14px">
+          <h3 style="margin:0 0 4px">Persona Mix</h3>
+          <p class="status" style="margin:0 0 10px">Set the total, then how much of it each persona gets. Weights start from the prompt share in the personas and can be any numbers; only their proportion matters. Changing a weight never deletes a prompt.</p>
+          <div id="q-mix"></div>
+        </div>
+        <div class="pnav" id="q-pnav"></div>
+        <div class="pcols" id="q-cols"></div>
+      </section>
+    </div>

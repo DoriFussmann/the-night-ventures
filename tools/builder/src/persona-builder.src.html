@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Persona Builder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;400&display=swap" rel="stylesheet">
+<style>
+/*CSS*/
+/* Persona Builder additions */
+.single{max-width:940px}
+.row.two{grid-template-columns:minmax(0,250px) minmax(0,1fr)}
+.row .field{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.row .field textarea{width:100%}
+.tag{display:inline-block;font-size:10px;letter-spacing:.14em;text-transform:uppercase;background:var(--mint);color:var(--mint-ink);border-radius:6px;padding:1px 6px;margin-left:8px;vertical-align:1px}
+.doclist{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.docchip{display:inline-flex;gap:8px;align-items:center;background:var(--mint);color:var(--mint-ink);border-radius:10px;padding:5px 6px 5px 12px;font-size:13px}
+.docchip button{border:0;background:transparent;color:inherit;cursor:pointer;border-radius:6px;padding:0 6px;font-size:15px;line-height:1.3}
+.docchip button:hover{background:var(--teal-mid);color:var(--navy)}
+.found{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;align-items:center;font-size:13px}
+.found span.f{border-radius:10px;padding:3px 10px;background:var(--calc);color:var(--muted)}
+.found span.f.y{background:var(--mint);color:var(--mint-ink)}
+.icpbox{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;border-left:4px solid transparent}
+.icpbox.flag{border-left-color:var(--orange)}
+.secactions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:0 0 14px}
+.doc h3{font-size:26px;margin:36px 0 8px;padding-top:24px;border-top:1px solid var(--line)}
+.doc h4{margin:22px 0 6px;font-size:12px;font-weight:400;letter-spacing:.2em;text-transform:uppercase;color:var(--teal)}
+#live:empty{display:none}
+#live{opacity:.92}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <p class="eyebrow">Buyer Personas</p>
+      <h1>Persona Builder</h1>
+      <p class="lede">Turn an existing ICP into the people who influence, evaluate, approve, buy and use the product. The number of personas comes out of the analysis.</p>
+    </div>
+    <nav class="tabs" aria-label="Views">
+      <a href="#inputs" id="tab-inputs">1 · Inputs</a>
+      <a href="#personas" id="tab-personas">2 · Personas</a>
+    </nav>
+  </header>
+
+  <main id="view-inputs" class="single">
+    <section class="sec" id="s1">
+      <p class="eyebrow">Section 01 · Required</p>
+      <h2>Existing ICP</h2>
+      <p class="desc">The ICP is the source of truth. Upload the markdown from the ICP Builder, or any ICP document. You can add more than one file, for example the ICP and the inputs behind it.</p>
+      <div class="icpbox" id="icpbox">
+        <div class="drop" id="drop">
+          <span>Drop .md files here</span>
+          <input type="file" id="file" accept=".md,.markdown,.txt,text/markdown,text/plain" multiple hidden>
+          <button class="btn" id="btn-file" type="button">Choose files</button>
+          <button class="btn" id="btn-paste" type="button">Paste markdown</button>
+        </div>
+        <div id="pastebox" hidden>
+          <label for="paste" class="status">Paste the ICP</label>
+          <textarea id="paste" spellcheck="false"></textarea>
+          <div><button class="btn primary" id="btn-import" type="button">Add pasted ICP</button></div>
+        </div>
+        <div class="doclist" id="doclist"></div>
+        <div class="found" id="found"></div>
+        <div class="actions">
+          <button class="btn quiet" id="btn-example" type="button">Load example</button>
+        </div>
+        <div id="import-note" class="note" hidden></div>
+      </div>
+    </section>
+
+    <section class="sec" id="s2">
+      <p class="eyebrow">Section 02 · Required</p>
+      <h2>Offering &amp; Sales Context</h2>
+      <p class="desc">Answers found in the ICP are filled in for you. Add only what is missing.</p>
+      <div class="secactions">
+        <button class="btn" id="btn-extract" type="button">Find missing answers in the ICP</button>
+        <span class="status" id="extract-status" role="status"></span>
+      </div>
+      <div class="rows" id="ctx-rows"></div>
+    </section>
+
+    <section class="sec" id="s3">
+      <p class="eyebrow">Section 03 · Optional</p>
+      <h2>Evidence You Already Have</h2>
+      <p class="desc">Used as evidence, never required. Anything you add here can be marked Validated in the personas; everything else stays an inference or a hypothesis.</p>
+      <div class="rows" id="opt-rows"></div>
+      <input type="file" id="optfile" accept=".md,.markdown,.txt,.csv,text/*" hidden>
+    </section>
+
+    <div class="bar">
+      <div class="stat">
+        <span>Required <b id="st-req">0/8</b></span>
+        <span>Evidence <b id="st-opt">0/9</b></span>
+        <span class="meter" aria-hidden="true"><i id="st-meter"></i></span>
+        <span id="st-msg"></span>
+      </div>
+      <div class="baract"><button class="btn" id="btn-clear" type="button">Reset</button><button class="btn primary" id="btn-generate" type="button">Build Personas</button></div>
+    </div>
+  </main>
+
+  <main id="view-personas" hidden>
+    <div class="outbar">
+      <button class="btn primary" id="btn-rebuild" type="button">Rebuild</button>
+      <button class="btn" id="btn-resume" type="button" hidden>Resume</button>
+      <button class="btn" id="btn-stop" type="button" hidden>Stop</button>
+      <button class="btn" id="btn-save" type="button" hidden>Save Personas</button>
+      <button class="btn" id="btn-push" type="button" hidden>Push to The Night Ventures</button>
+      <span class="status" id="out-status" role="status"></span>
+      <span class="sp"></span>
+      <button class="btn" id="btn-out-copy" type="button">Copy as markdown</button>
+      <button class="btn" id="btn-out-dl" type="button" hidden>Download .md</button>
+    </div>
+    <div id="fallback" class="panel" hidden style="margin-bottom:16px">
+      <h2>Claude Is Not Available in This View</h2>
+      <p class="sub">Persona research runs through Claude. Open this page in claude.ai and allow it to ask Claude, or copy the full prompt and paste it into a Claude chat.</p>
+      <button class="btn" id="btn-prompt-copy" type="button">Copy prompt</button>
+    </div>
+    <div id="psaved" class="panel" style="margin-bottom:16px" hidden>
+      <p class="eyebrow">Saved Personas</p>
+      <div id="psavedlist" class="savedlist"></div>
+    </div>
+    <div id="checks" class="panel" style="margin-bottom:16px" hidden>
+      <p class="eyebrow">Acceptance Checks</p>
+      <div id="checklist" class="savedlist"></div>
+      <p class="status" id="checksum" style="margin:8px 0 0"></p>
+    </div>
+    <div class="work">
+      <nav class="rail" id="rail" aria-label="Contents"></nav>
+      <article class="doc"><div id="doc"></div><div id="live"></div></article>
+    </div>
+  </main>
+</div>
+<div id="toast" role="status" aria-live="polite" hidden></div>
+<dialog id="dlg">
+  <span>Copy was blocked. Select and copy the text below.</span>
+  <textarea id="dlg-text" readonly></textarea>
+  <button class="btn" id="dlg-close" type="button">Close</button>
+</dialog>
+<dialog id="savedlg">
+  <p class="eyebrow">Output</p>
+  <h2 style="font-size:26px">Save Personas</h2>
+  <p class="sub" style="margin:8px 0 14px">Saves the whole portfolio: every persona, the buying committee, prospecting, messaging and evidence.</p>
+  <label for="save-name" class="status">Name</label>
+  <input id="save-name" type="text" maxlength="80" autocomplete="off">
+  <p class="status" id="save-msg" role="status" style="min-height:1.4em;margin:8px 0 0"></p>
+  <div class="actions"><button class="btn primary" id="save-ok" type="button">Save</button><button class="btn" id="save-cancel" type="button">Cancel</button></div>
+</dialog>
+
+<script>
+"use strict";
+const CTX=[
+ ["product","Product / Service","What is being sold?"],
+ ["value","Value proposition","What value does the product or service deliver?"],
+ ["problem","Problem addressed","What specific problem does it solve?"],
+ ["delivery","Delivery model","SaaS, managed service, consulting, product, etc."],
+ ["sales_model","Sales model","Inbound, outbound, self-service, enterprise sales, hybrid"],
+ ["deal_size","Typical deal size","Average or expected contract value"],
+ ["sales_complexity","Sales complexity","Transactional, mid-market, enterprise, etc."]];
+const OPT=[
+ ["buyer_language","Real buyer language","Call transcripts, emails, forum threads, search queries or real AI prompt data. Vocabulary and questions are taken from here first and labelled Real"],
+ ["customers","Existing customers","Examples of companies already purchasing"],
+ ["contacts","Existing contacts","Known people involved in purchasing. Roles are enough; names are not needed"],
+ ["conversations","Sales conversations","Transcripts, notes or summaries"],
+ ["interviews","Customer interviews","Direct feedback from customers"],
+ ["deals","Historical deals","Won, lost and stalled opportunities"],
+ ["materials","Existing sales materials","Presentations, proposals and messaging"],
+ ["objections","Known objections","Common concerns raised during sales conversations"],
+ ["knowledge","Existing organizational knowledge","How customers make decisions"]];
+const LABELMAP={productservice:"product",product:"product",corevalueproposition:"value",valueproposition:"value",problemsaddressed:"problem",problemaddressed:"problem",primarybusinessproblem:"problem",primaryproblem:"problem",deliverymodel:"delivery",salesmodel:"sales_model",typicaldealsize:"deal_size",typicalcontractvalue:"deal_size",typicalcustomervalue:"deal_size",salescomplexity:"sales_complexity",salescyclecomplexity:"sales_complexity",purchasecyclecomplexity:"sales_complexity"};
+const STORE="persona-builder-v1";
+const state={docs:[],ctx:{},src:{},opt:{},plan:null,profiles:{},tail:"",example:false};
+const $=id=>document.getElementById(id);
+const norm=s=>String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const val=k=>(state.ctx[k]||"").trim();
+function save(){ try{ localStorage.setItem(STORE,JSON.stringify(state)); }catch(e){} }
+function load(){ try{ const s=JSON.parse(localStorage.getItem(STORE)||"null"); if(s&&Array.isArray(s.docs)) Object.assign(state,s); }catch(e){} }
+
+/* ---------- Inputs ---------- */
+function autosize(t){ t.style.height="auto"; t.style.height=Math.max(38,t.scrollHeight+2)+"px"; }
+function renderInputs(){
+  $("ctx-rows").innerHTML=CTX.map(([k,l,h])=>`<div class="row two" data-k="${k}"><label for="c-${k}"><span class="lab">${esc(l)}<span class="req">required</span>${state.src[k]?'<span class="tag">from ICP</span>':""}</span><span class="hint">${esc(h)}</span></label><textarea id="c-${k}" rows="1" data-c="${k}">${esc(state.ctx[k]||"")}</textarea></div>`).join("");
+  $("opt-rows").innerHTML=OPT.map(([k,l,h])=>`<div class="row two"><label for="o-${k}"><span class="lab">${esc(l)}</span><span class="hint">${esc(h)}</span></label><div class="field"><textarea id="o-${k}" rows="2" data-o="${k}">${esc(state.opt[k]||"")}</textarea><button class="btn" type="button" data-addfile="${k}">Add a file</button></div></div>`).join("");
+  document.querySelectorAll("#view-inputs textarea").forEach(autosize);
+  renderDocs(); updateStats();
+}
+const FOUND=[["Ideal customer",/ideal customer|icp definition/i],["Segments",/segment/i],["Buyer situations",/buyer situations/i],["Alternatives",/alternatives/i],["Question variables",/question variables/i],["Evidence",/evidence|confidence/i]];
+function icpText(){ return state.docs.map(d=>d.text).join("\n\n"); }
+function renderDocs(){
+  $("doclist").innerHTML=state.docs.map((d,i)=>`<span class="docchip">${esc(d.name)} · ${d.text.length.toLocaleString()} characters<button type="button" data-rm="${i}" aria-label="Remove ${esc(d.name)}">×</button></span>`).join("");
+  const t=icpText();
+  $("found").innerHTML = t ? "<span>Found in the ICP:</span>"+FOUND.map(([n,re])=>`<span class="f ${re.test(t)?"y":""}">${n}${re.test(t)?"":" · not found"}</span>`).join("") : "";
+  if(state.docs.length) $("icpbox").classList.remove("flag");
+}
+function updateStats(){
+  const req=(state.docs.length?1:0)+CTX.filter(([k])=>val(k)).length;
+  const opt=OPT.filter(([k])=>(state.opt[k]||"").trim()).length;
+  $("st-req").textContent=req+"/8"; $("st-opt").textContent=opt+"/"+OPT.length;
+  $("st-meter").style.width=Math.round(req/8*100)+"%";
+  $("st-msg").textContent=state.example?"Example data loaded":"";
+  $("btn-extract").hidden = !state.docs.length || CTX.every(([k])=>val(k));
+}
+const splitRow=line=>line.trim().replace(/^\|/,"").replace(/\|\s*$/,"").split(/(?<!\\)\|/).map(c=>c.trim().replace(/\\\|/g,"|"));
+function prefill(text){
+  let ansCol=1, n=0;
+  for(const raw of text.split(/\r?\n/)){
+    const line=raw.trim(); if(!line.startsWith("|")) continue;
+    const c=splitRow(line);
+    if(c.every(x=>/^:?-{2,}:?$/.test(x)||x==="")) continue;
+    if(["input","field","inputs"].includes(norm(c[0]))){ ansCol=c.findIndex(x=>/answer|value|response/i.test(x)); if(ansCol<0) ansCol=(c.length===2&&/required|provide|description/i.test(c[1]))?-1:1; continue; }
+    const k=LABELMAP[norm(c[0].replace(/\*+\s*$/,""))]; if(!k||ansCol<0) continue;
+    const v=(c[ansCol]||"").replace(/<br\s*\/?>/gi,"\n").trim();
+    if(v && !val(k)){ state.ctx[k]=v; state.src[k]=true; n++; }
+  }
+  return n;
+}
+function note(msg,cls){ const n=$("import-note"); n.textContent=msg; n.className="note "+(cls||""); n.hidden=false; }
+function addDoc(name,text){
+  text=String(text||"").trim(); if(!text) return;
+  state.docs.push({name,text}); const n=prefill(text); state.example=false;
+  state.plan=null; state.profiles={}; state.tail="";
+  renderInputs(); save();
+  const left=CTX.filter(([k])=>!val(k)).length;
+  note(`Added ${name}.`+(n?` ${n} context answer${n===1?" was":"s were"} filled in from it.`:"")+(left?` ${left} required answer${left===1?" is":"s are"} still empty. Select Find missing answers in the ICP, or type them in.`:" All required answers are filled in."), left?"warn":"");
+}
+function readFiles(files,cb){ for(const f of files){ if(f.size>3e6){ note(f.name+" is over 3 MB. Upload a markdown or text file.","bad"); continue; }
+  const r=new FileReader(); r.onload=()=>cb(f.name,String(r.result)); r.onerror=()=>note(f.name+" could not be read. Paste its contents instead.","bad"); r.readAsText(f); } }
+$("btn-file").onclick=()=>$("file").click();
+$("file").onchange=e=>{ readFiles(e.target.files,addDoc); e.target.value=""; };
+const drop=$("drop");
+["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{ e.preventDefault(); drop.classList.add("over"); }));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{ e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop",e=>readFiles(e.dataTransfer.files,addDoc));
+$("btn-paste").onclick=()=>{ const p=$("pastebox"); p.hidden=!p.hidden; if(!p.hidden) $("paste").focus(); };
+$("btn-import").onclick=()=>{ const t=$("paste").value; if(!t.trim()){ note("Paste the ICP first.","warn"); return; } addDoc("Pasted ICP"+(state.docs.length?" "+(state.docs.length+1):""),t); $("paste").value=""; $("pastebox").hidden=true; };
+$("doclist").addEventListener("click",e=>{ const b=e.target.closest("[data-rm]"); if(!b) return; state.docs.splice(+b.dataset.rm,1); renderDocs(); updateStats(); save(); });
+$("view-inputs").addEventListener("input",e=>{
+  const t=e.target;
+  if(t.dataset.c){ state.ctx[t.dataset.c]=t.value; if(state.src[t.dataset.c]){ delete state.src[t.dataset.c]; const tg=t.closest(".row").querySelector(".tag"); if(tg) tg.remove(); } t.closest(".row").classList.remove("flag"); }
+  else if(t.dataset.o){ state.opt[t.dataset.o]=t.value; }
+  else return;
+  autosize(t); state.example=false; updateStats(); save();
+});
+let optTarget=null;
+$("opt-rows").addEventListener("click",e=>{ const b=e.target.closest("[data-addfile]"); if(!b) return; optTarget=b.dataset.addfile; $("optfile").click(); });
+$("optfile").onchange=e=>{ const k=optTarget; readFiles(e.target.files,(name,text)=>{ const cur=(state.opt[k]||"").trim(); state.opt[k]=(cur?cur+"\n\n":"")+"["+name+"]\n"+text.trim(); const t=$("o-"+k); t.value=state.opt[k]; autosize(t); updateStats(); save(); toast("Added "+name); }); e.target.value=""; };
+
+/* ---------- Copy, download, toast, Claude ---------- */
+let toastT;
+function toast(m){ const t=$("toast"); t.textContent=m; t.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>t.hidden=true,2600); }
+async function copy(text,what){ try{ await navigator.clipboard.writeText(text); toast(what+" copied"); }catch(e){ $("dlg-text").value=text; $("dlg").showModal(); $("dlg-text").select(); } }
+$("dlg-close").onclick=()=>$("dlg").close();
+let downloads=null, sampleP=Promise.resolve(null);
+if(window.claude && typeof window.claude.use==="function"){
+  sampleP=window.claude.use("sample").catch(()=>null);
+  window.claude.use("downloads").then(d=>{ if(d){ downloads=d; $("btn-out-dl").hidden=false; } }).catch(()=>{});
+}
+async function download(filename,data){ if(!downloads) return; try{ await downloads.save({filename,data}); toast("Saved "+filename); }catch(e){ if(e&&e.code==="declined") return; toast("Download is not available here. Use Copy instead."); } }
+$("btn-out-copy").onclick=()=>{ const m=assemble(); if(m) copy(m,"Personas"); else toast("No personas generated yet"); };
+$("btn-out-dl").onclick=()=>{ const m=assemble(); if(m) download("buyer-personas.md",m); else toast("No personas generated yet"); };
+$("btn-prompt-copy").onclick=()=>copy(singlePrompt(),"Prompt");
+
+/* ---------- Example and clear ---------- */
+const EX_ICP=`# ICP: Ledgerline (example company)
+
+Mid-sized Benelux and German product businesses whose finance teams can no longer keep up with supplier invoice volume.
+
+## A. ICP Definition
+| Attribute | Ideal profile |
+|---|---|
+| Industries | Wholesale distribution, light manufacturing, multi-site hospitality |
+| Size | 100 to 500 employees, EUR 20M to 150M revenue |
+| Structure | 3 or more legal entities, finance team of 4 to 15 |
+| Need | More than 500 supplier invoices a month processed by hand |
+| Technology | Cloud ERP with an open API (Exact Online, NetSuite, Business Central) |
+| Geography | Netherlands, Belgium, Germany |
+
+## B. ICP Segments
+| Segment | Who | Distinct need | Priority |
+|---|---|---|---|
+| Multi-entity distributors | 150 to 500 staff, 3+ entities | Intercompany invoices, consolidated cash view | 1 |
+| Growing manufacturers | 100 to 300 staff, one or two entities | Purchase-order matching, approval speed | 2 |
+| Hospitality groups | 10+ sites, small central finance team | High invoice count per site, decentralised approvers | 3 |
+
+## C. Qualification Criteria
+| Criterion | Classification | How to check |
+|---|---|---|
+| 500+ supplier invoices per month | Mandatory | Discovery call |
+| Cloud ERP with API | Mandatory | Technographic data |
+| On-premise ERP without API | Disqualifier | Discovery call |
+| Controller owns tooling budget | Strong indicator | Discovery call |
+
+## D. Buying Signals
+| Signal | Strength | Recency window |
+|---|---|---|
+| Hiring an AP clerk or finance operations role | Primary | 3 months |
+| ERP migration announced | Primary | 6 months |
+| Acquisition of another entity | Secondary | 12 months |`;
+const EX_CTX={product:"Accounts-payable automation platform: invoice capture, approval routing, payment runs, ERP sync",value:"A small finance team handles growing invoice volume without hiring, with fewer errors and late fees",problem:"Manual supplier invoice entry and slow approvals",delivery:"SaaS",sales_model:"Outbound plus ERP partner referrals",deal_size:"EUR 18k to 45k per year",sales_complexity:"Mid-market, 6 to 10 week cycle, 3 to 5 people involved"};
+$("btn-example").onclick=()=>{ state.docs=[{name:"Example ICP (invented company)",text:EX_ICP}]; state.ctx={...EX_CTX}; state.src={}; state.opt={objections:"Our ERP already has an AP module. IT has no capacity for another integration this year.",deals:"Won fastest when the financial controller ran the evaluation. Two deals stalled at IT security review."}; state.plan=null; state.profiles={}; state.tail=""; state.example=true; renderInputs(); save(); note("Example data loaded. It describes an invented company. Replace it with your own ICP or select Reset."); };
+let clearArmed=false;
+$("btn-clear").onclick=function(){
+  if(!clearArmed){ clearArmed=true; this.textContent="Click again to reset everything"; setTimeout(()=>{ clearArmed=false; this.textContent="Reset"; },4000); return; }
+  clearArmed=false; this.textContent="Reset";
+  Object.assign(state,{docs:[],ctx:{},src:{},opt:{},plan:null,profiles:{},tail:"",example:false}); $("import-note").hidden=true; renderInputs(); save(); toast("Everything was reset");
+};
+
+/* ---------- Prompts ---------- */
+const RULES=`Rules
+- The ICP is the source of truth. Reuse what it says; do not contradict it.
+- Stay locked to the ICP. Refer to buyer situations only by the IDs the ICP defines. Use ICP segment names verbatim. Do not reference any situation, segment or company fact that the ICP and the inputs below do not contain.
+- You cannot browse. "Research" here means your knowledge of how organizations of this kind are typically structured and how they buy. Do not rely on generic assumptions where the ICP or the supplied evidence says something specific.
+- Evidence classes: Validated = supported by the customer data, interviews, deals, contacts or conversations supplied below. Observed = a recurring, well-established industry pattern. Inferred = reasonably derived from the ICP and organizational context. Hypothesized = an assumption that needs validation. Unknown = cannot be established.
+- Sources: cite only the supplied inputs by name (for example "ICP", "Input: Sales conversations") or "General industry knowledge". Never invent URLs, studies, statistics, company names or quotes.
+- When "Input: Real buyer language" is supplied, take vocabulary and questions from it first and mark them Real. Everything you write yourself is Invented.
+- Personas are role archetypes named by function (for example "Finance Operations Lead"). No invented personal names, ages or biographies.
+- Never present an assumption as a fact. If something cannot be established reliably, say so.
+- If the ICP targets individuals rather than organizations, the personas are the distinct people involved in the purchase (buyer, payer, user, influencers such as a partner, parent or adviser). Replace job titles, departments and seniority with the descriptors that identify those people.`;
+const PURPOSE=`Purpose: these personas feed a later step that writes the questions each persona would type into an AI assistant (ChatGPT, Gemini, Claude, Perplexity). The unit for that step is persona × situation × stage, where stage is Learn (understanding the topic, not yet looking for a provider), Problem (stuck on something specific, looking for a way through) or Buy (comparing options, providers, prices and risks). What buyers ask, in their own words, matters more than what the seller says to them.`;
+function icpSituations(){
+  const t=icpText(), ids=[];
+  for(const m of t.matchAll(/^\s*\|\s*\**\s*(S\d{1,2})\b/gm)) if(!ids.includes(m[1])) ids.push(m[1]);
+  if(!ids.length) for(const m of t.matchAll(/^\s*(?:#{2,5}|[-*])\s*\**\s*(S\d{1,2})\s*[:.–-]/gm)) if(!ids.includes(m[1])) ids.push(m[1]);
+  return ids;
+}
+function contextBlock(){
+  const ctx=CTX.map(([k,l])=>`- ${l}: ${val(k)||"not provided"}`).join("\n");
+  const opt=OPT.filter(([k])=>(state.opt[k]||"").trim()).map(([k,l])=>`### Input: ${l}\n${state.opt[k].trim()}`).join("\n\n");
+  const docs=state.docs.map(d=>`### ICP document: ${d.name}\n${d.text}`).join("\n\n");
+  return `## Offering and sales context\n${ctx}\n\n## Evidence supplied by the user\n${opt||"None supplied. Nothing can be classified as Validated, and every question is Invented."}\n\n## ICP (source of truth)\n${docs}`;
+}
+const DISCOVERY_RULES=`Persona count rules
+1. No minimum or maximum number of personas. The count must follow from the analysis.
+2. Different job titles alone do not justify different personas.
+3. Consolidate roles with substantially similar responsibilities, objectives and purchasing influence.
+4. Separate roles when motivations, responsibilities, purchasing criteria or relationship with the product differ materially.
+5. Account for differences between company sizes, organizational maturity and ICP segments. Do not duplicate a persona per segment.
+6. Priority: Primary = essential to the purchasing decision or directly owns the business problem. Secondary = influences, evaluates or supports the decision. Tertiary = limited but potentially relevant involvement. Priority is independent of purchasing role and of seniority: a Secondary persona can still hold a veto, and the most senior person is not automatically the most important.
+Purchasing roles to consider (use only those that apply; one persona may hold several): Economic Buyer, Decision Maker, Champion, Problem Owner, Technical Evaluator, Operational Evaluator, End User, Influencer, Blocker, Procurement.
+Prompt share: each persona gets a whole-number percentage of the total prompt budget, derived from purchasing role and existence confidence. The decision maker gets the majority. A persona whose existence is only Hypothesized gets a small share or zero, with the reason. Shares sum to 100.`;
+function discoveryPrompt(){
+  const ids=icpSituations();
+  return `You are a B2B go-to-market researcher. Analyse the ICP below and identify the buyer personas: the people who influence, evaluate, approve, purchase or use the product.
+
+${PURPOSE}
+
+Work in this order: (1) which functions experience the problem, own the budget, evaluate solutions and use the solution; (2) candidate roles in the buying process; (3) consolidate overlapping roles; (4) final persona list.
+
+${RULES}
+
+${DISCOVERY_RULES}
+
+Buyer situation IDs defined in the ICP: ${ids.join(", ")}. Use only these.
+
+Return JSON only, with no text before or after it and no code fence, in exactly this shape:
+{"analysis":"3 to 5 sentences: which functions feel the problem, own the budget, evaluate and use the solution",
+"personas":[{"name":"functional persona name","priority":"Primary|Secondary|Tertiary","purchasing_roles":["..."],"influence":"High|Medium|Low","can_block":true,"buys_or_uses":true,"situations":["S1"],"prompt_share":40,"prompt_share_reason":"one sentence","titles":["3 to 6 typical job titles"],"department":"...","seniority":"...","why_distinct":"one sentence: why this persona exists and what separates it from the others","existence_confidence":"Validated|Observed|Inferred|Hypothesized","existence_basis":"short basis with source"}],
+"merged":[{"role":"candidate role that did not become its own persona","merged_into":"persona name or 'dropped'","reason":"short"}],
+"committee":{"initiates":"persona name(s)","experiences_problem":"...","advocates":"...","controls_budget":"...","evaluates":"...","approves":"...","can_block":"...","uses":"..."},
+"size_variation":"2 to 4 sentences on how the committee changes between small, mid-market and enterprise organizations within this ICP; say so if the ICP states that size does not matter",
+"segments":["ICP segment names exactly as written in the ICP; empty array if the ICP has none"],
+"segment_map":[{"persona":"persona name","relevance":{"<segment name>":"Primary|Secondary|Tertiary|Sometimes|Rare|Not relevant"}}],
+"segment_note":"one or two sentences on whether segments need different personas"}
+"buys_or_uses" is false for a persona that only influences and never buys or uses the product. "situations" lists the ICP situation IDs this persona is involved in. Order personas by priority, then influence.
+
+${contextBlock()}`;
+}
+const Q_RULES=`Rules for "Questions They Ask"
+- One table with exactly these columns: Situation | Stage | Question | Source. Situation is the ICP situation ID only (for example S1). Stage is exactly Learn, Problem or Buy. Source is exactly Real (taken from supplied material) or Invented.
+- For each situation listed for this persona: 4 to 6 questions at each of the three stages.
+- Write each question the way the buyer would type it to an AI assistant: full sentences, first person, with their own context included.
+- Use the buyer's vocabulary, not the seller's. No product or brand terms unless the buyer would already know them. Never use a term from the "What we call it" column of the Language table unless the buyer uses it too.
+- Include questions that name alternatives from the ICP's Alternatives section.
+- Turn every objection this persona has into at least one Buy-stage question.`;
+const TEMPLATE=`Use exactly this structure. Start with "### <persona name>". Use "####" for the section headings below, with these exact titles. Keep it lean: later AI steps read this in full, and repetition lowers their quality. Outside "Questions They Ask", use short bullets in the form "- **Label:** content", at most four bullets per section. Do not attach evidence labels to lines; evidence goes only in the last section. Do not repeat a point in two sections.
+
+#### 1. Identity
+Persona name, typical job titles, department, seniority, persona priority, prompt share.
+#### 2. Organizational Context
+Typical company environment, reporting structure, role in the purchasing process, which ICP situations they are in (by ID).
+#### 3. Professional Objectives
+Primary objectives, KPIs, areas of ownership.
+#### 4. Challenges & Pain Points
+Primary challenges, operational frustrations, problems they may not recognize yet, consequences of not acting.
+#### 5. Motivations
+What makes the problem urgent, desired outcomes, what makes a solution attractive.
+#### 6. Purchasing Characteristics
+Purchasing authority, budget ownership, evaluation criteria, decision influence (state any veto), required approvals, perceived risks.
+#### 7. Solution Alignment
+Relevant parts of the offering, expected value, reasons to adopt, reasons to resist.
+#### 8. Questions They Ask
+The table described in the rules below.
+#### 9. Language
+A table with exactly these columns: What the buyer calls it | What we call it. 6 to 10 rows.
+#### 10. Where They Look and Who They Trust
+The sites, communities, publications and kinds of people this persona consults when researching. Name a specific source only if you are confident it exists and is relevant; otherwise describe the kind of source.
+#### 11. Messaging Recommendations
+Core messaging angle, key value proposition, talking points. Then a table with exactly these columns: Objection | Suggested response | Buy-stage question. The third column repeats, word for word, a Buy-stage question from section 8 that expresses that objection.
+#### 12. Prospecting Information
+A table: Filter | Values, with rows Primary job titles, Alternative titles, Seniority, Departments, Keywords, Exclude (misleading titles). These are database search filters, separate from the persona description.
+#### 13. Evidence & Confidence
+A table: Characteristic | Classification | Basis, with 6 to 10 rows covering the most important claims in this profile. Classification is exactly one of Validated, Observed, Inferred, Hypothesized, Unknown. Then two bullets: "- **Existence confidence:** High, Medium or Low, with the reason" and "- **Characteristics confidence:** High, Medium or Low, with the reason".`;
+const TEMPLATE_SLIM=`This persona only influences the decision; it never buys or uses the product. Use exactly this slim structure, with no prospecting and no purchasing-authority sections. Start with "### <persona name>". Use "####" for the section headings below, with these exact titles. Short bullets in the form "- **Label:** content", at most four per section. Do not attach evidence labels to lines; evidence goes only in the last section.
+
+#### 1. Identity
+Persona name, who they typically are, their relationship to the buyer, persona priority, prompt share.
+#### 2. Context
+When and why the buyer turns to them, and which ICP situations they appear in (by ID).
+#### 3. Questions They Ask
+The table described in the rules below. These are the questions this influencer would ask an AI assistant when asked for advice by the buyer.
+#### 4. What They Would Advise the Buyer
+The advice they are likely to give, what makes them recommend or warn against a solution like this one.
+#### 5. Language
+A table with exactly these columns: What the buyer calls it | What we call it. 4 to 8 rows, using this persona's vocabulary in the first column.
+#### 6. Where They Look and Who They Trust
+The sites, communities, publications and kinds of people they consult. Name a specific source only if you are confident it exists and is relevant.
+#### 7. Evidence & Confidence
+A table: Characteristic | Classification | Basis, 4 to 6 rows. Classification is exactly one of Validated, Observed, Inferred, Hypothesized, Unknown. Then one bullet: "- **Existence confidence:** High, Medium or Low, with the reason".`;
+function planBrief(){ return state.plan.personas.map(p=>`- ${p.name} (${p.priority}; ${(p.purchasing_roles||[]).join(", ")}; prompt share ${p.prompt_share||0}%)`).join("\n"); }
+function profilePrompt(i){
+  const p=state.plan.personas[i], slim=p.buys_or_uses===false;
+  return `You are a B2B go-to-market researcher. Write the buyer persona profile for one persona. Markdown only, no preamble.
+
+${PURPOSE}
+
+${RULES}
+
+The full persona portfolio, so this profile stays distinct from the others:
+${planBrief()}
+
+The persona to profile now:
+${JSON.stringify(p)}
+Situations for this persona: ${(p.situations||[]).join(", ")||"none listed"}. Use these IDs only.
+
+${slim?TEMPLATE_SLIM:TEMPLATE}
+
+${Q_RULES}${slim?"\n- This persona has no objection table, so the objection rule does not apply.":""}
+
+${contextBlock()}`;
+}
+function tailOf(md){ const m=md.search(/^#{3,5}\s*\d*\.?\s*Evidence & Confidence/mi); return m>=0?md.slice(m):md.slice(-1500); }
+function tailPrompt(){
+  const parts=state.plan.personas.map((p,i)=>`### ${p.name} (${p.priority})\n${tailOf(state.profiles[i]||"")}`).join("\n\n");
+  return `Below are the evidence sections of a set of buyer persona profiles. Consolidate them. Use only what is in them; add no new facts. Markdown only, no preamble, exactly this one section:
+
+## Evidence & Confidence Report
+One short paragraph separating what is validated from what is observed, inferred and assumed across the portfolio. Do not repeat the per-persona tables. Then a numbered list "Research gaps": the 3 to 6 gaps to close first, each with a concrete way to validate it (who to interview, which deals to review, what data to pull).
+
+${parts}`;
+}
+function singlePrompt(){
+  return `You are a B2B go-to-market researcher. Turn the ICP below into a buyer persona portfolio.
+
+${PURPOSE}
+
+${RULES}
+
+${DISCOVERY_RULES}
+
+Produce, in Markdown: a Persona Portfolio table (priority, purchasing roles, influence, can block, prompt share, why it exists; plus roles you merged), the Buying Committee (who initiates, experiences the problem, advocates, controls budget, evaluates, approves, can block, uses; and how this changes by company size), ICP Segment Mapping, one profile per persona, and an Evidence & Confidence Report with research gaps.
+
+Profile template for personas that buy or use the product:
+${TEMPLATE}
+
+Profile template for personas that only influence:
+${TEMPLATE_SLIM}
+
+${Q_RULES}
+
+${contextBlock()}`;
+}
+function extractPrompt(missing){
+  return `From the ICP below, extract these facts about the seller's offering. Return JSON only, no code fence, with exactly these keys: ${missing.map(k=>'"'+k+'"').join(", ")}.
+Key meanings: product = what is being sold; value = the value it delivers; problem = the specific problem it solves; delivery = delivery model (SaaS, managed service, consulting, product...); sales_model = inbound, outbound, self-service, enterprise sales or hybrid; deal_size = typical contract value; sales_complexity = transactional, mid-market or enterprise, with cycle length if stated.
+Use a short phrase in the ICP's own words. Use null when the ICP neither states it nor makes it clearly evident. Do not guess.
+
+${state.docs.map(d=>d.text).join("\n\n")}`;
+}
+function parseJson(t){ t=String(t||""); const a=t.indexOf("{"), b=t.lastIndexOf("}"); if(a<0||b<=a) throw new Error("no json"); return JSON.parse(t.slice(a,b+1)); }
+
+$("btn-extract").onclick=async function(){
+  const missing=CTX.map(c=>c[0]).filter(k=>!val(k)); if(!missing.length||!state.docs.length) return;
+  const st=$("extract-status"); this.disabled=true; st.textContent="Reading the ICP…";
+  try{
+    const sample=await sampleP; if(!sample){ st.textContent="Claude is not available in this view. Type the missing answers in."; return; }
+    const r=await sample(extractPrompt(missing),{modelTier:"quick"}); const j=parseJson(r.text); let n=0;
+    for(const k of missing){ const v=j[k]; if(typeof v==="string"&&v.trim()){ state.ctx[k]=v.trim(); state.src[k]=true; n++; } }
+    renderInputs(); save(); const left=missing.length-n;
+    st.textContent=`Found ${n} of ${missing.length}.`+(left?` ${left} ${left===1?"is":"are"} not in the ICP. Type ${left===1?"it":"them"} in.`:"");
+  }catch(e){ st.textContent = e&&e.code==="rate_limited" ? "Claude is rate limited. Wait a minute and try again." : "The ICP could not be read automatically. Type the missing answers in."; }
+  finally{ this.disabled=false; }
+};
+
+/* ---------- Output assembly ---------- */
+const c=v=>(Array.isArray(v)?v.join(", "):String(v==null?"":v)).replace(/\|/g,"\\|").replace(/\s*\n+\s*/g," ");
+function planMd(){
+  const p=state.plan, P=p.personas||[], L=[];
+  if(!p._title) p._title=val("product").split(/[\n:.;]/)[0].slice(0,80);
+  L.push(`# Buyer Personas: ${p._title}`,"",`${P.length} persona${P.length===1?"":"s"} identified from the ICP. The count follows from the analysis of who feels the problem, pays, evaluates and uses the solution.`,"");
+  L.push("## Persona Portfolio","",c(p.analysis),"","| Persona | Priority | Purchasing role | Influence | Can block | Situations | Why it exists |","|---|---|---|---|---|---|---|");
+  for(const x of P) L.push(`| ${c(x.name)} | ${c(x.priority)} | ${c(x.purchasing_roles)} | ${c(x.influence)} | ${x.can_block?"Yes":"No"} | ${c(x.situations)||"None"} | ${c(x.why_distinct)} |`);
+  if((p.merged||[]).length){ L.push("","Roles considered and not made into separate personas:",""); for(const m of p.merged) L.push(`- **${c(m.role)}** › ${c(m.merged_into)}: ${c(m.reason)}`); }
+  L.push("","## Prompt Share","","Share of the total prompt budget per persona, derived from purchasing role and existence confidence.","","| Persona | Prompt share | Existence confidence | Reason |","|---|---|---|---|");
+  for(const x of P) L.push(`| ${c(x.name)} | ${Number(x.prompt_share)||0}% | ${c(x.existence_confidence)} | ${c([x.prompt_share_reason,x.existence_basis].filter(Boolean).join(" Basis: "))} |`);
+  const Q=[["initiates","Who initiates the purchasing process"],["experiences_problem","Who experiences the problem"],["advocates","Who advocates for a solution"],["controls_budget","Who controls the budget"],["evaluates","Who evaluates the solution"],["approves","Who approves the purchase"],["can_block","Who can block the purchase"],["uses","Who uses the solution"]];
+  L.push("","## Buying Committee","");
+  if(p.committee){ L.push("| Question | Answer |","|---|---|"); for(const [k,l] of Q) L.push(`| ${l} | ${c(p.committee[k])||"Unknown"} |`); }
+  if(p.size_variation) L.push("","**By company size:** "+c(p.size_variation));
+  L.push("","## ICP Segment Mapping","");
+  const segs=(p.segments||[]).filter(Boolean);
+  if(segs.length>1 && (p.segment_map||[]).length){
+    L.push("| Persona | "+segs.map(c).join(" | ")+" |","|---|"+segs.map(()=>"---|").join(""));
+    for(const r of p.segment_map) L.push(`| ${c(r.persona)} | `+segs.map(s=>c((r.relevance||{})[s])||"Unknown").join(" | ")+" |");
+    L.push("");
+  }
+  L.push(c(p.segment_note)|| (segs.length>1?"":"The ICP does not define distinct segments, so the personas apply across it."));
+  return L.join("\n");
+}
+/* ---------- Lock to the ICP and acceptance checks ---------- */
+function lockPlan(plan,ids){
+  const bad=[]; for(const x of plan.personas){ x.situations=(Array.isArray(x.situations)?x.situations:[]).map(s=>String(s).trim().toUpperCase()); for(const s of x.situations) if(!ids.includes(s)&&!bad.includes(s)) bad.push(s); }
+  if(bad.length) throw {code:"lock",message:"situation "+bad.join(", ")};
+  const icp=icpText().toLowerCase().replace(/\s+/g," ");
+  const badSeg=(plan.segments||[]).filter(s=>s&&!icp.includes(String(s).toLowerCase().replace(/\s+/g," ").trim()));
+  if(badSeg.length) throw {code:"lock",message:"segment "+badSeg.map(s=>'"'+s+'"').join(", ")};
+  const P=plan.personas, raw=P.map(x=>Math.max(0,Number(x.prompt_share)||0)), sum=raw.reduce((a,b)=>a+b,0);
+  if(sum>0 && sum!==100){ const sc=raw.map(v=>v*100/sum), fl=sc.map(Math.floor); let rem=100-fl.reduce((a,b)=>a+b,0);
+    sc.map((v,i)=>[v-fl[i],i]).sort((a,b)=>b[0]-a[0]).forEach(([,i])=>{ if(rem>0){ fl[i]++; rem--; } }); P.forEach((x,i)=>x.prompt_share=fl[i]); }
+  else P.forEach((x,i)=>x.prompt_share=raw[i]);
+}
+function lockProfile(md,ids){
+  const bad=[]; for(const m of md.matchAll(/\bS\d{1,2}\b/g)) if(!ids.includes(m[0])&&!bad.includes(m[0])) bad.push(m[0]);
+  if(bad.length) throw {code:"lock",message:"situation "+bad.join(", ")};
+}
+function mdTables(md){
+  const out=[], L=md.split(/\r?\n/);
+  for(let i=0;i<L.length-1;i++){
+    if(L[i].trim().startsWith("|") && /^\s*\|?\s*:?-{2,}/.test(L[i+1])){
+      const header=splitRow(L[i]).map(h=>h.replace(/\*\*/g,"").trim().toLowerCase()), rows=[]; i+=2;
+      while(i<L.length && L[i].trim().startsWith("|")){ rows.push(splitRow(L[i]).map(x=>x.replace(/\*\*/g,"").trim())); i++; }
+      out.push({header,rows}); i--;
+    }
+  }
+  return out;
+}
+function runChecks(){
+  if(!isComplete()) return [];
+  const ids=icpSituations(), P=state.plan.personas, res=[], names=a=>a.slice(0,4).join("; ")+(a.length>4?"…":"");
+  const f1=[], f2=[], f3=[], f4=[], f6=[];
+  P.forEach((p,i)=>{
+    const md=state.profiles[i]||"", T=mdTables(md);
+    for(const m of md.matchAll(/\bS\d{1,2}\b/g)) if(!ids.includes(m[0])&&!f1.includes(m[0])) f1.push(m[0]);
+    const qt=T.find(t=>t.header.includes("stage")&&t.header.includes("question")), qs=[];
+    if(qt){ const a=qt.header.indexOf("situation"), b=qt.header.indexOf("stage"), q=qt.header.indexOf("question"); for(const r of qt.rows) qs.push({s:(r[a]||"").toUpperCase(),st:(r[b]||"").toLowerCase(),q:r[q]||""}); }
+    if((Number(p.prompt_share)||0)>0) for(const s of (p.situations||[])) for(const st of ["learn","problem","buy"]) if(!qs.some(x=>x.s===s&&x.st===st)) f2.push(`${p.name}: ${s} ${st}`);
+    const lt=T.find(t=>(t.header[0]||"").includes("buyer calls")); 
+    if(lt){ const buyer=lt.rows.map(r=>(r[0]||"").toLowerCase()), clean=s=>s.toLowerCase().replace(/["'“”‘’]/g,"").trim();
+      for(const r of lt.rows) for(const term of clean(r[1]||"").split(/\s*[\/,;]\s*/)){ if(term.length<5||buyer.some(b=>clean(b).includes(term))) continue; if(qs.some(x=>x.q.toLowerCase().includes(term))) f3.push(`${p.name}: "${term}"`); } }
+    if(p.buys_or_uses!==false){ const ot=T.find(t=>(t.header[0]||"").includes("objection")); const k=ot?ot.header.findIndex(h=>h.includes("buy")):-1;
+      if(!ot||k<0) f4.push(`${p.name}: no objection table with a Buy-stage question column`); else for(const r of ot.rows) if(!(r[k]||"").replace(/[—–-]/g,"").trim()) f4.push(`${p.name}: "${(r[0]||"").slice(0,40)}"`); }
+    const seen=new Set(); for(const t of T){ const sig=t.header.join("|"); if(seen.has(sig)) f6.push(`${p.name}: ${t.header.slice(0,2).join(" / ")}`); seen.add(sig); }
+  });
+  const top=mdTables(planMd()+"\n\n"+state.tail), seenTop=new Set(); for(const t of top){ const sig=t.header.join("|"); if(seenTop.has(sig)) f6.push("portfolio: "+t.header.slice(0,2).join(" / ")); seenTop.add(sig); }
+  const sum=P.reduce((a,x)=>a+(Number(x.prompt_share)||0),0);
+  res.push([!f1.length,"Every situation ID used in the personas exists in the ICP",f1.length?"Not in the ICP: "+names(f1):""]);
+  res.push([!f2.length,"Every persona with a prompt share has questions at all three stages for each of its situations",f2.length?"Missing: "+names(f2):""]);
+  res.push([!f3.length,"No question uses a term from \"What we call it\" that the buyer does not use",f3.length?"Found: "+names(f3):""]);
+  res.push([!f4.length,"Every objection maps to a Buy-stage question",f4.length?"Missing: "+names(f4):""]);
+  res.push([sum===100,"Prompt shares sum to 100%",sum===100?"":"They sum to "+sum+"%"]);
+  res.push([!f6.length,"No table appears twice",f6.length?"Repeated: "+names(f6):""]);
+  return res;
+}
+function showChecks(){
+  const R=runChecks(), box=$("checks"); box.hidden=!R.length; if(!R.length) return;
+  const failed=R.filter(r=>!r[0]).length;
+  $("checklist").innerHTML=R.map(([ok,t,d])=>`<div class="savedrow"><div><span class="lab">${esc(t)}</span>${d?`<span class="hint">${esc(d)}</span>`:""}</div><span class="pill ${ok?"v":"h"}">${ok?"Pass":"Fail"}</span></div>`).join("");
+  $("checksum").textContent = failed ? failed+" of "+R.length+" checks failed. Select Rebuild to try again, or fix the ICP if a situation is missing." : "All "+R.length+" checks pass.";
+}
+function assemble(){
+  if(!state.plan) return "";
+  const P=state.plan.personas, parts=[planMd()];
+  const done=P.map((_,i)=>state.profiles[i]).filter(Boolean);
+  if(done.length) parts.push("## Persona Profiles\n\n"+done.join("\n\n"));
+  if(state.tail) parts.push(state.tail);
+  return parts.join("\n\n");
+}
+
+/* ---------- Markdown rendering ---------- */
+const PILL={"primary":"m","secondary":"s","tertiary":"p","validated":"v","observed":"p","inferred":"u","hypothesized":"h","unknown":"u","high":"m","medium":"s","low":"p","sometimes":"u","rare":"u","not relevant":"u","yes":"h","no":"u"};
+function inline(s){ return esc(s).replace(/&lt;br\s*\/?&gt;/g,"<br>").replace(/`([^`]+)`/g,"<code>$1</code>").replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>").replace(/(^|[^*\w])\*([^*\s][^*]*?)\*(?!\w)/g,"$1<em>$2</em>"); }
+function tdHtml(x){ const t=x.replace(/\*\*/g,"").trim(), k=t.toLowerCase(); return PILL[k]?`<span class="pill ${PILL[k]}">${esc(t)}</span>`:inline(x); }
+function renderMd(md,pre){
+  const L=md.split(/\r?\n/); let h="", i=0, para=[], hid=0;
+  const flush=()=>{ if(para.length){ h+="<p>"+inline(para.join(" "))+"</p>"; para=[]; } };
+  while(i<L.length){
+    const t=L[i].trim(); let m;
+    if(!t){ flush(); i++; continue; }
+    if((m=t.match(/^(#{1,5})\s+(.*)$/))){ flush(); const n=Math.min(m[1].length,4); h+=`<h${n} id="${pre}${hid++}">${inline(m[2].replace(/\*\*/g,""))}</h${n}>`; i++; continue; }
+    if(/^(-{3,}|\*{3,})$/.test(t)){ flush(); i++; continue; }
+    if(t.startsWith("|")){
+      flush(); const rows=[]; while(i<L.length&&L[i].trim().startsWith("|")){ rows.push(splitRow(L[i])); i++; }
+      const sep=rows.length>1&&rows[1].every(x=>/^:?-+:?$/.test(x)||x==="");
+      h+='<div class="tw"><table>'; if(sep) h+="<thead><tr>"+rows[0].map(x=>"<th>"+inline(x)+"</th>").join("")+"</tr></thead>";
+      h+="<tbody>"+rows.slice(sep?2:0).map(r=>"<tr>"+r.map(x=>"<td>"+tdHtml(x)+"</td>").join("")+"</tr>").join("")+"</tbody></table></div>"; continue;
+    }
+    if(/^([-*+]|\d+[.)])\s+/.test(t)){
+      flush(); const ord=/^\d/.test(t); h+=ord?"<ol>":"<ul>";
+      while(i<L.length&&/^\s*([-*+]|\d+[.)])\s+/.test(L[i])){ h+="<li>"+inline(L[i].replace(/^\s*([-*+]|\d+[.)])\s+/,""))+"</li>"; i++; }
+      h+=ord?"</ol>":"</ul>"; continue;
+    }
+    para.push(t); i++;
+  }
+  flush(); return h;
+}
+let liveText="", raf=0;
+function showOut(){
+  const md=assemble();
+  $("doc").innerHTML = md ? renderMd(md,"h") : '<p class="empty">No personas yet. Add an ICP on the Inputs tab, then select Build Personas.</p>';
+  $("rail").innerHTML=[...$("doc").querySelectorAll("h2,h3")].map(h=>`<a href="#${h.id}" data-h="${h.id}" style="${h.tagName==="H3"?"padding-left:22px":""}" class="${h.tagName==="H2"?"has":""}"><span>${esc(h.textContent)}</span></a>`).join("");
+  showLive(); showChecks();
+}
+function showLive(){ $("live").innerHTML = liveText ? renderMd(liveText,"l") : ""; }
+$("rail").addEventListener("click",e=>{ const a=e.target.closest("a"); if(!a) return; e.preventDefault(); const el=$(a.dataset.h); if(el) el.scrollIntoView(); });
+
+/* ---------- Generation ---------- */
+let ctrl=null, busy=false;
+function isComplete(){ return !!(state.plan && state.plan.personas.every((_,i)=>state.profiles[i]) && state.tail); }
+function setBusy(b){ busy=b; $("btn-stop").hidden=!b; $("btn-rebuild").disabled=b; $("btn-generate").disabled=b; $("btn-resume").hidden = b || !state.plan || isComplete(); $("btn-save").hidden = b || !isComplete(); $("btn-push").hidden = b || !isComplete(); }
+function checkRequired(){
+  document.querySelectorAll(".flag").forEach(r=>r.classList.remove("flag"));
+  const miss=CTX.map(x=>x[0]).filter(k=>!val(k)); const noIcp=!state.docs.length;
+  if(!miss.length && !noIcp) return true;
+  location.hash="inputs";
+  if(noIcp) $("icpbox").classList.add("flag");
+  miss.forEach(k=>{ const r=document.querySelector(`.row[data-k="${k}"]`); if(r) r.classList.add("flag"); });
+  const first = noIcp ? $("icpbox") : $("c-"+miss[0]); first.scrollIntoView({block:"center"}); if(!noIcp) first.focus({preventScroll:true});
+  toast(noIcp ? "Add an ICP first" : miss.length+" required answer"+(miss.length===1?" is":"s are")+" missing");
+  return false;
+}
+async function ask(sample,prompt,tier,onT){
+  let out="", input=prompt;
+  for(let k=0;k<3;k++){
+    const base=out;
+    const r=await sample(input,{modelTier:tier,signal:ctrl.signal,cache:false,onText:onT?({text})=>onT(base+text):undefined});
+    out=base+(r.text||""); if(!r.truncated) break;
+    input=[{role:"user",content:prompt},{role:"assistant",content:out},{role:"user",content:"Continue exactly where you stopped. Do not repeat anything and do not add commentary."}];
+  }
+  return out.trim();
+}
+const onLive=t=>{ liveText=t; if(!raf) raf=requestAnimationFrame(()=>{ raf=0; showLive(); }); };
+async function run(reset){
+  if(busy || !checkRequired()) return;
+  location.hash="personas"; $("fallback").hidden=true;
+  const st=$("out-status"), ids=icpSituations();
+  if(!ids.length){ st.textContent="Stopped: this ICP has no Buyer Situations section with IDs (S1, S2, …). Regenerate the ICP in the ICP Builder, save it, and select it again here."; return; }
+  if(reset){ state.plan=null; state.profiles={}; state.tail=""; liveText=""; showOut(); }
+  setBusy(true); st.textContent="Connecting to Claude…";
+  const sample=await sampleP;
+  if(!sample){ setBusy(false); st.textContent=""; $("fallback").hidden=false; return; }
+  ctrl=new AbortController();
+  try{
+    if(!state.plan){
+      st.textContent="Step 1 of 3 · Analysing the ICP and identifying personas…";
+      let plan; try{ plan=parseJson(await ask(sample,discoveryPrompt(),"complex")); }catch(e){ if(e&&e.code||ctrl.signal.aborted) throw e; throw {code:"plan"}; }
+      if(!plan||!Array.isArray(plan.personas)||!plan.personas.length) throw {code:"plan"};
+      lockPlan(plan,ids);
+      state.plan=plan; save(); showOut();
+    }
+    const P=state.plan.personas;
+    for(let i=0;i<P.length;i++){
+      if(state.profiles[i]) continue;
+      st.textContent=`Step 2 of 3 · Profile ${i+1} of ${P.length} · ${P[i].name}`;
+      const text=await ask(sample,profilePrompt(i),"default",onLive);
+      lockProfile(text,ids);
+      state.profiles[i]=text; liveText=""; save(); showOut();
+    }
+    if(!state.tail){
+      st.textContent="Step 3 of 3 · Evidence report and checks…";
+      state.tail=await ask(sample,tailPrompt(),"default",onLive); liveText=""; save(); showOut();
+    }
+    st.textContent=`Done · ${P.length} persona${P.length===1?"":"s"}. Review the Hypothesized and Inferred rows before using this.`;
+    autoSavePersonas();
+  }catch(e){
+    liveText=""; showOut(); const code=e&&e.code;
+    if(ctrl.signal.aborted) st.textContent="Stopped. Select Resume to continue where it stopped.";
+    else if(code==="not_granted"){ st.textContent=""; $("fallback").hidden=false; }
+    else if(code==="rate_limited") st.textContent="Claude is rate limited right now. Wait a minute, then select Resume.";
+    else if(code==="lock") st.textContent="Stopped: the personas refer to "+e.message+", which the ICP does not contain. Select Resume to retry that step.";
+    else if(code==="plan") st.textContent="The persona list from Claude could not be read. Select Resume to try again.";
+    else st.textContent="Generation failed"+(e&&e.message?": "+e.message:"")+". Select Resume to continue.";
+  }
+  setBusy(false);
+}
+$("btn-generate").onclick=()=>run(true);
+$("btn-rebuild").onclick=()=>run(true);
+$("btn-resume").onclick=()=>run(false);
+$("btn-stop").onclick=()=>{ if(ctrl) ctrl.abort(); };
+
+/* ---------- Save personas ---------- */
+let saveConfirm="", pDelArmed="";
+const slugId=s=>String(s).toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,80)||"personas";
+$("btn-save").onclick=()=>{
+  const icp=ICPStore.list().find(x=>x.id===state.savedId), co=(icp&&icp.company)||"";
+  $("save-name").value=state.savedPName||((co||(state.plan&&state.plan._title)||"")+" Personas").trim();
+  $("save-msg").textContent=""; saveConfirm=""; $("savedlg").showModal(); $("save-name").select();
+};
+$("save-cancel").onclick=()=>$("savedlg").close();
+$("save-name").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); $("save-ok").click(); } });
+async function savePersonas(name){
+  const icp=ICPStore.list().find(x=>x.id===state.savedId);
+  const obj={name,company:(icp&&icp.company)||"",icpId:state.savedId||"",icpName:(icp&&icp.name)||"",count:state.plan.personas.length,pack:JSON.stringify({plan:state.plan,profiles:state.profiles,tail:state.tail}),savedAt:new Date().toISOString()};
+  await PersonaStore.save(slugId(name),obj); state.savedPName=name; save();
+}
+function defaultPName(){ const icp=ICPStore.list().find(x=>x.id===state.savedId), co=(icp&&icp.company)||(state.plan&&state.plan._title)||""; return co?(co+" Personas").trim():""; }
+$("save-ok").onclick=async function(){
+  const name=$("save-name").value.trim(), msg=$("save-msg");
+  if(!name){ msg.textContent="Give the personas a name."; return; }
+  if(!isComplete()){ msg.textContent="The personas are not finished yet."; return; }
+  const id=slugId(name);
+  if(PersonaStore.exists(id)&&state.savedPName!==name&&saveConfirm!==id){ saveConfirm=id; msg.textContent=`Saved personas named "${name}" already exist. Select Save again to replace them.`; return; }
+  this.disabled=true; msg.textContent="Saving…";
+  try{ await savePersonas(name); $("savedlg").close(); toast("Saved "+name); $("out-status").textContent=`Saved as "${name}".`; }
+  catch(e){ msg.textContent = e&&e.code==="quota_exceeded" ? "Storage for this page is full. Delete a saved item, then try again." : e&&e.code==="invalid_argument" ? "This portfolio is too large to save in one piece." : "The personas could not be saved. You may not have permission to save on this page."; }
+  finally{ this.disabled=false; }
+};
+/* Personas are saved automatically when a build finishes, under the name last used or "<company> Personas". */
+async function autoSavePersonas(){
+  const name=state.savedPName||defaultPName(); if(!name||!isComplete()) return false;
+  try{ await savePersonas(name); const st=$("out-status"); st.textContent=(st.textContent+` Saved as "${name}".`).trim(); return true; }
+  catch(e){ const st=$("out-status"); st.textContent=(st.textContent+" The personas could not be saved automatically; select Save Personas.").trim(); return false; }
+}
+function renderSavedP(){
+  const L=PersonaStore.list(); $("psaved").hidden=!L.length;
+  $("psavedlist").innerHTML=L.map(x=>`<div class="savedrow"><div><span class="lab">${esc(x.name||x.id)}</span><span class="hint">${esc([x.count?x.count+" persona"+(x.count===1?"":"s"):"",x.icpName?"from "+x.icpName:x.company,x.savedAt?new Date(x.savedAt).toLocaleDateString():""].filter(Boolean).join(" · "))}</span></div><div class="savedbtns"><button class="btn" type="button" data-open="${esc(x.id)}">Open</button><button class="btn quiet" type="button" data-pdel="${esc(x.id)}">${pDelArmed===x.id?"Click again to delete":"Delete"}</button></div></div>`).join("");
+}
+let rescued=false;
+PersonaStore.on(()=>{ renderSavedP();
+  if(rescued||busy||PersonaStore.status()==="loading"||PersonaStore.status()==="slow"||!isComplete()||state.savedPName) return;
+  const name=defaultPName(); if(!name||PersonaStore.exists(slugId(name))) return;
+  rescued=true; autoSavePersonas();
+});
+renderSavedP();
+$("psavedlist").addEventListener("click",async e=>{
+  const o=e.target.closest("[data-open]"), d=e.target.closest("[data-pdel]");
+  if(o){
+    if(busy){ toast("Wait for the current build to finish, or select Stop"); return; }
+    const x=PersonaStore.list().find(i=>i.id===o.dataset.open), u=unpackPersonas(x); if(!u||!u.plan) return;
+    state.plan=u.plan; state.profiles=u.profiles||{}; state.tail=u.tail||""; state.savedPName=x.name||""; if(x.icpId) state.savedId=x.icpId;
+    liveText=""; save(); showOut(); setBusy(false); $("out-status").textContent=`Opened "${x.name||x.id}".`;
+  } else if(d){
+    const id=d.dataset.pdel;
+    if(pDelArmed!==id){ pDelArmed=id; renderSavedP(); setTimeout(()=>{ if(pDelArmed===id){ pDelArmed=""; renderSavedP(); } },4000); return; }
+    pDelArmed="";
+    try{ await PersonaStore.remove(id); toast("Saved personas deleted"); }catch(err){ renderSavedP(); toast("Could not delete. You may not have permission on this page."); }
+  }
+});
+
+/* ---------- Push to The Night Ventures ---------- */
+function situationsSection(){
+  const t=icpText(), a=t.search(/^#{1,4}[^\n]*Buyer Situations/mi); if(a<0) return "";
+  const rest=t.slice(a), b=rest.slice(4).search(/^#{1,2}\s/m); return (b<0?rest:rest.slice(0,b+4)).slice(0,6000);
+}
+function rowPrompt(i){
+  const p=state.plan.personas[i];
+  return `Condense one buyer persona into a short record for a content playbook. Use only what the profile and the buyer situations below say; add nothing.
+
+Return JSON only, no code fence, with exactly these string keys:
+"summary": one line, at most 30 words, describing who this persona is.
+"stage": the stage or kind of company or person they are, in a few words.
+"trigger": the moment that starts their search, from their buyer situations.
+"need": the job they want done.
+"pains": their pains and objections, as short phrases separated by semicolons.
+"decision_criteria": what they judge a solution on, as short phrases separated by semicolons.
+"alternatives": the alternatives they weigh, separated by semicolons.
+"their_words": 8 to 15 short queries or phrases in the buyer's own words, separated by semicolons, taken from the Language table's buyer column and the Questions table; put any marked Real first.
+"where_they_listen": the places and people they consult, separated by semicolons.
+"main_tiers": the intent stages most of their questions sit in, from Learn, Problem and Buy only, strongest first (for example "Problem, Buy").
+
+Persona: ${JSON.stringify({name:p.name,priority:p.priority,purchasing_roles:p.purchasing_roles,situations:p.situations,buys_or_uses:p.buys_or_uses})}
+
+Buyer situations from the ICP:
+${situationsSection()||"Not available."}
+
+Profile:
+${state.profiles[i]||""}`;
+}
+$("btn-push").onclick=()=>{
+  if(!isComplete()) return;
+  const icp=ICPStore.list().find(x=>x.id===state.savedId), n=state.plan.personas.length;
+  TNV.open({
+    guess:(icp&&icp.company)||"",
+    items:[`${n} persona${n===1?" is":"s are"} added next to the company's existing personas, with codes B1${n>1?" to B"+n:""}.`,"Existing personas and the prompts linked to them are not changed.","A repeat push updates the B personas in place.","The full persona portfolio is stored on the company."],
+    run: async (co,status)=>{
+      const sample=await sampleP; if(!sample) throw {code:"no_claude"};
+      const P=state.plan.personas, out=[], S=k=>v=>String(v==null?"":v).trim();
+      for(let i=0;i<P.length;i++){
+        status(`Preparing persona ${i+1} of ${P.length} · ${P[i].name}`);
+        const r=await sample(rowPrompt(i),{modelTier:"default",cache:false}); let j={}; try{ j=parseJson(r.text); }catch(e){ throw {code:"parse_row",message:P[i].name}; }
+        const g=k=>String(j[k]==null?"":j[k]).trim();
+        out.push({name:P[i].name,summary:g("summary"),stage:g("stage"),trigger:g("trigger"),need:g("need"),pains:g("pains"),decision_criteria:g("decision_criteria"),alternatives:g("alternatives"),their_words:g("their_words"),where_they_listen:g("where_they_listen"),main_tiers:g("main_tiers")});
+      }
+      status("Writing to The Night Ventures…");
+      const res=await TNV.pushPersonas(co.id,{personas:out,personas_md:assemble()});
+      return `Pushed to ${co.name}: ${res.personas} persona${res.personas===1?"":"s"} as B1${res.personas>1?" to B"+res.personas:""}, next to ${res.existing_untouched} existing persona${res.existing_untouched===1?"":"s"} that were not changed, plus the full portfolio.`+(res.kept_in_use?` ${res.kept_in_use} older builder persona${res.kept_in_use===1?" was":"s were"} kept because prompts use ${res.kept_in_use===1?"it":"them"}.`:"");
+    }
+  });
+};
+
+/* ---------- Views ---------- */
+function route(){
+  const out=location.hash==="#personas";
+  $("view-inputs").hidden=out; $("view-personas").hidden=!out;
+  $("tab-inputs").removeAttribute("aria-current"); $("tab-personas").removeAttribute("aria-current");
+  (out?$("tab-personas"):$("tab-inputs")).setAttribute("aria-current","page");
+  if(out){ showOut(); $("btn-resume").hidden = busy || !state.plan || isComplete(); $("btn-save").hidden = busy || !isComplete(); $("btn-push").hidden = busy || !isComplete(); }
+  else document.querySelectorAll("#view-inputs textarea").forEach(autosize);
+}
+window.addEventListener("hashchange",route);
+load(); renderInputs(); route();
+</script>
+</body>
+</html>

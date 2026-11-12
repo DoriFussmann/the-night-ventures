@@ -1,0 +1,65 @@
+# ICP, Persona and Prompt Builder: source
+
+The source of the builder page that feeds this app: ICP Builder, Persona Builder and Prompt Builder in one published Claude artifact. The app does not import anything from this folder and the app's build does not touch it. It is kept here because the page pushes into this app's database and reads this app's export format, so a change on either side should be visible next to the other.
+
+- Published page: https://claude.ai/artifact/2mefk9XaCJfayJKbWTGVUM (artifact slug `0e551409-6db3-45b4-b912-8848cef27bba`)
+- Explainer deck: https://claude.ai/artifact/9iqs1c27vA3Bz7838zK5y4 (artifact slug `46a0b75e-2771-4f98-ac68-64442ab62603`)
+
+## What is here
+
+| Path | What it is |
+|---|---|
+| `src/icp-builder.html` | ICP Builder, and the page's shared head, styles and layout |
+| `src/persona-builder.src.html` | Persona Builder (its element ids get the prefix `p-` at build time) |
+| `src/prompts.frag.html`, `src/prompts.js` | Prompt Builder markup and script (element ids prefixed `q-`) |
+| `src/tnv_rows.js` | Reader for the Supabase connector's replies |
+| `build.py` | Assembles the page from `src/`, including the shared stores and the push to The Night Ventures |
+| `built/builder.html` | The page as published. Commit it with every change so the repo shows what is live |
+| `tests/unit.test.mjs` | Node tests of import, parsing, brand merge, persona mix and trim |
+| `tests/browser_test.py` | Browser test of the built page with stand-in Claude and Supabase replies |
+| `tests/fixtures/` | Made-up sample files in the shape of the real exports and ICP |
+| `deck/gen.py` | Generates the explainer deck's slide files |
+
+## Build and test
+
+Run from this folder.
+
+```
+python3 build.py                      # writes built/builder.html and .check/j*.js
+for f in .check/j*.js; do node --check "$f"; done
+node --test tests/unit.test.mjs
+pip install playwright && playwright install chromium
+python3 tests/browser_test.py
+```
+
+The tests never call Claude or Supabase. The browser test uses fixed stand-in replies, so it shows the page's wiring works. It does not show how well Claude writes prompts, judges ambiguity or follows the style reference; check those in the published page.
+
+## Publish
+
+Publishing is done from a Claude session with the artifact tools:
+
+1. Build and run both test suites.
+2. Read the artifact's current version, then publish `built/builder.html` as `index.html` to the slug above, as a new version of the same artifact. The link and everything saved in the page stay.
+3. Check that the artifact still declares these capabilities afterwards. Without them the page silently loses Claude calls, saving or pushing:
+
+| Capability | Used for |
+|---|---|
+| `sample` | Every Claude call from the page |
+| `downloads` | Download .md, CSV, JSON |
+| `db` and `user` | Saved ICPs, personas and prompt sets |
+| `mcp`: server `Supabase`, tool `execute_sql` | Company list, reading tracked brands, the three pushes |
+
+## What it depends on in this app
+
+- **Database functions** `tnv_push_icp`, `tnv_push_personas`, `tnv_push_prompts` (migrations 080 and 081) and the tables `aeo_playbook`, `aeo_personas`, `pt_brands`, `pt_prompts`, `pt_runs`.
+- **Export format** of the AEO Playbook's Company and Brand Facts tabs (`src/pages/tools/aeoPlaybook/sectionMarkdown.js`). The ICP Builder's import maps those headings and labels to its fields. If a heading or label changes there, change the aliases in `src/icp-builder.html` (`SECTIONS`) and the test fixtures here.
+- **Tracked brands are maintained in the app.** `tnv_push_prompts` deletes brands that are not in the list it is sent, so the page reads the company's brands first and sends them back unchanged (`mergeBrands` in `src/prompts.js`). Do not go back to sending only the builder's list.
+
+## Things that break easily
+
+1. The three tools parse each other's output. The Prompt Builder reads the Strategic ICP's Buyer Situations, Alternatives and Question Variables tables by their headings and columns; the Persona Builder reads the Buyer Situations. Change an output format and its parser together.
+2. Buyer situation IDs (S1, S2 …) are the join key across all three tools.
+3. Element ids must keep their prefixes (`p-`, `q-`). `build.py` reports duplicate ids; the line must read `dup ids set()`.
+4. A section title used inside a request to Claude (for example "WRITE EXACTLY THESE") must not be repeated inside another block of the same request.
+
+The full description of how each tool works is in the project document `claude/builder-technical-reference.md`.
