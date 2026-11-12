@@ -94,6 +94,8 @@ function tally(prompts, outcomes, engine) {
   const byStage = {};
   const byType = {};
   for (const p of prompts) {
+    // Approved prompts only: a rejected prompt keeps its runs but leaves the totals.
+    if (p.status !== "Approved") continue;
     const o = (outcomes[p.id] || {})[engine];
     if (!o || o.label === "Failed") continue;
     for (const g of [all, (byStage[p.stage] = byStage[p.stage] || blank()), (byType[p.type] = byType[p.type] || blank())]) {

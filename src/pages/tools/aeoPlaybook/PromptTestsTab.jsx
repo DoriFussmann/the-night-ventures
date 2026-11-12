@@ -304,7 +304,10 @@ export default function PromptTestsTab({ companyId }) {
       {engineSummaries.length > 0 && (
         <section className="space-y-2">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-sm font-medium text-foreground">Latest results by engine</h2>
+            <h2 className="text-sm font-medium text-foreground">
+              Latest results by engine
+              <span className="ml-2 text-xs font-normal text-muted-foreground">Approved prompts only</span>
+            </h2>
             <Button type="button" size="sm" onClick={() => setSummaryOpen(true)}>
               <BarChart3 className="mr-1.5 h-3.5 w-3.5" />Summary
             </Button>
