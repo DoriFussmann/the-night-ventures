@@ -51,12 +51,6 @@
           <button class="btn quiet" id="q-reset" type="button">Reset prompts</button>
         </div>
         <p class="status" id="q-checkmsg" aria-live="polite"></p>
-        <div class="panel" style="margin-top:14px">
-          <label for="q-style" style="color:var(--navy)">Prompts in your own style (optional)</label>
-          <p class="status" style="margin:4px 0 8px">Paste a few prompts written the way you would type them into an AI assistant, one per line, up to 10. Claude copies their length, tone and how much context they give. It does not take topics from them: the persona, situation and stage mix still decides what each prompt is about. Leave empty to generate as before.</p>
-          <textarea id="q-style" rows="5" placeholder="One prompt per line"></textarea>
-          <p class="status" id="q-stylenote" style="margin:6px 0 0" aria-live="polite"></p>
-        </div>
         <details class="panel" style="margin-top:14px">
           <summary style="cursor:pointer;color:var(--navy)">Generation settings</summary>
           <div id="q-settings" class="setgrid"></div>
@@ -72,6 +66,13 @@
           <h3 style="margin:0 0 4px">Persona Mix</h3>
           <p class="status" style="margin:0 0 10px">Set the total, then how much of it each persona gets. Weights start from the prompt share in the personas and can be any numbers; only their proportion matters. Changing a weight never deletes a prompt.</p>
           <div id="q-mix"></div>
+        </div>
+        <div class="panel" style="margin-bottom:14px">
+          <h3 style="margin:0 0 4px">Generate All</h3>
+          <p class="status" style="margin:0 0 10px">One run for every persona: checks the prompts already here, approves drafts that passed and rejects the rest, rejects the extras of any persona over its target, then writes each persona up to its target. It ends with no drafts. A prompt that passes the checks is saved as Approved. One that could be a duplicate or be misread is rewritten up to three times, then dropped. Saving and pushing stay with you.</p>
+          <div class="actions" style="margin-top:0"><button class="btn primary" id="q-genall" type="button">Generate all</button><button class="btn" id="q-stop" type="button" hidden>Stop</button></div>
+          <p class="status" id="q-runmsg" role="status" aria-live="polite" style="margin:10px 0 0"></p>
+          <div id="q-runrows" style="margin-top:10px"></div>
         </div>
         <div class="pnav" id="q-pnav"></div>
         <div class="pcols" id="q-cols"></div>

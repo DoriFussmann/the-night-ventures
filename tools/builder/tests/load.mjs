@@ -26,7 +26,8 @@ export function prompts(icps = []) {
     L.slice(at(L, "const splitRow"), at(L, "function parsePersona")).join("\n") + "\n" +
     L[at(L, "const hasTerm")] + "\n" + L[at(L, "const listOf")] + "\n" +
     L.slice(at(L, "const dom="), at(L, '$("push").onclick')).join("\n") + "\n" +
-    L.slice(at(L, "/* ---------- Persona mix"), at(L, "const rot=")).join("\n") +
-    "\nreturn {parseIcp,splitNames,splitValues,cleanNames,cleanVariables,mergeBrands,ensureMix,applyMix,trimPlan,cellTargets,haveMap,live,set:x=>{S=x},get:()=>S};";
+    L.slice(at(L, "/* ---------- Persona mix"), at(L, "const rot=")).join("\n") + "\n" +
+    L[at(L, "const words=")] + "\n" + L.slice(at(L, "const STYLE_MAX"), at(L, "function existingAll")).join("\n") +
+    "\nreturn {parseIcp,splitNames,splitValues,cleanNames,cleanVariables,mergeBrands,ensureMix,applyMix,trimPlan,ensureStyles,styleList,styleBlock,styleNote,cellTargets,haveMap,live,set:x=>{S=x},get:()=>S};";
   return new Function("icps", src)(icps);
 }

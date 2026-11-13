@@ -20,7 +20,7 @@ window.claude={use:async n=> n==='sample' ? (async (inp,o)=>{ const p=typeof inp
   else if(p.includes('Write the buyer persona profile')){ window.__slim=(window.__slim||0)+(p.includes('slim structure')?1:0); t=PROFILE(p.includes('"name":"Board Adviser"')?'Board Adviser':'Financial Controller'); }
   else if(p.includes('WRITE EXACTLY THESE')){ window.__gen=(window.__gen||0)+1; const part=p.split('WRITE EXACTLY THESE')[1].split('RULES')[0]; const out=[]; for(const l of part.split('\n')){ const m=l.match(/^(\d+)\. situation (S\d+) \| stage (\w+) \| type (\w+) \| include: (.*?) \| name: (.*?)(?: \||$)/); if(!m) continue; const inc=m[5]==='none'?'':' for '+m[5].split(' = ').pop().split(';')[0]; const nm=m[6]==='none'?'':' compared with '+m[6].replace(' and ',' or ');
       out.push({slot:+m[1],prompt:(m[4]==='Recommendation'?'Who can help me sort out a growing invoice backlog':'How should I think about my invoice backlog')+' in '+m[2]+' '+m[3]+' number '+m[1]+' round '+window.__gen+inc+nm+'?',situation:m[2],stage:m[3],type:m[4],diagnostic:false}); } window.__lastGen=p; t=JSON.stringify(out); }
-  else if(p.includes('EXISTING prompts and NEW candidate')){ window.__judge=p; const n=(p.split('\nNEW\n')[1].match(/^N\d+\./gm)||[]).length; const v=[]; for(let i=1;i<=n;i++) v.push({n:i,dup:(window.__gen===1&&i===3)?'N1':null,amb:window.__gen===1&&(i===5||i===6),why:'could mean charity fundraising'}); t=JSON.stringify(v); }
+  else if(p.includes('EXISTING prompts and NEW candidate')){ window.__judge=p; const n=(p.split('\nNEW\n')[1].match(/^N\d+\./gm)||[]).length; const v=[]; for(let i=1;i<=n;i++) v.push({n:i,dup:(window.__gen===1&&i===3)?'N1':null,amb:(window.__gen===1&&(i===5||i===6))||(window.__alwaysAmb&&i===1),why:'could mean charity fundraising'}); t=JSON.stringify(v); }
   else if(p.includes('QUESTIONS\n1.')){ window.__chk=p; const n=(p.split('QUESTIONS\n')[1].match(/^\d+\./gm)||[]).length; const v=[]; for(let i=1;i<=n;i++) v.push({n:i,amb:i===2||i===7,why:'funds could mean fund managers'}); t=JSON.stringify(v); }
   else if(p.includes('From the Strategic ICP below')) t='{"icp":"Mid-sized firms with invoice overload.","shared_traits":["Small finance team","No AP tooling"]}';
   else if(p.includes('Condense one buyer persona')) t='{"summary":"Runs finance","stage":"Mid-sized","trigger":"Close slipped","need":"Fewer manual invoices","pains":"late fees; rework","decision_criteria":"ERP fit","alternatives":"hire a clerk","their_words":"invoice backlog; month-end close late","where_they_listen":"peers; LinkedIn","main_tiers":"Problem, Buy"}';
@@ -38,10 +38,11 @@ window.claude={use:async n=> n==='sample' ? (async (inp,o)=>{ const p=typeof inp
 
 
 STATE="JSON.parse(localStorage.getItem('prompt-builder-v1'))"
-async def state(pg): return await pg.evaluate(f"(s=>({{mix:s.mix,targets:s.cols.map(c=>c.target),live:s.cols.map(c=>c.prompts.filter(p=>p.status!=='Rejected').length),stored:s.cols.map(c=>c.prompts.length),draft:s.cols.map(c=>c.prompts.filter(p=>p.status==='Draft').length),amb:s.cols.map(c=>c.prompts.filter(p=>p.amb).length),style:s.style||''}}))({STATE})")
+async def state(pg): return await pg.evaluate(f"(s=>({{mix:s.mix,run:s.run,styles:s.styles,targets:s.cols.map(c=>c.target),live:s.cols.map(c=>c.prompts.filter(p=>p.status!=='Rejected').length),stored:s.cols.map(c=>c.prompts.length),approved:s.cols.map(c=>c.prompts.filter(p=>p.status==='Approved').length),draft:s.cols.map(c=>c.prompts.filter(p=>p.status==='Draft').length),amb:s.cols.map(c=>c.prompts.filter(p=>p.amb&&p.status!=='Rejected').length),dropped:s.cols.map(c=>c.dropped||0),exhausted:s.cols.map(c=>Object.keys(c.exhausted||{{}}).length)}}))({STATE})")
 async def to_prompts(pg):
     """ICP → personas → Prompt Builder, with the example company."""
     await pg.goto(PAGE); await pg.evaluate("localStorage.clear()"); await pg.reload()
+    await pg.evaluate("window.__gen=0; window.__alwaysAmb=false")
     await pg.click('#btn-example'); await pg.click('#btn-generate'); await pg.wait_for_timeout(600)
     await pg.click('#tool-tab-persona'); await pg.click('[data-use]'); await pg.wait_for_timeout(200); await pg.click('#p-btn-generate'); await pg.wait_for_timeout(1200)
     await pg.click('#tool-tab-prompts'); await pg.wait_for_timeout(200); await pg.click('[data-src]'); await pg.wait_for_timeout(200)
@@ -49,6 +50,9 @@ async def set_mix(pg,total,weights):
     await pg.fill('#q-mix-total',str(total)); await pg.press('#q-mix-total','Tab'); await pg.wait_for_timeout(100)
     for i,w in enumerate(weights):
         await pg.fill(f'[data-mixw="{i}"]',str(w)); await pg.press(f'[data-mixw="{i}"]','Tab'); await pg.wait_for_timeout(100)
+async def run_done(pg,limit=40000):
+    """Wait until a Generate all run has ended (the Stop button is hidden again)."""
+    await pg.wait_for_function("document.getElementById('q-stop').hidden && document.getElementById('q-runmsg').textContent.length>0",timeout=limit); await pg.wait_for_timeout(150)
 def check(name,ok,detail=''):
     print(('ok   ' if ok else 'FAIL ')+name+(' · '+str(detail) if detail and not ok else '')); RESULTS.append(ok)
 RESULTS=[]
@@ -58,23 +62,23 @@ async def main():
         errs=[]; pg.on('pageerror',lambda e:errs.append(str(e)))
         await pg.add_init_script(STUB)
 
-        # Persona mix
+        # ---- Persona mix
         await to_prompts(pg); s=await state(pg)
         check('mix starts at 200 with weights from the persona shares', s['mix']['total']==200 and sum(s['targets'])==200 and s['mix']['w']==[67,33], s)
         await pg.fill('[data-mixw="0"]','1'); await pg.press('[data-mixw="0"]','Tab'); await pg.wait_for_timeout(100)
         check('tabbing out of a weight box lands in the next one', await pg.evaluate("document.activeElement.dataset.mixw")=='1')
         await set_mix(pg,40,[1,1]); s=await state(pg); check('total 40, weights 1:1 → targets 20 and 20', s['targets']==[20,20], s)
 
-        # Generation, with one duplicate and two "may be misread" verdicts from the stand-in judge
+        # ---- The per-persona button: one batch, saved as Approved
         await pg.click('[data-gen="0"]'); await pg.wait_for_timeout(3500); s=await state(pg)
-        check('a batch fills the persona to its target', s['live'][0]==20, s)
+        check('the per-persona button fills the persona to its target', s['live'][0]==20, s)
+        check('prompts that pass the checks are saved as Approved, not Draft', s['approved'][0]==20 and s['draft'][0]==0, s)
         reasons=await pg.evaluate(f"[...new Set({STATE}.cols[0].log.map(l=>l.reason.split(' (')[0].split(';')[0]))]")
-        check('ambiguous and duplicate candidates were sent back for rewriting', any('misread' in r for r in reasons) and any('duplicate' in r for r in reasons), reasons)
+        check('ambiguous and duplicate candidates were rewritten, never approved', any('misread' in r for r in reasons) and any('duplicate' in r for r in reasons), reasons)
         g=await pg.evaluate("window.__lastGen"); check('the request carries rule 10 and the market line', '10. Each prompt is read on its own' in g and 'The market: ' in g)
         check('no style block when the box is empty', 'STYLE REFERENCE' not in g)
 
-        # Approve, check existing, flags
-        await pg.click('#q-approveall'); s=await state(pg); check('approve all drafts', s['draft'][0]==0, s)
+        # ---- Check existing prompts, flags
         await pg.click('#q-checkamb'); await pg.wait_for_timeout(900); s=await state(pg)
         check('check existing prompts flags two back to Draft', s['amb'][0]==2 and s['draft'][0]==2, s)
         await pg.click('#q-approveall'); s=await state(pg); check('approve all drafts leaves flagged prompts alone', s['draft'][0]==2, s)
@@ -82,30 +86,80 @@ async def main():
         await pg.fill(f'[data-text="{fid}"]','How should my distribution company handle a growing supplier invoice backlog before year end?'); await pg.press(f'[data-text="{fid}"]','Tab'); await pg.wait_for_timeout(200)
         s=await state(pg); check('editing a flagged prompt clears its flag', s['amb'][0]==1, s)
 
-        # Trim to target
+        # ---- Trim to target by hand: preview first
         await set_mix(pg,40,[1,4]); s=await state(pg); check('weights 1:4 → targets 8 and 32', s['targets']==[8,32], s)
         await pg.click('[data-trim="0"]'); await pg.wait_for_timeout(150); box=await pg.inner_text('.ptrim'); s=await state(pg)
-        check('trim shows a preview and rejects nothing yet', 'Trim will reject 12 of 20' in box and s['live'][0]==20, box[:80])
+        check('manual trim shows a preview and rejects nothing yet', 'Trim will reject 12 of 20' in box and s['live'][0]==20, box[:80])
         await pg.click('[data-trimgo="0"]'); await pg.wait_for_timeout(200); s=await state(pg)
-        check('trim brings the persona to its target and keeps rejected prompts stored', s['live'][0]==8 and s['stored'][0]==20, s)
+        check('manual trim brings the persona to its target and keeps rejected prompts stored', s['live'][0]==8 and s['stored'][0]==20, s)
 
-        # Push: brands already in The Night Ventures are kept; statuses travel
+        # ---- Push: brands already in The Night Ventures are kept; statuses travel
         await pg.evaluate("window.__live=[{name:'Ledgerline Inc',is_own:true,domains:['ledgerline.example'],name_patterns:['Ledgerline','Ledgerline Inc'],exclude_patterns:['Ledger Nano']},{name:'HandAdded',is_own:false,domains:['handadded.example'],name_patterns:['HandAdded'],exclude_patterns:[]}]")
         await pg.click('#q-push'); await pg.wait_for_timeout(300); await pg.select_option('#tnv-company',label='Ledgerline'); await pg.click('#tnv-go'); await pg.wait_for_timeout(800)
         q=await pg.evaluate("window.__pp"); m=re.search(r'\$(tnv\w+)\$(.*)\$\1\$',q,re.S); pl=json.loads(m.group(2))
         check('push sends the existing brands back unchanged', pl['brands']==[{'name':'Ledgerline Inc','own':True,'domains':['ledgerline.example'],'name_patterns':['Ledgerline','Ledgerline Inc'],'exclude_patterns':['Ledger Nano']},{'name':'HandAdded','own':False,'domains':['handadded.example'],'name_patterns':['HandAdded'],'exclude_patterns':[]}], pl['brands'])
         st=Counter(x['status'] for x in pl['prompts']); check('push sends approved and rejected prompts with their status, no drafts', st.get('Rejected',0)==12 and 'Draft' not in st and st.get('Approved',0)>0, dict(st))
 
-        # Style box
+        # ---- Generate all on an empty set
+        await to_prompts(pg); await set_mix(pg,40,[1,1])
+        check('Generate all is offered and Stop is hidden before a run', await pg.inner_text('#q-genall')=='Generate all' and await pg.evaluate("document.getElementById('q-stop').hidden"))
+        await pg.click('#q-genall'); await pg.wait_for_timeout(250)
+        check('during a run: Stop is shown and the per-persona buttons are locked', not await pg.evaluate("document.getElementById('q-stop').hidden") and await pg.evaluate("[...document.querySelectorAll('[data-gen]')].every(b=>b.disabled)"))
+        await run_done(pg); s=await state(pg)
+        check('one click writes every persona to its target, all Approved', s['approved']==[20,20] and s['draft']==[0,0] and s['run']['state']=='finished', s)
+        rows=await pg.inner_text('#q-runrows'); msg=await pg.inner_text('#q-runmsg')
+        check('the end table has one line per persona with approved, target, exhausted cells and dropped', all(h in rows for h in ['Approved','Target','Exhausted cells','Dropped']) and rows.count('target met')==2, rows.replace('\n',' | ')[:200])
+        check('the run ends with Finished and leaves saving and pushing to the user', msg.startswith('Finished.') and 'Save Prompts and Push' in msg, msg)
+        n=await pg.evaluate("window.__gen"); await pg.click('#q-genall'); await run_done(pg)
+        check('running it again when every target is met asks Claude for nothing', await pg.evaluate("window.__gen")==n)
+
+        # ---- Generate all on a set that already has prompts: check, approve passing drafts, trim, then write
+        await pg.evaluate(f"(()=>{{const s={STATE}; s.cols[0].prompts.forEach((p,i)=>{{ delete p.ck; if(i<5) p.status='Draft'; }}); s.cols[1].prompts=[]; s.cols[1].seq=0; s.run=null; s.mix.w=[1,4]; s.cols[0].target=8; s.cols[1].target=32; localStorage.setItem('prompt-builder-v1',JSON.stringify(s));}})()")
+        await pg.reload(); await pg.evaluate("location.hash='prompts'"); await pg.wait_for_timeout(300); s=await state(pg)
+        check('set up: persona 1 over target (20 against 8) with 5 drafts, persona 2 empty', s['targets']==[8,32] and s['live']==[20,0] and s['draft'][0]==5, s)
+        await pg.click('#q-genall'); await run_done(pg); s=await state(pg); msg=await pg.inner_text('#q-runmsg')
+        check('existing prompts were checked: two flagged', '2 existing prompts flagged' in msg, msg)
+        check('drafts that passed were approved (4 of 5) and every other draft rejected (the 2 flagged)', '4 drafts approved' in msg and '2 drafts rejected' in msg, msg)
+        check('the persona over target was then trimmed without a preview', '10 rejected to bring personas to target' in msg and s['live'][0]==8 and s['stored'][0]==20, s)
+        check('then the other persona was written up to its target, and the run ends with no drafts', s['approved']==[8,32] and s['draft']==[0,0] and s['amb']==[0,0], s)
+        reasons=await pg.evaluate(f"{STATE}.cols[0].prompts.filter(p=>p.rej).map(p=>p.rej)")
+        check('a rejected flagged prompt keeps the reason, shown on its row', len(reasons)==2 and all(r.startswith('could be misread') for r in reasons), reasons)
+
+        # ---- Stop, then resume
+        await to_prompts(pg); await set_mix(pg,100,[1,1])
+        await pg.click('#q-genall'); await pg.wait_for_timeout(150); await pg.evaluate("document.getElementById('q-stop').click()")
+        check('Stop says it waits for the request in flight', 'Stopping' in await pg.inner_text('#q-stop'))
+        await run_done(pg); s=await state(pg)
+        check('a stopped run keeps what it has, marks nothing exhausted, and offers Resume', s['run']['state']=='stopped' and s['exhausted']==[0,0] and sum(s['live'])<100 and await pg.inner_text('#q-genall')=='Resume Generate all', s)
+        await pg.reload(); await pg.evaluate("location.hash='prompts'"); await pg.wait_for_timeout(300)
+        check('Resume is still offered after a reload', await pg.inner_text('#q-genall')=='Resume Generate all')
+        await pg.click('#q-genall'); await run_done(pg); s=await state(pg)
+        check('Resume finishes the run: both personas at target', s['approved']==[50,50] and s['run']['state']=='finished', s)
+
+        # ---- A slot that keeps failing is dropped after three rounds
+        await to_prompts(pg); await set_mix(pg,40,[1,1]); await pg.evaluate("window.__alwaysAmb=true")
+        await pg.click('#q-genall'); await run_done(pg); s=await state(pg); rows=await pg.inner_text('#q-runrows')
+        check('a prompt that fails three rounds is dropped, never approved, and its cell is marked exhausted', s['approved']==[19,19] and s['dropped']==[1,1] and s['exhausted']==[1,1] and s['draft']==[0,0], s)
+        check('the end table says so', rows.count('no distinct prompts left')==2, rows.replace('\n',' | ')[:240])
+        await pg.evaluate("window.__alwaysAmb=false")
+
+        # ---- Style examples per persona
         await to_prompts(pg); await set_mix(pg,40,[1,1])
         await pg.click('[data-gen="0"]'); await pg.wait_for_timeout(3500); empty=await pg.evaluate("window.__lastGen")
         await to_prompts(pg); await set_mix(pg,40,[1,1])
-        await pg.fill('#q-style','need a tool for supplier invoices, 3 entities, 2 people in finance. what do people use?\n- how do i stop duplicate payments'); await pg.wait_for_timeout(100)
-        note=await pg.inner_text('#q-stylenote'); check('the note under the style box counts the examples', note.startswith('2 examples in use'), note)
+        check('there is one style box per persona and no global one', await pg.evaluate("document.querySelectorAll('[data-style]').length")==2 and await pg.evaluate("!document.getElementById('q-style')"))
+        await pg.fill('[data-style="0"]','need a tool for supplier invoices, 3 entities, 2 people in finance. what do people use?\n- how do i stop duplicate payments\nwhich payables tools work with our erp'); await pg.wait_for_timeout(100)
+        note=await pg.inner_text('[data-stylenote="0"]'); check('the note under a style box counts its examples', note.startswith('3 examples in use'), note)
         await pg.click('[data-gen="0"]'); await pg.wait_for_timeout(3500); styled=await pg.evaluate("window.__lastGen")
         i=styled.find('STYLE REFERENCE'); j=styled.find('WRITE EXACTLY THESE')
         check('with examples, one block is added before the slot list and nothing else changes', 0<i<j and styled[:i]+styled[j:]==empty)
         check('examples are not copied into the prompt list', not await pg.evaluate(f"{STATE}.cols[0].prompts.some(p=>p.text.includes('duplicate payments'))"))
+        await pg.click('[data-gen="1"]'); await pg.wait_for_timeout(3500)
+        check("another persona's request does not get these examples", 'STYLE REFERENCE' not in await pg.evaluate("window.__lastGen"))
+        await pg.evaluate(f"(()=>{{const s={STATE}; delete s.styles; s.style='old global line one\\nold global line two'; localStorage.setItem('prompt-builder-v1',JSON.stringify(s));}})()")
+        await pg.reload(); await pg.evaluate("location.hash='prompts'"); await pg.wait_for_timeout(300)
+        vals=await pg.evaluate("[...document.querySelectorAll('[data-style]')].map(t=>t.value)")
+        check('an old global style box is carried over to every persona', vals==['old global line one\nold global line two']*2, vals)
 
         check('no page errors', not errs, errs)
         await b.close()

@@ -126,3 +126,20 @@ test("persona mix and trim to target", () => {
   for (const k of Object.keys(target)) assert.ok((have[k] || 0) >= target[k], "no cell drops below its own target: " + k);
   assert.equal(P.trimPlan(1).length, 0); assert.equal(P.trimPlan(0).length, 0);
 });
+
+test("style examples: one box per persona, an old global box is carried to every persona", () => {
+  const P = prompts();
+  const S = { settings: { minWords: 8, maxWords: 40 }, src: { personas: [{}, {}, {}] }, cols: [{}, {}, {}], style: "need a payables tool for 3 entities, what do people use\n- how do i stop duplicate payments" };
+  P.set(S); P.ensureStyles();
+  assert.equal(S.style, ""); assert.equal(S.styles.length, 3);
+  for (const ci of [0, 1, 2]) assert.deepEqual(P.styleList(ci), ["need a payables tool for 3 entities, what do people use", "how do i stop duplicate payments"]);
+  S.styles[1] = ""; S.styles[2] = "one\ntwo\nthree\nfour\nfive\nsix\nseven";
+  assert.equal(P.styleBlock(1), "", "an empty box adds nothing to the request");
+  assert.match(P.styleBlock(0), /^STYLE REFERENCE\n[\s\S]*- how do i stop duplicate payments\n\n$/);
+  assert.ok(!P.styleBlock(0).includes("WRITE EXACTLY THESE"), "the block must not repeat a section title of the request");
+  assert.equal(P.styleList(2).length, 5, "at most five examples are used");
+  assert.match(P.styleNote(2), /Only the first 5 of 7 lines are used/);
+  assert.match(P.styleNote(0), /^2 examples in use.*Three to five give a steadier result/);
+  P.ensureStyles(); assert.deepEqual(S.styles, ["need a payables tool for 3 entities, what do people use\n- how do i stop duplicate payments", "", "one\ntwo\nthree\nfour\nfive\nsix\nseven"], "running it again changes nothing");
+  S.cols.push({}); S.src.personas.push({}); P.ensureStyles(); assert.equal(S.styles.length, 4, "a persona added later gets an empty box"); assert.equal(S.styles[3], "");
+});
