@@ -7,6 +7,7 @@ Writes built/builder.html (the page to publish) and .check/j*.js (each script bl
 import re, pathlib
 ROOT=pathlib.Path(__file__).resolve().parent
 SRC=ROOT/'src'; OUT=ROOT/'built'/'builder.html'; CHECK=ROOT/'.check'
+APP=ROOT.parent.parent/'src'/'pages'/'tools'/'aeoPlaybook'   # the TNV app's AEO Playbook code
 CHECK.mkdir(exist_ok=True); OUT.parent.mkdir(exist_ok=True)
 def rep(s,a,b,n=1):
     assert s.count(a)==n,(a[:60],s.count(a)); return s.replace(a,b)
@@ -122,7 +123,7 @@ idlg='''<dialog id="savedlg">
 <dialog id="tnvdlg">
   <p class="eyebrow">Output</p>
   <h2 style="font-size:26px">Push to The Night Ventures</h2>
-  <label for="tnv-company" class="status" style="display:block;margin-top:14px">Company</label>
+  <label for="tnv-company" class="status" style="display:block;margin-top:14px">Company (chosen at the top of the page)</label>
   <select id="tnv-company" style="margin-top:4px"></select>
   <ul id="tnv-items" style="margin:14px 0 0;padding-left:20px;font-size:14px"></ul>
   <p class="status" id="tnv-msg" role="status" style="min-height:1.4em;margin:12px 0 0"></p>
@@ -235,6 +236,10 @@ input[type="text"]:focus{border-color:var(--teal);outline:none;box-shadow:0 0 0 
 .mixgrid input{width:70px;margin:0}
 .mixgrid td,.mixgrid th{text-align:left}
 .rungrid td,.rungrid th{text-align:left}
+.cobar{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin:0 0 18px;padding:12px 16px;border-radius:12px;background:var(--card2,#E6EEF0)}
+.cobar label{font-size:13px;letter-spacing:2px;text-transform:uppercase;color:var(--teal)}
+.cobar select{margin:0;min-width:220px;width:auto}
+.cobar .status{margin:0}
 .rungrid b{font-weight:400;color:var(--navy)}
 .pstyle{margin-top:10px;display:flex;flex-direction:column;gap:4px}
 .pstyle textarea{margin:0;min-height:76px}
@@ -375,13 +380,12 @@ window.TNV=(()=>{
   function open(opts){
     current=opts; const dlg=el("tnvdlg"), sel=el("tnv-company"), msg=el("tnv-msg"), go=el("tnv-go");
     el("tnv-items").innerHTML=opts.items.map(t=>"<li>"+String(t).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))+"</li>").join("");
-    go.hidden=false; go.disabled=true; el("tnv-cancel").textContent="Cancel"; sel.disabled=false; sel.innerHTML="<option value=\\"\\">Loading companies…</option>"; msg.textContent="";
+    go.hidden=false; el("tnv-cancel").textContent="Cancel"; msg.textContent=""; sel.disabled=true;
     dlg.showModal();
-    const fill=list=>{ companies=list; const g=String(opts.guess||"").toLowerCase().replace(/\\(.*?\\)/g,"").trim();
-      sel.innerHTML="<option value=\\"\\">Choose a company</option>"+list.map(c=>`<option value="${c.id}">${String(c.name).replace(/[&<>"]/g,"")}</option>`).join("");
-      const hit=g&&list.find(c=>{ const n=String(c.name).toLowerCase(); return n===g||g.includes(n)||n.includes(g); }); if(hit) sel.value=hit.id; go.disabled=!sel.value; };
-    if(companies) fill(companies);
-    else sql("select id, name from public.companies order by name").then(l=>{ if(current===opts) fill(l); }).catch(e=>{ if(current===opts){ sel.innerHTML="<option value=\\"\\">Companies could not be loaded</option>"; msg.textContent=errorText(e); } });
+    // The company is chosen once, at the top of the page. The dialog shows it and offers no other.
+    const pick=window.Company&&Company.get();
+    if(!pick){ companies=[]; sel.innerHTML="<option value=\\"\\">No company chosen</option>"; go.disabled=true; msg.textContent="Choose the company at the top of the page first, then push."; return; }
+    companies=[pick]; sel.innerHTML=`<option value="${pick.id}">${String(pick.name).replace(/[&<>"]/g,"")}</option>`; sel.value=pick.id; go.disabled=false;
   }
   document.addEventListener("DOMContentLoaded",()=>{},{once:true});
   function wire(){
@@ -393,11 +397,11 @@ window.TNV=(()=>{
       const co=(companies||[]).find(c=>c.id===sel.value); if(!co) return;
       busy=true; go.disabled=true; sel.disabled=true; msg.textContent="Starting…";
       try{ const text=await current.run(co,t=>{ msg.textContent=t; }); msg.textContent=text; go.hidden=true; el("tnv-cancel").textContent="Close"; }
-      catch(e){ msg.textContent=errorText(e); go.disabled=false; sel.disabled=false; }
+      catch(e){ msg.textContent=errorText(e); go.disabled=false; }
       finally{ busy=false; }
     };
   }
-  return { open, wire, errorText, pushIcp:(id,p)=>call("tnv_push_icp",id,p), pushPersonas:(id,p)=>call("tnv_push_personas",id,p), pushPrompts:(id,p)=>call("tnv_push_prompts",id,p),
+  return { open, wire, errorText, sql, pushIcp:(id,p)=>call("tnv_push_icp",id,p), pushPersonas:(id,p)=>call("tnv_push_personas",id,p), pushPrompts:(id,p)=>call("tnv_push_prompts",id,p),
     brands:id=>{ if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw {code:"bad_id"}; return sql(`select name, is_own, domains, name_patterns, exclude_patterns from public.pt_brands where company_id='${id}'::uuid order by sort, name`); } };
 })();
 TNV.wire();
@@ -411,13 +415,45 @@ function showTool(){
 window.addEventListener("hashchange",showTool); showTool();
 '''
 head=icp[:icp.index('<style>')].replace('<title>ICP Builder</title>','<title>ICP &amp; Persona Builder</title>')
-out=head+'<style>\n'+css+pcss+extra+'</style>\n</head>\n<body>\n<div class="wrap">\n  <nav class="tools" aria-label="Tools">\n    <a href="#inputs" id="tool-tab-icp">ICP Builder</a>\n    <a href="#persona-inputs" id="tool-tab-persona">Persona Builder</a>\n    <a href="#prompts" id="tool-tab-prompts">Prompt Builder</a>\n  </nav>\n  <div id="tool-icp">'+ibody+'</div>\n  <div id="tool-persona" hidden>'+pbody+'</div>\n  <div id="tool-prompts" hidden>'+open(SRC/'prompts.frag.html').read()+'</div>\n</div>\n'+itail+idlg+'\n'+ptail+'<script>\n'+store+'</script>\n<script>\n(function(){'+ijs+'})();\n</script>\n<script>\n(function(){'+pjs+'})();\n</script>\n<script>\n(function(){'+open(SRC/'prompts.js').read()+'})();\n</script>\n</body>\n</html>\n'
+
+# ---------- The app's Company and Brand Facts export, built into the page ----------
+# The ICP Builder loads a company's two documents from The Night Ventures with the same code the app's Export button runs:
+# sectionMarkdown.js and the declarations it needs from api.js are copied into src/tnv_export.js here.
+# After a change to the app's export, rebuild and republish the page.
+def top_level(src, name):
+    """Source of one top-level `const NAME = ...;` or `function NAME(...){...}` declaration, found by bracket matching."""
+    m=re.search(r'^(?:export )?(const %s\b|function %s\b)'%(name,name), src, re.M)
+    assert m, 'not found in the app code: '+name
+    i=m.start(); j=m.end(); depth=0; q=None; seen=False; fn=m.group(1).startswith('function')
+    while j<len(src):
+        ch=src[j]
+        if q:
+            if ch=='\\': j+=2; continue
+            if ch==q: q=None
+        elif ch in '"\'`': q=ch
+        elif src.startswith('//',j): j=src.index('\n',j); continue
+        elif src.startswith('/*',j): j=src.index('*/',j)+2; continue
+        elif ch in '([{': depth+=1; seen=True
+        elif ch in ')]}':
+            depth-=1
+            if fn and depth==0 and ch=='}': j+=1; break
+        elif ch==';' and depth==0 and not fn: j+=1; break
+        j+=1
+    return src[i:j].replace('export ','',1)
+api_src=open(APP/'api.js').read()
+API_NAMES=['EMPTY_BRAND_FACTS','MOVED_TO_COMPANY','REMOVED_BRAND_KEYS','BRAND_FACTS_NOTE','BRAND_SECTIONS','COMMERCIAL_FIELDS','IMAGE_STYLE_FIELD','normalizeBrandFacts']
+sm=open(APP/'sectionMarkdown.js').read()
+SM_IMPORTS=['import { supabase } from "@/lib/supabase";','import { downloadMarkdown } from "../siteBuildFlow/buildFlowMarkdown";','import { BRAND_FACTS_NOTE, BRAND_SECTIONS, COMMERCIAL_FIELDS, IMAGE_STYLE_FIELD } from "./api";']
+assert re.findall(r'^import .*$', sm, re.M)==SM_IMPORTS, "sectionMarkdown.js imports changed; check the adapter in src/tnv_export.js and update SM_IMPORTS in build.py"
+export_js=open(SRC/'tnv_export.js').read()
+assert export_js.count('/*@APP_API@*/')==1 and export_js.count('/*@APP_SECTION_MARKDOWN@*/')==1
+export_js=export_js.replace('/*@APP_API@*/','\n'.join(top_level(api_src,n) for n in API_NAMES)).replace('/*@APP_SECTION_MARKDOWN@*/',re.sub(r'^export ','',re.sub(r'^import .*\n','',sm,flags=re.M),flags=re.M))
+out=head+'<style>\n'+css+pcss+extra+'</style>\n</head>\n<body>\n<div class="wrap">\n  <nav class="tools" aria-label="Tools">\n    <a href="#inputs" id="tool-tab-icp">ICP Builder</a>\n    <a href="#persona-inputs" id="tool-tab-persona">Persona Builder</a>\n    <a href="#prompts" id="tool-tab-prompts">Prompt Builder</a>\n  </nav>\n  <div class="cobar" role="group" aria-label="Company"><label for="co-pick">Company in The Night Ventures</label><select id="co-pick"><option value="">Loading companies…</option></select><span class="status" id="co-msg" role="status"></span></div>\n  <div id="tool-icp">'+ibody+'</div>\n  <div id="tool-persona" hidden>'+pbody+'</div>\n  <div id="tool-prompts" hidden>'+open(SRC/'prompts.frag.html').read()+'</div>\n</div>\n'+itail+idlg+'\n'+ptail+'<script>\n'+store+'</script>\n<script>\n'+export_js+'</script>\n<script>\n'+open(SRC/'company.js').read()+'</script>\n<script>\n(function(){'+ijs+'})();\n</script>\n<script>\n(function(){'+pjs+'})();\n</script>\n<script>\n(function(){'+open(SRC/'prompts.js').read()+'})();\n</script>\n</body>\n</html>\n'
 out,_k=re.subn(r"  function rows\(payload\)\{.*?\n  \}\n(?=  async function sql)",lambda m:open(SRC/'tnv_rows.js').read(),out,flags=re.S); assert _k==1
 def _r(x,y):
     global out
     assert out.count(x)==1,(x[:50],out.count(x)); out=out.replace(x,y)
 _r('if(c==="parse") return "The push ran but its confirmation could not be read. Check the company in The Night Ventures before pushing again.";','if(c==="parse") return "The push ran but its confirmation could not be read. Check the company in The Night Ventures before pushing again.";\n    if(c==="parse_list") return "Supabase answered, but the company list came back in a form this page could not read. Nothing was written."+(m?" Reply started: "+m.slice(0,120):"");')
-_r('sql("select id, name from public.companies order by name").then(l=>{ if(current===opts) fill(l); }).catch(e=>{','sql("select id, name from public.companies order by name").then(l=>{ if(!l.length||!l[0].id) throw {code:"parse",message:JSON.stringify(l).slice(0,120)}; if(current===opts) fill(l); }).catch(e=>{ if(e&&e.code==="parse") e={code:"parse_list",message:e.message};')
 open(OUT,'w').write(out)
 ids=re.findall(r'\bid="([^"$]+)"',out); d={i for i in ids if ids.count(i)>1}; print('dup ids',d)
 for i,m in enumerate(re.findall(r'<script>\n(.*?)</script>',out,re.S)): open(CHECK/f'j{i}.js','w').write(m)

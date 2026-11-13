@@ -1,0 +1,66 @@
+{
+ "company": {
+  "name": "Ledgerline",
+  "github_owner": "example-owner",
+  "github_repo": "ledgerline-site"
+ },
+ "profile": {
+  "domain": "https://www.ledgerline.example/",
+  "product_name": "Ledgerline Flow",
+  "seo_market": "United Kingdom",
+  "seo_language": "English.",
+  "ai_training_bot_policy": "allow",
+  "gtm_deal_size": "About 18k a year per customer.",
+  "gtm_sales_motion": null,
+  "gtm_customer_evidence": "Forty paying customers. Two published case studies.",
+  "gtm_where_to_find": "",
+  "gtm_constraints": "We only take customers in the UK and Ireland.",
+  "image_style": null
+ },
+ "brand_facts": {
+  "offer": "Accounts payable software for mid-sized distributors. Pricing: a flat monthly fee per entity.",
+  "customer": "Finance teams of two to ten people at distributors with several legal entities.\n\nNot a fit: companies with fewer than 200 invoices a month.",
+  "problem": "Invoices arrive faster than the team can code and approve them.",
+  "triggers": "Trigger: month-end close slipped twice in a row.\n\nWhy now: e-invoicing rules take effect next year.",
+  "signals": "",
+  "difference": "Alternatives are spreadsheets, the ERP's own module and outsourced bookkeeping.",
+  "conversion": "Primary: a booked demo.",
+  "conversion_action": "Book a demo.",
+  "conversion_url": "https://www.ledgerline.example/demo/",
+  "voice": "Plain and exact.",
+  "live_wording": [
+   {
+    "where": "Homepage H1",
+    "text": "Invoices, handled."
+   }
+  ],
+  "approved_claims": [
+   "No per-invoice fees"
+  ],
+  "never_claims": [
+   "Guaranteed savings"
+  ],
+  "out_of_scope": [
+   "Payroll advice",
+   "Tax filing"
+  ],
+  "competitors": [
+   {
+    "name": "PayStack Pro",
+    "url": "https://paystackpro.example",
+    "what": "Self-serve payables tool with invoice capture",
+    "charges": "Free plan; paid from $40/month",
+    "category": "Self-serve software"
+   },
+   {
+    "name": "Northbook",
+    "url": "https://northbook.example",
+    "what": "Outsourced bookkeeping with a monthly close service",
+    "charges": "Monthly retainer plus a fee per entity",
+    "category": "Outsourced service"
+   }
+  ],
+  "open_items": [],
+  "proof": "An old key that moved to the Company tab; the export must drop it."
+ }
+}
