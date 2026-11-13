@@ -151,7 +151,7 @@ function loadSource(id){
   S={src:Object.assign({personasId:id,personasName:set.name||id,icpId:icp.id,company},parsed,{personas}),
      brands:[{name:company||"Own brand",domains:"",patterns:company,exclude:"",own:true}].concat([...new Set(parsed.alternatives.flatMap(a=>a.names))].filter(n=>n.toLowerCase()!==company.toLowerCase()).map(n=>({name:n,domains:"",patterns:n,exclude:"",own:false}))),
      settings:Object.assign({},S.settings),
-     mix:null, style:S.style||"",
+     mix:null, styles:personas.map(()=>S.style||""), style:"", run:null,
      cols:personas.map(p=>({target:0,weights:Object.fromEntries(p.situations.map(s=>[s,1])),prompts:[],exhausted:{},log:[],seq:0})),
      rot:{},name:(company?company+" ":"")+"Prompts",setId:""};
   ensureMix();
@@ -239,18 +239,26 @@ const AMB_TEST=`Read each one as an AI assistant would: it sees only that one qu
 A question is not ambiguous merely because it is short or leaves out detail. It is ambiguous only when the missing context changes what is being asked.`;
 const marketLine=()=>market()||"the one described by the person and the situations above";
 /* Style reference: a few prompts the user wrote the way they would type them. Used for length, tone and amount of context only. */
-const styleList=()=>String(S.style||"").split(/\r?\n/).map(x=>x.replace(/^\s*(?:[-*•]|\d+[.)])\s+/,"").replace(/\s+/g," ").trim()).filter(Boolean).slice(0,10);
-function styleBlock(){ const ex=styleList(); if(!ex.length) return "";
+/* Style reference: a few prompts the user wrote the way this persona would type them. Used for length, tone and amount of context only.
+   One box per persona. A single global box existed before; its text is carried over to every persona once. */
+const STYLE_MAX=5;
+function ensureStyles(){ if(!S.src) return; const n=S.cols.length;
+  if(!Array.isArray(S.styles)||S.styles.length!==n) S.styles=S.cols.map((_,i)=>(Array.isArray(S.styles)&&typeof S.styles[i]==="string"&&S.styles[i])||S.style||"");
+  S.style=""; }
+const styleLines=ci=>String((S.styles||[])[ci]||"").split(/\r?\n/).map(x=>x.replace(/^\s*(?:[-*•]|\d+[.)])\s+/,"").replace(/\s+/g," ").trim()).filter(Boolean);
+const styleList=ci=>styleLines(ci).slice(0,STYLE_MAX);
+function styleBlock(ci){ const ex=styleList(ci); if(!ex.length) return "";
   return `STYLE REFERENCE
 The user wrote these the way they type to an AI assistant. Match their length, their tone and how much background they give before the ask.
 Take nothing else from them: not their topics, not their wording, not their subject matter. What each prompt is about comes only from the numbered list that follows.
 ${ex.map(x=>"- "+x).join("\n")}
 
 `; }
-function styleNote(){ const ex=styleList(), st=S.settings; if(!ex.length) return "";
-  const w=ex.map(words), lo=Math.min(...w), hi=Math.max(...w), raw=String(S.style||"").split(/\r?\n/).filter(x=>x.trim()).length;
+function styleNote(ci){ const ex=styleList(ci), st=S.settings; if(!ex.length) return "";
+  const w=ex.map(words), lo=Math.min(...w), hi=Math.max(...w), raw=styleLines(ci).length;
   let t=`${ex.length} example${ex.length===1?"":"s"} in use, ${lo===hi?lo:lo+" to "+hi} words each.`;
-  if(raw>10) t+=` Only the first 10 of ${raw} lines are used.`;
+  if(raw>STYLE_MAX) t+=` Only the first ${STYLE_MAX} of ${raw} lines are used.`;
+  if(ex.length<3) t+=" Three to five give a steadier result.";
   if(lo<st.minWords||hi>st.maxWords) t+=` Prompts must still be ${st.minWords} to ${st.maxWords} words. Your examples go ${lo<st.minWords&&hi>st.maxWords?"below and above":lo<st.minWords?"below":"above"} that; change the length limits under Generation settings if you want prompts as ${lo<st.minWords?"short":"long"} as yours.`;
   return t; }
 function existingAll(){ const out=[]; S.cols.forEach((c,ci)=>c.prompts.forEach(p=>out.push({ci,id:p.id,text:p.text}))); return out; }
@@ -286,7 +294,7 @@ ${seeds.map(q=>`- [${q.s} ${q.st}] ${q.q}`).join("\n")||"none"}
 ALREADY WRITTEN, DO NOT REPEAT OR REPHRASE
 ${ex.map(e=>"- "+e.text).join("\n")||"nothing yet"}
 
-${styleBlock()}WRITE EXACTLY THESE
+${styleBlock(ci)}WRITE EXACTLY THESE
 ${slots.map(slotLine).join("\n")}
 
 RULES
@@ -348,6 +356,7 @@ function localIssues(ci,p){
 }
 
 /* ---------- Generation ---------- */
+const RUN={on:false,stop:false};
 const PROG={ci:-1,frac:0,text:"",t0:0,timer:0};
 function paintProgress(){
   const box=document.querySelector(`[data-prog="${PROG.ci}"]`); if(!box) return;
@@ -358,17 +367,21 @@ function startProgress(ci){ PROG.ci=ci; PROG.frac=0.02; PROG.text="Starting"; PR
 function setProgress(frac,text){ PROG.frac=Math.max(PROG.frac,frac); PROG.text=text; paintProgress(); }
 function stopProgress(){ clearInterval(PROG.timer); PROG.ci=-1; }
 function setStatus(ci,t){ UI.status[ci]=t; const el=document.querySelector(`[data-status="${ci}"]`); if(el) el.textContent=t; }
-async function generate(ci){
-  if(UI.busy>=0) return;
-  if(checking){ toast("Wait for the check to finish"); return; }
-  const slots=planBatch(ci); if(!slots.length){ setStatus(ci,"Nothing left to generate for this persona."); return; }
+/* Writes one batch for a persona. A prompt that passes the local checks and Claude's duplicate and misread check is saved as Approved.
+   One that fails is rewritten, up to three rounds, and then dropped. Returns what happened, for Generate all. */
+async function generate(ci,inRun){
+  const res={added:0,dropped:0,stopped:false,error:"",idle:false};
+  if(UI.busy>=0||(RUN.on&&!inRun)){ res.idle=true; return res; }
+  if(checking){ toast("Wait for the check to finish"); res.idle=true; return res; }
+  const slots=planBatch(ci); if(!slots.length){ setStatus(ci,"Nothing left to generate for this persona."); res.idle=true; return res; }
   const sample=await sampleP;
-  if(!sample){ setStatus(ci,"Claude is not available in this view, so prompts cannot be generated here. Open the page in claude.ai."); return; }
+  if(!sample){ setStatus(ci,"Claude is not available in this view, so prompts cannot be generated here. Open the page in claude.ai."); res.error="no_claude"; return res; }
   UI.busy=ci; renderCols(); startProgress(ci);
   const c=S.cols[ci], st=S.settings, added=[], notes={}, total=slots.length; let pending=slots, logged=0;
   const diagCap=Math.floor(slots.length*st.diagMax/100); let diag=0;
   try{
     for(let round=1;round<=3&&pending.length;round++){
+      if(RUN.stop){ res.stopped=true; break; }
       const need=pending.length, had=added.length, stepName=round>1?`Attempt ${round} of 3 for ${need} that failed`:`Step 1 of 2`;
       setStatus(ci,`Writing ${need} prompt${need===1?"":"s"}${round>1?" (attempt "+round+" for the ones that failed)":""}…`);
       setProgress((had+0.02*need)/total,`${stepName} · asking Claude for ${need} prompts`);
@@ -387,6 +400,8 @@ async function generate(ci){
         if(cand.diag) diag++;
         cands.push(cand);
       }
+      if(cands.length&&RUN.stop){ res.stopped=true; break; }
+      if(cands.length&&inRun) cands.forEach(x=>{ x.inRun=true; });
       if(cands.length){
         setStatus(ci,`Checking ${cands.length} prompt${cands.length===1?"":"s"} for duplicates across all personas…`);
         setProgress((had+0.8*need)/total,`${round>1?"Attempt "+round+" of 3":"Step 2 of 2"} · checking ${cands.length} for duplicates and for prompts that could be misread`);
@@ -397,27 +412,35 @@ async function generate(ci){
           const d=verdict?verdict[i+1]:null;
           if(verdict&&d){ const m=String(d).match(/^([EN])(\d+)$/i); const other=m&&m[1].toUpperCase()==="E"&&ex[Number(m[2])-1]&&ex[Number(m[2])-1].ci!==ci;
             if(cand.diag) diag--; fail(cand.slot, other?"duplicate of another persona's prompt; ask something this person alone would ask":"duplicate of an existing prompt; cover new ground", cand.text); return; }
+          if(!verdict&&inRun){ if(cand.diag) diag--; fail(cand.slot,"the duplicate check could not be read; write it again",cand.text); return; }
           if(verdict&&amb[i+1]){ if(cand.diag) diag--; fail(cand.slot,`could be misread out of context (${amb[i+1]}); make clear from the prompt alone who is asking and in which market`,cand.text); return; }
           c.seq=(c.seq||0)+1;
-          const row={id:`P${ci+1}-${String(c.seq).padStart(3,"0")}`,s:cand.s,st:cand.st,ty:cand.ty,vars:cand.vars,alts:cand.alts,text:cand.text,status:"Draft",diag:cand.diag,unchecked:!verdict};
+          const row={id:`P${ci+1}-${String(c.seq).padStart(3,"0")}`,s:cand.s,st:cand.st,ty:cand.ty,vars:cand.vars,alts:cand.alts,text:cand.text,status:verdict?"Approved":"Draft",diag:cand.diag,unchecked:!verdict};
+          if(verdict) row.ck=true;
           if(cand.obj!=null) row.obj=cand.obj;
           c.prompts.push(row); added.push(row);
         });
       }
       pending=failed; save(); renderCols(); setProgress(added.length/total,`${added.length} of ${total} accepted`+(failed.length?` · ${failed.length} to retry`:""));
     }
+    res.added=added.length;
+    if(res.stopped){ setStatus(ci,`Stopped. ${added.length} prompt${added.length===1?"":"s"} added and approved before the stop.`); }
+    else{
     for(const x of pending) c.exhausted[key(x.s,x.st)]=true;
+    res.dropped=pending.length; c.dropped=(c.dropped||0)+pending.length;
     const n=added.length, rec=added.filter(x=>x.ty==="Recommendation").length, cmp=added.filter(x=>x.ty==="Comparison").length, dg=added.filter(x=>x.diag).length;
     const ex=[...new Set(pending.map(x=>key(x.s,x.st)))];
-    setStatus(ci,`Added ${n} prompt${n===1?"":"s"}: ${rec} recommendation (${n?Math.round(rec/n*100):0}% of ${n}), ${cmp} comparison, ${n-rec-cmp} question; ${dg} personal diagnostic${dg===1?"":"s"}.`+(pending.length?` ${pending.length} slot${pending.length===1?"":"s"} could not be filled after three attempts; ${ex.length} cell${ex.length===1?" is":"s are"} marked exhausted.`:"")+(added.some(x=>x.unchecked)?" The duplicate check could not be read for some prompts; they are flagged.":""));
+    setStatus(ci,`Added and approved ${n} prompt${n===1?"":"s"}: ${rec} recommendation (${n?Math.round(rec/n*100):0}% of ${n}), ${cmp} comparison, ${n-rec-cmp} question; ${dg} personal diagnostic${dg===1?"":"s"}.`+(pending.length?` ${pending.length} slot${pending.length===1?"":"s"} could not be filled after three attempts and ${pending.length===1?"was":"were"} dropped; ${ex.length} cell${ex.length===1?" is":"s are"} marked exhausted.`:"")+(added.some(x=>x.unchecked)?" The duplicate check could not be read for some prompts; they are flagged and left as drafts.":""));
+    }
   }catch(e){
-    const code=e&&e.code;
+    const code=e&&e.code; res.added=added.length; res.error=code||"failed";
     setStatus(ci, code==="rate_limited" ? `Claude is rate limited. ${added.length} prompts were added before it stopped. Wait a minute, then generate again.`
       : code==="not_granted" ? "Generating needs permission to ask Claude. Select the button again and allow it."
       : code==="parse" ? `Claude's reply could not be read. ${added.length} prompts were added before it stopped. Select the button again.`
       : `Generation stopped${e&&e.message?": "+e.message:""}. ${added.length} prompts were added. Select the button again.`);
   }
   stopProgress(); UI.busy=-1; save(); render();
+  return res;
 }
 
 /* ---------- Rendering ---------- */
@@ -438,7 +461,6 @@ function renderBrands(){
     <label for="q-be-${i}"><span class="lab">Exclude patterns</span><input type="text" id="q-be-${i}" data-bf="exclude" value="${esc(b.exclude)}" placeholder="name collisions"></label>
     <div class="bact"><label class="chk2"><input type="radio" name="q-own" data-own="${i}" ${b.own?"checked":""}> Own</label><button class="btn quiet" type="button" data-rmb="${i}" aria-label="Remove ${esc(b.name)}">×</button></div></div>`).join("");
 }
-function renderStyle(){ const el=$("style"); if(document.activeElement!==el) el.value=S.style||""; $("stylenote").textContent=styleNote(); }
 function renderSettings(){
   $("settings").innerHTML=SETTING_LABELS.map(([k,l])=>`<label for="q-set-${k}"><span class="hint">${esc(l)}</span><input type="text" inputmode="numeric" id="q-set-${k}" data-set="${k}" value="${esc(S.settings[k])}"></label>`).join("");
 }
@@ -469,12 +491,13 @@ function colHtml(ci){
   const next=Math.min(S.settings.batch,Math.max(0,c.target-gen));
   return `<div class="pcol" data-ci="${ci}" id="q-col-${ci}">
    <div class="phead"><h3>${esc(p.name)}</h3><p class="hint">${esc(p.role||"")}${p.slim?" · influencer only":""}</p>
-    <div class="ptarget"><span class="hint">Target</span><b>${c.target}</b><span class="hint">${mixPct(ci)}% of ${S.mix.total}, set under Persona Mix</span>${gen>c.target?`<span class="pill">${gen-c.target} over target</span><button class="btn" type="button" data-trim="${ci}" ${UI.busy>=0?"disabled":""}>Trim to target</button>`:""}</div>
+    <div class="ptarget"><span class="hint">Target</span><b>${c.target}</b><span class="hint">${mixPct(ci)}% of ${S.mix.total}, set under Persona Mix</span>${gen>c.target?`<span class="pill">${gen-c.target} over target</span><button class="btn" type="button" data-trim="${ci}" ${UI.busy>=0||RUN.on?"disabled":""}>Trim to target</button>`:""}</div>
     ${UI.trim===ci&&gen>c.target?trimBox(ci):""}
+    <div class="pstyle"><label class="hint" for="q-style-${ci}">Your own prompts for this persona (optional): 3 to 5, one per line. Claude copies their length and tone, never their topic.</label><textarea id="q-style-${ci}" data-style="${ci}" rows="4" placeholder="One prompt per line">${esc((S.styles||[])[ci]||"")}</textarea><p class="hint" data-stylenote="${ci}">${esc(styleNote(ci))}</p></div>
     <div class="pcount"><div><span class="hint">Generated</span><b>${gen}</b></div><div><span class="hint">Approved</span><b>${ap}</b></div><div><span class="hint">Tested</span><b>0</b></div><div><span class="hint">Own brand named</span><b>Not tested</b></div></div></div>
    <table class="pgrid"><thead><tr><th>Situation</th><th>Weight</th>${STAGES.map(s=>`<th>${s}</th>`).join("")}</tr></thead><tbody>${
      p.situations.map(s=>{ const sit=S.src.situations.find(x=>x.id===s); return `<tr><td title="${esc(sit.name)}">${s} <span class="hint">${esc(sit.name)}</span></td><td><input type="text" inputmode="decimal" data-w="${ci}|${s}" value="${esc(c.weights[s])}" aria-label="Weight for ${s}"></td>${STAGES.map(st=>{ const k=key(s,st), have=h[k]||0, tg=t[k]||0; return `<td class="${c.exhausted[k]&&have<tg?"ex":have<tg?"under":""}" title="${c.exhausted[k]?"Exhausted: no distinct prompts left":""}">${have} / ${tg}${c.exhausted[k]&&have<tg?" ·":""}</td>`; }).join("")}</tr>`; }).join("")||'<tr><td colspan="5">No buyer situation applies to this persona.</td></tr>'}</tbody></table>
-   <div class="pact"><button class="btn primary" type="button" data-gen="${ci}" ${why||UI.busy>=0||!p.situations.length?"disabled":""}>${busy?"Working…":why==="exhausted"?"No distinct prompts left for this persona":why==="target"?"Target reached":"Generate next "+next}</button></div>
+   <div class="pact"><button class="btn primary" type="button" data-gen="${ci}" ${why||UI.busy>=0||RUN.on||!p.situations.length?"disabled":""}>${busy?"Working…":why==="exhausted"?"No distinct prompts left for this persona":why==="target"?"Target reached":"Generate next "+next}</button></div>
    <div class="pprog" data-prog="${ci}" hidden><div class="pbar"><i></i></div><span class="hint"></span></div>
    <p class="status" data-status="${ci}" role="status">${esc(UI.status[ci]||"")}</p>
    <div class="pfilters">
@@ -488,7 +511,7 @@ function colHtml(ci){
    <div class="plist">${rows.map(r=>{ const iss=localIssues(ci,r); return `<div class="prow st-${r.status.toLowerCase()}" data-id="${r.id}">
       <input type="checkbox" data-sel="${r.id}" aria-label="Select ${r.id}">
       <div class="pmain"><textarea rows="3" data-text="${r.id}" aria-label="Prompt ${r.id}">${esc(r.text)}</textarea>
-       <div class="ptags"><span>${r.id}</span><span>${r.s}</span><span>${r.st}</span><span>${r.ty}</span>${(r.vars||[]).map(v=>`<span>${esc(v.k)}: ${esc(v.v)}</span>`).join("")}${(r.alts||[]).map(a=>`<span>names ${esc(a)}</span>`).join("")}${r.diag?"<span>diagnostic</span>":""}${iss.map(i=>`<span class="pill h">${esc(i)}</span>`).join("")}${r.unchecked?'<span class="pill h">duplicate check not done</span>':""}${r.amb?`<span class="pill h">may be misread: ${esc(r.amb)}</span>`:""}</div></div>
+       <div class="ptags"><span>${r.id}</span><span>${r.s}</span><span>${r.st}</span><span>${r.ty}</span>${(r.vars||[]).map(v=>`<span>${esc(v.k)}: ${esc(v.v)}</span>`).join("")}${(r.alts||[]).map(a=>`<span>names ${esc(a)}</span>`).join("")}${r.diag?"<span>diagnostic</span>":""}${iss.map(i=>`<span class="pill h">${esc(i)}</span>`).join("")}${r.unchecked?'<span class="pill h">duplicate check not done</span>':""}${r.amb?`<span class="pill h">may be misread: ${esc(r.amb)}</span>`:""}${r.status==="Rejected"&&r.rej?`<span class="pill">rejected: ${esc(r.rej)}</span>`:""}</div></div>
       <select data-status-of="${r.id}" aria-label="Status of ${r.id}">${STATUSES.map(s=>`<option${s===r.status?" selected":""}>${s}</option>`).join("")}</select></div>`; }).join("")||'<p class="status">No prompts here yet.</p>'}</div>
   </div>`;
 }
@@ -497,11 +520,11 @@ function renderCols(){
   const keep=$("cols").scrollLeft;
   $("pnav").innerHTML=`<span class="hint">${S.cols.length} personas, one column each. Scroll sideways or jump to:</span>`+S.cols.map((c,ci)=>`<button class="btn" type="button" data-jump="${ci}">${esc(S.src.personas[ci].name)} · ${live(ci).length}/${c.target}</button>`).join("");
   $("cols").innerHTML=S.cols.map((_,ci)=>colHtml(ci)).join(""); $("cols").scrollLeft=keep;
-  renderMix(); renderSummary(); if(PROG.ci>=0) paintProgress();
+  renderMix(); renderSummary(); renderRun(); if(PROG.ci>=0) paintProgress();
 }
 function render(){
   renderSources(); renderSets(); $("work").hidden=!S.src; $("setname").value=S.name||"";
-  if(S.src){ renderBrands(); renderSettings(); renderStyle(); renderCols(); }
+  if(S.src){ renderBrands(); renderSettings(); renderCols(); }
 }
 
 /* ---------- Events ---------- */
@@ -519,7 +542,7 @@ $("brands").addEventListener("change",e=>{ if(e.target.dataset.own!=null){ S.bra
 $("brands").addEventListener("click",e=>{ const b=e.target.closest("[data-rmb]"); if(!b) return; const i=+b.dataset.rmb; if(S.brands[i].own){ toast("Mark another brand as own before removing this one"); return; } S.brands.splice(i,1); save(); renderBrands(); });
 $("addbrand").onclick=()=>{ S.brands.push({name:"",domains:"",patterns:"",exclude:"",own:!S.brands.some(b=>b.own)}); save(); renderBrands(); };
 $("settings").addEventListener("change",e=>{ const k=e.target.dataset.set; if(!k) return; const v=Number(e.target.value); if(Number.isFinite(v)&&v>=0){ S.settings[k]=v; save(); renderCols(); } else e.target.value=S.settings[k]; });
-$("style").addEventListener("input",e=>{ S.style=e.target.value; save(); $("stylenote").textContent=styleNote(); });
+$("cols").addEventListener("input",e=>{ const t=e.target; if(t.dataset.style==null) return; const ci=+t.dataset.style; S.styles[ci]=t.value; save(); const n=document.querySelector(`[data-stylenote="${ci}"]`); if(n) n.textContent=styleNote(ci); });
 $("mix").addEventListener("change",e=>{ const t=e.target;
   if(t.id==="q-mix-total"){ const v=Math.round(Number(t.value)); if(Number.isFinite(v)&&v>=0) S.mix.total=v; }
   else if(t.dataset.mixw!=null){ const v=Number(t.value); if(Number.isFinite(v)&&v>=0) S.mix.w[+t.dataset.mixw]=v; }
@@ -534,19 +557,19 @@ colsEl.addEventListener("click",e=>{
   const g=e.target.closest("[data-gen]"); if(g){ generate(+g.dataset.gen); return; }
   const tr=e.target.closest("[data-trim]"); if(tr){ UI.trim=UI.trim===+tr.dataset.trim?-1:+tr.dataset.trim; renderCols(); return; }
   if(e.target.closest("[data-trimno]")){ UI.trim=-1; renderCols(); return; }
-  const tg=e.target.closest("[data-trimgo]"); if(tg){ if(UI.busy>=0||checking){ toast("Wait for the current run to finish"); return; } const ci=+tg.dataset.trimgo, plan=trimPlan(ci); for(const p of plan) p.status="Rejected"; UI.trim=-1; save(); renderCols(); toast(`${plan.length} prompt${plan.length===1?"":"s"} rejected to bring this persona to its target`); return; }
+  const tg=e.target.closest("[data-trimgo]"); if(tg){ if(UI.busy>=0||checking||RUN.on){ toast("Wait for the current run to finish"); return; } const ci=+tg.dataset.trimgo, plan=trimPlan(ci); for(const p of plan) p.status="Rejected"; UI.trim=-1; save(); renderCols(); toast(`${plan.length} prompt${plan.length===1?"":"s"} rejected to bring this persona to its target`); return; }
   const b=e.target.closest("[data-bulk]"); if(!b) return; const [ci,act]=b.dataset.bulk.split("|"), colEl=b.closest(".pcol");
   if(act==="approveall"){ const n=approveDrafts([+ci]); toast((n?`${n} draft${n===1?"":"s"} approved for this persona.`:"No drafts to approve for this persona.")+heldNote()); return; }
   if(act==="all"){ const boxes=[...colEl.querySelectorAll("[data-sel]")], on=boxes.some(x=>!x.checked); boxes.forEach(x=>x.checked=on); return; }
   const ids=[...colEl.querySelectorAll("[data-sel]:checked")].map(x=>x.dataset.sel); if(!ids.length){ toast("Select prompts first"); return; }
-  for(const p of S.cols[+ci].prompts) if(ids.includes(p.id)){ p.status=act; if(act==="Approved") delete p.amb; } save(); renderCols(); toast(`${ids.length} prompt${ids.length===1?"":"s"} ${act.toLowerCase()}`);
+  for(const p of S.cols[+ci].prompts) if(ids.includes(p.id)){ p.status=act; if(act==="Approved") delete p.amb; if(act!=="Rejected") delete p.rej; } save(); renderCols(); toast(`${ids.length} prompt${ids.length===1?"":"s"} ${act.toLowerCase()}`);
 });
 colsEl.addEventListener("change",e=>{
   const t=e.target, colEl=t.closest(".pcol"); if(!colEl) return; const ci=+colEl.dataset.ci, c=S.cols[ci];
   if(t.dataset.w){ const s=t.dataset.w.split("|")[1], v=Number(t.value); if(Number.isFinite(v)&&v>=0) c.weights[s]=v; save(); renderCols(); }
   else if(t.dataset.f){ const k=t.dataset.f.split("|")[1]; (UI.filters[ci]=UI.filters[ci]||{})[k]=t.value; renderCols(); }
-  else if(t.dataset.statusOf){ const p=c.prompts.find(x=>x.id===t.dataset.statusOf); if(p){ p.status=t.value; save(); renderCols(); } }
-  else if(t.dataset.text){ const p=c.prompts.find(x=>x.id===t.dataset.text); if(p){ const v=t.value.replace(/\s+/g," ").trim(); if(v&&v!==p.text){ p.text=v; p.edited=true; delete p.amb; save(); renderCols(); } else t.value=p.text; } }
+  else if(t.dataset.statusOf){ const p=c.prompts.find(x=>x.id===t.dataset.statusOf); if(p){ p.status=t.value; if(t.value!=="Rejected") delete p.rej; if(t.value==="Approved") delete p.amb; save(); renderCols(); } }
+  else if(t.dataset.text){ const p=c.prompts.find(x=>x.id===t.dataset.text); if(p){ const v=t.value.replace(/\s+/g," ").trim(); if(v&&v!==p.text){ p.text=v; p.edited=true; delete p.amb; delete p.ck; save(); renderCols(); } else t.value=p.text; } }
 });
 function exportRows(){ const out=[]; S.cols.forEach((c,ci)=>c.prompts.forEach(p=>out.push({id:p.id,persona:S.src.personas[ci].name,situation:p.s,stage:p.st,type:p.ty,variables:(p.vars||[]).map(v=>v.k+": "+v.v),named_brands:p.alts||[],status:p.status,prompt:p.text}))); return out; }
 function exportJson(){ return JSON.stringify({brand:S.src.company,personas_set:S.src.personasName,exported_at:new Date().toISOString(),tracked_brands:S.brands.map(b=>({name:b.name,own:!!b.own,domains:listOf(b.domains),name_patterns:listOf(b.patterns),exclude_patterns:listOf(b.exclude)})),situations:S.src.situations.map(s=>({id:s.id,name:s.name})),prompts:exportRows()},null,1); }
@@ -568,20 +591,84 @@ const heldNote=()=>held?` ${held} marked "may be misread" stay as drafts: edit t
 $("approveall").onclick=()=>{ if(!S.src) return; const n=approveDrafts(S.cols.map((_,i)=>i)); toast((n?`${n} draft${n===1?"":"s"} approved across all personas.`:"No drafts to approve.")+heldNote()); };
 /* One-off check of prompts written before the stand-alone rule existed. A flagged prompt goes back to Draft with the reason shown on it. */
 let checking=false;
+/* Sends prompts to Claude 40 at a time and asks which could be misread out of context. A flagged prompt goes back to Draft with the reason on it;
+   one that passes is marked checked (ck), so a later run does not send it again. Stops between batches when `halt()` says so. Throws on a Claude error. */
+async function checkPrompts(sample,all,say,halt){
+  const out={done:0,flagged:0,unread:0,stopped:false};
+  for(let i=0;i<all.length;i+=40){ if(halt&&halt()){ out.stopped=true; break; }
+    const part=all.slice(i,i+40); say(`Checking prompts ${i+1} to ${i+part.length} of ${all.length}…`);
+    let v; try{ v=parseJsonList(await ask(sample,ambPrompt(part.map(p=>p.text)),"default")); }catch(e){ if(e&&e.code&&e.code!=="parse") throw Object.assign(e,{partial:out}); out.unread+=part.length; continue; }
+    const by={}; for(const r of v) if(r&&r.n!=null) by[Number(r.n)]=r;
+    part.forEach((p,k)=>{ const r=by[k+1]; if(!r){ out.unread++; return; } out.done++; if(r.amb===true){ p.amb=String(r.why||"").trim().slice(0,140)||"unclear who is asking or in which market"; p.status="Draft"; delete p.ck; out.flagged++; } else { delete p.amb; p.ck=true; } });
+    save(); renderCols(); }
+  return out;
+}
 $("checkamb").onclick=async()=>{
-  if(!S.src||checking) return; if(UI.busy>=0){ toast("Wait for generation to finish"); return; }
+  if(!S.src||checking||RUN.on) return; if(UI.busy>=0){ toast("Wait for generation to finish"); return; }
   const msg=$("checkmsg"), sample=await sampleP; if(!sample){ msg.textContent="Claude is not available in this view, so the check cannot run here. Open the page in claude.ai."; return; }
   const all=S.cols.flatMap(c=>c.prompts.filter(p=>p.status!=="Rejected")); if(!all.length){ msg.textContent="There are no prompts to check."; return; }
-  checking=true; $("checkamb").disabled=true; let flagged=0, done=0, unread=0;
-  try{
-    for(let i=0;i<all.length;i+=40){ const part=all.slice(i,i+40); msg.textContent=`Checking prompts ${i+1} to ${i+part.length} of ${all.length}…`;
-      let v; try{ v=parseJsonList(await ask(sample,ambPrompt(part.map(p=>p.text)),"default")); }catch(e){ if(e&&e.code&&e.code!=="parse") throw e; unread+=part.length; continue; }
-      const by={}; for(const r of v) if(r&&r.n!=null) by[Number(r.n)]=r;
-      part.forEach((p,k)=>{ const r=by[k+1]; if(!r){ unread++; return; } done++; if(r.amb===true){ p.amb=String(r.why||"").trim().slice(0,140)||"unclear who is asking or in which market"; p.status="Draft"; flagged++; } else delete p.amb; });
-      save(); renderCols(); }
-    msg.textContent=`Checked ${done} of ${all.length} prompts. ${flagged} could be misread out of context and ${flagged===1?"is":"are"} back in Draft with the reason shown on ${flagged===1?"it":"each"}. Filter by status "Draft" to see them.`+(unread?` ${unread} could not be checked; run it again.`:"");
-  }catch(e){ msg.textContent=`The check stopped${e&&e.code==="rate_limited"?" because Claude is rate limited":""}. ${done} prompts were checked and ${flagged} flagged. Run it again to finish.`; }
+  checking=true; $("checkamb").disabled=true;
+  try{ const r=await checkPrompts(sample,all,t=>{ msg.textContent=t; });
+    msg.textContent=`Checked ${r.done} of ${all.length} prompts. ${r.flagged} could be misread out of context and ${r.flagged===1?"is":"are"} back in Draft with the reason shown on ${r.flagged===1?"it":"each"}. Filter by status "Draft" to see them.`+(r.unread?` ${r.unread} could not be checked; run it again.`:"");
+  }catch(e){ const r=e.partial||{done:0,flagged:0}; msg.textContent=`The check stopped${e&&e.code==="rate_limited"?" because Claude is rate limited":""}. ${r.done} prompts were checked and ${r.flagged} flagged. Run it again to finish.`; }
   checking=false; $("checkamb").disabled=false; save(); renderCols();
+};
+
+/* ---------- Generate all ---------- */
+/* One run: check what is there, trim personas over target, approve drafts that passed, then write every persona up to its target.
+   S.run is saved, so the result table survives a reload and a stopped run can be resumed. */
+function runRows(){ if(!S.src||!S.run) return "";
+  const st=S.run.state, cur=S.run.ci;
+  return `<table class="pgrid rungrid"><thead><tr><th>Persona</th><th>Approved</th><th>Target</th><th>Exhausted cells</th><th>Dropped</th><th></th></tr></thead><tbody>${S.cols.map((c,ci)=>{
+    const ap=c.prompts.filter(p=>p.status==="Approved").length, dr=c.prompts.filter(p=>p.status==="Draft").length, ex=shortfalls(ci).filter(x=>x.ex).length, why=canGenerate(ci);
+    const note=st==="running"&&cur===ci?"writing now":st==="running"&&cur<ci?"waiting":ap>=c.target?"target met":why==="exhausted"?"no distinct prompts left":why==="target"?"at target, counting drafts":st==="running"?"done":"not finished";
+    return `<tr><td>${esc(S.src.personas[ci].name)}</td><td><b>${ap}</b></td><td>${c.target}</td><td>${ex}</td><td>${c.dropped||0}</td><td>${note}${dr?` · ${dr} draft${dr===1?"":"s"} left for you`:""}</td></tr>`; }).join("")}</tbody></table>`; }
+function renderRun(){ if(!S.src) return; const r=S.run, resume=r&&(r.state==="stopped"||r.state==="error");
+  $("genall").hidden=RUN.on; $("genall").textContent=resume?"Resume Generate all":"Generate all"; $("stop").hidden=!RUN.on; $("stop").disabled=RUN.stop; $("stop").textContent=RUN.stop?"Stopping after this request…":"Stop";
+  $("runmsg").textContent=r?r.msg||"":""; $("runrows").innerHTML=runRows(); }
+const runSay=t=>{ if(S.run){ S.run.msg=t; } const el=$("runmsg"); if(el) el.textContent=t; };
+$("stop").onclick=()=>{ if(!RUN.on) return; RUN.stop=true; renderRun(); };
+$("genall").onclick=async()=>{
+  if(!S.src||RUN.on||checking) return; if(UI.busy>=0){ toast("Wait for generation to finish"); return; }
+  const sample=await sampleP; if(!sample){ S.run={state:"error",ci:-1,msg:"Claude is not available in this view, so prompts cannot be generated here. Open the page in claude.ai."}; renderRun(); return; }
+  const resumed=!!(S.run&&(S.run.state==="stopped"||S.run.state==="error"));
+  if(!resumed) S.cols.forEach(c=>{ c.dropped=0; });
+  RUN.on=true; RUN.stop=false; S.run={state:"running",ci:-1,msg:"",trimmed:resumed&&S.run.trimmed||0,flagged:resumed&&S.run.flagged||0,approved:resumed&&S.run.approved||0,rejected:resumed&&S.run.rejected||0}; UI.trim=-1; save(); renderCols();
+  const end=(state,msg)=>{ RUN.on=false; RUN.stop=false; S.run.state=state; S.run.ci=-1; S.run.msg=msg; save(); render(); };
+  const tally=()=>{ const dr=S.cols.reduce((a,c)=>a+c.prompts.filter(p=>p.status==="Draft").length,0);
+    return `Before writing: ${S.run.flagged} existing prompt${S.run.flagged===1?"":"s"} flagged as possibly misread, ${S.run.approved} draft${S.run.approved===1?"":"s"} approved, ${S.run.rejected} draft${S.run.rejected===1?"":"s"} rejected (flagged or failing a check) and replaced, ${S.run.trimmed} rejected to bring personas to target. Rejected prompts stay stored, with the reason.`+(dr?` ${dr} draft${dr===1?"":"s"} left: filter by status "Draft".`:""); };
+  try{
+    // 1. Check prompts that have not been checked yet (first, so that trimming removes the flagged ones first).
+    checking=true;
+    const todo=S.cols.flatMap(c=>c.prompts.filter(p=>p.status!=="Rejected"&&!p.ck));
+    if(todo.length){ const r=await checkPrompts(sample,todo,t=>runSay("Step 1 of 4 · "+t),()=>RUN.stop); S.run.flagged+=r.flagged;
+      if(r.stopped){ checking=false; end("stopped",`Stopped during the check. ${r.done} of ${todo.length} prompts were checked. Select Resume to continue.`); return; } }
+    checking=false;
+    // 2. Drafts: approve those that passed the check and have no local issue; reject the rest, so the run ends with no drafts.
+    //    A rejected prompt stays stored with the reason, and the writing step replaces it.
+    runSay("Step 2 of 4 · Approving drafts that passed the check, rejecting the rest…");
+    S.cols.forEach((c,ci)=>{ for(const p of c.prompts){ if(p.status!=="Draft") continue; const iss=localIssues(ci,p);
+      if(p.ck&&!p.amb&&!p.unchecked&&!iss.length){ p.status="Approved"; S.run.approved++; }
+      else { p.status="Rejected"; p.rej=p.amb?"could be misread: "+p.amb:iss.length?iss.join("; "):"not checked"; S.run.rejected++; } } });
+    // 3. Trim personas over target. No preview in a run. Flagged prompts go first.
+    runSay("Step 3 of 4 · Trimming personas that are over target…");
+    S.cols.forEach((c,ci)=>{ const plan=trimPlan(ci); for(const p of plan) p.status="Rejected"; S.run.trimmed+=plan.length; });
+    save(); renderCols();
+    // 4. Write each persona up to its target.
+    for(let ci=0;ci<S.cols.length;ci++){
+      S.run.ci=ci;
+      for(let guard=0;guard<60;guard++){
+        if(RUN.stop){ end("stopped",`Stopped while writing for ${S.src.personas[ci].name}. Select Resume to continue. ${tally()}`); return; }
+        if(canGenerate(ci)) break;
+        runSay(`Step 4 of 4 · Writing for ${S.src.personas[ci].name} (${ci+1} of ${S.cols.length}): ${live(ci).length} of ${S.cols[ci].target}`); renderRun();
+        const r=await generate(ci,true);
+        if(r.stopped){ end("stopped",`Stopped while writing for ${S.src.personas[ci].name}. Select Resume to continue. ${tally()}`); return; }
+        if(r.error){ end("error",`The run stopped while writing for ${S.src.personas[ci].name}${r.error==="rate_limited"?" because Claude is rate limited. Wait a minute, then select Resume":r.error==="not_granted"?" because it needs permission to ask Claude. Select Resume and allow it":". Select Resume to continue"}. ${tally()}`); return; }
+        if(r.idle||(!r.added&&!r.dropped)) break;
+      }
+    }
+    end("finished",`Finished. ${tally()} Save Prompts and Push to The Night Ventures are yours to click.`);
+  }catch(e){ checking=false; end("error",`The run stopped${e&&e.code==="rate_limited"?" because Claude is rate limited. Wait a minute, then select Resume":". Select Resume to continue"}. ${tally()}`); }
 };
 /* The Night Ventures is where tracked brands are maintained. A brand already there (same website domain, else same name) is sent back unchanged, so a push never renames, empties or removes one. */
 const dom=d=>String(d||"").replace(/^https?:\/\//i,"").replace(/^www\./i,"").replace(/\/.*$/,"").trim().toLowerCase();
@@ -629,7 +716,7 @@ $("save").onclick=async function(){
   if(PromptStore.exists(id)&&S.setId!==id&&saveConfirm!==id){ saveConfirm=id; msg.textContent=`A prompt set named "${name}" already exists. Select Save Prompts again to replace it.`; return; }
   const all=S.cols.flatMap(c=>c.prompts.filter(p=>p.status!=="Rejected"));
   const meta={name,company:S.src.company,personasId:S.src.personasId,personasName:S.src.personasName,total:all.length,approved:all.filter(p=>p.status==="Approved").length,count:S.cols.length,savedAt:new Date().toISOString(),
-    pack:JSON.stringify({src:S.src,brands:S.brands,settings:S.settings,rot:S.rot,mix:S.mix,style:S.style||""})};
+    pack:JSON.stringify({src:S.src,brands:S.brands,settings:S.settings,rot:S.rot,mix:S.mix,styles:S.styles})};
   this.disabled=true; msg.textContent="Saving…";
   try{ await PromptStore.saveSet(id,meta,S.cols); S.setId=id; save(); msg.textContent=`Saved "${name}".`; renderSets(); }
   catch(e){ msg.textContent = e&&e.code==="quota_exceeded" ? "Storage for this page is full. Delete a saved set, then try again." : "The prompt set could not be saved. You may not have permission to save on this page."; }
@@ -641,7 +728,7 @@ $("sets").addEventListener("click",async e=>{
     if(UI.busy>=0){ toast("Wait for generation to finish"); return; }
     msg.textContent="Opening…";
     try{ const x=await PromptStore.openSet(o.dataset.open); const st0=x&&x.meta&&(x.meta.pack?JSON.parse(x.meta.pack):x.meta.state); if(!st0){ msg.textContent="This prompt set could not be read."; return; }
-      S=Object.assign({},st0,{settings:Object.assign({},DEFAULTS,st0.settings),cols:x.cols,name:x.meta.name,setId:o.dataset.open}); cleanNames(); cleanVariables(); ensureMix(); UI.filters={}; UI.status={}; UI.trim=-1; save(); render(); msg.textContent=`Opened "${x.meta.name}".`; }
+      S=Object.assign({},st0,{settings:Object.assign({},DEFAULTS,st0.settings),cols:x.cols,name:x.meta.name,setId:o.dataset.open}); cleanNames(); cleanVariables(); ensureMix(); ensureStyles(); UI.filters={}; UI.status={}; UI.trim=-1; save(); render(); msg.textContent=`Opened "${x.meta.name}".`; }
     catch(err){ msg.textContent="This prompt set could not be opened."; }
   } else if(d){
     const id=d.dataset.del; if(delArmed!==id){ delArmed=id; renderSets(); setTimeout(()=>{ if(delArmed===id){ delArmed=""; renderSets(); } },4000); return; }
@@ -651,5 +738,5 @@ $("sets").addEventListener("click",async e=>{
 PersonaStore.on(renderSources); ICPStore.on(renderSources); PromptStore.on(renderSets);
 load();
 { const fixed=cleanNames(), tags=cleanVariables(); if(tags) save(); if(fixed.brands||fixed.prompts){ save(); setTimeout(()=>toast(`Competitor names cleaned: ${fixed.brands} tracked brand${fixed.brands===1?"":"s"}, ${fixed.prompts} prompt${fixed.prompts===1?"":"s"}`),400); } }
-if(S.src){ const had=!!S.mix; ensureMix(); if(!had) save(); }
+if(S.src){ const had=!!S.mix&&Array.isArray(S.styles); ensureMix(); ensureStyles(); if(S.run&&S.run.state==="running"){ S.run.state="stopped"; S.run.ci=-1; S.run.msg="The page was closed or reloaded during a run. Select Resume to continue."; } if(!had) save(); }
 render();

@@ -234,6 +234,10 @@ input[type="text"]:focus{border-color:var(--teal);outline:none;box-shadow:0 0 0 
 .mixtop input{width:110px;margin:0}
 .mixgrid input{width:70px;margin:0}
 .mixgrid td,.mixgrid th{text-align:left}
+.rungrid td,.rungrid th{text-align:left}
+.rungrid b{font-weight:400;color:var(--navy)}
+.pstyle{margin-top:10px;display:flex;flex-direction:column;gap:4px}
+.pstyle textarea{margin:0;min-height:76px}
 .pcount,.sumgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px}
 .pcount b,.sumgrid b{display:block;color:var(--navy);font-size:20px;font-weight:200;font-variant-numeric:tabular-nums}
 .pcount div:last-child b{font-size:13px;font-weight:400;padding-top:6px}
