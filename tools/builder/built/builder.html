@@ -631,9 +631,10 @@ input[type="text"]:focus{border-color:var(--teal);outline:none;box-shadow:0 0 0 
         <section class="sec" id="d-secc" hidden>
           <p class="eyebrow">Step C</p>
           <h2>Prompt Set</h2>
-          <p class="desc">Ten recommendation prompts from the seed: the same person, the same moment, two per angle. Each is checked for duplicates (within the set and against the company's prompts in The Night Ventures), for being a recommendation prompt, for staying in the moment and for not naming your brand.</p>
+          <p class="desc">Recommendation prompts from the seed, 10 unless you choose another number: the same person, the same moment, spread evenly over five angles. Each is checked for duplicates (within the set and against the company's prompts in The Night Ventures), for being a recommendation prompt, for staying in the moment and for not naming your brand.</p>
           <div class="panel">
-            <div class="actions" style="margin-top:0"><button class="btn primary" id="d-setgo" type="button">Write the 10 prompts</button><button class="btn" id="d-check" type="button" hidden>Check again</button></div>
+            <div class="upbox" style="margin-top:0"><label for="d-count" class="status">Number of prompts</label><input type="number" id="d-count" min="3" max="20" step="1" value="10" style="width:80px;border:1px solid var(--line);border-radius:10px;padding:6px 10px;background:var(--page);color:var(--navy)"><span class="status" id="d-countnote"></span></div>
+            <div class="actions"><button class="btn primary" id="d-setgo" type="button">Write the 10 prompts</button><button class="btn" id="d-check" type="button" hidden>Check again</button></div>
             <div id="d-rows" style="margin-top:12px"></div>
             <div id="d-setfbbox" hidden>
               <label for="d-setfb" class="status" style="display:block;margin-top:12px">Feedback on the whole set</label>
@@ -647,7 +648,7 @@ input[type="text"]:focus{border-color:var(--teal);outline:none;box-shadow:0 0 0 
         <section class="sec" id="d-secd" hidden>
           <p class="eyebrow">Step D</p>
           <h2>Push and Test</h2>
-          <p class="desc">Writes the moment and its 10 prompts to The Night Ventures, as Approved prompts linked to the moment. Then run them in Prompt Tests.</p>
+          <p class="desc">Writes the moment and its prompts to The Night Ventures, as Approved prompts linked to the moment. Then run them in Prompt Tests.</p>
           <div class="panel">
             <div class="actions" style="margin-top:0"><button class="btn primary" id="d-push" type="button">Push to The Night Ventures</button></div>
             <p class="status" id="d-dmsg" role="status" aria-live="polite" style="margin:8px 0 0"></p>
@@ -3467,7 +3468,7 @@ render();
 (function(){"use strict";
 /* Decision Moments: one base persona, in one buyer situation, at the moment they are ready to act.
    Step A matches the user's description to a persona and situation; Step B writes and refines one seed prompt;
-   Step C writes 10 recommendation prompts from it (two per angle) and checks them; Step D pushes to The Night Ventures
+   Step C writes the set of recommendation prompts from it (default 10, spread evenly over the angles) and checks them; Step D pushes to The Night Ventures
    (tnv_push_moment, migration 083). Reads the ICP and personas with the Prompt Builder's parsers (window.PromptParse). */
 const $=id=>document.getElementById("d-"+id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -3478,7 +3479,11 @@ const ANGLES=[
   ["Named comparison","weighs one or two named competitors against each other or against doing it themselves"],
   ["Hire or do it myself","asks whether to pay someone or do it themselves, and who to pay if so"],
   ["Constraint-led","leads with their hard constraint (budget, time, fee model, risk) and asks what fits it"]];
-const MIN_W=12, MAX_W=80, SET_N=10;
+const MIN_W=12, MAX_W=80, SET_DEFAULT=10, SET_MIN=3, SET_MAX=20;
+/* How many prompts the set has: chosen in Step C, 10 unless changed. */
+const setN=c=>{ const n=Math.round(Number(c&&c.count)); return Number.isFinite(n)&&n>=SET_MIN&&n<=SET_MAX?n:SET_DEFAULT; };
+/* Angles spread evenly over the set, in order: 10 gives two per angle; 7 gives 2,1,2,1,1. */
+const angleOf=(i,n)=>ANGLES[Math.min(ANGLES.length-1,Math.floor(i*ANGLES.length/n))][0];
 let M={srcId:"",cur:null};
 const UI={busy:false,brands:null,brandsFor:"",existing:null,existingFor:"",moments:null,armed:""};
 const blank=()=>({code:"",title:"",text:"",pi:-1,sid:"",reason:"",seed:"",path:"",fb:"",versions:[],seedFinal:false,prompts:[],setFb:"",setFinal:false,pushedAt:"",companyId:""});
@@ -3558,7 +3563,7 @@ async function openMoment(mid){
   const bm=String(m.persona_code||"").match(/^B(\d+)$/); if(bm) pi=Number(bm[1])-1;
   if(!src||pi<0||pi>=src.personas.length) pi=-1;
   M.cur=Object.assign(blank(),{code:m.code,title:m.title||"",text:m.moment_text||"",pi,sid:m.situation_id||"",reason:m.match_reason||"",seed:m.seed_prompt||"",path:m.path_note||"",
-    versions:Array.isArray(m.seed_versions)?m.seed_versions:[],seedFinal:!!m.seed_prompt,setFinal:ps.length>0,companyId:id,pushedAt:m.updated_at||"",
+    versions:Array.isArray(m.seed_versions)?m.seed_versions:[],seedFinal:!!m.seed_prompt,setFinal:ps.length>0,count:ps.length||SET_DEFAULT,pushedN:ps.length,companyId:id,pushedAt:m.updated_at||"",
     prompts:ps.map((p,i)=>({n:i+1,angle:((p.variables||[]).find(v=>v.k==="Angle")||{}).v||"",text:p.prompt,named:p.named_brands||[],issue:""}))});
   save(); render(); toast("Opened "+m.code+(pi<0?". Pick its base persona again in Step A":""));
 }
@@ -3627,7 +3632,7 @@ Return JSON only, no code fence: {"prompt": "...", "path": {"need": "...", "cate
 function pathText(p){ if(!p||typeof p!=="object") return String(p||""); return `Need: ${p.need||""}\nCategory: ${p.category||""}\nWhy us: ${p.why_us||""}\nCompeting for the answer: ${(p.competitors||[]).join(", ")||"none named"}`; }
 function setPrompt(src,c,only,note){
   const others=c.prompts.filter(p=>!only||p.n!==only.n);
-  const slots=only?[{n:only.n,angle:only.angle}]:Array.from({length:SET_N},(_,i)=>({n:i+1,angle:ANGLES[Math.floor(i/2)][0]}));
+  const slots=only?[{n:only.n,angle:only.angle}]:Array.from({length:setN(c)},(_,i)=>({n:i+1,angle:angleOf(i,setN(c))}));
   return `You write prompts a specific person would type into an AI assistant such as ChatGPT. All of them come from one moment and all of them are recommendation prompts.
 
 PERSON
@@ -3726,13 +3731,13 @@ async function doSeed(withFb){
 }
 async function doSet(only,note){
   const src=source(), c=M.cur, msg=$("cmsg"); if(!src||!c.seedFinal){ msg.textContent="Finalize the seed prompt first."; return; }
-  busy(true,msg,only?`Rewriting prompt ${only.n}…`:note?"Rewriting the set with your feedback…":"Writing 10 prompts…");
+  busy(true,msg,only?`Rewriting prompt ${only.n}…`:note?"Rewriting the set with your feedback…":`Writing ${setN(c)} prompts…`);
   try{ await brands();
     const list=pjson(await ask(setPrompt(src,c,only,note),"complex"),"[","]");
     const comp=competitors(src).map(x=>x.toLowerCase());
-    const rows=list.map(r=>({n:Number(r.n),angle:String(r.angle||"").trim(),text:String(r.prompt||"").replace(/\s+/g," ").trim(),named:(Array.isArray(r.named_brands)?r.named_brands:[]).map(String).filter(x=>comp.includes(x.toLowerCase())),issue:""})).filter(r=>r.text&&r.n>=1&&r.n<=SET_N);
+    const rows=list.map(r=>({n:Number(r.n),angle:String(r.angle||"").trim(),text:String(r.prompt||"").replace(/\s+/g," ").trim(),named:(Array.isArray(r.named_brands)?r.named_brands:[]).map(String).filter(x=>comp.includes(x.toLowerCase())),issue:""})).filter(r=>r.text&&r.n>=1&&r.n<=setN(c));
     if(only){ const r=rows.find(x=>x.n===only.n)||rows[0]; if(!r) throw {code:"parse"}; Object.assign(only,{text:r.text,named:r.named,issue:""}); }
-    else { if(rows.length<SET_N) throw {code:"parse"}; c.prompts=rows.slice(0,SET_N).sort((a,b)=>a.n-b.n); c.setFb=""; }
+    else { if(rows.length<setN(c)) throw {code:"parse"}; c.prompts=rows.slice(0,setN(c)).sort((a,b)=>a.n-b.n); c.setFb=""; }
     save(); render(); await doCheck(true); }
   catch(e){ msg.textContent=errText(e); busy(false); }
 }
@@ -3760,7 +3765,7 @@ function doPush(){
   TNV.open({
     items:[`The moment ${c.code||"(a new DM code)"} "${c.title||"untitled"}": your description, persona ${c.pi>=0?"B"+(c.pi+1)+" ("+src.personas[c.pi].name+")":"?"}, situation ${c.sid}, the seed prompt, its path note and ${c.versions.length} earlier version${c.versions.length===1?"":"s"}.`,
       `${c.prompts.length} prompts as Approved, codes ${c.code||"DM…"}-01 to -${String(c.prompts.length).padStart(2,"0")}, type Recommendation, linked to the moment. A prompt whose wording changed loses its earlier test results.`,
-      "Tracked brands and all other prompts are not touched. The database refuses any prompt that names your own brand.",
+      "Tracked brands and all other prompts are not touched. The database refuses any prompt that names your own brand."+(c.pushedN>c.prompts.length?` This moment had ${c.pushedN} prompts in The Night Ventures; ${c.code}-${String(c.prompts.length+1).padStart(2,"0")} and after stay there. Set them to Rejected in Prompt Tests if you no longer want them run.`:""),
       "Persona codes B1, B2 … follow the order of the personas pushed from the Persona Builder."],
     run: async (co2,status)=>{
       let code=c.code;
@@ -3768,7 +3773,7 @@ function doPush(){
       status("Writing to The Night Ventures…");
       const res=await TNV.pushMoment(co2.id,{moment:{code,title:c.title,moment_text:c.text,persona_code:c.pi>=0?"B"+(c.pi+1):"",situation_id:c.sid,match_reason:c.reason,seed_prompt:c.seed,path_note:c.path,seed_versions:c.versions,runs:10,status:"final"},
         prompts:c.prompts.map((p,i)=>({id:`${code}-${String(i+1).padStart(2,"0")}`,prompt:p.text,angle:p.angle,named_brands:p.named,status:"Approved"}))});
-      c.code=code; c.companyId=co2.id; c.pushedAt=new Date().toISOString(); UI.existing=null; save(); render(); loadMoments();
+      c.code=code; c.companyId=co2.id; c.pushedAt=new Date().toISOString(); c.pushedN=Math.max(c.pushedN||0,c.prompts.length); UI.existing=null; save(); render(); loadMoments();
       $("dmsg").textContent=`Pushed ${code}. Next: The Night Ventures › Prompt Tests, select the ${code} prompts and run them.`;
       return `Pushed to ${co2.name}: moment ${code} with ${res.prompts} prompts.`;
     }
@@ -3808,6 +3813,8 @@ function render(){
   $("secc").hidden=!c.seedFinal;
   const has=c.prompts.length>0;
   $("setgo").hidden=has; $("check").hidden=!has||c.setFinal; $("setfbbox").hidden=!has;
+  if(document.activeElement!==$("count")) $("count").value=setN(c); $("count").disabled=c.setFinal; $("setgo").textContent=`Write the ${setN(c)} prompts`;
+  $("countnote").textContent=has&&c.prompts.length!==setN(c)?`The set below has ${c.prompts.length}. Select Rewrite the set to write ${setN(c)}.`:`Spread over the angles: ${ANGLES.map(([a])=>a+" "+Array.from({length:setN(c)},(_,i)=>angleOf(i,setN(c))).filter(x=>x===a).length).join(", ")}.`;
   $("rows").innerHTML=c.prompts.map(p=>`<div class="prow" style="grid-template-columns:150px minmax(0,1fr) auto"><div><span class="lab" style="color:var(--navy)">${p.n}. ${esc(p.angle)}</span><span class="hint" style="display:block;color:var(--muted);font-size:12px">${words(p.text)} words${p.named&&p.named.length?" · names "+esc(p.named.join(", ")):""}</span></div>
     <div><textarea data-ptext="${p.n}" rows="2"${c.setFinal?" readonly":""} aria-label="Prompt ${p.n}">${esc(p.text)}</textarea>${p.issue?`<div class="ptags"><span class="pill">${esc(p.issue)}</span></div>`:""}${c.setFinal?"":`<input type="text" data-pnote="${p.n}" placeholder="Note for a rewrite (optional)" style="margin-top:6px;font-size:13px" aria-label="Note for prompt ${p.n}">`}</div>
     <div>${c.setFinal?"":`<button class="btn" type="button" data-pre="${p.n}">Rewrite</button>`}</div></div>`).join("");
@@ -3845,13 +3852,14 @@ $("seedopen").onclick=()=>{ const c=M.cur; c.seedFinal=false; c.setFinal=false; 
 $("versions").addEventListener("click",e=>{ const b=e.target.closest("[data-vback]"); if(!b) return; const c=M.cur, v=c.versions[Number(b.dataset.vback)]; if(!v) return;
   c.versions.push({prompt:c.seed,path_note:c.path,feedback:"(replaced by an earlier version)",at:new Date().toISOString()}); c.seed=v.prompt; c.path=v.path_note||c.path; save(); render(); });
 $("setgo").onclick=()=>doSet(null,"");
-$("setre").onclick=()=>{ const fb=$("setfb").value.trim(); if(!fb){ $("cmsg").textContent="Write your feedback first."; return; } syncRows(); doSet(null,fb); };
+$("setre").onclick=()=>{ const fb=$("setfb").value.trim(), resize=M.cur.prompts.length!==setN(M.cur); if(!fb&&!resize){ $("cmsg").textContent="Write your feedback first."; return; } syncRows(); doSet(null,fb); };
 $("setfb").addEventListener("input",e=>{ M.cur.setFb=e.target.value; save(); });
+$("count").addEventListener("change",e=>{ const v=Math.round(Number(e.target.value)); M.cur.count=Number.isFinite(v)?Math.max(SET_MIN,Math.min(SET_MAX,v)):SET_DEFAULT; save(); render(); });
 $("check").onclick=()=>doCheck(false);
 $("rows").addEventListener("change",e=>{ if(e.target.dataset.ptext){ syncRows(); save(); render(); } });
 $("rows").addEventListener("click",e=>{ const b=e.target.closest("[data-pre]"); if(!b||UI.busy) return; syncRows(); const p=M.cur.prompts.find(x=>x.n===Number(b.dataset.pre)); const n=document.querySelector(`[data-pnote="${b.dataset.pre}"]`); if(p) doSet(p,n?n.value.trim():""); });
 $("setfin").onclick=()=>{ const c=M.cur; syncRows(); const left=c.prompts.filter(p=>p.issue);
-  if(c.prompts.length<SET_N){ $("cmsg").textContent=`The set needs ${SET_N} prompts.`; return; }
+  if(c.prompts.length!==setN(c)){ $("cmsg").textContent=`The set has ${c.prompts.length} prompts and the number chosen is ${setN(c)}. Rewrite the set, or change the number back.`; return; }
   if(left.length&&UI.armed!=="fin"){ UI.armed="fin"; $("cmsg").textContent=`${left.length} prompt${left.length===1?" still has":"s still have"} a note. Select Finalize set again to keep them as they are.`; setTimeout(()=>{ if(UI.armed==="fin") UI.armed=""; },6000); return; }
   if(c.prompts.some(p=>/names your own brand/.test(p.issue))){ $("cmsg").textContent="A prompt names your own brand. Change it first."; return; }
   UI.armed=""; c.setFinal=true; $("cmsg").textContent="Set finalized."; save(); render(); };
