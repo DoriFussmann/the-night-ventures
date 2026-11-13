@@ -58,6 +58,8 @@ header.top p.lede{margin:12px 0 0;color:var(--on-navy-soft);max-width:58ch;font-
 .seg input{position:absolute;opacity:0;pointer-events:none}
 .seg label:has(input:checked){background:var(--mint);border-color:var(--mint);color:var(--mint-ink)}
 .seg label:has(input:focus-visible){outline:2px solid var(--teal);outline-offset:2px}
+.tnvload{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px}
+.tnvload .status{flex:1 1 260px}
 .drop{border:1.5px dashed var(--teal-mid);border-radius:12px;padding:14px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--card2)}
 .drop.over{background:var(--mint);border-color:var(--teal)}
 .drop span{color:var(--body);font-size:14px;flex:1 1 180px}
@@ -181,6 +183,11 @@ dialog::backdrop{background:rgba(22,35,58,.55)}
         <p class="eyebrow">Input</p>
         <h2>Import Inputs From Markdown</h2>
         <p class="sub">Upload the filled template or any documents about the business, one or several. Template rows and sections whose headings match a field are imported directly. Select Analyse to have Claude read all of them and allocate their content to every relevant field.</p>
+        <div class="tnvload" id="tnvload">
+          <button class="btn primary" id="btn-tnvload" type="button" disabled>Load from The Night Ventures</button>
+          <span class="status" id="tnvload-msg" role="status">Choose the company at the top of the page. Its Company and Brand Facts are then loaded here, as if you had dropped their two exported files.</span>
+          <div id="tnvload-ask" hidden><button class="btn" id="btn-tnvreplace" type="button"></button> <button class="btn quiet" id="btn-tnvkeep" type="button">Keep what is here</button></div>
+        </div>
         <div class="drop" id="drop">
           <span>Drop one or more .md files here</span>
           <input type="file" id="file" accept=".md,.markdown,.txt,text/markdown,text/plain" multiple hidden>
@@ -635,8 +642,43 @@ $("btn-example").onclick=()=>{ state.mode=EXAMPLE.mode; state.vals={...EXAMPLE.v
 let clearArmed=false;
 $("btn-clear").onclick=function(){
   if(!clearArmed){ clearArmed=true; this.textContent="Click again to reset everything"; setTimeout(()=>{ clearArmed=false; this.textContent="Reset"; },4000); return; }
-  clearArmed=false; this.textContent="Reset"; state.mode="org"; state.out=""; state.outS=""; state.outO=""; state.tab="s"; state.savedName=""; state.vals={}; state.ev={}; state.auto={}; state.uploads=[]; renderUpload(); state.example=false; $("import-note").hidden=true; renderForm(); save(); toast("Everything was reset");
+  clearArmed=false; this.textContent="Reset"; resetAll(); toast("Everything was reset");
 };
+function resetAll(){ state.mode="org"; state.out=""; state.outS=""; state.outO=""; state.tab="s"; state.savedName=""; state.vals={}; state.ev={}; state.auto={}; state.from={}; state.uploads=[]; delete state.companyId; delete state.companyName; renderUpload(); state.example=false; $("import-note").hidden=true; renderForm(); save(); }
+
+/* ---------- Load Company and Brand Facts from The Night Ventures ---------- */
+/* The two documents are written by the app's own export code (TNVExport) and imported exactly as dropped files.
+   Their file names are the export's, so loading again replaces this company's blocks instead of adding to them. */
+let tnvPending=null;
+function tnvSay(t){ $("tnvload-msg").textContent=t; }
+function tnvButton(){ const co=window.Company&&Company.get(); $("btn-tnvload").disabled=!co; $("btn-tnvload").textContent=co?"Load "+co.name+" from The Night Ventures":"Load from The Night Ventures"; }
+function hasInputs(){ return state.uploads.length>0||Object.values(state.vals).some(v=>String(v||"").trim()); }
+async function loadFromTnv(force){
+  const co=window.Company&&Company.get(); $("tnvload-ask").hidden=true;
+  if(!co){ tnvSay("Choose the company at the top of the page first."); return; }
+  $("btn-tnvload").disabled=true;
+  try{
+    tnvSay("Reading "+co.name+"'s Company and Brand Facts from The Night Ventures…");
+    const docs=force&&tnvPending&&tnvPending.id===co.id ? tnvPending.docs : await TNVExport.load(co.id); tnvPending=null;
+    const same=state.companyId===co.id||state.uploads.some(u=>docs.some(d=>d.filename===u.name));
+    if(hasInputs()&&!same&&!force){
+      tnvPending={id:co.id,docs};
+      const from=state.companyName||state.uploads.map(u=>u.name).join(", ")||"inputs typed or loaded earlier";
+      tnvSay("The inputs here are not "+co.name+"'s (they come from "+from+"). Loading now would mix two companies.");
+      $("btn-tnvreplace").textContent="Reset and load "+co.name; $("tnvload-ask").hidden=false; return;
+    }
+    if(force&&!same) resetAll();
+    batch=[]; for(const d of docs) importMarkdown(d.content,d.filename);
+    state.companyId=co.id; state.companyName=co.name; save();
+    const filled=Object.values(state.vals).filter(v=>String(v||"").trim()).length;
+    tnvSay("Loaded "+co.name+"'s Company and Brand Facts from The Night Ventures ("+docs.map(d=>d.filename).join(" and ")+"). "+filled+" fields have an answer. Select Analyse to fill more from the same two documents.");
+  }catch(e){ tnvSay(TNV.errorText(e).replace(/,? then push again\./," then try again.").replace(/^The push ran but its confirmation could not be read\..*$/,"The answer from The Night Ventures could not be read. Try again.")); }
+  finally{ tnvButton(); }
+}
+$("btn-tnvload").onclick=()=>loadFromTnv(false);
+$("btn-tnvreplace").onclick=()=>loadFromTnv(true);
+$("btn-tnvkeep").onclick=()=>{ tnvPending=null; $("tnvload-ask").hidden=true; tnvSay("Kept what is here. Every push still goes to "+((Company.get()||{}).name||"the chosen company")+"."); };
+if(window.Company){ Company.on(co=>{ tnvButton(); if(co) loadFromTnv(false); }); tnvButton(); }
 
 /* ---------- Prompts ---------- */
 function promptParts(){

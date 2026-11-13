@@ -58,6 +58,8 @@ header.top p.lede{margin:12px 0 0;color:var(--on-navy-soft);max-width:58ch;font-
 .seg input{position:absolute;opacity:0;pointer-events:none}
 .seg label:has(input:checked){background:var(--mint);border-color:var(--mint);color:var(--mint-ink)}
 .seg label:has(input:focus-visible){outline:2px solid var(--teal);outline-offset:2px}
+.tnvload{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px}
+.tnvload .status{flex:1 1 260px}
 .drop{border:1.5px dashed var(--teal-mid);border-radius:12px;padding:14px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--card2)}
 .drop.over{background:var(--mint);border-color:var(--teal)}
 .drop span{color:var(--body);font-size:14px;flex:1 1 180px}
@@ -203,6 +205,10 @@ input[type="text"]:focus{border-color:var(--teal);outline:none;box-shadow:0 0 0 
 .mixgrid input{width:70px;margin:0}
 .mixgrid td,.mixgrid th{text-align:left}
 .rungrid td,.rungrid th{text-align:left}
+.cobar{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin:0 0 18px;padding:12px 16px;border-radius:12px;background:var(--card2,#E6EEF0)}
+.cobar label{font-size:13px;letter-spacing:2px;text-transform:uppercase;color:var(--teal)}
+.cobar select{margin:0;min-width:220px;width:auto}
+.cobar .status{margin:0}
 .rungrid b{font-weight:400;color:var(--navy)}
 .pstyle{margin-top:10px;display:flex;flex-direction:column;gap:4px}
 .pstyle textarea{margin:0;min-height:76px}
@@ -258,6 +264,7 @@ input[type="text"]:focus{border-color:var(--teal);outline:none;box-shadow:0 0 0 
     <a href="#persona-inputs" id="tool-tab-persona">Persona Builder</a>
     <a href="#prompts" id="tool-tab-prompts">Prompt Builder</a>
   </nav>
+  <div class="cobar" role="group" aria-label="Company"><label for="co-pick">Company in The Night Ventures</label><select id="co-pick"><option value="">Loading companies…</option></select><span class="status" id="co-msg" role="status"></span></div>
   <div id="tool-icp">
   <header class="top">
     <div>
@@ -295,6 +302,11 @@ input[type="text"]:focus{border-color:var(--teal);outline:none;box-shadow:0 0 0 
         <p class="eyebrow">Input</p>
         <h2>Import Inputs From Markdown</h2>
         <p class="sub">Upload the filled template or any documents about the business, one or several. Template rows and sections whose headings match a field are imported directly. Select Analyse to have Claude read all of them and allocate their content to every relevant field.</p>
+        <div class="tnvload" id="tnvload">
+          <button class="btn primary" id="btn-tnvload" type="button" disabled>Load from The Night Ventures</button>
+          <span class="status" id="tnvload-msg" role="status">Choose the company at the top of the page. Its Company and Brand Facts are then loaded here, as if you had dropped their two exported files.</span>
+          <div id="tnvload-ask" hidden><button class="btn" id="btn-tnvreplace" type="button"></button> <button class="btn quiet" id="btn-tnvkeep" type="button">Keep what is here</button></div>
+        </div>
         <div class="drop" id="drop">
           <span>Drop one or more .md files here</span>
           <input type="file" id="file" accept=".md,.markdown,.txt,text/markdown,text/plain" multiple hidden>
@@ -567,7 +579,7 @@ input[type="text"]:focus{border-color:var(--teal);outline:none;box-shadow:0 0 0 
 <dialog id="tnvdlg">
   <p class="eyebrow">Output</p>
   <h2 style="font-size:26px">Push to The Night Ventures</h2>
-  <label for="tnv-company" class="status" style="display:block;margin-top:14px">Company</label>
+  <label for="tnv-company" class="status" style="display:block;margin-top:14px">Company (chosen at the top of the page)</label>
   <select id="tnv-company" style="margin-top:4px"></select>
   <ul id="tnv-items" style="margin:14px 0 0;padding-left:20px;font-size:14px"></ul>
   <p class="status" id="tnv-msg" role="status" style="min-height:1.4em;margin:12px 0 0"></p>
@@ -708,13 +720,12 @@ window.TNV=(()=>{
   function open(opts){
     current=opts; const dlg=el("tnvdlg"), sel=el("tnv-company"), msg=el("tnv-msg"), go=el("tnv-go");
     el("tnv-items").innerHTML=opts.items.map(t=>"<li>"+String(t).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))+"</li>").join("");
-    go.hidden=false; go.disabled=true; el("tnv-cancel").textContent="Cancel"; sel.disabled=false; sel.innerHTML="<option value=\"\">Loading companies…</option>"; msg.textContent="";
+    go.hidden=false; el("tnv-cancel").textContent="Cancel"; msg.textContent=""; sel.disabled=true;
     dlg.showModal();
-    const fill=list=>{ companies=list; const g=String(opts.guess||"").toLowerCase().replace(/\(.*?\)/g,"").trim();
-      sel.innerHTML="<option value=\"\">Choose a company</option>"+list.map(c=>`<option value="${c.id}">${String(c.name).replace(/[&<>"]/g,"")}</option>`).join("");
-      const hit=g&&list.find(c=>{ const n=String(c.name).toLowerCase(); return n===g||g.includes(n)||n.includes(g); }); if(hit) sel.value=hit.id; go.disabled=!sel.value; };
-    if(companies) fill(companies);
-    else sql("select id, name from public.companies order by name").then(l=>{ if(!l.length||!l[0].id) throw {code:"parse",message:JSON.stringify(l).slice(0,120)}; if(current===opts) fill(l); }).catch(e=>{ if(e&&e.code==="parse") e={code:"parse_list",message:e.message}; if(current===opts){ sel.innerHTML="<option value=\"\">Companies could not be loaded</option>"; msg.textContent=errorText(e); } });
+    // The company is chosen once, at the top of the page. The dialog shows it and offers no other.
+    const pick=window.Company&&Company.get();
+    if(!pick){ companies=[]; sel.innerHTML="<option value=\"\">No company chosen</option>"; go.disabled=true; msg.textContent="Choose the company at the top of the page first, then push."; return; }
+    companies=[pick]; sel.innerHTML=`<option value="${pick.id}">${String(pick.name).replace(/[&<>"]/g,"")}</option>`; sel.value=pick.id; go.disabled=false;
   }
   document.addEventListener("DOMContentLoaded",()=>{},{once:true});
   function wire(){
@@ -726,11 +737,11 @@ window.TNV=(()=>{
       const co=(companies||[]).find(c=>c.id===sel.value); if(!co) return;
       busy=true; go.disabled=true; sel.disabled=true; msg.textContent="Starting…";
       try{ const text=await current.run(co,t=>{ msg.textContent=t; }); msg.textContent=text; go.hidden=true; el("tnv-cancel").textContent="Close"; }
-      catch(e){ msg.textContent=errorText(e); go.disabled=false; sel.disabled=false; }
+      catch(e){ msg.textContent=errorText(e); go.disabled=false; }
       finally{ busy=false; }
     };
   }
-  return { open, wire, errorText, pushIcp:(id,p)=>call("tnv_push_icp",id,p), pushPersonas:(id,p)=>call("tnv_push_personas",id,p), pushPrompts:(id,p)=>call("tnv_push_prompts",id,p),
+  return { open, wire, errorText, sql, pushIcp:(id,p)=>call("tnv_push_icp",id,p), pushPersonas:(id,p)=>call("tnv_push_personas",id,p), pushPrompts:(id,p)=>call("tnv_push_prompts",id,p),
     brands:id=>{ if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw {code:"bad_id"}; return sql(`select name, is_own, domains, name_patterns, exclude_patterns from public.pt_brands where company_id='${id}'::uuid order by sort, name`); } };
 })();
 TNV.wire();
@@ -742,6 +753,419 @@ function showTool(){
   document.querySelector(".wrap").classList.toggle("wide",q);
 }
 window.addEventListener("hashchange",showTool); showTool();
+</script>
+<script>
+/* Company and Brand Facts from The Night Ventures, written by the app's own export code.
+   build.py copies sectionMarkdown.js, and the constants it needs from api.js, into the two marked places below.
+   Only the database reads differ: `supabase` here is an adapter that runs them through the viewer's Supabase connection. */
+window.TNVExport=(()=>{
+  const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  // The export code reads with supabase.from(table).select(columns).eq(column, id).maybeSingle(). Same call shape, run as SQL.
+  const supabase={from(table){ let cols="*", where=null; const q={
+    select(c){ cols=String(c); return q; },
+    eq(c,v){ where=[String(c),String(v)]; return q; },
+    async maybeSingle(){
+      if(!/^[a-z_]+$/.test(table)||!/^[a-z0-9_,\s]+$/i.test(cols)||!where||!/^[a-z_]+$/.test(where[0])||!UUID.test(where[1])) throw {code:"bad_query",message:table};
+      const r=await TNV.sql(`select ${cols.replace(/\s+/g," ").trim()} from public.${table} where ${where[0]}='${where[1]}'::uuid limit 1`);
+      return {data:r[0]||null,error:null}; } }; return q; } };
+  const downloadMarkdown=()=>{};
+
+const EMPTY_BRAND_FACTS = Object.freeze({
+  live_wording: [],
+  offer: "",
+  customer: "",
+  problem: "",
+  triggers: "",
+  signals: "",
+  difference: "",
+  conversion: "",
+  conversion_action: "",
+  conversion_url: "",
+  voice: "",
+  approved_claims: [],
+  never_claims: [],
+  out_of_scope: [],
+  competitors: [],
+  open_items: [],
+});
+const MOVED_TO_COMPANY = { proof: "gtm_customer_evidence", image_style: "image_style" };
+const REMOVED_BRAND_KEYS = [
+  ...Object.keys(MOVED_TO_COMPANY),
+  "fit_size_band", "fit_ability_to_pay", "fit_floor_ceiling", "fit_problem_cost", "fit_buying_window", "fit_signals", "fit_environment",
+];
+const BRAND_FACTS_NOTE =
+  "Approved messaging lives here. Pricing, customer evidence and proof, and operating constraints live in the Company tab.";
+const BRAND_SECTIONS = [
+  { key: "offer", label: "1 · The offer", helper: "What exactly is sold, the price model, what the customer gets step by step." },
+  {
+    key: "customer",
+    label: "2 · Customer qualification & fit",
+    helper: "Who buys today and who it is not for; markets and stages served; tools or prerequisites the customer must have, and what rules them out.",
+  },
+  {
+    key: "problem",
+    label: "3 · Customer problem & impact",
+    helper: "The problem, and what it costs the customer in money or time if unsolved. Qualitative is fine; no invented numbers.",
+  },
+  {
+    key: "triggers",
+    label: "4 · Buying triggers & timing",
+    helper: "The moment that triggers the purchase, how recent it must be, and how long the window stays open.",
+  },
+  { key: "signals", label: "5 · Observable signals", helper: "Public evidence that the trigger has happened." },
+  { key: "difference", label: "6 · The difference", helper: "Why this over competitors, DIY or doing nothing; what is never done." },
+  { key: "conversion", label: "7 · The conversion", helper: "What counts as a win and the next step after reading. The call to action and page below are what articles link to." },
+  {
+    key: "voice",
+    label: "8 · Voice & tone",
+    helper: "How articles should sound: register, sentence style, words and framings to use and avoid. The writer follows this. Claims that must never be made go under Never claim.",
+  },
+];
+const COMMERCIAL_FIELDS = [
+  { key: "gtm_deal_size", label: "Deal size", rows: 2, hint: "Typical price or contract value, as a band." },
+  { key: "gtm_sales_motion", label: "Sales motion", rows: 2, hint: "Sales model, cycle length, how many people are involved. The Persona Builder needs this too." },
+  {
+    key: "gtm_customer_evidence",
+    label: "Customer evidence & proof",
+    rows: 8,
+    wide: true,
+    hint: "Who stands behind it, credentials, clients, results that can be stated, the database. Best customers and what they share; worst or churned and why; lost deals and why. Proxy evidence if pre-launch. Keep the founder's earlier results apart from the company's own. Articles take their proof from here.",
+  },
+  { key: "gtm_where_to_find", label: "Where to find them", rows: 3, hint: "Databases, lists, communities, channels." },
+  {
+    key: "gtm_constraints",
+    label: "Operating constraints",
+    rows: 3,
+    hint: "Legal, regulatory or ownership limits; delivery capacity. What articles must not say goes in Brand Facts (Never claim, Voice & tone).",
+  },
+];
+const IMAGE_STYLE_FIELD = {
+  key: "image_style",
+  label: "Image style",
+  rows: 4,
+  hint: "How article hero images should look. Each image gets a scene written for its article in this style. Leave empty to use the default (editorial desk still life, warm light).",
+};
+function normalizeBrandFacts(value) {
+  const v = { ...(value && typeof value === "object" ? value : {}) };
+  for (const key of REMOVED_BRAND_KEYS) delete v[key];
+  return { ...EMPTY_BRAND_FACTS, ...v };
+}
+
+
+/** One downloadable .md per AEO Playbook tab. Everything is the saved data, not unsaved edits. */
+const SECTION_LABELS = {
+  company: "Company",
+  brand: "Brand Facts",
+  personas: "ICP & Personas",
+  prompts: "Prompts",
+  map: "Content Map",
+};
+
+const FILE_SLUGS = {
+  company: "company",
+  brand: "brand-facts",
+  personas: "icp-personas",
+  prompts: "prompts",
+  map: "content-map",
+};
+
+const PERSONA_FIELDS = [
+  ["stage", "Stage"],
+  ["trigger", "Trigger"],
+  ["need", "Need"],
+  ["pains", "Pains and objections"],
+  ["decision_criteria", "Decision criteria"],
+  ["alternatives", "Alternatives they weigh"],
+  ["their_words", "Their words (real queries)"],
+  ["where_they_listen", "Where they listen"],
+  ["main_tiers", "Main intent tiers"],
+];
+
+const TRAINING_POLICY_LABELS = {
+  allow: "Allow AI training crawlers",
+  block: "Block AI training crawlers",
+  any: "No preference",
+};
+
+const EMPTY = "_Empty_";
+const text = (value) => String(value ?? "").trim();
+const orEmpty = (value) => text(value) || EMPTY;
+const bullets = (items) => {
+  const list = (items || []).map(text).filter(Boolean);
+  return list.length ? list.map((item) => `- ${item}`).join("\n") : EMPTY;
+};
+/** Table cell: one line, pipes escaped. */
+const cell = (value) => (value === null || value === undefined ? "" : String(value)).replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ").trim();
+const table = (headers, rows) =>
+  [`| ${headers.join(" | ")} |`, `| ${headers.map(() => "---").join(" | ")} |`, ...rows.map((r) => `| ${r.map(cell).join(" | ")} |`)].join("\n");
+
+const slugify = (value) =>
+  text(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+function header(companyName, section) {
+  const date = new Date().toISOString().slice(0, 10);
+  return `# ${companyName ? `${companyName}: ` : ""}AEO Playbook, ${SECTION_LABELS[section]}\n\n_Exported ${date}_`;
+}
+
+async function companyMarkdown(companyId) {
+  const [companyRes, profileRes] = await Promise.all([
+    supabase.from("companies").select("name, github_owner, github_repo").eq("id", companyId).maybeSingle(),
+    supabase
+      .from("company_profiles")
+      .select(
+        `domain, product_name, seo_market, seo_language, ai_training_bot_policy, ${[...COMMERCIAL_FIELDS, IMAGE_STYLE_FIELD].map((f) => f.key).join(", ")}`
+      )
+      .eq("company_id", companyId)
+      .maybeSingle(),
+  ]);
+  if (companyRes.error) throw new Error(companyRes.error.message);
+  if (profileRes.error) throw new Error(profileRes.error.message);
+  const c = companyRes.data || {};
+  const p = profileRes.data || {};
+  const parts = [
+    "## Basics",
+    [
+      `- **Company name:** ${orEmpty(c.name)}`,
+      `- **Domain:** ${orEmpty(p.domain)}`,
+      `- **Product name:** ${orEmpty(p.product_name)}`,
+      `- **Search market:** ${orEmpty(p.seo_market)}`,
+      `- **Language:** ${orEmpty(p.seo_language)}`,
+      `- **AI training crawlers:** ${TRAINING_POLICY_LABELS[p.ai_training_bot_policy || "allow"] || p.ai_training_bot_policy}`,
+    ].join("\n"),
+    "## Commercial and sales",
+    ...COMMERCIAL_FIELDS.flatMap((f) => [`### ${f.label}`, orEmpty(p[f.key])]),
+    "## Article images",
+    `### ${IMAGE_STYLE_FIELD.label}`,
+    orEmpty(p[IMAGE_STYLE_FIELD.key]),
+    "## Publish Destination",
+    [`- **GitHub owner:** ${orEmpty(c.github_owner)}`, `- **GitHub repo:** ${orEmpty(c.github_repo)}`].join("\n"),
+  ];
+  return parts;
+}
+
+function brandMarkdown({ playbook }) {
+  const facts = playbook.brand_facts;
+  const parts = [`_${BRAND_FACTS_NOTE}_`, "## Live wording (frozen)"];
+  const live = (facts.live_wording || []).filter((r) => text(r?.where) || text(r?.text));
+  parts.push(live.length ? live.map((r) => `- **${orEmpty(r.where)}:** ${orEmpty(r.text)}`).join("\n") : EMPTY);
+
+  for (const s of BRAND_SECTIONS) {
+    parts.push(`## ${s.label}`);
+    if (s.key === "conversion") {
+      parts.push(
+        [`- **Call to action:** ${orEmpty(facts.conversion_action)}`, `- **Conversion page URL:** ${orEmpty(facts.conversion_url)}`].join("\n")
+      );
+    }
+    parts.push(orEmpty(facts[s.key]));
+  }
+
+  parts.push(
+    "## Claims and scope",
+    "### Approved (use as written)",
+    bullets(facts.approved_claims),
+    "### Never claim",
+    bullets(facts.never_claims),
+    "### Out of scope topics",
+    bullets(facts.out_of_scope),
+    "## Competitors"
+  );
+  const competitors = (facts.competitors || []).filter((r) => Object.values(r || {}).some(text));
+  if (!competitors.length) parts.push(EMPTY);
+  for (const r of competitors) {
+    parts.push(
+      `### ${orEmpty(r.name)}`,
+      [
+        `- **URL:** ${orEmpty(r.url)}`,
+        `- **What it is:** ${orEmpty(r.what)}`,
+        `- **How it charges:** ${orEmpty(r.charges)}`,
+        `- **Category vs us:** ${orEmpty(r.category)}`,
+      ].join("\n")
+    );
+  }
+  parts.push("## Open items", bullets(facts.open_items));
+  return parts;
+}
+
+function personasMarkdown({ playbook, personas }) {
+  const parts = ["## ICP", orEmpty(playbook.icp), "## Shared by all personas", bullets(playbook.shared_traits), `## Personas (${personas.length})`];
+  if (!personas.length) parts.push(EMPTY);
+  for (const p of personas) {
+    parts.push(`### ${p.code} · ${orEmpty(p.name)}`);
+    if (text(p.summary)) parts.push(text(p.summary));
+    for (const [key, label] of PERSONA_FIELDS) parts.push(`**${label}**`, orEmpty(p[key]));
+  }
+  return parts;
+}
+
+function promptsMarkdown({ prompts, personas, groups, pillars }) {
+  const personaById = new Map(personas.map((p) => [p.id, p]));
+  const groupById = new Map(groups.map((g) => [g.id, g]));
+  const pillarById = new Map(pillars.map((p) => [p.id, p]));
+  const rows = prompts.map((p) => {
+    const persona = personaById.get(p.persona_id);
+    const group = groupById.get(p.group_id);
+    return [
+      p.code,
+      p.prompt,
+      p.keyword,
+      persona ? `${persona.code} · ${persona.name}` : "",
+      p.intent_tier,
+      p.search_volume,
+      p.keyword_difficulty,
+      p.gsc_impressions,
+      p.gsc_best_position,
+      p.bing_impressions,
+      p.cited_today,
+      p.business_value,
+      group ? `${group.code} · ${group.name}` : "Unassigned",
+      pillarById.get(group?.pillar_id)?.name || "",
+    ];
+  });
+  return [
+    `## Prompts (${prompts.length})`,
+    prompts.length
+      ? table(
+          ["ID", "Prompt", "Keyword", "Persona", "Tier", "Volume", "KD", "Google impr.", "Best pos.", "Bing impr.", "Cited today", "Value", "Prompt group", "Pillar"],
+          rows
+        )
+      : EMPTY,
+  ];
+}
+
+function mapMarkdown({ pillars, groups, prompts, personas }) {
+  const personaById = new Map(personas.map((p) => [p.id, p]));
+  const promptsByGroup = new Map();
+  for (const p of prompts) {
+    if (!promptsByGroup.has(p.group_id)) promptsByGroup.set(p.group_id, []);
+    promptsByGroup.get(p.group_id).push(p);
+  }
+  const tiers = { Buy: 0, Problem: 0, Learn: 0 };
+  for (const p of prompts) if (p.intent_tier in tiers) tiers[p.intent_tier] += 1;
+  const statuses = {};
+  for (const g of groups) statuses[g.status] = (statuses[g.status] || 0) + 1;
+
+  const parts = [
+    "## Summary",
+    [
+      `- **Personas:** ${personas.length}`,
+      `- **Prompts:** ${prompts.length} (Buy ${tiers.Buy} · Problem ${tiers.Problem} · Learn ${tiers.Learn})`,
+      `- **Prompt groups (articles):** ${groups.length}`,
+      `- **Pillars:** ${pillars.length}`,
+      `- **Groups by status:** ${Object.entries(statuses).map(([s, n]) => `${s} ${n}`).join(" · ") || "none"}`,
+    ].join("\n"),
+  ];
+
+  const groupBlock = (g) => {
+    const list = promptsByGroup.get(g.id) || [];
+    const lines = [
+      `- **Page type:** ${g.page_type}`,
+      `- **Status:** ${g.status}`,
+      `- **Live slug:** ${orEmpty(g.live_slug)}`,
+      `- **Primary keyword:** ${orEmpty(g.primary_keyword)}`,
+    ];
+    if (text(g.notes)) lines.push(`- **Notes:** ${cell(g.notes)}`);
+    const out = [`### ${g.code} · ${orEmpty(g.name)}`, lines.join("\n")];
+    out.push(
+      list.length
+        ? table(
+            ["ID", "Prompt", "Tier", "Persona", "Keyword"],
+            list.map((p) => [p.code, p.prompt, p.intent_tier, personaById.get(p.persona_id)?.code || "", p.keyword])
+          )
+        : "_No prompts in this group._"
+    );
+    return out;
+  };
+
+  for (const pillar of pillars) {
+    const list = groups.filter((g) => g.pillar_id === pillar.id);
+    parts.push(
+      `## ${pillar.code} · ${orEmpty(pillar.name)}${pillar.is_new ? " (new pillar)" : ""}`,
+      [
+        `- **Site topic name:** ${orEmpty(pillar.topic_name)}`,
+        `- **Hub page:** ${orEmpty(pillar.hub_path)}`,
+        `- **Pillar article:** ${orEmpty(pillar.pillar_article_slug)}`,
+        `- **Groups:** ${list.length}`,
+      ].join("\n")
+    );
+    for (const g of list) parts.push(...groupBlock(g));
+  }
+
+  const loose = groups.filter((g) => !g.pillar_id);
+  if (loose.length) {
+    parts.push("## Groups without a pillar");
+    for (const g of loose) parts.push(...groupBlock(g));
+  }
+  const ungrouped = promptsByGroup.get(null) || [];
+  if (ungrouped.length) {
+    parts.push(
+      `## Prompts without a group (${ungrouped.length})`,
+      table(
+        ["ID", "Prompt", "Tier", "Persona", "Keyword"],
+        ungrouped.map((p) => [p.code, p.prompt, p.intent_tier, personaById.get(p.persona_id)?.code || "", p.keyword])
+      )
+    );
+  }
+  return parts;
+}
+
+const BUILDERS = { brand: brandMarkdown, personas: personasMarkdown, prompts: promptsMarkdown, map: mapMarkdown };
+
+/** Build one section's markdown. `data` is the loaded playbook; Company reads its own tables. */
+async function buildSectionMarkdown(section, companyId, data) {
+  const { data: company } = await supabase.from("companies").select("name").eq("id", companyId).maybeSingle();
+  const companyName = text(company?.name);
+  const parts = section === "company" ? await companyMarkdown(companyId) : BUILDERS[section](data);
+  return {
+    filename: `${[slugify(companyName), "aeo-playbook", FILE_SLUGS[section]].filter(Boolean).join("-")}.md`,
+    content: `${[header(companyName, section), ...parts].join("\n\n")}\n`,
+  };
+}
+
+async function downloadSectionMarkdown(section, companyId, data) {
+  const { filename, content } = await buildSectionMarkdown(section, companyId, data);
+  downloadMarkdown(filename, content);
+}
+
+
+  /* The two documents for one company, as the Export button names and writes them: [Company, Brand Facts]. */
+  async function load(companyId){
+    if(!UUID.test(companyId)) throw {code:"bad_id"};
+    const pb=(await TNV.sql(`select brand_facts from public.aeo_playbook where company_id='${companyId}'::uuid limit 1`))[0];
+    const company=await buildSectionMarkdown("company",companyId,{});
+    const brand=await buildSectionMarkdown("brand",companyId,{playbook:{brand_facts:normalizeBrandFacts(pb&&pb.brand_facts)}});
+    return [company,brand];
+  }
+  return {load};
+})();
+</script>
+<script>
+/* The company the whole page works on. Chosen once, in the bar at the top. Every push goes to it,
+   and the ICP Builder loads its Company and Brand Facts from The Night Ventures. */
+window.Company=(()=>{
+  const KEY="tnv-company-v1", el=id=>document.getElementById(id), subs=[]; let cur=null, list=null;
+  try{ const v=JSON.parse(localStorage.getItem(KEY)||"null"); if(v&&v.id&&v.name) cur={id:v.id,name:v.name}; }catch(e){}
+  const esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  function note(){ el("co-msg").textContent=cur?"Every push goes to "+cur.name+".":"Choose the company to work on. Every push goes to it."; }
+  function set(id){
+    const was=cur&&cur.id, c=(list||[]).find(x=>x.id===id)||null; cur=c?{id:c.id,name:c.name}:null;
+    try{ if(cur) localStorage.setItem(KEY,JSON.stringify(cur)); else localStorage.removeItem(KEY); }catch(e){}
+    note(); if((cur&&cur.id)!==was) subs.forEach(f=>{ try{ f(cur); }catch(e){} });
+  }
+  function start(){
+    const sel=el("co-pick"); sel.disabled=true; sel.onchange=e=>set(e.target.value);
+    TNV.sql("select id, name from public.companies order by name").then(l=>{
+      if(!Array.isArray(l)||(l.length&&!l[0].id)) throw {code:"parse_list",message:JSON.stringify(l).slice(0,120)};
+      list=l; if(cur&&!l.some(c=>c.id===cur.id)){ cur=null; try{ localStorage.removeItem(KEY); }catch(e){} subs.forEach(f=>{ try{ f(null); }catch(e){} }); }
+      sel.innerHTML='<option value="">Choose a company</option>'+l.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("");
+      sel.value=cur?cur.id:""; sel.disabled=false; note();
+    }).catch(e=>{ sel.innerHTML='<option value="">Companies could not be loaded</option>'; el("co-msg").textContent=TNV.errorText(e).replace(/,? then push again\./," then reload the page."); });
+  }
+  return { get:()=>cur, on:f=>subs.push(f), start };
+})();
+Company.start();
 </script>
 <script>
 (function(){
@@ -1127,8 +1551,43 @@ $("btn-example").onclick=()=>{ state.mode=EXAMPLE.mode; state.vals={...EXAMPLE.v
 let clearArmed=false;
 $("btn-clear").onclick=function(){
   if(!clearArmed){ clearArmed=true; this.textContent="Click again to reset everything"; setTimeout(()=>{ clearArmed=false; this.textContent="Reset"; },4000); return; }
-  clearArmed=false; this.textContent="Reset"; state.mode="org"; state.out=""; state.outS=""; state.outO=""; state.tab="s"; state.savedName=""; state.vals={}; state.ev={}; state.auto={}; state.uploads=[]; renderUpload(); state.example=false; $("import-note").hidden=true; renderForm(); save(); toast("Everything was reset");
+  clearArmed=false; this.textContent="Reset"; resetAll(); toast("Everything was reset");
 };
+function resetAll(){ state.mode="org"; state.out=""; state.outS=""; state.outO=""; state.tab="s"; state.savedName=""; state.vals={}; state.ev={}; state.auto={}; state.from={}; state.uploads=[]; delete state.companyId; delete state.companyName; renderUpload(); state.example=false; $("import-note").hidden=true; renderForm(); save(); }
+
+/* ---------- Load Company and Brand Facts from The Night Ventures ---------- */
+/* The two documents are written by the app's own export code (TNVExport) and imported exactly as dropped files.
+   Their file names are the export's, so loading again replaces this company's blocks instead of adding to them. */
+let tnvPending=null;
+function tnvSay(t){ $("tnvload-msg").textContent=t; }
+function tnvButton(){ const co=window.Company&&Company.get(); $("btn-tnvload").disabled=!co; $("btn-tnvload").textContent=co?"Load "+co.name+" from The Night Ventures":"Load from The Night Ventures"; }
+function hasInputs(){ return state.uploads.length>0||Object.values(state.vals).some(v=>String(v||"").trim()); }
+async function loadFromTnv(force){
+  const co=window.Company&&Company.get(); $("tnvload-ask").hidden=true;
+  if(!co){ tnvSay("Choose the company at the top of the page first."); return; }
+  $("btn-tnvload").disabled=true;
+  try{
+    tnvSay("Reading "+co.name+"'s Company and Brand Facts from The Night Ventures…");
+    const docs=force&&tnvPending&&tnvPending.id===co.id ? tnvPending.docs : await TNVExport.load(co.id); tnvPending=null;
+    const same=state.companyId===co.id||state.uploads.some(u=>docs.some(d=>d.filename===u.name));
+    if(hasInputs()&&!same&&!force){
+      tnvPending={id:co.id,docs};
+      const from=state.companyName||state.uploads.map(u=>u.name).join(", ")||"inputs typed or loaded earlier";
+      tnvSay("The inputs here are not "+co.name+"'s (they come from "+from+"). Loading now would mix two companies.");
+      $("btn-tnvreplace").textContent="Reset and load "+co.name; $("tnvload-ask").hidden=false; return;
+    }
+    if(force&&!same) resetAll();
+    batch=[]; for(const d of docs) importMarkdown(d.content,d.filename);
+    state.companyId=co.id; state.companyName=co.name; save();
+    const filled=Object.values(state.vals).filter(v=>String(v||"").trim()).length;
+    tnvSay("Loaded "+co.name+"'s Company and Brand Facts from The Night Ventures ("+docs.map(d=>d.filename).join(" and ")+"). "+filled+" fields have an answer. Select Analyse to fill more from the same two documents.");
+  }catch(e){ tnvSay(TNV.errorText(e).replace(/,? then push again\./," then try again.").replace(/^The push ran but its confirmation could not be read\..*$/,"The answer from The Night Ventures could not be read. Try again.")); }
+  finally{ tnvButton(); }
+}
+$("btn-tnvload").onclick=()=>loadFromTnv(false);
+$("btn-tnvreplace").onclick=()=>loadFromTnv(true);
+$("btn-tnvkeep").onclick=()=>{ tnvPending=null; $("tnvload-ask").hidden=true; tnvSay("Kept what is here. Every push still goes to "+((Company.get()||{}).name||"the chosen company")+"."); };
+if(window.Company){ Company.on(co=>{ tnvButton(); if(co) loadFromTnv(false); }); tnvButton(); }
 
 /* ---------- Prompts ---------- */
 function promptParts(){

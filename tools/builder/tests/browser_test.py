@@ -10,6 +10,7 @@ from collections import Counter
 from playwright.async_api import async_playwright
 PAGE=(pathlib.Path(__file__).resolve().parent.parent/'built'/'builder.html').as_uri()
 STUB=r"""
+const ROWS={"company": {"name": "Ledgerline", "github_owner": "example-owner", "github_repo": "ledgerline-site"}, "profile": {"domain": "https://www.ledgerline.example/", "product_name": "Ledgerline Flow", "seo_market": "United Kingdom", "seo_language": "English.", "ai_training_bot_policy": "allow", "gtm_deal_size": "About 18k a year per customer.", "gtm_sales_motion": null, "gtm_customer_evidence": "Forty paying customers. Two published case studies.", "gtm_where_to_find": "", "gtm_constraints": "We only take customers in the UK and Ireland.", "image_style": null}, "brand_facts": {"offer": "Accounts payable software for mid-sized distributors. Pricing: a flat monthly fee per entity.", "customer": "Finance teams of two to ten people at distributors with several legal entities.\n\nNot a fit: companies with fewer than 200 invoices a month.", "problem": "Invoices arrive faster than the team can code and approve them.", "triggers": "Trigger: month-end close slipped twice in a row.\n\nWhy now: e-invoicing rules take effect next year.", "signals": "", "difference": "Alternatives are spreadsheets, the ERP's own module and outsourced bookkeeping.", "conversion": "Primary: a booked demo.", "conversion_action": "Book a demo.", "conversion_url": "https://www.ledgerline.example/demo/", "voice": "Plain and exact.", "live_wording": [{"where": "Homepage H1", "text": "Invoices, handled."}], "approved_claims": ["No per-invoice fees"], "never_claims": ["Guaranteed savings"], "out_of_scope": ["Payroll advice", "Tax filing"], "competitors": [{"name": "PayStack Pro", "url": "https://paystackpro.example", "what": "Self-serve payables tool with invoice capture", "charges": "Free plan; paid from $40/month", "category": "Self-serve software"}, {"name": "Northbook", "url": "https://northbook.example", "what": "Outsourced bookkeeping with a monthly close service", "charges": "Monthly retainer plus a fee per entity", "category": "Outsourced service"}], "open_items": [], "proof": "An old key that moved to the Company tab; the export must drop it."}};
 window.__bad=false;
 const STRAT='# Strategic ICP: Ledgerline\n\nOne line.\n\n## Blocking Unknowns\nNone\n\n## 4. Segments\n| Segment | Distinct need |\n|---|---|\n| Multi-entity distributors | x |\n\n## 5. Buyer Situations\n| ID | Situation | Trigger moment | Already tried | Deciding between | Stage weight | Confidence |\n|---|---|---|---|---|---|---|\n| S1 | Month-end overload | Close slipped twice | Hired temp | Tool or hire | Learn 10%, Problem 50%, Buy 40% | Hypothesized |\n| S2 | ERP migration | New ERP signed | Nothing | Native module or add-on | Learn 30%, Problem 30%, Buy 40% | Hypothesized |\n\n## 6. Alternatives\n| Category | Named examples |\n|---|---|\n| Do nothing | - |';
 const PROFILE=n=>`### ${n}\n\n#### 1. Identity\n- **Dept:** Finance\n\n#### 8. Questions They Ask\n| Situation | Stage | Question | Source |\n|---|---|---|---|\n| S1 | Learn | How do finance teams handle invoices? | Invented |\n| S1 | Problem | My month-end close slipped twice, what do I do? | Invented |\n| S1 | Buy | Is AP software worth it versus hiring a clerk? | Invented |\n\n#### 9. Language\n| What the buyer calls it | What we call it |\n|---|---|\n| invoice backlog | AP automation |\n\n#### 11. Messaging Recommendations\n| Objection | Suggested response | Buy-stage question |\n|---|---|---|\n| ERP has a module | Compare | Is AP software worth it versus hiring a clerk? |\n\n#### 13. Evidence & Confidence\n| Characteristic | Classification | Basis |\n|---|---|---|\n| Owns budget | Inferred | ICP |`;
@@ -26,6 +27,10 @@ window.claude={use:async n=> n==='sample' ? (async (inp,o)=>{ const p=typeof inp
   else if(p.includes('Condense one buyer persona')) t='{"summary":"Runs finance","stage":"Mid-sized","trigger":"Close slipped","need":"Fewer manual invoices","pains":"late fees; rework","decision_criteria":"ERP fit","alternatives":"hire a clerk","their_words":"invoice backlog; month-end close late","where_they_listen":"peers; LinkedIn","main_tiers":"Problem, Buy"}';
   else t='## Evidence & Confidence Report\nAll inferred.\n\n1. Interview controllers';
   if(o&&o.onText) o.onText({text:t}); if(p.includes('WRITE EXACTLY THESE')) await new Promise(r=>setTimeout(r,300)); return {text:t,truncated:false}}) : n==='mcp' ? {callTool:async(srv,tool,inp)=>{ window.__sql=(window.__sql||[]); window.__sql.push(inp.query); const wrap=j=>({payload:{result:'Below is the result.\n<untrusted-data-abc>\n'+JSON.stringify(j)+'\n</untrusted-data-abc>\nUse this data'}});
+    window.__sql2=(window.__sql2||[]); window.__sql2.push(inp.query);
+    if(inp.query.includes('from public.company_profiles')) return wrap([ROWS.profile]);
+    if(inp.query.includes('from public.aeo_playbook')) return wrap([{brand_facts:ROWS.brand_facts}]);
+    if(/from public\.companies where id='([0-9a-f-]+)'/.test(inp.query)){ const id=inp.query.match(/where id='([0-9a-f-]+)'/)[1]; return wrap([Object.assign({},ROWS.company,{name:id.startsWith('1111')?'Otherco':'Ledgerline'})]); }
     if(inp.query.includes('from public.companies')) return wrap([{id:'11111111-2222-4333-8444-555555555555',name:'Otherco'},{id:'22222222-3333-4444-8555-666666666666',name:'Ledgerline'}]);
     if(inp.query.includes('from public.pt_brands')) return wrap(window.__live||[]);
     if(inp.query.includes('tnv_push_icp')) return wrap([{result:{ok:true,icp_updated:true,traits:2,operational:false}}]);
@@ -95,7 +100,12 @@ async def main():
 
         # ---- Push: brands already in The Night Ventures are kept; statuses travel
         await pg.evaluate("window.__live=[{name:'Ledgerline Inc',is_own:true,domains:['ledgerline.example'],name_patterns:['Ledgerline','Ledgerline Inc'],exclude_patterns:['Ledger Nano']},{name:'HandAdded',is_own:false,domains:['handadded.example'],name_patterns:['HandAdded'],exclude_patterns:[]}]")
-        await pg.click('#q-push'); await pg.wait_for_timeout(300); await pg.select_option('#tnv-company',label='Ledgerline'); await pg.click('#tnv-go'); await pg.wait_for_timeout(800)
+        await pg.click('#q-push'); await pg.wait_for_timeout(300)
+        check('without a company chosen at the top, the push dialog says so and cannot push', 'Choose the company at the top' in await pg.inner_text('#tnv-msg') and await pg.is_disabled('#tnv-go'))
+        await pg.click('#tnv-cancel'); await pg.select_option('#co-pick',label='Ledgerline'); await pg.wait_for_timeout(300)
+        await pg.click('#q-push'); await pg.wait_for_timeout(300)
+        check('the push dialog shows the company chosen at the top and offers no other', await pg.evaluate("[...document.querySelectorAll('#tnv-company option')].map(o=>o.textContent).join('|')")=='Ledgerline' and await pg.is_disabled('#tnv-company'))
+        await pg.click('#tnv-go'); await pg.wait_for_timeout(800)
         q=await pg.evaluate("window.__pp"); m=re.search(r'\$(tnv\w+)\$(.*)\$\1\$',q,re.S); pl=json.loads(m.group(2))
         check('push sends the existing brands back unchanged', pl['brands']==[{'name':'Ledgerline Inc','own':True,'domains':['ledgerline.example'],'name_patterns':['Ledgerline','Ledgerline Inc'],'exclude_patterns':['Ledger Nano']},{'name':'HandAdded','own':False,'domains':['handadded.example'],'name_patterns':['HandAdded'],'exclude_patterns':[]}], pl['brands'])
         st=Counter(x['status'] for x in pl['prompts']); check('push sends approved and rejected prompts with their status, no drafts', st.get('Rejected',0)==12 and 'Draft' not in st and st.get('Approved',0)>0, dict(st))
@@ -160,6 +170,31 @@ async def main():
         await pg.reload(); await pg.evaluate("location.hash='prompts'"); await pg.wait_for_timeout(300)
         vals=await pg.evaluate("[...document.querySelectorAll('[data-style]')].map(t=>t.value)")
         check('an old global style box is carried over to every persona', vals==['old global line one\nold global line two']*2, vals)
+
+        # ---- One company for the whole page; load Company and Brand Facts from The Night Ventures
+        await pg.goto(PAGE); await pg.evaluate("localStorage.clear()"); await pg.reload(); await pg.wait_for_timeout(400)
+        opts=await pg.evaluate("[...document.querySelectorAll('#co-pick option')].map(o=>o.textContent)")
+        check('the company bar lists the companies in The Night Ventures', opts==['Choose a company','Otherco','Ledgerline'], opts)
+        check('the load button waits for a company', await pg.is_disabled('#btn-tnvload'))
+        await pg.evaluate("window.__sql2=[]"); await pg.select_option('#co-pick',label='Ledgerline'); await pg.wait_for_timeout(500)
+        st=await pg.evaluate("(s=>({names:s.uploads.map(u=>u.name),n:Object.keys(s.vals).length,co:s.companyName,comp:s.vals['1.11']||''}))(JSON.parse(localStorage.getItem('icp-builder-v3')))")
+        check('choosing a company with empty inputs loads its two documents, named as the export names them', st['names']==['ledgerline-aeo-playbook-company.md','ledgerline-aeo-playbook-brand-facts.md'] and st['co']=='Ledgerline', st)
+        check('the imported fields are filled exactly as from dropped files', st['n']==12 and st['comp'].startswith('PayStack Pro — URL:'), st)
+        check('the reads are plain one-row selects', all(q.startswith('select ') and ' limit 1' in q for q in await pg.evaluate("window.__sql2")))
+        msg=await pg.inner_text('#tnvload-msg'); check('the load says what it did', msg.startswith("Loaded Ledgerline's Company and Brand Facts"), msg)
+        before=await pg.evaluate("localStorage.getItem('icp-builder-v3')"); await pg.click('#btn-tnvload'); await pg.wait_for_timeout(500)
+        after=await pg.evaluate("(s=>JSON.stringify([s.vals,s.uploads.map(u=>u.name)]))(JSON.parse(localStorage.getItem('icp-builder-v3')))"); bef=await pg.evaluate(f"(s=>JSON.stringify([s.vals,s.uploads.map(u=>u.name)]))({before})")
+        check('loading the same company again changes nothing', after==bef)
+        await pg.select_option('#co-pick',label='Otherco'); await pg.wait_for_timeout(500)
+        msg=await pg.inner_text('#tnvload-msg'); n=await pg.evaluate("JSON.parse(localStorage.getItem('icp-builder-v3')).uploads.length")
+        check('switching to another company with inputs on the page asks first and changes nothing', 'would mix two companies' in msg and not await pg.is_hidden('#tnvload-ask') and n==2, msg)
+        await pg.click('#btn-tnvkeep'); await pg.wait_for_timeout(150)
+        check('Keep leaves the inputs as they were', await pg.evaluate("JSON.parse(localStorage.getItem('icp-builder-v3')).companyName")=='Ledgerline')
+        await pg.click('#btn-tnvload'); await pg.wait_for_timeout(400); await pg.click('#btn-tnvreplace'); await pg.wait_for_timeout(500)
+        st=await pg.evaluate("(s=>({names:s.uploads.map(u=>u.name),co:s.companyName,out:s.outS||''}))(JSON.parse(localStorage.getItem('icp-builder-v3')))")
+        check('Reset and load replaces the inputs with the other company', st['names']==['otherco-aeo-playbook-company.md','otherco-aeo-playbook-brand-facts.md'] and st['co']=='Otherco', st)
+        await pg.reload(); await pg.wait_for_timeout(500)
+        check('the chosen company is remembered after a reload', await pg.evaluate("document.getElementById('co-pick').value")=='11111111-2222-4333-8444-555555555555' and 'Otherco' in await pg.inner_text('#co-msg'))
 
         check('no page errors', not errs, errs)
         await b.close()

@@ -12,9 +12,12 @@ The source of the builder page that feeds this app: ICP Builder, Persona Builder
 | `src/persona-builder.src.html` | Persona Builder (its element ids get the prefix `p-` at build time) |
 | `src/prompts.frag.html`, `src/prompts.js` | Prompt Builder markup and script (element ids prefixed `q-`) |
 | `src/tnv_rows.js` | Reader for the Supabase connector's replies |
+| `src/company.js` | The company bar at the top of the page: one company for all three tools and every push |
+| `src/tnv_export.js` | Loads a company's Company and Brand Facts from The Night Ventures. `build.py` fills it with the app's own export code |
 | `build.py` | Assembles the page from `src/`, including the shared stores and the push to The Night Ventures |
 | `built/builder.html` | The page as published. Commit it with every change so the repo shows what is live |
-| `tests/unit.test.mjs` | Node tests of import, parsing, brand merge, persona mix and trim |
+| `tests/unit.test.mjs` | Node tests of import, parsing, brand merge, persona mix, trim and style examples |
+| `tests/export.test.mjs` | The page's Company and Brand Facts must match the app's Export button exactly |
 | `tests/browser_test.py` | Browser test of the built page with stand-in Claude and Supabase replies |
 | `tests/fixtures/` | Made-up sample files in the shape of the real exports and ICP |
 
@@ -25,7 +28,7 @@ Run from this folder.
 ```
 python3 build.py                      # writes built/builder.html and .check/j*.js
 for f in .check/j*.js; do node --check "$f"; done
-node --test tests/unit.test.mjs
+node --test tests/unit.test.mjs tests/export.test.mjs
 pip install playwright && playwright install chromium
 python3 tests/browser_test.py
 ```
@@ -50,7 +53,7 @@ Publishing is done from a Claude session with the artifact tools:
 ## What it depends on in this app
 
 - **Database functions** `tnv_push_icp`, `tnv_push_personas`, `tnv_push_prompts` (migrations 080 and 081) and the tables `aeo_playbook`, `aeo_personas`, `pt_brands`, `pt_prompts`, `pt_runs`.
-- **Export format** of the AEO Playbook's Company and Brand Facts tabs (`src/pages/tools/aeoPlaybook/sectionMarkdown.js`). The ICP Builder's import maps those headings and labels to its fields. If a heading or label changes there, change the aliases in `src/icp-builder.html` (`SECTIONS`) and the test fixtures here.
+- **Export format** of the AEO Playbook's Company and Brand Facts tabs (`src/pages/tools/aeoPlaybook/sectionMarkdown.js`, with the declarations it uses from `api.js`). `build.py` copies that code into the page, so "Load from The Night Ventures" writes the same two documents as the Export button. **After any change to the export, rebuild and republish the page**; `tests/export.test.mjs` fails until you do. The ICP Builder's import then maps the headings and labels to its fields: if one changes, change the aliases in `src/icp-builder.html` (`SECTIONS`) and the test fixtures.
 - **Tracked brands are maintained in the app.** `tnv_push_prompts` deletes brands that are not in the list it is sent, so the page reads the company's brands first and sends them back unchanged (`mergeBrands` in `src/prompts.js`). Do not go back to sending only the builder's list.
 
 ## Things that break easily
