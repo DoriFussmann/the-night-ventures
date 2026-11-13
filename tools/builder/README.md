@@ -11,14 +11,17 @@ The source of the builder page that feeds this app: ICP Builder, Persona Builder
 | `src/icp-builder.html` | ICP Builder, and the page's shared head, styles and layout |
 | `src/persona-builder.src.html` | Persona Builder (its element ids get the prefix `p-` at build time) |
 | `src/prompts.frag.html`, `src/prompts.js` | Prompt Builder markup and script (element ids prefixed `q-`) |
+| `src/moments.frag.html`, `src/moments.js` | Decision Moments markup and script (element ids written with the prefix `d-`). Reads the ICP and personas through `window.PromptParse` from `prompts.js`; pushes with `tnv_push_moment` (migration 083) |
 | `src/tnv_rows.js` | Reader for the Supabase connector's replies |
-| `src/company.js` | The company bar at the top of the page: one company for all three tools and every push |
+| `src/company.js` | The company bar at the top of the page: one company for all four tools and every push |
+| `src/company_link.js` | Makes the bar the only control: hides "Use This ICP", "Use These Personas" and the Saved ICPs list, and picks for each tool the company's newest saved ICP (by `companyId`, else by name) and the newest persona set built from it. Never replaces same-company work; asks before replacing another company's prompts |
 | `src/tnv_export.js` | Loads a company's Company and Brand Facts from The Night Ventures. `build.py` fills it with the app's own export code |
 | `build.py` | Assembles the page from `src/`, including the shared stores and the push to The Night Ventures |
 | `built/builder.html` | The page as published. Commit it with every change so the repo shows what is live |
 | `tests/unit.test.mjs` | Node tests of import, parsing, brand merge, persona mix, trim and style examples |
 | `tests/export.test.mjs` | The page's Company and Brand Facts must match the app's Export button exactly |
 | `tests/browser_test.py` | Browser test of the built page with stand-in Claude and Supabase replies |
+| `tests/moments_test.py` | Browser test of the Decision Moments tool (reuses the stand-ins of `browser_test.py`). `PAGE_URI` points it at another copy of the page |
 | `tests/fixtures/` | Made-up sample files in the shape of the real exports and ICP |
 
 ## Build and test
@@ -31,6 +34,7 @@ for f in .check/j*.js; do node --check "$f"; done
 node --test tests/unit.test.mjs tests/export.test.mjs
 pip install playwright && playwright install chromium
 python3 tests/browser_test.py
+python3 tests/moments_test.py
 ```
 
 The tests never call Claude or Supabase. The browser test uses fixed stand-in replies, so it shows the page's wiring works. It does not show how well Claude writes prompts, judges ambiguity or follows the style reference; check those in the published page.
@@ -64,3 +68,7 @@ Publishing is done from a Claude session with the artifact tools:
 4. A section title used inside a request to Claude (for example "WRITE EXACTLY THESE") must not be repeated inside another block of the same request.
 
 The full description of how each tool works is in the project document `claude/builder-technical-reference.md`.
+
+## Live page differs from `built/builder.html` (2026-11-13)
+
+The live page was published at 2026-11-12 22:25 PST (version `1794551129-a56f`) from source that is not in this repo (it adds, among other things, a `.fbrow` feedback list). To keep that work, the Decision Moments tool was not published from `built/builder.html`: it is served as extra files, `moments.js` (the frag and script bundled) and `company-link.js` (`src/company_link.js`), and `index.html` got eight small edits (tool tab, empty `#tool-moments`, `TNV.pushMoment`, `showTool`, `window.PromptParse`, `companyId` on a saved ICP, the two script tags). `built/builder.html` here holds the same tool inline. Until the 22:25 source is recovered and committed, **do not publish `built/builder.html` over the live page**: it would remove that work.

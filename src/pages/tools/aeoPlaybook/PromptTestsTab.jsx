@@ -14,6 +14,20 @@ import {
 import PromptTestsSummary, { formatDuration } from "./PromptTestsSummary";
 
 const STEP_SIZE = 10;
+/* Steps of up to STEP_SIZE calls, sent in order. A Decision Moment call (seq) never shares a step with another run of the same prompt,
+   so each moment prompt's runs happen one after another while different prompts run side by side. */
+export function planSteps(calls, size = STEP_SIZE) {
+  const steps = [];
+  let cur = [];
+  for (const c of calls) {
+    if (cur.length >= size || (c.seq && cur.some((x) => x.seq && x.promptId === c.promptId))) { steps.push(cur); cur = []; }
+    cur.push(c);
+  }
+  if (cur.length) steps.push(cur);
+  return steps;
+}
+/* "Baseline" for Prompt Builder prompts, the moment code (DM1 …) for Decision Moment prompts. */
+const setOf = (p) => (p.moment_id ? String(p.source_set || "").replace(/^moment:/, "") || "Decision Moment" : "Baseline");
 const STAGES = ["Learn", "Problem", "Buy"];
 const TYPES = ["Question", "Comparison", "Recommendation"];
 const LABEL_TONE = {
@@ -110,7 +124,7 @@ export default function PromptTestsTab({ companyId }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(() => new Set());
-  const [filters, setFilters] = useState({ persona: "", stage: "", type: "", outcome: "" });
+  const [filters, setFilters] = useState({ set: "", persona: "", stage: "", type: "", outcome: "" });
   const [plan, setPlan] = useState(null);
   const [run, setRun] = useState(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
@@ -143,11 +157,13 @@ export default function PromptTestsTab({ companyId }) {
 
   const engineIds = useMemo(() => (data ? Object.keys(data.engines) : []), [data]);
   const personas = useMemo(() => [...new Set((data?.prompts || []).map((p) => p.persona))].filter(Boolean), [data]);
+  const sets = useMemo(() => [...new Set((data?.prompts || []).map(setOf))].sort((a, b) => (a === "Baseline" ? -1 : b === "Baseline" ? 1 : a.localeCompare(b, undefined, { numeric: true }))), [data]);
   const shownEngines = useMemo(() => engineIds.filter((e) => data.settings.engines.includes(e) || data.summary.engines[e]), [engineIds, data]);
 
   const rows = useMemo(() => {
     if (!data) return [];
     return data.prompts.filter((p) => {
+      if (filters.set && setOf(p) !== filters.set) return false;
       if (filters.persona && p.persona !== filters.persona) return false;
       if (filters.stage && p.stage !== filters.stage) return false;
       if (filters.type && p.type !== filters.type) return false;
@@ -198,8 +214,9 @@ export default function PromptTestsTab({ companyId }) {
       let spent = 0;
       const startedAt = Date.now();
       setRun({ total: calls.length, done, failed, spent, note: "", startedAt });
-      for (let i = 0; i < calls.length && !stopRef.current; i += STEP_SIZE) {
-        const res = await stepPromptTest(companyId, cycleId, calls.slice(i, i + STEP_SIZE));
+      for (const batch of planSteps(calls)) {
+        if (stopRef.current) break;
+        const res = await stepPromptTest(companyId, cycleId, batch);
         if (res.capReached) {
           setRun((r) => ({ ...r, note: `Stopped: the monthly cap of ${money(res.cap)} was reached.` }));
           stopRef.current = true;
@@ -261,14 +278,16 @@ export default function PromptTestsTab({ companyId }) {
   const elapsed = run?.startedAt ? (run.endedAt || now) - run.startedAt : 0;
   // Time left, from the pace so far. Shown once a first step is done.
   const remaining = run && !run.finished && run.done > 0 ? (elapsed / run.done) * (run.total - run.done) : null;
-  const engineSummaries = Object.entries(data.summary.engines);
+  // With a prompt set chosen in the filter, the results and the Summary cover that set only.
+  const view = filters.set && data.summaries?.[filters.set] ? { ...data, summary: data.summaries[filters.set], prompts: data.prompts.filter((p) => setOf(p) === filters.set) } : data;
+  const engineSummaries = Object.entries(view.summary.engines);
   const lastCycle = data.cycles[0];
   const stale = lastCycle && Date.now() - new Date(lastCycle.created_at).getTime() > 30 * 86400000;
 
   return (
     <div className="space-y-5">
       {error && <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>}
-      <PromptTestsSummary open={summaryOpen} onOpenChange={setSummaryOpen} data={data} />
+      <PromptTestsSummary open={summaryOpen} onOpenChange={setSummaryOpen} data={view} />
 
       <section className="rounded-lg border border-border bg-card p-4">
         <h2 className="text-sm font-medium text-foreground">Prompt tests</h2>
@@ -318,6 +337,12 @@ export default function PromptTestsTab({ companyId }) {
 
       <section className="rounded-lg border border-border bg-card p-4">
         <div className="flex flex-wrap items-center gap-2">
+          {sets.length > 1 && (
+            <select className={selectClass} value={filters.set} onChange={(e) => setFilters({ ...filters, set: e.target.value })} aria-label="Filter by prompt set">
+              <option value="">All sets</option>
+              {sets.map((p) => (<option key={p}>{p}</option>))}
+            </select>
+          )}
           <select className={selectClass} value={filters.persona} onChange={(e) => setFilters({ ...filters, persona: e.target.value })} aria-label="Filter by persona">
             <option value="">All personas</option>
             {personas.map((p) => (<option key={p}>{p}</option>))}
@@ -361,7 +386,9 @@ export default function PromptTestsTab({ companyId }) {
             <p className="font-medium text-foreground">Cost before it runs</p>
             {plan.perEngine.map((e) => (
               <p key={e.engine} className="tabular-nums">
-                {e.label}: {plan.prompts} prompts × {e.runs} runs × {`$${e.unitCost.toFixed(3)}`} = {money(e.cost)}{e.estimated ? " (estimate; the API charges by length)" : ""}
+                {e.label}: {e.momentPrompts
+                  ? [e.baselinePrompts ? `${e.baselinePrompts} prompts × ${e.runs} runs` : "", `${e.momentPrompts} Decision Moment prompts × ${e.momentRuns} runs, one after another`].filter(Boolean).join(" + ")
+                  : `${plan.prompts} prompts × ${e.runs} runs`} × {`$${e.unitCost.toFixed(3)}`} = {money(e.cost)}{e.estimated ? " (estimate; the API charges by length)" : ""}
               </p>
             ))}
             <p className="mt-1 font-medium tabular-nums text-foreground">

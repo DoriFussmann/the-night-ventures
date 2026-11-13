@@ -49,8 +49,9 @@ async def to_prompts(pg):
     await pg.goto(PAGE); await pg.evaluate("localStorage.clear()"); await pg.reload()
     await pg.evaluate("window.__gen=0; window.__alwaysAmb=false")
     await pg.click('#btn-example'); await pg.click('#btn-generate'); await pg.wait_for_timeout(600)
-    await pg.click('#tool-tab-persona'); await pg.click('[data-use]'); await pg.wait_for_timeout(200); await pg.click('#p-btn-generate'); await pg.wait_for_timeout(1200)
-    await pg.click('#tool-tab-prompts'); await pg.wait_for_timeout(200); await pg.click('[data-src]'); await pg.wait_for_timeout(200)
+    # The pickers are hidden (the company bar drives them; see moments_test.py). No company is chosen here, so they are clicked directly.
+    await pg.click('#tool-tab-persona'); await pg.evaluate("document.querySelector('[data-use]').click()"); await pg.wait_for_timeout(200); await pg.click('#p-btn-generate'); await pg.wait_for_timeout(1200)
+    await pg.click('#tool-tab-prompts'); await pg.wait_for_timeout(200); await pg.evaluate("document.querySelector('[data-src]').click()"); await pg.wait_for_timeout(200)
 async def set_mix(pg,total,weights):
     await pg.fill('#q-mix-total',str(total)); await pg.press('#q-mix-total','Tab'); await pg.wait_for_timeout(100)
     for i,w in enumerate(weights):

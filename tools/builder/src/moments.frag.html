@@ -1,0 +1,95 @@
+
+    <header class="top">
+      <div>
+        <p class="eyebrow">Recommendation Prompts</p>
+        <h1>Decision Moments</h1>
+        <p class="lede">One base persona, in one buyer situation, at the moment they are ready to act. Describe the moment, agree the one prompt that person would type, then turn it into 10 recommendation prompts that one piece of content should answer.</p>
+      </div>
+    </header>
+
+    <main class="single" style="max-width:1000px">
+      <div class="setup" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr)">
+        <div class="panel">
+          <p class="eyebrow">Input</p>
+          <h2>Base Personas</h2>
+          <p class="sub">The saved persona set this moment comes from. Its ICP supplies the buyer situations and the alternatives.</p>
+          <div id="d-sources" class="savedlist"></div>
+        </div>
+        <div class="panel">
+          <p class="eyebrow">In The Night Ventures</p>
+          <h2>Decision Moments</h2>
+          <p class="sub">Moments already pushed for the company chosen at the top of the page. Open one to change it and push again.</p>
+          <div id="d-list" class="savedlist"></div>
+          <div class="actions"><button class="btn" id="d-new" type="button">New moment</button><button class="btn quiet" id="d-refresh" type="button">Refresh</button></div>
+          <p class="status" id="d-listmsg" role="status" style="margin:8px 0 0"></p>
+        </div>
+      </div>
+
+      <div id="d-work" hidden>
+        <section class="sec">
+          <p class="eyebrow">Step A</p>
+          <h2>The Moment</h2>
+          <p class="desc">Who the person is and the moment they are in, in your own words: their position, their constraints, what just happened and what they now want to do.</p>
+          <div class="panel">
+            <label for="d-text" class="status">The moment <span id="d-code" class="tag" hidden></span></label>
+            <textarea id="d-text" rows="5" style="margin-top:6px" placeholder="A CEO, bootstrapped, moving the business forward slowly, very careful with spending and burn aware, feels it is finally time to raise money and wants to act on it."></textarea>
+            <div class="actions"><button class="btn primary" id="d-match" type="button">Match to a persona</button></div>
+            <div id="d-matchbox" hidden style="margin-top:14px">
+              <div class="setgrid" style="margin-top:0">
+                <label for="d-title"><span class="status">Short title</span><input type="text" id="d-title" maxlength="90" autocomplete="off"></label>
+                <label for="d-persona"><span class="status">Base persona</span><select id="d-persona" style="margin-top:4px"></select></label>
+                <label for="d-sit"><span class="status">Buyer situation</span><select id="d-sit" style="margin-top:4px"></select></label>
+              </div>
+              <p class="status" id="d-reason" style="margin:10px 0 0"></p>
+            </div>
+            <p class="status" id="d-amsg" role="status" aria-live="polite" style="margin:8px 0 0"></p>
+          </div>
+        </section>
+
+        <section class="sec" id="d-secb" hidden>
+          <p class="eyebrow">Step B</p>
+          <h2>Seed Prompt</h2>
+          <p class="desc">The one prompt this person would type to an AI at that moment. It asks who or what to use. The note under it says how the answer should lead to the company; your brand never appears in the prompt.</p>
+          <div class="panel">
+            <div class="actions" style="margin-top:0"><button class="btn primary" id="d-seedgo" type="button">Write seed prompt</button></div>
+            <div id="d-seedbox" hidden>
+              <label for="d-seed" class="status" style="display:block;margin-top:12px">Seed prompt <span id="d-seedw"></span></label>
+              <textarea id="d-seed" rows="3" style="margin-top:4px"></textarea>
+              <label for="d-path" class="status" style="display:block;margin-top:12px">Path to us</label>
+              <textarea id="d-path" rows="4" style="margin-top:4px"></textarea>
+              <label for="d-fb" class="status" style="display:block;margin-top:12px">Your feedback</label>
+              <textarea id="d-fb" rows="2" style="margin-top:4px" placeholder="For example: shorter, he would not say 'seed round' yet, mention he has paying customers"></textarea>
+              <div class="actions"><button class="btn" id="d-seedre" type="button">Rewrite with feedback</button><button class="btn primary" id="d-seedfin" type="button">Finalize seed</button><button class="btn quiet" id="d-seedopen" type="button" hidden>Unlock seed</button></div>
+              <details style="margin-top:12px"><summary class="status" style="cursor:pointer">Earlier versions (<span id="d-vcount">0</span>)</summary><div id="d-versions"></div></details>
+            </div>
+            <p class="status" id="d-bmsg" role="status" aria-live="polite" style="margin:8px 0 0"></p>
+          </div>
+        </section>
+
+        <section class="sec" id="d-secc" hidden>
+          <p class="eyebrow">Step C</p>
+          <h2>Prompt Set</h2>
+          <p class="desc">Ten recommendation prompts from the seed: the same person, the same moment, two per angle. Each is checked for duplicates (within the set and against the company's prompts in The Night Ventures), for being a recommendation prompt, for staying in the moment and for not naming your brand.</p>
+          <div class="panel">
+            <div class="actions" style="margin-top:0"><button class="btn primary" id="d-setgo" type="button">Write the 10 prompts</button><button class="btn" id="d-check" type="button" hidden>Check again</button></div>
+            <div id="d-rows" style="margin-top:12px"></div>
+            <div id="d-setfbbox" hidden>
+              <label for="d-setfb" class="status" style="display:block;margin-top:12px">Feedback on the whole set</label>
+              <textarea id="d-setfb" rows="2" style="margin-top:4px"></textarea>
+              <div class="actions"><button class="btn" id="d-setre" type="button">Rewrite the set with feedback</button><button class="btn primary" id="d-setfin" type="button">Finalize set</button><button class="btn quiet" id="d-setopen" type="button" hidden>Unlock set</button></div>
+            </div>
+            <p class="status" id="d-cmsg" role="status" aria-live="polite" style="margin:8px 0 0"></p>
+          </div>
+        </section>
+
+        <section class="sec" id="d-secd" hidden>
+          <p class="eyebrow">Step D</p>
+          <h2>Push and Test</h2>
+          <p class="desc">Writes the moment and its 10 prompts to The Night Ventures, as Approved prompts linked to the moment. Then run them in Prompt Tests.</p>
+          <div class="panel">
+            <div class="actions" style="margin-top:0"><button class="btn primary" id="d-push" type="button">Push to The Night Ventures</button></div>
+            <p class="status" id="d-dmsg" role="status" aria-live="polite" style="margin:8px 0 0"></p>
+          </div>
+        </section>
+      </div>
+    </main>
