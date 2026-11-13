@@ -13,7 +13,8 @@ The source of the builder page that feeds this app: ICP Builder, Persona Builder
 | `src/prompts.frag.html`, `src/prompts.js` | Prompt Builder markup and script (element ids prefixed `q-`) |
 | `src/moments.frag.html`, `src/moments.js` | Decision Moments markup and script (element ids written with the prefix `d-`). Reads the ICP and personas through `window.PromptParse` from `prompts.js`; pushes with `tnv_push_moment` (migration 083) |
 | `src/tnv_rows.js` | Reader for the Supabase connector's replies |
-| `src/company.js` | The company bar at the top of the page: one company for all three tools and every push |
+| `src/company.js` | The company bar at the top of the page: one company for all four tools and every push |
+| `src/company_link.js` | Makes the bar the only control: hides "Use This ICP", "Use These Personas" and the Saved ICPs list, and picks for each tool the company's newest saved ICP (by `companyId`, else by name) and the newest persona set built from it. Never replaces same-company work; asks before replacing another company's prompts |
 | `src/tnv_export.js` | Loads a company's Company and Brand Facts from The Night Ventures. `build.py` fills it with the app's own export code |
 | `build.py` | Assembles the page from `src/`, including the shared stores and the push to The Night Ventures |
 | `built/builder.html` | The page as published. Commit it with every change so the repo shows what is live |
@@ -70,4 +71,4 @@ The full description of how each tool works is in the project document `claude/b
 
 ## Live page differs from `built/builder.html` (2026-11-13)
 
-The live page was published at 2026-11-12 22:25 PST (version `1794551129-a56f`) from source that is not in this repo (it adds, among other things, a `.fbrow` feedback list). To keep that work, the Decision Moments tool was not published from `built/builder.html`: it is served as a second file, `moments.js` (the frag and script bundled), and `index.html` got six small edits (tool tab, empty `#tool-moments`, `TNV.pushMoment`, `showTool`, `window.PromptParse`, the script tag). `built/builder.html` here holds the same tool inline. Until the 22:25 source is recovered and committed, **do not publish `built/builder.html` over the live page**: it would remove that work.
+The live page was published at 2026-11-12 22:25 PST (version `1794551129-a56f`) from source that is not in this repo (it adds, among other things, a `.fbrow` feedback list). To keep that work, the Decision Moments tool was not published from `built/builder.html`: it is served as extra files, `moments.js` (the frag and script bundled) and `company-link.js` (`src/company_link.js`), and `index.html` got eight small edits (tool tab, empty `#tool-moments`, `TNV.pushMoment`, `showTool`, `window.PromptParse`, `companyId` on a saved ICP, the two script tags). `built/builder.html` here holds the same tool inline. Until the 22:25 source is recovered and committed, **do not publish `built/builder.html` over the live page**: it would remove that work.
