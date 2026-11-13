@@ -401,15 +401,15 @@ window.TNV=(()=>{
       finally{ busy=false; }
     };
   }
-  return { open, wire, errorText, sql, pushIcp:(id,p)=>call("tnv_push_icp",id,p), pushPersonas:(id,p)=>call("tnv_push_personas",id,p), pushPrompts:(id,p)=>call("tnv_push_prompts",id,p),
+  return { open, wire, errorText, sql, pushIcp:(id,p)=>call("tnv_push_icp",id,p), pushPersonas:(id,p)=>call("tnv_push_personas",id,p), pushPrompts:(id,p)=>call("tnv_push_prompts",id,p), pushMoment:(id,p)=>call("tnv_push_moment",id,p),
     brands:id=>{ if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw {code:"bad_id"}; return sql(`select name, is_own, domains, name_patterns, exclude_patterns from public.pt_brands where company_id='${id}'::uuid order by sort, name`); } };
 })();
 TNV.wire();
 function showTool(){
-  const h=location.hash, q=h==="#prompts", p=!q&&["#persona-inputs","#personas"].includes(h);
-  document.getElementById("tool-icp").hidden=p||q; document.getElementById("tool-persona").hidden=!p; document.getElementById("tool-prompts").hidden=!q;
-  const a=document.getElementById("tool-tab-icp"), b=document.getElementById("tool-tab-persona"), c=document.getElementById("tool-tab-prompts");
-  a.removeAttribute("aria-current"); b.removeAttribute("aria-current"); c.removeAttribute("aria-current"); (q?c:p?b:a).setAttribute("aria-current","page");
+  const h=location.hash, d=h==="#moments", q=h==="#prompts", p=!q&&!d&&["#persona-inputs","#personas"].includes(h);
+  document.getElementById("tool-icp").hidden=p||q||d; document.getElementById("tool-persona").hidden=!p; document.getElementById("tool-prompts").hidden=!q; document.getElementById("tool-moments").hidden=!d;
+  const a=document.getElementById("tool-tab-icp"), b=document.getElementById("tool-tab-persona"), c=document.getElementById("tool-tab-prompts"), e=document.getElementById("tool-tab-moments");
+  [a,b,c,e].forEach(x=>x.removeAttribute("aria-current")); (d?e:q?c:p?b:a).setAttribute("aria-current","page");
   document.querySelector(".wrap").classList.toggle("wide",q);
 }
 window.addEventListener("hashchange",showTool); showTool();
@@ -448,7 +448,7 @@ assert re.findall(r'^import .*$', sm, re.M)==SM_IMPORTS, "sectionMarkdown.js imp
 export_js=open(SRC/'tnv_export.js').read()
 assert export_js.count('/*@APP_API@*/')==1 and export_js.count('/*@APP_SECTION_MARKDOWN@*/')==1
 export_js=export_js.replace('/*@APP_API@*/','\n'.join(top_level(api_src,n) for n in API_NAMES)).replace('/*@APP_SECTION_MARKDOWN@*/',re.sub(r'^export ','',re.sub(r'^import .*\n','',sm,flags=re.M),flags=re.M))
-out=head+'<style>\n'+css+pcss+extra+'</style>\n</head>\n<body>\n<div class="wrap">\n  <nav class="tools" aria-label="Tools">\n    <a href="#inputs" id="tool-tab-icp">ICP Builder</a>\n    <a href="#persona-inputs" id="tool-tab-persona">Persona Builder</a>\n    <a href="#prompts" id="tool-tab-prompts">Prompt Builder</a>\n  </nav>\n  <div class="cobar" role="group" aria-label="Company"><label for="co-pick">Company in The Night Ventures</label><select id="co-pick"><option value="">Loading companies…</option></select><span class="status" id="co-msg" role="status"></span></div>\n  <div id="tool-icp">'+ibody+'</div>\n  <div id="tool-persona" hidden>'+pbody+'</div>\n  <div id="tool-prompts" hidden>'+open(SRC/'prompts.frag.html').read()+'</div>\n</div>\n'+itail+idlg+'\n'+ptail+'<script>\n'+store+'</script>\n<script>\n'+export_js+'</script>\n<script>\n'+open(SRC/'company.js').read()+'</script>\n<script>\n(function(){'+ijs+'})();\n</script>\n<script>\n(function(){'+pjs+'})();\n</script>\n<script>\n(function(){'+open(SRC/'prompts.js').read()+'})();\n</script>\n</body>\n</html>\n'
+out=head+'<style>\n'+css+pcss+extra+'</style>\n</head>\n<body>\n<div class="wrap">\n  <nav class="tools" aria-label="Tools">\n    <a href="#inputs" id="tool-tab-icp">ICP Builder</a>\n    <a href="#persona-inputs" id="tool-tab-persona">Persona Builder</a>\n    <a href="#prompts" id="tool-tab-prompts">Prompt Builder</a>\n    <a href="#moments" id="tool-tab-moments">Decision Moments</a>\n  </nav>\n  <div class="cobar" role="group" aria-label="Company"><label for="co-pick">Company in The Night Ventures</label><select id="co-pick"><option value="">Loading companies…</option></select><span class="status" id="co-msg" role="status"></span></div>\n  <div id="tool-icp">'+ibody+'</div>\n  <div id="tool-persona" hidden>'+pbody+'</div>\n  <div id="tool-prompts" hidden>'+open(SRC/'prompts.frag.html').read()+'</div>\n  <div id="tool-moments" hidden>'+open(SRC/'moments.frag.html').read()+'</div>\n</div>\n'+itail+idlg+'\n'+ptail+'<script>\n'+store+'</script>\n<script>\n'+export_js+'</script>\n<script>\n'+open(SRC/'company.js').read()+'</script>\n<script>\n(function(){'+ijs+'})();\n</script>\n<script>\n(function(){'+pjs+'})();\n</script>\n<script>\n(function(){'+open(SRC/'prompts.js').read()+'})();\n</script>\n<script>\n(function(){'+open(SRC/'moments.js').read()+'})();\n</script>\n</body>\n</html>\n'
 out,_k=re.subn(r"  function rows\(payload\)\{.*?\n  \}\n(?=  async function sql)",lambda m:open(SRC/'tnv_rows.js').read(),out,flags=re.S); assert _k==1
 def _r(x,y):
     global out

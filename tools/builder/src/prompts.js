@@ -735,6 +735,8 @@ $("sets").addEventListener("click",async e=>{
     delArmed=""; try{ await PromptStore.removeSet(id); if(S.setId===id) S.setId=""; toast("Prompt set deleted"); }catch(err){ toast("Could not delete. You may not have permission on this page."); } renderSets();
   }
 });
+/* The Decision Moments tool reads the ICP and the personas with these same parsers. */
+window.PromptParse={parseIcp,parsePersona,icpCustomer};
 PersonaStore.on(renderSources); ICPStore.on(renderSources); PromptStore.on(renderSets);
 load();
 { const fixed=cleanNames(), tags=cleanVariables(); if(tags) save(); if(fixed.brands||fixed.prompts){ save(); setTimeout(()=>toast(`Competitor names cleaned: ${fixed.brands} tracked brand${fixed.brands===1?"":"s"}, ${fixed.prompts} prompt${fixed.prompts===1?"":"s"}`),400); } }
