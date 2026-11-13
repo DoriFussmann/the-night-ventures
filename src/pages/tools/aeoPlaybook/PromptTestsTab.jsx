@@ -237,9 +237,12 @@ export default function PromptTestsTab({ companyId }) {
     reload();
   };
 
+  // Exports follow the prompt set chosen in the filter (all prompts when none is chosen); the file name says which.
+  const inSet = (p) => !filters.set || setOf(p) === filters.set;
+  const fileTag = filters.set ? "-" + filters.set.toLowerCase().replace(/[^a-z0-9]+/g, "-") : "";
   const exportPrompts = (format) => {
-    const out = data.prompts.map((p) => {
-      const row = { id: p.code, persona: p.persona, situation: p.situation, stage: p.stage, type: p.type, variables: (p.variables || []).join("; "), named_brands: (p.named_brands || []).join("; "), status: p.status, prompt: p.prompt };
+    const out = data.prompts.filter(inSet).map((p) => {
+      const row = { id: p.code, set: setOf(p), persona: p.persona, situation: p.situation, stage: p.stage, type: p.type, variables: (p.variables || []).join("; "), named_brands: (p.named_brands || []).join("; "), status: p.status, prompt: p.prompt };
       for (const e of engineIds) {
         const o = (data.outcomes[p.id] || {})[e];
         row[`${e}_runs`] = o ? o.runs : 0;
@@ -251,15 +254,16 @@ export default function PromptTestsTab({ companyId }) {
       }
       return row;
     });
-    if (format === "json") return download("prompt-tests.json", JSON.stringify(out, null, 1), "application/json");
+    if (format === "json") return download(`prompt-tests${fileTag}.json`, JSON.stringify(out, null, 1), "application/json");
     const keys = Object.keys(out[0] || {});
-    download("prompt-tests.csv", [keys.join(",")].concat(out.map((r) => keys.map((k) => csvCell(r[k])).join(","))).join("\n"), "text/csv");
+    download(`prompt-tests${fileTag}.csv`, [keys.join(",")].concat(out.map((r) => keys.map((k) => csvCell(r[k])).join(","))).join("\n"), "text/csv");
   };
 
   const exportRuns = async () => {
     try {
       const res = await exportPromptRuns(companyId);
-      download("prompt-test-runs.json", JSON.stringify(res.runs, null, 1), "application/json");
+      const codes = new Set(data.prompts.filter(inSet).map((p) => p.code));
+      download(`prompt-test-runs${fileTag}.json`, JSON.stringify(res.runs.filter((r) => codes.has(r.prompt_code)), null, 1), "application/json");
     } catch (err) {
       setError(err?.message || "Could not export runs");
     }
@@ -287,7 +291,7 @@ export default function PromptTestsTab({ companyId }) {
   return (
     <div className="space-y-5">
       {error && <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>}
-      <PromptTestsSummary open={summaryOpen} onOpenChange={setSummaryOpen} data={view} />
+      <PromptTestsSummary open={summaryOpen} onOpenChange={setSummaryOpen} data={view} setName={filters.set} />
 
       <section className="rounded-lg border border-border bg-card p-4">
         <h2 className="text-sm font-medium text-foreground">Prompt tests</h2>

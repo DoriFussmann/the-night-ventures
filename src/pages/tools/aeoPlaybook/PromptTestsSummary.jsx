@@ -106,8 +106,72 @@ function tally(prompts, outcomes, engine) {
   return { all, byStage, byType };
 }
 
+/** The summary as a Markdown document: the same figures as the dialog, for one engine. */
+export function summaryMarkdown({ s, t, ownName, brands, cycle, took, setName }) {
+  const total = t.all.total;
+  const named = t.all.counts.Named || 0;
+  const visible = named + (t.all.counts["Cited, not named"] || 0) + (t.all.counts["Retrieved, not cited"] || 0);
+  const row = (k, g) => `| ${k} | ${g ? g.total : 0} | ${OUTCOMES.map((o) => (g && g.counts[o.label]) || 0).join(" | ")} |`;
+  const head = `| | Prompts | ${OUTCOMES.map((o) => o.label).join(" | ")} |\n|---|---:|${OUTCOMES.map(() => "---:").join("|")}|`;
+  const L = [
+    `# Prompt test summary${setName ? `: ${setName}` : ""}`,
+    "",
+    `${total} prompts on ${s.label}${s.model ? `, model ${s.model}` : ""}${s.lastRun ? `, last run ${new Date(s.lastRun).toLocaleDateString()}` : ""}.` +
+      (cycle ? ` Last test: ${cycle.planned_calls} calls in ${formatDuration(took)}, $${Number(cycle.est_cost || 0).toFixed(2)}.` : ""),
+    "",
+    `**${ownName} is named in ${named} of ${total} prompts (${pct(named, total)}%).** Found in some form in ${visible} (${pct(visible, total)}%). A prompt counts by its best run.`,
+    "",
+    "## Outcomes",
+    "",
+    "| Outcome | Prompts | What to do |",
+    "|---|---:|---|",
+    ...OUTCOMES.map((o) => `| ${o.label} | ${t.all.counts[o.label] || 0} | ${o.action} |`),
+    "",
+    "## By stage",
+    "",
+    head,
+    ...STAGES.map((k) => row(k, t.byStage[k])),
+    "",
+    "## By prompt type",
+    "",
+    head,
+    ...TYPES.map((k) => row(k, t.byType[k])),
+    "",
+    "## Web search",
+    "",
+    `${s.search.all.n} of ${s.search.all.base} prompts made ${s.label} search the web at least once.`,
+    "",
+    "## Who gets named (prompts)",
+    "",
+    ...(brands.length ? brands.map((b) => `- ${b.own ? `**${b.name}**` : b.name}: ${b.n}`) : ["- No tracked brands."]),
+    "",
+    "## Top cited sites (prompts cited / Buy-stage prompts cited)",
+    "",
+    ...(s.topDomains.length ? s.topDomains.map((d) => `- ${d.name}: ${d.n} / ${d.buy}`) : ["- No sources cited."]),
+    "",
+    "## Your pages cited (runs)",
+    "",
+    ...(s.ownUrls.length ? s.ownUrls.map((u) => `- ${u.name}: ${u.n}`) : ["- None."]),
+    "",
+    "## Brand names inside its searches (queries)",
+    "",
+    ...((s.queryNames || []).length ? s.queryNames.map((q) => `- ${q.name}: ${q.n}`) : ["- None."]),
+    "",
+  ];
+  return L.join("\n");
+}
+
+function saveText(filename, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: "text/markdown" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 /** High-level reading of the latest test, one engine at a time. */
-export default function PromptTestsSummary({ open, onOpenChange, data, companyName }) {
+export default function PromptTestsSummary({ open, onOpenChange, data, companyName, setName }) {
   const engineIds = Object.keys(data?.summary?.engines || {});
   const [engine, setEngine] = useState(null);
   const active = engine && engineIds.includes(engine) ? engine : engineIds[0];
@@ -130,7 +194,14 @@ export default function PromptTestsSummary({ open, onOpenChange, data, companyNa
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Prompt test summary</DialogTitle>
+          <div className="flex flex-wrap items-center justify-between gap-2 pr-6">
+            <DialogTitle>Prompt test summary{setName ? `: ${setName}` : ""}</DialogTitle>
+            <button type="button" className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+              onClick={() => saveText(`prompt-test-summary${setName ? "-" + setName.toLowerCase().replace(/[^a-z0-9]+/g, "-") : ""}-${active}.md`,
+                summaryMarkdown({ s, t, ownName, brands, cycle, took, setName }))}>
+              Download summary (.md)
+            </button>
+          </div>
           <DialogDescription>
             {total} prompts on {s.label}
             {s.model ? `, model ${s.model}` : ""}
