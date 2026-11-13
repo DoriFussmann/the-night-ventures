@@ -69,9 +69,10 @@
         <section class="sec" id="d-secc" hidden>
           <p class="eyebrow">Step C</p>
           <h2>Prompt Set</h2>
-          <p class="desc">Ten recommendation prompts from the seed: the same person, the same moment, two per angle. Each is checked for duplicates (within the set and against the company's prompts in The Night Ventures), for being a recommendation prompt, for staying in the moment and for not naming your brand.</p>
+          <p class="desc">Recommendation prompts from the seed, 10 unless you choose another number: the same person, the same moment, spread evenly over five angles. Each is checked for duplicates (within the set and against the company's prompts in The Night Ventures), for being a recommendation prompt, for staying in the moment and for not naming your brand.</p>
           <div class="panel">
-            <div class="actions" style="margin-top:0"><button class="btn primary" id="d-setgo" type="button">Write the 10 prompts</button><button class="btn" id="d-check" type="button" hidden>Check again</button></div>
+            <div class="upbox" style="margin-top:0"><label for="d-count" class="status">Number of prompts</label><input type="number" id="d-count" min="3" max="20" step="1" value="10" style="width:80px;border:1px solid var(--line);border-radius:10px;padding:6px 10px;background:var(--page);color:var(--navy)"><span class="status" id="d-countnote"></span></div>
+            <div class="actions"><button class="btn primary" id="d-setgo" type="button">Write the 10 prompts</button><button class="btn" id="d-check" type="button" hidden>Check again</button></div>
             <div id="d-rows" style="margin-top:12px"></div>
             <div id="d-setfbbox" hidden>
               <label for="d-setfb" class="status" style="display:block;margin-top:12px">Feedback on the whole set</label>
@@ -85,7 +86,7 @@
         <section class="sec" id="d-secd" hidden>
           <p class="eyebrow">Step D</p>
           <h2>Push and Test</h2>
-          <p class="desc">Writes the moment and its 10 prompts to The Night Ventures, as Approved prompts linked to the moment. Then run them in Prompt Tests.</p>
+          <p class="desc">Writes the moment and its prompts to The Night Ventures, as Approved prompts linked to the moment. Then run them in Prompt Tests.</p>
           <div class="panel">
             <div class="actions" style="margin-top:0"><button class="btn primary" id="d-push" type="button">Push to The Night Ventures</button></div>
             <p class="status" id="d-dmsg" role="status" aria-live="polite" style="margin:8px 0 0"></p>
