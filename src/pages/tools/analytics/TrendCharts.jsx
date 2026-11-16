@@ -8,11 +8,6 @@ const SEARCH_CONFIG = {
   impressions: { label: "Impressions", color: "hsl(var(--chart-2))" },
 };
 
-const VISITS_CONFIG = {
-  sessions: { label: "Sessions", color: "hsl(var(--chart-3))" },
-  ai_sessions: { label: "AI-assistant visits", color: "hsl(var(--chart-1))" },
-};
-
 const AI_CONFIG = {
   ai_search: { label: "AI search crawlers", color: "hsl(var(--chart-1))" },
   ai_user: { label: "Live AI fetches", color: "hsl(var(--chart-2))" },
@@ -194,36 +189,96 @@ function EngagementChart({ traffic, granularity }) {
   );
 }
 
-export default function TrendCharts({ summary }) {
-  const { gsc, traffic, bots, granularity } = summary;
-  const per = granularity === "week" ? "Weekly" : "Daily";
+const AI_VISITS_CONFIG = {
+  ai_sessions: { label: "AI-assistant visits", color: "hsl(var(--chart-1))" },
+};
+
+const SESSIONS_CONFIG = {
+  sessions: { label: "Visits", color: "hsl(var(--chart-3))" },
+};
+
+/** One series as bars: small counts read better as bars than as a line. */
+function BarSeriesChart({ data, config, dataKey, granularity }) {
+  return (
+    <ChartContainer config={config} className="aspect-auto h-56 w-full">
+      <ComposedChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+        <CartesianGrid vertical={false} />
+        <XAxis dataKey="date" tickFormatter={fmtDay} tickLine={false} axisLine={false} minTickGap={24} />
+        <YAxis tickLine={false} axisLine={false} width={40} allowDecimals={false} />
+        <ChartTooltip
+          content={
+            <ChartTooltipContent
+              labelFormatter={(_, payload) => bucketLabel(granularity)(payload?.[0]?.payload?.date)}
+              formatter={rowFormatter(config, (v) => fmtNum(v))}
+            />
+          }
+        />
+        <Bar dataKey={dataKey} fill={`var(--color-${dataKey})`} radius={[2, 2, 0, 0]} />
+      </ComposedChart>
+    </ChartContainer>
+  );
+}
+
+const per = (granularity) => (granularity === "week" ? "Weekly" : "Daily");
+
+function SearchChart({ block, granularity, name, missing }) {
+  return (
+    <ChartCard title={name} note={`${per(granularity)} clicks (left) and impressions (right).`}>
+      {block?.series?.length ? (
+        <TwoLineChart data={block.series} config={SEARCH_CONFIG} left="clicks" right="impressions" granularity={granularity} />
+      ) : (
+        <Empty>{missing}</Empty>
+      )}
+    </ChartCard>
+  );
+}
+
+/** Charts for one view: "search" | "ai" | "traffic". */
+export default function TrendCharts({ summary, view }) {
+  const { gsc, bing, traffic, bots, granularity } = summary;
+  if (view === "ai") {
+    return (
+      <div className="grid gap-4 lg:grid-cols-2">
+        <ChartCard title="Visits from AI assistants" note={`${per(granularity)} visits that arrived from an AI answer (GA4).`}>
+          {!traffic ? (
+            <Empty>Needs GA4 — see Setup.</Empty>
+          ) : hasValues(traffic.series, ["ai_sessions"]) ? (
+            <BarSeriesChart data={traffic.series} config={AI_VISITS_CONFIG} dataKey="ai_sessions" granularity={granularity} />
+          ) : (
+            <Empty>No visits from AI assistants in this period.</Empty>
+          )}
+        </ChartCard>
+        <ChartCard
+          title="AI crawlers and AI Overviews"
+          note={`${per(granularity)} AI crawler visits (bars) and core keywords cited in Google AI Overviews (line, weekly check).${
+            bots?.seriesPartial ? " Partial: very high crawler volume." : ""
+          }`}
+        >
+          <AiVisibilityChart bots={bots} granularity={granularity} />
+        </ChartCard>
+      </div>
+    );
+  }
+  if (view === "traffic") {
+    return (
+      <div className="grid gap-4 lg:grid-cols-2">
+        <ChartCard title="Visits" note={`${per(granularity)} visits from every source (GA4).`}>
+          {traffic?.series?.length ? (
+            <BarSeriesChart data={traffic.series} config={SESSIONS_CONFIG} dataKey="sessions" granularity={granularity} />
+          ) : (
+            <Empty>Needs GA4 — see Setup.</Empty>
+          )}
+        </ChartCard>
+        <ChartCard title="Engagement" note={`${per(granularity)} share of visits that engaged, by source (GA4).`}>
+          <EngagementChart traffic={traffic} granularity={granularity} />
+        </ChartCard>
+      </div>
+    );
+  }
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      <ChartCard title="Google Search" note={`${per} clicks (left) and impressions (right).`}>
-        {gsc?.series?.length ? (
-          <TwoLineChart data={gsc.series} config={SEARCH_CONFIG} left="clicks" right="impressions" granularity={granularity} />
-        ) : (
-          <Empty>Connect Search Console — see Setup.</Empty>
-        )}
-      </ChartCard>
-      <ChartCard title="Visits (GA4)" note={`${per} sessions (left) and AI-assistant visits (right).`}>
-        {traffic?.series?.length ? (
-          <TwoLineChart data={traffic.series} config={VISITS_CONFIG} left="sessions" right="ai_sessions" granularity={granularity} />
-        ) : (
-          <Empty>Needs GA4 — see Setup.</Empty>
-        )}
-      </ChartCard>
-      <ChartCard
-        title="AI visibility"
-        note={`${per} AI crawler visits (bars) and core keywords cited in Google AI Overviews (line, weekly check).${
-          bots?.seriesPartial ? " Partial: very high crawler volume." : ""
-        }`}
-      >
-        <AiVisibilityChart bots={bots} granularity={granularity} />
-      </ChartCard>
-      <ChartCard title="Engagement" note={`${per} share of visits that engaged, by source (GA4).`}>
-        <EngagementChart traffic={traffic} granularity={granularity} />
-      </ChartCard>
+      <SearchChart block={gsc} granularity={granularity} name="Google Search" missing="Connect Search Console — see Setup." />
+      <SearchChart block={bing} granularity={granularity} name="Bing" missing="Connect Bing Webmaster — see Setup." />
     </div>
   );
 }

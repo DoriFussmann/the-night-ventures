@@ -29,7 +29,7 @@ function YesNo({ value }) {
 }
 
 const EVIDENCE = {
-  cited: { label: "Cited in tests", tone: "good", title: "A source in an AI answer to a question we asked (audit buyer questions, DataForSEO, AI Overview checks)" },
+  cited: { label: "Cited in tests", tone: "good", title: "A source in an AI answer to a question we asked (Prompt Tests, audit buyer questions, DataForSEO, AI Overview checks)" },
   read: { label: "Read live", tone: "info", title: "An AI assistant fetched it to answer someone" },
   clicked: { label: "Clicked", tone: "muted", title: "Visitors arrived from an AI assistant" },
 };
@@ -55,8 +55,9 @@ const HINTS = {
         tools never share those.
       </span>
       <span className="block">
-        They come from the buyer questions in Audit → AI Visibility, DataForSEO's collection of AI answers, and your core
-        keywords checked for Google AI Overviews. Under each one is the AI system that cited the page. Up to 3 shown.
+        They come from your Prompt Tests, the buyer questions in Audit → AI Visibility, DataForSEO's collection of AI
+        answers, and your core keywords checked for Google AI Overviews. Under each one is the AI system that cited the
+        page. Up to 3 shown.
       </span>
     </span>
   ),
@@ -64,16 +65,17 @@ const HINTS = {
     "The most recent evidence: the last live read, or the last test run that cited the page. For a citation this is when we tested, not when a person asked. \"In range\" means only visits, which have no exact time here. The table is sorted by this column, newest first.",
 };
 
-function AiCitations({ citations, checkedAt, botsInstalled, hasGa4 }) {
+function AiCitations({ citations, checkedAt, botsInstalled, hasGa4, hasPromptTests }) {
   const gaps = [
     !hasGa4 && "GA4 (visits)",
     !botsInstalled && "crawler tracking (live reads)",
     !checkedAt && "an AI Visibility audit run (buyer questions)",
+    !hasPromptTests && "Prompt Tests",
   ].filter(Boolean);
   return (
     <Sub
       title="Where AI cites you"
-      description="Pages AI systems used. Visits and live reads are real traffic; citations come from questions we test (Audit → AI Visibility, DataForSEO, AI Overview checks). AI tools never pass the real question to your site."
+      description="Pages AI systems used. Visits and live reads are real traffic; citations come from questions we test (Prompt Tests, Audit → AI Visibility, DataForSEO, AI Overview checks). AI tools never pass the real question to your site."
     >
       <DataTable
         rowKey={(r) => r.path}
@@ -115,7 +117,9 @@ function AiCitations({ citations, checkedAt, botsInstalled, hasGa4 }) {
                       </span>
                     </li>
                   ))}
-                  {r.questions.length > 3 ? <li className="text-[11px] text-muted-foreground">+{r.questions.length - 3} more</li> : null}
+                  {(r.questionCount || r.questions.length) > 3 ? (
+                    <li className="text-[11px] text-muted-foreground">+{(r.questionCount || r.questions.length) - 3} more</li>
+                  ) : null}
                 </ul>
               ) : (
                 <span className="text-muted-foreground">—</span>
@@ -139,7 +143,7 @@ export default function AiSection({ summary, onCheckAi, checkingAi }) {
 
   return (
     <div className="space-y-8">
-      <AiCitations citations={ai.citations || []} checkedAt={ai.citationsCheckedAt} botsInstalled={bots.installed} hasGa4={Boolean(traffic)} />
+      <AiCitations citations={ai.citations || []} checkedAt={ai.citationsCheckedAt} botsInstalled={bots.installed} hasGa4={Boolean(traffic)} hasPromptTests={Boolean(ai.answers)} />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Sub title="Visits from AI assistants" description="Real people clicking through from an AI answer (GA4).">
@@ -250,7 +254,10 @@ export default function AiSection({ summary, onCheckAi, checkingAi }) {
         />
       </Sub>
 
-      <Sub title="Mentions in AI answers" description="Questions where an AI answer cites your domain (DataForSEO LLM Mentions, US).">
+      <Sub
+        title="Questions whose AI answers cite you"
+        description="Questions from DataForSEO's collection of AI answers (US) where the answer lists your domain as a source. These are citations; whether the answer names your brand is in the section above."
+      >
         <div className="grid gap-3 md:grid-cols-2">
           {ai.mentions.map((m) => (
             <div key={m.platform} className="space-y-2 rounded-md border border-border p-3">
@@ -279,7 +286,7 @@ export default function AiSection({ summary, onCheckAi, checkingAi }) {
                 </ul>
               ) : (
                 <p className="text-[11px] text-muted-foreground">
-                  {m.checkedAt ? "No mentions found yet." : "Not checked yet."}
+                  {m.checkedAt ? "No citations found yet." : "Not checked yet."}
                 </p>
               )}
             </div>

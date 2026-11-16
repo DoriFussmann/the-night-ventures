@@ -106,7 +106,7 @@ export function DataTable({ columns, rows, empty = "No data for this period.", r
 }
 
 /** Small segmented control. */
-export function Segmented({ value, onChange, options, label }) {
+export function Segmented({ value, onChange, options, label, size = "sm" }) {
   return (
     <div role="group" aria-label={label} className="inline-flex rounded-md border border-border p-0.5">
       {options.map((o) => (
@@ -116,8 +116,13 @@ export function Segmented({ value, onChange, options, label }) {
           aria-pressed={value === o.value}
           onClick={() => onChange(o.value)}
           className={cn(
-            "rounded px-2.5 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            value === o.value ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"
+            "rounded transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            size === "lg" ? "px-4 py-1.5 text-sm font-medium" : "px-2.5 py-1 text-xs",
+            value === o.value
+              ? size === "lg"
+                ? "bg-primary text-primary-foreground"
+                : "bg-accent text-foreground"
+              : "text-muted-foreground hover:text-foreground"
           )}
         >
           {o.label}
