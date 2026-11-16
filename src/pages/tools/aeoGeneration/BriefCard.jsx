@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Check, Loader2, PenLine, Sparkles, Trash2, X } from "lucide-react";
+import { Check, Download, Loader2, PenLine, Sparkles, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,6 +13,7 @@ import {
   textToOutline,
   updateBrief,
 } from "./briefs";
+import { downloadBriefMarkdown } from "./briefMarkdown";
 import DraftPanel, { formatPublishAt } from "./DraftPanel";
 
 const selectClass =
@@ -281,6 +282,16 @@ export default function BriefCard({
               </Button>
               <Button type="button" variant="ghost" size="sm" onClick={() => save({ status: brief.status === "skipped" ? "draft" : "skipped" })}>
                 {brief.status === "skipped" ? "Unskip" : "Skip"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() =>
+                  downloadBriefMarkdown({ brief, group, pillar, prompts, personasById, title, keyword, angle, outlineText, keyPoints })
+                }
+              >
+                <Download className="mr-1 h-3.5 w-3.5" /> Download .md
               </Button>
             </div>
             {brief.status === "ready" ? (
