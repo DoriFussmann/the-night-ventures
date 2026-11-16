@@ -34,6 +34,36 @@ const EVIDENCE = {
   clicked: { label: "Clicked", tone: "muted", title: "Visitors arrived from an AI assistant" },
 };
 
+const HINTS = {
+  path: "A page on your site that an AI system used. Tracking parameters are removed, so one page is one row.",
+  evidence: (
+    <span className="block space-y-1">
+      <span className="block">How we know an AI system used this page. A page can have more than one.</span>
+      <span className="block"><b>Cited in tests:</b> it was listed as a source in an AI answer to a question we ran ourselves.</span>
+      <span className="block"><b>Read live:</b> an AI assistant opened the page while answering a real person.</span>
+      <span className="block"><b>Clicked:</b> a real person arrived on the page from an AI assistant.</span>
+    </span>
+  ),
+  assistants: "The AI systems the evidence in this row comes from.",
+  visits: "Visits that landed on this page from an AI assistant in the selected period (GA4).",
+  reads:
+    "Times an AI assistant opened this page to answer someone (ChatGPT, Claude, Perplexity, Mistral, Meta AI), counted by the crawler tracking on your site. Training and search crawlers are not counted here.",
+  questions: (
+    <span className="block space-y-1">
+      <span className="block">
+        Questions we tested whose AI answer used this page as a source. These are <b>not</b> prompts real people typed: AI
+        tools never share those.
+      </span>
+      <span className="block">
+        They come from the buyer questions in Audit → AI Visibility, DataForSEO's collection of AI answers, and your core
+        keywords checked for Google AI Overviews. Under each one is the AI system that cited the page. Up to 3 shown.
+      </span>
+    </span>
+  ),
+  last:
+    "The most recent evidence: the last live read, or the last test run that cited the page. For a citation this is when we tested, not when a person asked. \"In range\" means only visits, which have no exact time here. The table is sorted by this column, newest first.",
+};
+
 function AiCitations({ citations, checkedAt, botsInstalled, hasGa4 }) {
   const gaps = [
     !hasGa4 && "GA4 (visits)",
@@ -50,10 +80,11 @@ function AiCitations({ citations, checkedAt, botsInstalled, hasGa4 }) {
         rows={citations}
         empty="No AI citations, live reads or AI-assistant visits found yet."
         columns={[
-          { key: "path", label: "Page", className: "break-all", render: (r) => <PageLink url={r.url}>{r.path}</PageLink> },
+          { key: "path", label: "Page", hint: HINTS.path, className: "break-all", render: (r) => <PageLink url={r.url}>{r.path}</PageLink> },
           {
             key: "evidence",
             label: "Evidence",
+            hint: HINTS.evidence,
             render: (r) => (
               <span className="flex flex-wrap gap-1">
                 {r.evidence.map((e) => (
@@ -64,12 +95,13 @@ function AiCitations({ citations, checkedAt, botsInstalled, hasGa4 }) {
               </span>
             ),
           },
-          { key: "assistants", label: "AI systems", render: (r) => r.assistants.join(", ") },
-          { key: "visits", label: "Visits", align: "right", render: (r) => (r.visits ? fmtNum(r.visits) : "—") },
-          { key: "reads", label: "Live reads", align: "right", render: (r) => (r.liveReads ? fmtNum(r.liveReads) : "—") },
+          { key: "assistants", label: "AI systems", hint: HINTS.assistants, render: (r) => r.assistants.join(", ") },
+          { key: "visits", label: "Visits", hint: HINTS.visits, align: "right", render: (r) => (r.visits ? fmtNum(r.visits) : "—") },
+          { key: "reads", label: "Live reads", hint: HINTS.reads, align: "right", render: (r) => (r.liveReads ? fmtNum(r.liveReads) : "—") },
           {
             key: "questions",
             label: "Questions",
+            hint: HINTS.questions,
             className: "min-w-[14rem]",
             render: (r) =>
               r.questions.length ? (
@@ -89,7 +121,7 @@ function AiCitations({ citations, checkedAt, botsInstalled, hasGa4 }) {
                 <span className="text-muted-foreground">—</span>
               ),
           },
-          { key: "last", label: "Last seen", render: (r) => (r.lastSeen ? fmtDate(r.lastSeen) : "In range") },
+          { key: "last", label: "Last seen", hint: HINTS.last, render: (r) => (r.lastSeen ? fmtDate(r.lastSeen) : "In range") },
         ]}
       />
       {gaps.length ? (

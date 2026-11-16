@@ -1,5 +1,6 @@
 import React from "react";
 import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { deltaInfo } from "./format";
 
 const TONE = {
@@ -40,10 +41,31 @@ export function Tile({ label, value, delta, invert, absolute, sub }) {
   );
 }
 
-/** Compact data table. columns: [{ key, label, align, render, className }] */
+/** Column header; with a hint it shows an explanation on hover or keyboard focus. */
+function HeaderLabel({ label, hint }) {
+  if (!hint) return label;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          tabIndex={0}
+          className="cursor-help rounded-sm underline decoration-dotted underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {label}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" align="start" className="max-w-xs whitespace-normal text-left font-normal leading-relaxed">
+        {hint}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** Compact data table. columns: [{ key, label, hint, align, render, className }] */
 export function DataTable({ columns, rows, empty = "No data for this period.", rowKey }) {
   if (!rows?.length) return <p className="text-xs text-muted-foreground">{empty}</p>;
   return (
+    <TooltipProvider delayDuration={150}>
     <div className="overflow-x-auto">
       <table className="w-full text-xs">
         <thead>
@@ -54,7 +76,7 @@ export function DataTable({ columns, rows, empty = "No data for this period.", r
                 scope="col"
                 className={cn("px-2 py-1.5 font-medium", c.align === "right" ? "text-right" : "text-left")}
               >
-                {c.label}
+                <HeaderLabel label={c.label} hint={c.hint} />
               </th>
             ))}
           </tr>
@@ -79,6 +101,7 @@ export function DataTable({ columns, rows, empty = "No data for this period.", r
         </tbody>
       </table>
     </div>
+    </TooltipProvider>
   );
 }
 
