@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { PageLink, Segmented } from "./parts";
 import { fmtNum, fmtPosition, shortUrl } from "./format";
 
-const TYPES = [
+const ALL_TYPES = [
   { value: "striking", label: "Almost there", hint: "Queries ranking 4–20 with real impressions." },
   { value: "low_ctr", label: "Seen, not clicked", hint: "Top-10 pages whose click rate is under half the usual." },
   { value: "decaying", label: "Decaying", hint: "Pages that lost 30%+ of their clicks." },
@@ -63,22 +63,26 @@ function Metrics({ m }) {
   return <span className="tabular-nums">{parts.join(" · ")}</span>;
 }
 
-export default function OpportunitiesSection({ companyId, opportunities }) {
+/** `types` limits the section to some opportunity types (the Search and AI views show different ones). */
+export default function OpportunitiesSection({ companyId, opportunities, types }) {
+  const TYPES = types?.length ? ALL_TYPES.filter((t) => types.includes(t.value)) : ALL_TYPES;
   const counts = Object.fromEntries(TYPES.map((t) => [t.value, opportunities?.[t.value]?.length || 0]));
-  const first = TYPES.find((t) => counts[t.value] > 0)?.value || "striking";
+  const first = TYPES.find((t) => counts[t.value] > 0)?.value || TYPES[0].value;
   const [type, setType] = useState(first);
   const items = opportunities?.[type] || [];
   const meta = TYPES.find((t) => t.value === type);
 
   return (
     <div className="space-y-3">
-      <Segmented
-        label="Opportunity type"
-        value={type}
-        onChange={setType}
-        options={TYPES.map((t) => ({ value: t.value, label: `${t.label} (${counts[t.value]})` }))}
-      />
-      <p className="text-[11px] text-muted-foreground">{meta?.hint}</p>
+      {TYPES.length > 1 ? (
+        <Segmented
+          label="Opportunity type"
+          value={type}
+          onChange={setType}
+          options={TYPES.map((t) => ({ value: t.value, label: `${t.label} (${counts[t.value]})` }))}
+        />
+      ) : null}
+      {TYPES.length > 1 ? <p className="text-[11px] text-muted-foreground">{meta?.hint}</p> : null}
       {items.length === 0 ? (
         <p className="text-xs text-muted-foreground">Nothing here for this period.</p>
       ) : (

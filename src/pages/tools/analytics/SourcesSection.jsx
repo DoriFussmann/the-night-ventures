@@ -1,5 +1,5 @@
 import React from "react";
-import { Area, AreaChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { DataTable, Delta } from "./parts";
 import { fmtDay, fmtNum, fmtPct } from "./format";
@@ -24,35 +24,6 @@ function ShareBar({ value }) {
 
 function change(current, previous) {
   return previous > 0 ? (current - previous) / previous : null;
-}
-
-function FocusCard({ group, traffic }) {
-  const cur = traffic.groups?.current?.[group] || { sessions: 0, engaged: 0 };
-  const prev = traffic.groups?.previous?.[group] || { sessions: 0, engaged: 0 };
-  const total = traffic.current.sessions || 0;
-  const config = { [group]: GROUP_CONFIG[group] };
-  return (
-    <div className="min-w-0 space-y-2 rounded-md border border-border p-3">
-      <div className="flex items-baseline justify-between gap-2">
-        <p className="text-xs font-medium">{GROUP_CONFIG[group].label}</p>
-        <p className="text-[11px] text-muted-foreground">
-          {total > 0 ? `${fmtPct(cur.sessions / total, 0)} of visits` : "—"}
-        </p>
-      </div>
-      <div className="flex flex-wrap items-baseline gap-1.5">
-        <p className="text-2xl font-semibold tabular-nums">{fmtNum(cur.sessions)}</p>
-        <Delta value={change(cur.sessions, prev.sessions)} />
-        <p className="text-[11px] text-muted-foreground">
-          visits · {cur.sessions > 0 ? `${fmtPct(cur.engaged / cur.sessions, 0)} engaged` : "no visits"}
-        </p>
-      </div>
-      <ChartContainer config={config} className="aspect-auto h-12 w-full">
-        <LineChart data={traffic.series} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
-          <Line dataKey={group} type="monotone" stroke={`var(--color-${group})`} strokeWidth={2} dot={false} isAnimationActive={false} />
-        </LineChart>
-      </ChartContainer>
-    </div>
-  );
 }
 
 function SourcesOverTime({ traffic, granularity }) {
@@ -99,11 +70,6 @@ export default function SourcesSection({ traffic, granularity }) {
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-3 md:grid-cols-2">
-        <FocusCard group="organic" traffic={traffic} />
-        <FocusCard group="ai" traffic={traffic} />
-      </div>
-
       <div className="space-y-2">
         <p className="text-xs font-medium text-muted-foreground">
           {granularity === "week" ? "Weekly" : "Daily"} visits by source

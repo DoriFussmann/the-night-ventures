@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ErrorLine, Loading, Section } from "@/components/SectionBlocks";
@@ -11,6 +11,7 @@ import TrendCharts from "./analytics/TrendCharts";
 import SourcesSection from "./analytics/SourcesSection";
 import PagesSection from "./analytics/PagesSection";
 import AiSection from "./analytics/AiSection";
+import AnswersSection from "./analytics/AnswersSection";
 import OpportunitiesSection from "./analytics/OpportunitiesSection";
 import SetupSection from "./analytics/SetupSection";
 
@@ -20,6 +21,21 @@ const RANGES = [
   { value: 90, label: "90 days" },
 ];
 
+const VIEWS = [
+  { value: "search", label: "Search" },
+  { value: "ai", label: "AI" },
+  { value: "traffic", label: "Traffic" },
+];
+
+const VIEW_NOTE = {
+  search: "How you show up in Google and Bing, and what to fix next.",
+  ai: "How AI answers name and cite you, and the visits and page reads that follow.",
+  traffic: "Every visit to the site, by where it came from.",
+};
+
+const SEARCH_OPPORTUNITIES = ["striking", "low_ctr", "decaying", "gap"];
+const AI_OPPORTUNITIES = ["ai_gap"];
+
 function needsSetup(summary) {
   const s = summary?.setup;
   if (!s) return false;
@@ -28,6 +44,14 @@ function needsSetup(summary) {
 
 export default function Analytics() {
   const { companyId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const view = VIEWS.some((v) => v.value === searchParams.get("view")) ? searchParams.get("view") : "search";
+  const setView = (next) => {
+    const params = new URLSearchParams(searchParams);
+    if (next === "search") params.delete("view");
+    else params.set("view", next);
+    setSearchParams(params, { replace: true });
+  };
   const [days, setDays] = useState(28);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -84,7 +108,7 @@ export default function Analytics() {
         <div className="space-y-1">
           <h1 className="text-xl font-semibold tracking-tight">Analytics</h1>
           <p className="text-sm text-muted-foreground">
-            Traffic, sources, winning pages and AI visibility — refreshed daily
+            Search, AI and traffic — refreshed daily
             {summary?.setup?.syncedAt ? ` · last refresh ${fmtDate(summary.setup.syncedAt)}` : ""}.
           </p>
         </div>
@@ -119,31 +143,73 @@ export default function Analytics() {
           ) : null}
           <div className={loading ? "pointer-events-none opacity-60 transition-opacity" : "transition-opacity"} aria-busy={loading}>
             <div className="space-y-6">
-              <Scorecard summary={summary} />
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <Segmented label="Analytics view" size="lg" value={view} onChange={setView} options={VIEWS} />
+                <p className="text-xs text-muted-foreground">{VIEW_NOTE[view]}</p>
+              </div>
 
-              <Section title="Trends" description="Each source is shown through its latest complete day.">
-                <TrendCharts summary={summary} />
-              </Section>
+              <Scorecard summary={summary} view={view} />
 
-              <Section title="Sources over time" description="Where visitors come from and how engaged they are (GA4).">
-                <SourcesSection traffic={summary.traffic} granularity={summary.granularity} />
-              </Section>
+              {view === "search" ? (
+                <>
+                  <Section title="Trends" description="Each source is shown through its latest complete day.">
+                    <TrendCharts summary={summary} view="search" />
+                  </Section>
 
-              <Section title="AI visibility" description="AI-assistant traffic, AI Overview citations, mentions and AI crawlers.">
-                <AiSection summary={summary} onCheckAi={onCheckAi} checkingAi={busy === "ai"} />
-              </Section>
+                  <Section title="Pages and queries" description="Top, winning and losing pages vs the previous period.">
+                    <PagesSection key={`${companyId}-${days}`} pages={summary.pages} />
+                  </Section>
 
-              <Section title="Pages" description="Top, winning and losing pages vs the previous period.">
-                <PagesSection key={`${companyId}-${days}`} pages={summary.pages} />
-              </Section>
+                  <Section title="Search opportunities" description="What to do next to win more search traffic — each opens the right tool.">
+                    <OpportunitiesSection
+                      key={`${companyId}-${days}-search`}
+                      companyId={companyId}
+                      opportunities={summary.opportunities}
+                      types={SEARCH_OPPORTUNITIES}
+                    />
+                  </Section>
+                </>
+              ) : null}
 
-              <Section title="Opportunities" description="What to do next to win more traffic — each opens the right tool.">
-                <OpportunitiesSection
-                  key={`${companyId}-${days}`}
-                  companyId={companyId}
-                  opportunities={summary.opportunities}
-                />
-              </Section>
+              {view === "ai" ? (
+                <>
+                  <Section
+                    title="Named and cited in AI answers"
+                    description="How often AI answers mention your brand, and how often they use your pages as a source."
+                  >
+                    <AnswersSection answers={summary.ai.answers} companyId={companyId} />
+                  </Section>
+
+                  <Section title="Trends" description="Real visits and page reads from AI systems.">
+                    <TrendCharts summary={summary} view="ai" />
+                  </Section>
+
+                  <Section title="Citations, visits and crawlers" description="Which pages AI systems use, who sends visitors, and which crawlers read the site.">
+                    <AiSection summary={summary} onCheckAi={onCheckAi} checkingAi={busy === "ai"} />
+                  </Section>
+
+                  <Section title="AI gaps" description="Google AI Overviews that cite others, not you.">
+                    <OpportunitiesSection
+                      key={`${companyId}-${days}-ai`}
+                      companyId={companyId}
+                      opportunities={summary.opportunities}
+                      types={AI_OPPORTUNITIES}
+                    />
+                  </Section>
+                </>
+              ) : null}
+
+              {view === "traffic" ? (
+                <>
+                  <Section title="Trends" description="Shown through the latest complete day in GA4.">
+                    <TrendCharts summary={summary} view="traffic" />
+                  </Section>
+
+                  <Section title="Sources over time" description="Where visitors come from and how engaged they are (GA4).">
+                    <SourcesSection traffic={summary.traffic} granularity={summary.granularity} />
+                  </Section>
+                </>
+              ) : null}
 
               <Section
                 title="Setup"
