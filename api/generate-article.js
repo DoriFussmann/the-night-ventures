@@ -22,6 +22,7 @@ import { claimSourceErrors, normalizeClaimSources, sourcesToExternalLinks } from
 import { stripNoVolumeTag } from '../lib/stripNoVolumeTag.js'
 import { slugify } from '../lib/slugify.js'
 import { demoteBodyH1 } from '../lib/demoteBodyH1.js'
+import { shortAnswerErrors } from '../lib/generate-article/shortAnswer.js'
 
 // Mirrors seo-core's H1 rules (lib/h1.ts): 20-70 chars and not the title.
 export function cleanH1(value, title) {
@@ -1048,6 +1049,8 @@ function interpretGeneratedArticle(parsed, context) {
             ? { length: { min: context.lengthBounds.min, max: context.lengthBounds.max } }
             : {}),
         })),
+    // Generated articles open with The Short Answer; an author's own text (modify) is left as written.
+    ...(context.requireClaimSources ? shortAnswerErrors(articleBody) : []),
     // Author's own text (modify) keeps its claims; generated text must cite them.
     ...(context.requireClaimSources ? claimSourceErrors(articleBody, claimSources) : []),
     ...(context.requireClaimSources
