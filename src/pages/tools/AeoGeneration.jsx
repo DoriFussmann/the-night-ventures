@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Loader2, PenLine, Plus } from "lucide-react";
+import { ArrowLeft, ListPlus, Loader2, PenLine, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { loadPlaybook } from "./aeoPlaybook/api";
 import { BRIEF_STATUS_LABELS, createBriefs, loadBriefs, nextFreeBatchLabel } from "./aeoGeneration/briefs";
@@ -60,6 +60,14 @@ export default function AeoGeneration() {
   const [taken, setTaken] = useState([]);
   const [publishAt, setPublishAt] = useState(new Map());
   const [progress, setProgress] = useState(null);
+  // Draft pipeline: while one draft is being written, more ready briefs can be
+  // lined up behind it. Lives in this tab only, like the writing run itself.
+  const [drafting, setDrafting] = useState(false);
+  const [writingId, setWritingId] = useState(null);
+  const [queue, setQueue] = useState([]);
+  const queueRef = useRef([]);
+  const writingRef = useRef(null);
+  const lookupsRef = useRef(null);
 
   const reload = useCallback(async () => {
     if (!companyId) return;
@@ -110,6 +118,21 @@ export default function AeoGeneration() {
     };
   }, [data]);
 
+  useEffect(() => {
+    lookupsRef.current = lookups;
+  }, [lookups]);
+
+  const setPipeline = (ids) => {
+    queueRef.current = ids;
+    setQueue(ids);
+  };
+  const enqueue = (list) =>
+    setPipeline([
+      ...queueRef.current,
+      ...list.map((b) => b.id).filter((id) => id !== writingRef.current && !queueRef.current.includes(id)),
+    ]);
+  const unqueue = (id) => setPipeline(queueRef.current.filter((x) => x !== id));
+
   const liveCount = briefs.filter((b) => b.status === "published").length;
   const suggested = ranked.slice(0, mode === "batch" ? BATCH_SIZE : 1);
   // Stable order: briefs in one batch share created_at, so tie-break on the
@@ -157,41 +180,74 @@ export default function AeoGeneration() {
     }
   };
 
-  const writeDrafts = (list) =>
-    run(async () => {
-      const writer = { positioning: await loadWriterContext(companyId), brandFacts: data.playbook.brand_facts };
+  /** Write the listed ready briefs one after another; briefs added to the pipeline meanwhile follow on. */
+  const writeDrafts = (list) => {
+    if (drafting) return enqueue(list);
+    setPipeline(list.map((b) => b.id));
+    setDrafting(true);
+    return run(async () => {
       const context = [];
       const problems = [];
-      for (let i = 0; i < list.length; i += 1) {
-        const brief = list[i];
-        const group = lookups.groupById.get(brief.group_id);
-        const label = list.length > 1 ? `${i + 1} of ${list.length}: ` : "";
-        const batch = brief.batch_label || "Single articles";
-        const started = Date.now();
-        setProgress({ batch, text: `Article ${i + 1} of ${list.length} · ${brief.title} · starting…`, started });
-        try {
-          const res = await generateDraft({
-            companyId,
-            brief,
-            group,
-            pillar: lookups.pillarById.get(group?.pillar_id),
-            prompts: lookups.promptsByGroup.get(brief.group_id) || [],
-            writer,
-            batchContext: context,
-            onStatus: (msg) => {
-              setGenStatus((m) => ({ ...m, [brief.id]: `${label}${msg}` }));
-              setProgress({ batch, text: `Article ${i + 1} of ${list.length} · ${brief.title} · ${msg}`, started });
-            },
-          });
-          context.push({ title: res.row.title, slug: res.row.slug, type: res.row.type, targetKeyword: res.row.target_keyword, oneLinerSummary: res.row.description });
-          setProgress({ batch, text: `Article ${i + 1} of ${list.length} done: ${res.row.title}`, started });
-          if (res.heroMissing) problems.push(`"${res.row.title}": no hero image; add one in Articles.`);
-        } catch (err) {
-          problems.push(`"${brief.title}": ${err?.message || "writing failed"}`);
+      let n = 0;
+      let written = 0;
+      try {
+        const writer = { positioning: await loadWriterContext(companyId), brandFacts: data.playbook.brand_facts };
+        while (queueRef.current.length) {
+          const [id, ...rest] = queueRef.current;
+          setPipeline(rest);
+          let title = "Article";
+          try {
+            // Read the brief again: it may have been edited, set back or deleted while it waited.
+            const brief = (await loadBriefs(companyId)).find((x) => x.id === id);
+            if (!brief || brief.status !== "ready") continue;
+            title = brief.title;
+            n += 1;
+            const index = n;
+            const count = () => `Article ${index} of ${index + queueRef.current.length}`;
+            const lk = lookupsRef.current || lookups;
+            const group = lk.groupById.get(brief.group_id);
+            const batch = brief.batch_label || "Single articles";
+            const started = Date.now();
+            writingRef.current = id;
+            setWritingId(id);
+            setProgress({ batch, text: `${count()} · ${brief.title} · starting…`, started });
+            const res = await generateDraft({
+              companyId,
+              brief,
+              group,
+              pillar: lk.pillarById.get(group?.pillar_id),
+              prompts: lk.promptsByGroup.get(brief.group_id) || [],
+              writer,
+              batchContext: context,
+              onStatus: (msg) => {
+                setGenStatus((m) => ({ ...m, [id]: msg }));
+                setProgress({ batch, text: `${count()} · ${brief.title} · ${msg}`, started });
+              },
+            });
+            written += 1;
+            context.push({ title: res.row.title, slug: res.row.slug, type: res.row.type, targetKeyword: res.row.target_keyword, oneLinerSummary: res.row.description });
+            setProgress({ batch, text: `${count()} done: ${res.row.title}`, started });
+            if (res.heroMissing) problems.push(`"${res.row.title}": no hero image; add one in Articles.`);
+          } catch (err) {
+            problems.push(`"${title}": ${err?.message || "writing failed"}`);
+          } finally {
+            writingRef.current = null;
+            setWritingId(null);
+            setGenStatus({});
+          }
+          // Show the finished draft now, not when the whole pipeline is done.
+          if (queueRef.current.length) await reload();
         }
+      } finally {
+        writingRef.current = null;
+        setWritingId(null);
+        setPipeline([]);
+        setDrafting(false);
       }
-      setNote(problems.length ? `Done, with problems: ${problems.join(" ")}` : `Wrote ${list.length} draft${list.length === 1 ? "" : "s"}. Read and approve below.`);
+      const wrote = `Wrote ${written} draft${written === 1 ? "" : "s"}.`;
+      setNote(problems.length ? `${wrote} Problems: ${problems.join(" ")}` : `${wrote} Read and approve below.`);
     });
+  };
 
   const schedule = (list, start) =>
     run(async () => {
@@ -322,12 +378,24 @@ export default function AeoGeneration() {
                   </span>
                 </h2>
                 <div className="flex gap-2">
-                  {list.some((b) => b.status === "ready") && (
-                    <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => writeDrafts(list.filter((b) => b.status === "ready"))}>
-                      {busy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <PenLine className="mr-1.5 h-3.5 w-3.5" />}
-                      Write {list.filter((b) => b.status === "ready").length} ready draft{list.filter((b) => b.status === "ready").length === 1 ? "" : "s"}
-                    </Button>
-                  )}
+                  {(() => {
+                    const ready = list.filter((b) => b.status === "ready");
+                    const free = ready.filter((b) => b.id !== writingId && !queue.includes(b.id));
+                    if (drafting) {
+                      return free.length ? (
+                        <Button type="button" variant="outline" size="sm" onClick={() => enqueue(free)}>
+                          <ListPlus className="mr-1.5 h-3.5 w-3.5" />
+                          Add {free.length} ready to draft pipeline
+                        </Button>
+                      ) : null;
+                    }
+                    return ready.length ? (
+                      <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => writeDrafts(ready)}>
+                        {busy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <PenLine className="mr-1.5 h-3.5 w-3.5" />}
+                        Write {ready.length} ready draft{ready.length === 1 ? "" : "s"}
+                      </Button>
+                    ) : null;
+                  })()}
                 </div>
               </div>
               {progress?.batch === label && (
@@ -357,6 +425,11 @@ export default function AeoGeneration() {
                       busy={busy}
                       genStatus={genStatus[b.id]}
                       onGenerate={() => writeDrafts([b])}
+                      pipelineOpen={drafting}
+                      writing={writingId === b.id}
+                      queuePosition={queue.indexOf(b.id) + 1}
+                      onQueue={() => enqueue([b])}
+                      onUnqueue={() => unqueue(b.id)}
                       onApprove={() => run(() => approveBrief(b))}
                       onUnapprove={() => run(() => unapproveBrief(b))}
                       onNewImage={async (note) => {

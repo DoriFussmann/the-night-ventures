@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Check, Download, Loader2, PenLine, Sparkles, Trash2, X } from "lucide-react";
+import { Check, Download, ListPlus, Loader2, PenLine, Sparkles, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -55,6 +55,11 @@ export default function BriefCard({
   busy,
   genStatus,
   onGenerate,
+  pipelineOpen,
+  writing,
+  queuePosition,
+  onQueue,
+  onUnqueue,
   onApprove,
   onUnapprove,
   onRedo,
@@ -129,6 +134,11 @@ export default function BriefCard({
           <p className="mt-0.5 text-xs text-muted-foreground">
             {group.code} · {pillar?.name || "No pillar"} · {prompts.length} prompts · keyword: {keyword || "—"}
           </p>
+          {queuePosition > 0 || writing ? (
+            <p className="mt-0.5 text-xs font-medium text-sky-800 dark:text-sky-300">
+              {writing ? "Writing the draft now" : `In draft pipeline · ${queuePosition === 1 ? "next" : `#${queuePosition}`}`}
+            </p>
+          ) : null}
           {publishAt ? (
             <p className="mt-0.5 text-xs font-medium text-violet-800 dark:text-violet-300">
               Publishes {formatPublishAt(publishAt)}
@@ -297,13 +307,30 @@ export default function BriefCard({
             {brief.status === "ready" ? (
               <div className="flex items-center gap-2">
                 {genStatus && <span className="text-[11px] text-muted-foreground">{genStatus}</span>}
-                <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => save({ status: "draft" })}>
-                  Back to draft
-                </Button>
-                <Button type="button" size="sm" disabled={busy} onClick={onGenerate}>
-                  {genStatus ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <PenLine className="mr-1 h-3.5 w-3.5" />}
-                  Write draft
-                </Button>
+                {queuePosition > 0 ? (
+                  <>
+                    <span className="text-[11px] text-muted-foreground">
+                      In draft pipeline · {queuePosition === 1 ? "next" : `#${queuePosition}`}
+                    </span>
+                    <Button type="button" variant="ghost" size="sm" onClick={onUnqueue}>
+                      <X className="mr-1 h-3.5 w-3.5" /> Remove from pipeline
+                    </Button>
+                  </>
+                ) : pipelineOpen && !writing ? (
+                  <Button type="button" variant="outline" size="sm" onClick={onQueue}>
+                    <ListPlus className="mr-1 h-3.5 w-3.5" /> Add to draft pipeline
+                  </Button>
+                ) : (
+                  <>
+                    <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => save({ status: "draft" })}>
+                      Back to draft
+                    </Button>
+                    <Button type="button" size="sm" disabled={busy} onClick={onGenerate}>
+                      {writing || genStatus ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <PenLine className="mr-1 h-3.5 w-3.5" />}
+                      Write draft
+                    </Button>
+                  </>
+                )}
               </div>
             ) : (
               <div className="flex items-center gap-2">
