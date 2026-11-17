@@ -14,6 +14,7 @@ import AiSection from "./analytics/AiSection";
 import AnswersSection from "./analytics/AnswersSection";
 import OpportunitiesSection from "./analytics/OpportunitiesSection";
 import SetupSection from "./analytics/SetupSection";
+import EventsSection from "./analytics/EventsSection";
 
 const RANGES = [
   { value: 7, label: "7 days" },
@@ -25,12 +26,14 @@ const VIEWS = [
   { value: "search", label: "Search" },
   { value: "ai", label: "AI" },
   { value: "traffic", label: "Traffic" },
+  { value: "events", label: "Events" },
 ];
 
 const VIEW_NOTE = {
   search: "How you show up in Google and Bing, and what to fix next.",
   ai: "How AI answers name and cite you, and the visits and page reads that follow.",
   traffic: "Every visit to the site, by where it came from.",
+  events: "What changed on a chart, and which events explain it.",
 };
 
 const SEARCH_OPPORTUNITIES = ["striking", "low_ctr", "decaying", "gap"];
@@ -108,12 +111,12 @@ export default function Analytics() {
         <div className="space-y-1">
           <h1 className="text-xl font-semibold tracking-tight">Analytics</h1>
           <p className="text-sm text-muted-foreground">
-            Search, AI and traffic — refreshed daily
+            Search, AI, traffic and events — refreshed daily
             {summary?.setup?.syncedAt ? ` · last refresh ${fmtDate(summary.setup.syncedAt)}` : ""}.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Segmented label="Date range" value={days} onChange={setDays} options={RANGES} />
+          {view === "events" ? null : <Segmented label="Date range" value={days} onChange={setDays} options={RANGES} />}
           <Button type="button" size="sm" variant="outline" onClick={onRefresh} disabled={Boolean(busy) || !summary}>
             {busy === "refresh" ? (
               <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
@@ -148,7 +151,7 @@ export default function Analytics() {
                 <p className="text-xs text-muted-foreground">{VIEW_NOTE[view]}</p>
               </div>
 
-              <Scorecard summary={summary} view={view} />
+              {view === "events" ? <EventsSection key={companyId} companyId={companyId} /> : <Scorecard summary={summary} view={view} />}
 
               {view === "search" ? (
                 <>
@@ -211,6 +214,7 @@ export default function Analytics() {
                 </>
               ) : null}
 
+              {view === "events" ? null : (
               <Section
                 title="Setup"
                 description="Connections, property overrides and AI crawler tracking."
@@ -225,6 +229,7 @@ export default function Analytics() {
                   saving={busy === "save"}
                 />
               </Section>
+              )}
             </div>
           </div>
         </>
