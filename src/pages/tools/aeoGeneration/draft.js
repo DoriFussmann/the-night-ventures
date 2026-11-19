@@ -6,6 +6,7 @@ import { finishHeroImage } from "../articleGeneration/heroImageStorage";
 import { jsonAuthHeaders } from "@/lib/authHeaders";
 import { saveGeneratedArticles } from "../articleGeneration/saveGeneratedArticles";
 import { groupStats } from "../../../../lib/aeo/nextUp.js";
+import { slugCandidates, slugify } from "../../../../lib/aeo/slug.js";
 import { aeoScheduleSlug, ctaAngleFor, planPublishDays, searchIntentFor } from "../../../../lib/aeo/schedule.js";
 import { OPEN_SCHEDULE_STATUSES, normalizeSettings, publishMoment, takenDays, todayIn } from "../../../../lib/publish-schedule/plan.js";
 import { browserTimezone } from "../articlesAutomation/publishSchedule";
@@ -126,26 +127,23 @@ export function articleSpecFromBrief({ brief, group, prompts, conversion }) {
   };
 }
 
-function slugify(text) {
-  return String(text || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-}
-
 async function slugTaken(companyId, slug, ownId) {
   const { data, error } = await supabase.from("generated_articles").select("id").eq("company_id", companyId).eq("slug", slug).limit(1);
   fail(error, "Slug check");
   return Boolean(data?.length) && data[0].id !== ownId;
 }
 
-/** The writer's slug if no other article uses it, else one from the primary keyword. */
-async function freeSlug(companyId, proposed, brief) {
+/**
+ * The writer's slug if no other article uses it, else one from the primary keyword.
+ * A supporting article never takes the hub's own keyword as its slug.
+ */
+async function freeSlug(companyId, proposed, brief, hubSlug = "") {
   const own = brief.generated_article_id || null;
-  const candidates = [slugify(proposed), slugify(brief.primary_keyword), slugify(`${brief.primary_keyword} guide`)].filter(Boolean);
+  const candidates = slugCandidates({ proposed, primaryKeyword: brief.primary_keyword, hubSlug });
   for (const slug of candidates) {
     if (!(await slugTaken(companyId, slug, own))) return slug;
   }
+  if (!candidates.length) throw new Error("No usable slug: give the brief a primary keyword that differs from the pillar's topic name.");
   throw new Error(`The slug "${candidates[0]}" is already used by another article. Change the title or primary keyword and write again.`);
 }
 
@@ -169,7 +167,9 @@ export async function generateDraft({ companyId, brief, group, pillar, prompts, 
   );
 
   // Never overwrite another article: the library upserts on slug.
-  data.frontmatter.slug = await freeSlug(companyId, data.frontmatter.slug, brief);
+  // The hub's own slug belongs to the pillar article alone.
+  const hubSlug = group?.page_type === "pillar" ? "" : slugify(pillar.topic_name);
+  data.frontmatter.slug = await freeSlug(companyId, data.frontmatter.slug, brief, hubSlug);
 
   onStatus?.("Finding a hero image…");
   let hero = null;
