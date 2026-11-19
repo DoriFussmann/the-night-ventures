@@ -107,7 +107,7 @@ export async function loadWriterContext(companyId) {
 }
 
 /** The writer's article spec, built from a brief. */
-export function articleSpecFromBrief({ brief, group, prompts, conversion }) {
+export function articleSpecFromBrief({ brief, group, prompts, conversion, facts }) {
   const stats = groupStats(prompts);
   const keywords = [...new Set(prompts.map((p) => String(p.keyword || "").trim()).filter(Boolean))];
   return {
@@ -116,7 +116,7 @@ export function articleSpecFromBrief({ brief, group, prompts, conversion }) {
     type: brief.article_type,
     searchIntent: searchIntentFor(stats.dominant),
     wordCount: group.page_type === "pillar" ? PILLAR_WORDS : SUPPORTING_WORDS,
-    ctaAngle: ctaAngleFor(brief.cta, conversion),
+    ctaAngle: ctaAngleFor(brief.cta, conversion, facts),
     keyMessages: [
       ...(brief.outline || []).map((s) => (s.points?.length ? `${s.heading}: ${s.points.join(" ")}` : s.heading)),
       `Answer each of these reader questions directly somewhere in the article: ${prompts.map((p) => p.prompt).join(" | ")}`,
@@ -153,7 +153,7 @@ async function freeSlug(companyId, proposed, brief, hubSlug = "") {
  */
 export async function generateDraft({ companyId, brief, group, pillar, prompts, writer, batchContext = [], onStatus }) {
   if (!pillar?.topic_name) throw new Error("The pillar has no site topic name (AEO Playbook › Content Map).");
-  const spec = articleSpecFromBrief({ brief, group, prompts, conversion: writer.brandFacts?.conversion });
+  const spec = articleSpecFromBrief({ brief, group, prompts, conversion: writer.brandFacts?.conversion, facts: writer.brandFacts });
   onStatus?.("Writing the article…");
   const data = await withTimeout(
     generateOneArticle({
