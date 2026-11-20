@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link } from "react-router-dom";
 import { CalendarDays, Check, ChevronDown, ChevronRight, Loader2, PenLine, Sparkles, Square, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   buildMonthPlan,
   monthCalendar,
@@ -109,7 +110,8 @@ export default function MonthPlanPanel({
   const [open, setOpen] = useState({});
   const [working, setWorking] = useState(null);
   const [suggest, setSuggest] = useState({});
-  const [seed, setSeed] = useState({});
+  const [activeKey, setActiveKey] = useState(null);
+  const [draft, setDraft] = useState("");
   const stopRef = useRef(false);
 
   const toggle = (k) => setOpen((o) => ({ ...o, [k]: !o[k] }));
@@ -231,6 +233,15 @@ export default function MonthPlanPanel({
     } catch (err) {
       onError?.(err?.message);
     }
+  };
+
+  const openTheme = (key) => {
+    setDraft(views[key] || "");
+    setActiveKey(key);
+  };
+  const closeTheme = () => {
+    if (activeKey && draft !== (views[activeKey] || "")) saveView(activeKey, draft);
+    setActiveKey(null);
   };
 
   const prepare = async () => {
@@ -527,80 +538,21 @@ export default function MonthPlanPanel({
               placeholder="Write as … experienced …, practical, bottom line first, no fluff. Signature terms: …"
               className="mt-1 w-full rounded-md border border-border bg-background p-2 text-sm" />
           </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            {themes.map((t) => (
-              <div key={t.key} className={`space-y-1.5 rounded-lg border p-3 ${String(views[t.key] || "").trim() ? "border-border" : "border-teal-300"}`}>
-                <div className="flex items-center justify-between gap-2">
-                  <label htmlFor={`kp-${t.key}`} className="text-sm text-foreground">
-                    <span className={`${CHIP.calc} mr-2`}>{t.pillar?.code || "—"}</span>
+          <div className="flex flex-col gap-1.5">
+            {themes.map((t) => {
+              const written = String(views[t.key] || "").trim();
+              return (
+                <button key={t.key} type="button" disabled={!approved} onClick={() => openTheme(t.key)}
+                  className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2.5 text-left hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60 ${written ? "border-border" : "border-teal-300"}`}>
+                  <span className="flex items-center gap-2 text-sm text-foreground">
+                    <span className={CHIP.calc}>{t.pillar?.code || "—"}</span>
                     {t.pillar?.name || "No pillar"}
-                  </label>
-                  <span className="text-[11px] text-muted-foreground">feeds {t.picks.length} article{t.picks.length === 1 ? "" : "s"}</span>
-                </div>
-                <div className="space-y-1 rounded-md bg-muted/40 p-2 text-xs text-muted-foreground">
-                  <p>
-                    <span className="text-foreground">Article topics: </span>
-                    {t.picks.map((p) => briefByGroup.get(p.group.id)?.title || p.group.name).join(" · ")}
-                  </p>
-                  {(() => {
-                    const qs = t.picks
-                      .flatMap((p) => (lookups.promptsByGroup?.get(p.group.id) || []).slice(0, 1))
-                      .map((q) => q.prompt)
-                      .filter(Boolean)
-                      .slice(0, 3);
-                    return qs.length ? (
-                      <p>
-                        <span className="text-foreground">Potential buyer prompts: </span>
-                        {qs.map((q) => `“${q}”`).join(" · ")}
-                      </p>
-                    ) : null;
-                  })()}
-                </div>
-                <div className="space-y-1 rounded-md border border-dashed border-border p-2 text-xs">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-foreground">Suggestions for your view</span>
-                    <button type="button" disabled={suggest[t.key] === "…"}
-                      className="inline-flex items-center gap-1 text-teal-800 underline disabled:opacity-50"
-                      onClick={async () => {
-                        setSuggest((m) => ({ ...m, [t.key]: "…" }));
-                        try {
-                          const text = await suggestThemeView({ companyId, pillarId: t.pillar?.id || "", groupIds: t.picks.map((p) => p.group.id) });
-                          setSuggest((m) => ({ ...m, [t.key]: text }));
-                        } catch (err) {
-                          setSuggest((m) => ({ ...m, [t.key]: "" }));
-                          onError?.(err?.message);
-                        }
-                      }}>
-                      {suggest[t.key] === "…" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                      {suggest[t.key] && suggest[t.key] !== "…" ? "Suggest again" : "Suggest"}
-                    </button>
-                  </div>
-                  {suggest[t.key] && suggest[t.key] !== "…" ? (
-                    <>
-                      <p className="whitespace-pre-line text-muted-foreground">{suggest[t.key]}</p>
-                      {approved && (
-                        <button type="button" className="text-teal-800 underline"
-                          onClick={() => {
-                            const cur = String(views[t.key] || "").trim();
-                            saveView(t.key, cur ? `${cur}\n\n${suggest[t.key]}` : suggest[t.key]);
-                            setSeed((m) => ({ ...m, [t.key]: (m[t.key] || 0) + 1 }));
-                          }}>
-                          Copy into my view to edit
-                        </button>
-                      )}
-                    </>
-                  ) : (
-                    <p className="text-muted-foreground">Angles and questions to take a position on. Prompts for your thinking, not your opinion.</p>
-                  )}
-                </div>
-                <textarea id={`kp-${t.key}`} rows={4} disabled={!approved}
-                  defaultValue={views[t.key] || ""}
-                  key={`${row?.id || "new"}-${t.key}-${seed[t.key] || 0}`}
-                  onBlur={(e) => e.target.value !== (views[t.key] || "") && saveView(t.key, e.target.value)}
-                  placeholder="Your take on this theme in 3 to 5 sentences: what most advice gets wrong, what you would do."
-                  className="w-full rounded-md border border-border bg-background p-2 text-sm disabled:opacity-60" />
-              </div>
-            ))}
+                    <span className="text-xs text-muted-foreground">{t.picks.length} article{t.picks.length === 1 ? "" : "s"}</span>
+                  </span>
+                  <span className={written ? CHIP.calc : CHIP.input}>{written ? "View written" : "Write your view"}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
       </Section>
@@ -639,6 +591,85 @@ export default function MonthPlanPanel({
           </div>
         </div>
       </Section>
+
+      {(() => {
+        const t = themes.find((x) => x.key === activeKey);
+        if (!t) return null;
+        const prompts = t.picks
+          .flatMap((p) => (lookups.promptsByGroup?.get(p.group.id) || []).slice(0, 2))
+          .map((q) => q.prompt)
+          .filter(Boolean)
+          .slice(0, 8);
+        const sug = suggest[t.key];
+        return (
+          <Dialog open onOpenChange={(o) => !o && closeTheme()}>
+            <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="font-light">{t.pillar?.name || "No pillar"}</DialogTitle>
+                <DialogDescription>
+                  Your view on this theme for {monthLabel(month)}. It feeds the key points of {t.picks.length} article{t.picks.length === 1 ? "" : "s"}.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 text-sm">
+                <div>
+                  <p className="text-[11px] font-medium uppercase tracking-wider text-teal-800">Article topics</p>
+                  <ul className="mt-1 list-disc space-y-0.5 pl-5 text-foreground">
+                    {t.picks.map((p) => <li key={p.group.id}>{briefByGroup.get(p.group.id)?.title || p.group.name}</li>)}
+                  </ul>
+                </div>
+                {prompts.length > 0 && (
+                  <div>
+                    <p className="text-[11px] font-medium uppercase tracking-wider text-teal-800">Potential buyer prompts</p>
+                    <ul className="mt-1 list-disc space-y-0.5 pl-5 text-muted-foreground">
+                      {prompts.map((q) => <li key={q}>{q}</li>)}
+                    </ul>
+                  </div>
+                )}
+                <div className="rounded-md border border-dashed border-border p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[11px] font-medium uppercase tracking-wider text-teal-800">Suggestions for your view</p>
+                    <button type="button" disabled={sug === "…"}
+                      className="inline-flex items-center gap-1 text-xs text-teal-800 underline disabled:opacity-50"
+                      onClick={async () => {
+                        setSuggest((m) => ({ ...m, [t.key]: "…" }));
+                        try {
+                          const text = await suggestThemeView({ companyId, pillarId: t.pillar?.id || "", groupIds: t.picks.map((p) => p.group.id) });
+                          setSuggest((m) => ({ ...m, [t.key]: text }));
+                        } catch (err) {
+                          setSuggest((m) => ({ ...m, [t.key]: "" }));
+                          onError?.(err?.message);
+                        }
+                      }}>
+                      {sug === "…" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                      {sug && sug !== "…" ? "Suggest again" : "Suggest"}
+                    </button>
+                  </div>
+                  {sug && sug !== "…" ? (
+                    <>
+                      <p className="mt-2 whitespace-pre-line text-xs text-muted-foreground">{sug}</p>
+                      <button type="button" className="mt-2 text-xs text-teal-800 underline"
+                        onClick={() => setDraft((d) => (d.trim() ? `${d.trim()}\n\n${sug}` : sug))}>
+                        Copy into my view to edit
+                      </button>
+                    </>
+                  ) : (
+                    <p className="mt-1 text-xs text-muted-foreground">Angles and questions to take a position on. Prompts for your thinking, not your opinion.</p>
+                  )}
+                </div>
+                <div>
+                  <label htmlFor="kp-modal" className="text-[11px] font-medium uppercase tracking-wider text-teal-800">Your view</label>
+                  <textarea id="kp-modal" rows={8} value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus
+                    placeholder="Your take on this theme in 3 to 5 sentences: what most advice gets wrong, what you would do."
+                    className="mt-1 w-full rounded-md border border-border bg-background p-2 text-sm" />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" onClick={closeTheme}>Save and close</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
 
       <p className="text-[11px] text-muted-foreground">
         Phase 2 adds Prompt Tests results (gap per topic), page fixes and last month&apos;s results. Briefs of this plan appear below under &ldquo;{monthLabel(month)}&rdquo;.
