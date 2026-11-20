@@ -6,6 +6,7 @@ import { loadPlaybook } from "./aeoPlaybook/api";
 import { BRIEF_STATUS_LABELS, createBriefs, loadBriefs, nextFreeBatchLabel } from "./aeoGeneration/briefs";
 import BriefCard from "./aeoGeneration/BriefCard";
 import SchedulePanel from "./aeoGeneration/SchedulePanel";
+import MonthPlanPanel from "./aeoGeneration/MonthPlanPanel";
 import {
   approveBrief,
   generateDraft,
@@ -304,6 +305,21 @@ export default function AeoGeneration() {
         </p>
       ) : data && lookups ? (
         <>
+          <MonthPlanPanel
+            companyId={companyId}
+            data={data}
+            briefs={briefs}
+            lookups={lookups}
+            taken={taken}
+            today={todayHere()}
+            busy={busy}
+            drafting={drafting}
+            onReload={reload}
+            onError={setError}
+            onWriteDrafts={writeDrafts}
+            onSchedule={schedule}
+          />
+
           <section className="space-y-3 rounded-lg border border-border bg-card p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
