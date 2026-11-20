@@ -10,9 +10,10 @@ import PromptsTab from "./aeoPlaybook/PromptsTab";
 import ContentMapTab from "./aeoPlaybook/ContentMapTab";
 import PromptTestsTab from "./aeoPlaybook/PromptTestsTab";
 import CompanyTab from "./aeoPlaybook/CompanyTab";
+import LoginsTab from "./aeoPlaybook/LoginsTab";
 import { SECTION_LABELS, downloadSectionMarkdown } from "./aeoPlaybook/sectionMarkdown";
 
-const TAB_IDS = ["company", "brand", "personas", "prompts", "tests", "map"];
+const TAB_IDS = ["company", "brand", "personas", "prompts", "tests", "map", "logins"];
 
 export default function AeoPlaybook() {
   const { companyId } = useParams();
@@ -135,6 +136,7 @@ export default function AeoPlaybook() {
               <TabsTrigger value="prompts">Prompts ({data.prompts.length})</TabsTrigger>
               <TabsTrigger value="tests">Prompt Tests</TabsTrigger>
               <TabsTrigger value="map">Content Map ({data.groups.length})</TabsTrigger>
+              <TabsTrigger value="logins">Login &amp; Access</TabsTrigger>
             </TabsList>
             {SECTION_LABELS[tab] && (
               <Button
@@ -167,6 +169,9 @@ export default function AeoPlaybook() {
           </TabsContent>
           <TabsContent value="map">
             <ContentMapTab companyId={companyId} data={data} onChanged={reload} />
+          </TabsContent>
+          <TabsContent value="logins">
+            <LoginsTab companyId={companyId} />
           </TabsContent>
         </Tabs>
       ) : null}
