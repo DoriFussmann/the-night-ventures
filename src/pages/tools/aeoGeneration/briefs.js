@@ -80,7 +80,7 @@ export function nextFreeBatchLabel(briefs, from = new Date()) {
   return `Week of ${monday}`;
 }
 
-export async function createBriefs(companyId, groupItems, data, { batchLabel = "" } = {}) {
+export async function createBriefs(companyId, groupItems, data, { batchLabel = "", monthPlanId = null } = {}) {
   const rows = groupItems.map(({ group }) => {
     const prompts = data.prompts.filter((p) => p.group_id === group.id);
     const stats = groupStats(prompts);
@@ -94,6 +94,7 @@ export async function createBriefs(companyId, groupItems, data, { batchLabel = "
       cta: defaultCta(stats.dominant),
       link_targets: linkTargetsFor(group, data),
       batch_label: batchLabel,
+      ...(monthPlanId ? { month_plan_id: monthPlanId } : {}),
     };
   });
   if (!rows.length) return;
