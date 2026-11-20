@@ -535,6 +535,25 @@ export default function MonthPlanPanel({
                   </label>
                   <span className="text-[11px] text-muted-foreground">feeds {t.picks.length} article{t.picks.length === 1 ? "" : "s"}</span>
                 </div>
+                <div className="space-y-1 rounded-md bg-muted/40 p-2 text-xs text-muted-foreground">
+                  <p>
+                    <span className="text-foreground">This month&apos;s articles: </span>
+                    {t.picks.map((p) => briefByGroup.get(p.group.id)?.title || p.group.name).join(" · ")}
+                  </p>
+                  {(() => {
+                    const qs = t.picks
+                      .flatMap((p) => (lookups.promptsByGroup?.get(p.group.id) || []).slice(0, 1))
+                      .map((q) => q.prompt)
+                      .filter(Boolean)
+                      .slice(0, 3);
+                    return qs.length ? (
+                      <p>
+                        <span className="text-foreground">Buyers ask: </span>
+                        {qs.map((q) => `“${q}”`).join(" · ")}
+                      </p>
+                    ) : null;
+                  })()}
+                </div>
                 <textarea id={`kp-${t.key}`} rows={4} disabled={!approved}
                   defaultValue={views[t.key] || ""}
                   key={`${row?.id || "new"}-${t.key}`}
