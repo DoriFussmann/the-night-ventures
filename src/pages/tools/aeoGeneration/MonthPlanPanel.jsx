@@ -11,7 +11,7 @@ import {
   shiftMonth,
   themesOf,
 } from "../../../../lib/aeo/monthPlan.js";
-import { approveMonthPlan, loadMonthPlan, loadVoice, prepareBrief, saveMonthPlan, saveVoice } from "./monthPlan";
+import { approveMonthPlan, loadMonthPlan, loadVoice, prepareBrief, saveMonthPlan, saveVoice, suggestThemeView } from "./monthPlan";
 
 const DONE_DRAFT = new Set(["generated", "approved", "scheduled", "published"]);
 const DONE_APPROVED = new Set(["approved", "scheduled", "published"]);
@@ -108,6 +108,8 @@ export default function MonthPlanPanel({
   const [removed, setRemoved] = useState(new Set());
   const [open, setOpen] = useState({});
   const [working, setWorking] = useState(null);
+  const [suggest, setSuggest] = useState({});
+  const [seed, setSeed] = useState({});
   const stopRef = useRef(false);
 
   const toggle = (k) => setOpen((o) => ({ ...o, [k]: !o[k] }));
@@ -537,7 +539,7 @@ export default function MonthPlanPanel({
                 </div>
                 <div className="space-y-1 rounded-md bg-muted/40 p-2 text-xs text-muted-foreground">
                   <p>
-                    <span className="text-foreground">This month&apos;s articles: </span>
+                    <span className="text-foreground">Article topics: </span>
                     {t.picks.map((p) => briefByGroup.get(p.group.id)?.title || p.group.name).join(" · ")}
                   </p>
                   {(() => {
@@ -548,15 +550,52 @@ export default function MonthPlanPanel({
                       .slice(0, 3);
                     return qs.length ? (
                       <p>
-                        <span className="text-foreground">Buyers ask: </span>
+                        <span className="text-foreground">Potential buyer prompts: </span>
                         {qs.map((q) => `“${q}”`).join(" · ")}
                       </p>
                     ) : null;
                   })()}
                 </div>
+                <div className="space-y-1 rounded-md border border-dashed border-border p-2 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-foreground">Suggestions for your view</span>
+                    <button type="button" disabled={suggest[t.key] === "…"}
+                      className="inline-flex items-center gap-1 text-teal-800 underline disabled:opacity-50"
+                      onClick={async () => {
+                        setSuggest((m) => ({ ...m, [t.key]: "…" }));
+                        try {
+                          const text = await suggestThemeView({ companyId, pillarId: t.pillar?.id || "", groupIds: t.picks.map((p) => p.group.id) });
+                          setSuggest((m) => ({ ...m, [t.key]: text }));
+                        } catch (err) {
+                          setSuggest((m) => ({ ...m, [t.key]: "" }));
+                          onError?.(err?.message);
+                        }
+                      }}>
+                      {suggest[t.key] === "…" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                      {suggest[t.key] && suggest[t.key] !== "…" ? "Suggest again" : "Suggest"}
+                    </button>
+                  </div>
+                  {suggest[t.key] && suggest[t.key] !== "…" ? (
+                    <>
+                      <p className="whitespace-pre-line text-muted-foreground">{suggest[t.key]}</p>
+                      {approved && (
+                        <button type="button" className="text-teal-800 underline"
+                          onClick={() => {
+                            const cur = String(views[t.key] || "").trim();
+                            saveView(t.key, cur ? `${cur}\n\n${suggest[t.key]}` : suggest[t.key]);
+                            setSeed((m) => ({ ...m, [t.key]: (m[t.key] || 0) + 1 }));
+                          }}>
+                          Copy into my view to edit
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-muted-foreground">Angles and questions to take a position on. Prompts for your thinking, not your opinion.</p>
+                  )}
+                </div>
                 <textarea id={`kp-${t.key}`} rows={4} disabled={!approved}
                   defaultValue={views[t.key] || ""}
-                  key={`${row?.id || "new"}-${t.key}`}
+                  key={`${row?.id || "new"}-${t.key}-${seed[t.key] || 0}`}
                   onBlur={(e) => e.target.value !== (views[t.key] || "") && saveView(t.key, e.target.value)}
                   placeholder="Your take on this theme in 3 to 5 sentences: what most advice gets wrong, what you would do."
                   className="w-full rounded-md border border-border bg-background p-2 text-sm disabled:opacity-60" />
