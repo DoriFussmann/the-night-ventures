@@ -79,6 +79,17 @@ export async function writeKeyPoints({ companyId, groupId, view, title, angle, o
   return body.keyPoints;
 }
 
+export async function suggestThemeView({ companyId, pillarId, groupIds }) {
+  const res = await fetch("/api/aeo-brief-outline", {
+    method: "POST",
+    headers: await jsonAuthHeaders(),
+    body: JSON.stringify({ mode: "theme_view", companyId, pillarId, groupIds }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `Suggestions failed (${res.status})`);
+  return body.suggestions;
+}
+
 /**
  * Get one brief ready to write: outline if it has none, key points from the
  * theme view if it has none, then Ready when nothing is missing.
