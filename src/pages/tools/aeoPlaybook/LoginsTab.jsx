@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { Check, Copy, Eye, EyeOff, Loader2, Plus, Trash2 } from "lucide-react";
+import { Check, Copy, Eye, EyeOff, KeyRound, Loader2, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { deleteLogin, listLogins, revealPassword, saveLogin } from "./loginsApi";
 
 const EMPTY = { id: null, title: "", username: "", comments: "", hasPassword: false };
@@ -41,7 +42,7 @@ function CopyButton({ label, getText, disabled }) {
   );
 }
 
-function LoginCard({ companyId, login, onSaved, onDeleted, onCancelNew }) {
+function LoginForm({ companyId, login, onSaved, onDeleted, onClose }) {
   const isNew = !login.id;
   const [draft, setDraft] = useState(login);
   const [password, setPassword] = useState(""); // plain text, only once loaded or typed
@@ -100,7 +101,7 @@ function LoginCard({ companyId, login, onSaved, onDeleted, onCancelNew }) {
   };
 
   const remove = async () => {
-    if (isNew) return onCancelNew();
+    if (isNew) return onClose();
     if (!window.confirm(`Delete the login "${login.title}"? This cannot be undone.`)) return;
     setBusy("delete");
     try {
@@ -115,7 +116,7 @@ function LoginCard({ companyId, login, onSaved, onDeleted, onCancelNew }) {
   const pwPlaceholder = !pwLoaded && login.hasPassword ? "••••••••  (saved)" : "Password";
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    <div>
       <div className="mb-3 flex items-center gap-2">
         <Input
           className="font-medium"
@@ -128,7 +129,7 @@ function LoginCard({ companyId, login, onSaved, onDeleted, onCancelNew }) {
           <Trash2 className="h-3.5 w-3.5" />
         </Button>
       </div>
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-3">
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-foreground">Username</span>
           <div className="flex gap-2">
@@ -178,7 +179,7 @@ function LoginCard({ companyId, login, onSaved, onDeleted, onCancelNew }) {
             />
           </div>
         </label>
-        <label className="block md:col-span-2">
+        <label className="block">
           <span className="mb-1 block text-xs font-medium text-foreground">Comments</span>
           <Textarea rows={2} value={draft.comments} onChange={(e) => setDraft({ ...draft, comments: e.target.value })} />
         </label>
@@ -188,11 +189,9 @@ function LoginCard({ companyId, login, onSaved, onDeleted, onCancelNew }) {
           {busy === "save" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
           {isNew ? "Save login" : "Save changes"}
         </Button>
-        {isNew ? (
-          <Button type="button" variant="ghost" size="sm" onClick={onCancelNew}>
-            Cancel
-          </Button>
-        ) : null}
+        <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+          {dirty && !isNew ? "Cancel" : "Close"}
+        </Button>
         {note ? <span className="text-xs text-destructive">{note}</span> : null}
       </div>
     </div>
@@ -201,12 +200,13 @@ function LoginCard({ companyId, login, onSaved, onDeleted, onCancelNew }) {
 
 export default function LoginsTab({ companyId }) {
   const [logins, setLogins] = useState(null);
-  const [adding, setAdding] = useState(false);
+  const [open, setOpen] = useState(null); // null | "new" | login id
   const [error, setError] = useState("");
 
   useEffect(() => {
     let live = true;
     setLogins(null);
+    setOpen(null);
     setError("");
     listLogins(companyId)
       .then((rows) => live && setLogins(rows))
@@ -224,19 +224,22 @@ export default function LoginsTab({ companyId }) {
     };
   }, [companyId]);
 
+  const current = open === "new" ? EMPTY : logins?.find((l) => l.id === open) || null;
+  const close = () => setOpen(null);
+
   const onSaved = (saved, prevId) => {
     setLogins((rows) => (prevId ? rows.map((r) => (r.id === saved.id ? saved : r)) : [...rows, saved]));
-    if (!prevId) setAdding(false);
+    close();
   };
 
   return (
     <div className="space-y-4 pt-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="max-w-2xl text-sm text-muted-foreground">
-          Logins for this company&apos;s accounts. Passwords are stored encrypted and are only shown when you click
-          Show or Copy. Not included in any download or export.
+          Logins for this company&apos;s accounts. Click one to see, copy or edit it. Passwords are stored encrypted
+          and are not included in any download or export.
         </p>
-        <Button type="button" size="sm" disabled={adding || logins === null} onClick={() => setAdding(true)}>
+        <Button type="button" size="sm" disabled={logins === null} onClick={() => setOpen("new")}>
           <Plus className="mr-1.5 h-3.5 w-3.5" /> Add login
         </Button>
       </div>
@@ -247,30 +250,44 @@ export default function LoginsTab({ companyId }) {
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading…
         </p>
+      ) : logins.length === 0 && !error ? (
+        <p className="text-sm text-muted-foreground">No logins yet.</p>
       ) : (
-        <>
-          {logins.length === 0 && !adding && !error ? (
-            <p className="text-sm text-muted-foreground">No logins yet.</p>
-          ) : null}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {logins.map((login) => (
-            <LoginCard
+            <button
               key={login.id}
-              companyId={companyId}
-              login={login}
-              onSaved={onSaved}
-              onDeleted={(id) => setLogins((rows) => rows.filter((r) => r.id !== id))}
-            />
+              type="button"
+              onClick={() => setOpen(login.id)}
+              className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-3 text-left text-sm font-medium text-foreground transition-colors hover:bg-muted"
+            >
+              <KeyRound className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="truncate">{login.title}</span>
+            </button>
           ))}
-          {adding ? (
-            <LoginCard
+        </div>
+      )}
+      <Dialog open={Boolean(current)} onOpenChange={(v) => !v && close()}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{open === "new" ? "New login" : current?.title}</DialogTitle>
+            <DialogDescription className="sr-only">Login details</DialogDescription>
+          </DialogHeader>
+          {current ? (
+            <LoginForm
+              key={open}
               companyId={companyId}
-              login={EMPTY}
+              login={current}
               onSaved={onSaved}
-              onCancelNew={() => setAdding(false)}
+              onDeleted={(id) => {
+                setLogins((rows) => rows.filter((r) => r.id !== id));
+                close();
+              }}
+              onClose={close}
             />
           ) : null}
-        </>
-      )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
