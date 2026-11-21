@@ -256,7 +256,7 @@ export default function MonthPlanPanel({
       if (stopRef.current) break;
       const group = lookups.groupById.get(b.group_id);
       const pillar = lookups.pillarById.get(group?.pillar_id);
-      setWorking({ text: `Preparing ${i + 1} of ${todo.length} · ${b.title}`, stop: true });
+      setWorking({ text: `Preparing ${i + 1} of ${todo.length} · ${b.title}`, stop: true, stopping: stopRef.current });
       try {
         const res = await prepareBrief({ companyId, brief: b, group, pillar, view: views[pillar?.id || "none"] });
         if (res === "ready") done += 1;
@@ -422,9 +422,19 @@ export default function MonthPlanPanel({
         <p className="flex items-center gap-2 rounded-md bg-sky-50 px-3 py-2 text-xs text-sky-900">
           <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" /> {working.text}
           {working.stop && (
-            <button type="button" className="ml-auto inline-flex items-center gap-1 underline" onClick={() => (stopRef.current = true)}>
-              <Square className="h-3 w-3" /> Stop after this one
-            </button>
+            working.stopping ? (
+              <span className="ml-auto inline-flex items-center gap-1 font-medium">
+                <Check className="h-3 w-3" /> Stopping after this brief…
+              </span>
+            ) : (
+              <button type="button" className="ml-auto inline-flex items-center gap-1 underline"
+                onClick={() => {
+                  stopRef.current = true;
+                  setWorking((w) => (w ? { ...w, stopping: true } : w));
+                }}>
+                <Square className="h-3 w-3" /> Stop after this one
+              </button>
+            )
           )}
         </p>
       )}
