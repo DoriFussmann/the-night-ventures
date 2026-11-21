@@ -305,6 +305,16 @@ export default function AeoGeneration() {
         </p>
       ) : data && lookups ? (
         <>
+          {progress && (
+            <div className="sticky top-0 z-30 -mx-1 flex flex-wrap items-center gap-2 rounded-md border border-sky-200 bg-sky-50/95 px-3 py-2 text-xs text-sky-900 shadow-sm backdrop-blur">
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+              <span className="min-w-0 flex-1">{progress.text}</span>
+              {queue.length > 0 && <span>{queue.length} more in the pipeline</span>}
+              <ElapsedTime since={progress.started} />
+              <span className="text-sky-800/80">Keep this tab open</span>
+            </div>
+          )}
+
           <MonthPlanPanel
             companyId={companyId}
             data={data}
