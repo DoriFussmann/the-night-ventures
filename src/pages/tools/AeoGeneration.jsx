@@ -7,6 +7,7 @@ import { BRIEF_STATUS_LABELS, createBriefs, loadBriefs, nextFreeBatchLabel } fro
 import BriefCard from "./aeoGeneration/BriefCard";
 import SchedulePanel from "./aeoGeneration/SchedulePanel";
 import MonthPlanPanel from "./aeoGeneration/MonthPlanPanel";
+import HotTakesPanel from "./aeoGeneration/HotTakesPanel";
 import {
   approveBrief,
   generateDraft,
@@ -279,7 +280,7 @@ export default function AeoGeneration() {
           </span>
         </h1>
         <p className="mt-0.5 max-w-3xl text-sm text-muted-foreground">
-          What to write next, from the content map. Create briefs, add your key points and mark them ready; write the
+          What to write next, from the content map. Create briefs, add your hot takes and mark them ready; write the
           drafts, review and approve them, then pick a start day and schedule: one article goes live per workday.
           {liveCount > 0 ? (
             <>
@@ -319,6 +320,8 @@ export default function AeoGeneration() {
             onWriteDrafts={writeDrafts}
             onSchedule={schedule}
           />
+
+          <HotTakesPanel companyId={companyId} onError={setError} />
 
           <section className="space-y-3 rounded-lg border border-border bg-card p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
