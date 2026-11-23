@@ -7,6 +7,8 @@ import { BRIEF_STATUS_LABELS, createBriefs, loadBriefs, nextFreeBatchLabel } fro
 import BriefCard from "./aeoGeneration/BriefCard";
 import SchedulePanel from "./aeoGeneration/SchedulePanel";
 import MonthPlanPanel from "./aeoGeneration/MonthPlanPanel";
+import HotTakesPanel from "./aeoGeneration/HotTakesPanel";
+import { loadCompanyName, loadHotTakes } from "./aeoGeneration/hotTakes";
 import {
   approveBrief,
   generateDraft,
@@ -69,6 +71,23 @@ export default function AeoGeneration() {
   const queueRef = useRef([]);
   const writingRef = useRef(null);
   const lookupsRef = useRef(null);
+
+  // The hot takes bank, read once for the panel and every brief card.
+  // takes === null while loading; missing says why the bank cannot be used.
+  const [bank, setBank] = useState({ takes: null, companyName: "", missing: "" });
+  const reloadBank = useCallback(async () => {
+    try {
+      const [takes, companyName] = await Promise.all([loadHotTakes(companyId), loadCompanyName(companyId)]);
+      setBank({ takes, companyName, missing: "" });
+    } catch (err) {
+      const msg = err?.message || "Could not load the hot takes bank";
+      setBank({ takes: [], companyName: "", missing: /aeo_hot_takes/.test(msg) ? "The bank's table is not in the database yet. Run migration 087 first." : msg });
+    }
+  }, [companyId]);
+  useEffect(() => {
+    setBank({ takes: null, companyName: "", missing: "" });
+    reloadBank();
+  }, [reloadBank]);
 
   const reload = useCallback(async () => {
     if (!companyId) return;
@@ -279,7 +298,7 @@ export default function AeoGeneration() {
           </span>
         </h1>
         <p className="mt-0.5 max-w-3xl text-sm text-muted-foreground">
-          What to write next, from the content map. Create briefs, add your key points and mark them ready; write the
+          What to write next, from the content map. Create briefs, add your hot takes and mark them ready; write the
           drafts, review and approve them, then pick a start day and schedule: one article goes live per workday.
           {liveCount > 0 ? (
             <>
@@ -329,6 +348,8 @@ export default function AeoGeneration() {
             onWriteDrafts={writeDrafts}
             onSchedule={schedule}
           />
+
+          <HotTakesPanel companyId={companyId} bank={bank} onReload={reloadBank} onError={setError} />
 
           <section className="space-y-3 rounded-lg border border-border bg-card p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -462,6 +483,8 @@ export default function AeoGeneration() {
                       pillar={lookups.pillarById.get(group.pillar_id)}
                       prompts={lookups.promptsByGroup.get(group.id) || []}
                       personasById={lookups.personasById}
+                      bank={bank}
+                      onBankChanged={reloadBank}
                       onChanged={reload}
                       onError={setError}
                       draft={drafts.get(b.generated_article_id)}

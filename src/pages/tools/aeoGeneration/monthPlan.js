@@ -75,8 +75,8 @@ export async function writeKeyPoints({ companyId, groupId, view, title, angle, o
     body: JSON.stringify({ mode: "key_points", companyId, groupId, view, title, angle, outline }),
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error || `Key points failed (${res.status})`);
-  return body.keyPoints;
+  if (!res.ok) throw new Error(body.error || `Hot takes failed (${res.status})`);
+  return { keyPoints: body.keyPoints, bankError: body.bankError || "" };
 }
 
 export async function suggestThemeView({ companyId, pillarId, groupIds }) {
@@ -93,7 +93,9 @@ export async function suggestThemeView({ companyId, pillarId, groupIds }) {
 /**
  * Get one brief ready to write: outline if it has none, key points from the
  * theme view if it has none, then Ready when nothing is missing.
- * Returns "ready" | "draft" (something still missing).
+ * Returns {status: "ready" | "draft" (something still missing), bankError}.
+ * bankError is set when the hot takes were written without the bank because
+ * the bank could not be read.
  */
 export async function prepareBrief({ companyId, brief, group, pillar, view }) {
   let { title, angle, article_type: articleType } = brief;
@@ -105,9 +107,13 @@ export async function prepareBrief({ companyId, brief, group, pillar, view }) {
     articleType = s.articleType;
     outline = s.outline;
   }
-  const keyPoints = String(brief.key_points || "").trim()
-    ? brief.key_points
-    : await writeKeyPoints({ companyId, groupId: group.id, view, title, angle, outline });
+  let keyPoints = brief.key_points;
+  let bankError = "";
+  if (!String(keyPoints || "").trim()) {
+    const written = await writeKeyPoints({ companyId, groupId: group.id, view, title, angle, outline });
+    keyPoints = written.keyPoints;
+    bankError = written.bankError;
+  }
   const ready = Boolean(String(title || "").trim() && String(brief.primary_keyword || "").trim() && outline.length >= 3 && pillar?.topic_name);
   await updateBrief(brief.id, {
     title,
@@ -117,5 +123,5 @@ export async function prepareBrief({ companyId, brief, group, pillar, view }) {
     key_points: keyPoints,
     status: ready ? "ready" : "draft",
   });
-  return ready ? "ready" : "draft";
+  return { status: ready ? "ready" : "draft", bankError };
 }

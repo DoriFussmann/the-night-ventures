@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Check, Download, ListPlus, Loader2, PenLine, Sparkles, Trash2, X } from "lucide-react";
+import { Check, Download, Library, ListPlus, Loader2, PenLine, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,6 +14,8 @@ import {
   updateBrief,
 } from "./briefs";
 import { downloadBriefMarkdown } from "./briefMarkdown";
+import { draftHotTake, matchHotTakes, saveTakeToBank } from "./hotTakes";
+import { appendTake, hasTake, takesNotInBank } from "../../../../lib/aeo/hotTakesBank.js";
 import DraftPanel, { formatPublishAt } from "./DraftPanel";
 
 const selectClass =
@@ -48,6 +50,8 @@ export default function BriefCard({
   pillar,
   prompts,
   personasById,
+  bank,
+  onBankChanged,
   onChanged,
   onError,
   draft,
@@ -74,6 +78,11 @@ export default function BriefCard({
   const [suggesting, setSuggesting] = useState(false);
   const [open, setOpen] = useState(brief.status === "draft" || brief.status === "generated");
   const [cardError, setCardError] = useState("");
+  const [found, setFound] = useState(null); // {matches, conflicts}: what "Find in my bank" returned
+  const [newTake, setNewTake] = useState(null); // {take, basedOn, why}: a draft, not yet in the field
+  const [bankBusy, setBankBusy] = useState("");
+  const [bankError, setBankError] = useState("");
+  const [bankNote, setBankNote] = useState("");
 
   const save = async (values) => {
     try {
@@ -105,6 +114,48 @@ export default function BriefCard({
   };
 
   const outline = textToOutline(outlineText);
+
+  const askBank = async (what) => {
+    setBankBusy(what);
+    setBankError("");
+    const about = { companyId, groupId: group.id, title, angle, outline };
+    try {
+      if (what === "match") setFound(await matchHotTakes(about));
+      else setNewTake(await draftHotTake({ ...about, current: keyPoints }));
+    } catch (err) {
+      setBankError(err?.message || "The bank could not be read");
+    } finally {
+      setBankBusy("");
+    }
+  };
+  // Takes in the field that the bank does not hold yet: typed here, or a draft that was accepted.
+  const bankReady = Boolean(bank?.takes) && !bank.missing;
+  const unsaved = bankReady ? takesNotInBank(keyPoints, bank.takes) : [];
+  const saveToBank = async (take) => {
+    setBankBusy(`save:${take}`);
+    setBankError("");
+    try {
+      const res = await saveTakeToBank(companyId, bank.companyName, {
+        take,
+        original: take,
+        topic: pillar?.name || "",
+        kind: "Opinion",
+        source: `${group.code} · ${title || group.name} (saved from the brief)`,
+      });
+      setBankNote(res.saved ? `Saved to the bank as ${res.saved}.` : `Already in the bank as ${res.duplicate}; not added again.`);
+      await onBankChanged?.();
+    } catch (err) {
+      setBankError(err?.message || "Could not save to the bank");
+    } finally {
+      setBankBusy("");
+    }
+  };
+  const addTakes = (texts) => {
+    const next = texts.reduce((cur, t) => appendTake(cur, t), keyPoints || "");
+    if (next === (keyPoints || "").trim()) return;
+    setKeyPoints(next);
+    save({ key_points: next });
+  };
   const readyProblems = [
     !title.trim() && "a title",
     !keyword.trim() && "a primary keyword",
@@ -233,7 +284,7 @@ export default function BriefCard({
             />
           </div>
 
-          <Field label="Your key points" hint="Your expert input: what you'd tell a client. The writer leads with these.">
+          <Field label="Your hot takes" hint="Your own position on this topic: what you'd tell a client. The writer leads with these.">
             <Textarea
               rows={5}
               value={keyPoints}
@@ -242,6 +293,117 @@ export default function BriefCard({
               onBlur={() => saveIfChanged("key_points", keyPoints, brief.key_points)}
             />
           </Field>
+
+          <div className="space-y-2 rounded-md border border-dashed border-border px-3 py-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" variant="outline" size="sm" disabled={Boolean(bankBusy)} onClick={() => askBank("match")}>
+                {bankBusy === "match" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Library className="mr-1.5 h-3.5 w-3.5" />}
+                {bankBusy === "match" ? "Reading your bank…" : "Find in my bank"}
+              </Button>
+              <Button type="button" variant="outline" size="sm" disabled={Boolean(bankBusy)} onClick={() => askBank("new")}>
+                {bankBusy === "new" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1.5 h-3.5 w-3.5" />}
+                {bankBusy === "new" ? "Drafting…" : "Draft a new take"}
+              </Button>
+              <span className="text-[11px] text-muted-foreground">
+                What you have already said on this topic, and a new take drafted from your other takes. Nothing is added until you click Add.
+              </span>
+            </div>
+            {bankError && <p className="text-xs text-destructive">{bankError}</p>}
+            {bank?.missing && <p className="text-xs text-destructive">Hot takes bank: {bank.missing}</p>}
+            {bankNote && <p className="text-xs text-foreground">{bankNote}</p>}
+
+            {unsaved.length > 0 && (
+              <details className="space-y-1.5">
+                <summary className="cursor-pointer text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                  On this brief, not in your bank yet · {unsaved.length}
+                </summary>
+                <p className="text-[11px] text-muted-foreground">
+                  Save only what is your own position. Points Claude wrote from a theme view also show here.
+                </p>
+                {unsaved.map((t) => (
+                  <div key={t} className="flex items-start gap-2 rounded-md border border-border px-2 py-1.5">
+                    <p className="min-w-0 flex-1 text-xs text-foreground">{t}</p>
+                    <Button type="button" variant="ghost" size="sm" disabled={Boolean(bankBusy)} onClick={() => saveToBank(t)}>
+                      {bankBusy === `save:${t}` ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Library className="mr-1 h-3.5 w-3.5" />}
+                      Save to bank
+                    </Button>
+                  </div>
+                ))}
+              </details>
+            )}
+
+            {found && found.matches.length === 0 && (
+              <p className="text-xs text-muted-foreground">Nothing in your bank speaks to this topic yet.</p>
+            )}
+            {found && found.matches.length > 0 && (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                    From your bank · {found.matches.length}
+                  </span>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => addTakes(found.matches.map((m) => m.take))}>
+                    Add all
+                  </Button>
+                </div>
+                {found.conflicts.map((c) => (
+                  <p key={c.codes.join("-")} className="rounded bg-amber-50 px-2 py-1 text-xs text-amber-900">
+                    {c.codes.join(" and ")} disagree: {c.why} Add one, or fix the bank.
+                  </p>
+                ))}
+                {found.matches.map((m) => {
+                  const added = hasTake(keyPoints, m.take);
+                  return (
+                    <div key={m.code} className="flex items-start gap-2 rounded-md border border-border px-2 py-1.5">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs text-foreground">{m.take}</p>
+                        <p className="mt-0.5 text-[11px] text-muted-foreground">
+                          <span className="font-mono">{m.code}</span> · {m.topic}
+                          {m.why ? ` · ${m.why}` : ""}
+                          {m.note ? ` · Note: ${m.note}` : ""}
+                        </p>
+                      </div>
+                      <Button type="button" variant="ghost" size="sm" disabled={added} onClick={() => addTakes([m.take])}>
+                        {added ? <Check className="mr-1 h-3.5 w-3.5" /> : <Plus className="mr-1 h-3.5 w-3.5" />}
+                        {added ? "Added" : "Add"}
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {newTake && !newTake.take && (
+              <p className="text-xs text-muted-foreground">No new take drafted{newTake.why ? `: ${newTake.why}` : "."}</p>
+            )}
+            {newTake && newTake.take && (
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                  New take · a draft, not yet yours
+                </span>
+                <Textarea rows={3} className="text-xs" value={newTake.take} onChange={(e) => setNewTake({ ...newTake, take: e.target.value })} />
+                <p className="text-[11px] text-muted-foreground">
+                  {newTake.basedOn.length ? `Built on ${newTake.basedOn.join(", ")}. ` : ""}
+                  {newTake.why}
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      addTakes([newTake.take]);
+                      setNewTake(null);
+                    }}
+                  >
+                    <Plus className="mr-1 h-3.5 w-3.5" /> Add to this article
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setNewTake(null)}>
+                    Discard
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
 
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Call to action">

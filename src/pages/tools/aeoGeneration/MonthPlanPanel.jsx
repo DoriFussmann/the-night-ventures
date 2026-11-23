@@ -251,15 +251,25 @@ export default function MonthPlanPanel({
     if (!todo.length) return;
     stopRef.current = false;
     const problems = [];
+    const noBank = [];
+    let bankError = "";
     let done = 0;
     for (const [i, b] of todo.entries()) {
       if (stopRef.current) break;
       const group = lookups.groupById.get(b.group_id);
       const pillar = lookups.pillarById.get(group?.pillar_id);
-      setWorking({ text: `Preparing ${i + 1} of ${todo.length} · ${b.title}`, stop: true, stopping: stopRef.current });
+      setWorking({
+        text: `Preparing ${i + 1} of ${todo.length} · ${b.title}${noBank.length ? ` · WARNING: bank not read for ${noBank.length}` : ""}`,
+        stop: true,
+        stopping: stopRef.current,
+      });
       try {
         const res = await prepareBrief({ companyId, brief: b, group, pillar, view: views[pillar?.id || "none"] });
-        if (res === "ready") done += 1;
+        if (res.bankError) {
+          bankError = res.bankError;
+          noBank.push(b.title);
+        }
+        if (res.status === "ready") done += 1;
         else problems.push(`"${b.title}" still needs something (open its card below)`);
       } catch (err) {
         problems.push(`"${b.title}": ${err?.message || "failed"}`);
@@ -267,7 +277,10 @@ export default function MonthPlanPanel({
     }
     setWorking(null);
     await onReload();
-    if (problems.length) onError?.(`Prepared ${done}. ${problems.join(" · ")}`);
+    const warning = noBank.length
+      ? `WARNING: the hot takes bank could not be read (${bankError}). ${noBank.length} brief${noBank.length === 1 ? " was" : "s were"} written from your theme view only and not checked against the bank: ${noBank.map((x) => `"${x}"`).join(", ")}.`
+      : "";
+    if (problems.length || warning) onError?.([warning, problems.length ? `Prepared ${done}. ${problems.join(" · ")}` : ""].filter(Boolean).join(" "));
   };
 
   const writeAll = () => {
@@ -321,8 +334,8 @@ export default function MonthPlanPanel({
         kind: "input",
         title: missing ? `Your input needed · write your view on ${missing} of ${themeKeys.length} themes` : "Prepare the briefs",
         text: missing
-          ? "One view per theme. Claude turns it into key points for each article in that theme."
-          : "Outline and key points for each brief, then Ready. Keep this tab open while it runs.",
+          ? "One view per theme. Claude turns it into hot takes for each article in that theme, with the matching takes from your bank."
+          : "Outline and hot takes for each brief, then Ready. Keep this tab open while it runs.",
         action: (
           <Button type="button" size="sm" disabled={busy || drafting || !!working || !viewsDone} onClick={prepare}>
             <Sparkles className="mr-1.5 h-3.5 w-3.5" /> Prepare {counts.total - counts.ready} brief{counts.total - counts.ready === 1 ? "" : "s"}
@@ -443,7 +456,7 @@ export default function MonthPlanPanel({
       <div className="flex flex-wrap gap-2">
         <Step n={1} title="Plan" note={`${slots} articles · ${themes.length} themes`} state={stage === 1 ? "now" : ""}
           chipKind={approved ? "output" : "input"} chipText={approved ? `Approved · ${shortDay(String(row.approved_at).slice(0, 10))}` : "Waiting for you"} />
-        <Step n={2} title="Key points" note="Your view per theme" state={stage === 2 ? "now" : ""}
+        <Step n={2} title="Hot takes" note="Your view per theme" state={stage === 2 ? "now" : ""}
           chipKind={stage > 2 ? "output" : "input"} chipText={`${viewsDone} of ${themes.length} views · ${counts.ready} ready`} />
         <Step n={3} title="Drafts" note="One at a time, tab open" state={stage === 3 ? "now" : ""}
           chipKind="calc" chipText={`${counts.drafted} of ${approved ? counts.total : slots}`} />
@@ -534,7 +547,7 @@ export default function MonthPlanPanel({
 
       {/* Key points */}
       <Section
-        eyebrow="Key points · voice › theme view › article"
+        eyebrow="Hot takes · voice › theme view › article"
         title="Your view, once per theme"
         summary={approved ? `${viewsDone} of ${themes.length} views written` : "Opens after the plan is approved"}
         open={open.kp ?? stage === 2}
@@ -617,7 +630,7 @@ export default function MonthPlanPanel({
               <DialogHeader>
                 <DialogTitle className="font-light">{t.pillar?.name || "No pillar"}</DialogTitle>
                 <DialogDescription>
-                  Your view on this theme for {monthLabel(month)}. It feeds the key points of {t.picks.length} article{t.picks.length === 1 ? "" : "s"}.
+                  Your view on this theme for {monthLabel(month)}. It feeds the hot takes of {t.picks.length} article{t.picks.length === 1 ? "" : "s"}.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 text-sm">

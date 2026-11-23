@@ -4,7 +4,7 @@ import { CTA_PRIMARY } from "./briefs";
 
 /**
  * A brief as a markdown file to work on outside the app: title, keyword, angle,
- * outline and the prompts it answers, with "Your key points" last to fill in.
+ * outline and the prompts it answers, with "Your hot takes" last to fill in.
  * `outlineText` is the outline as shown in the card ("## Heading" / "- point").
  */
 export function briefToMarkdown({ brief, group, pillar, prompts = [], personasById, title, keyword, angle, outlineText, keyPoints }) {
@@ -36,7 +36,7 @@ export function briefToMarkdown({ brief, group, pillar, prompts = [], personasBy
     `## Angle\n\n${String(angle || "").trim() || "_None yet_"}`,
     `## Outline\n\n${outline || "_None yet_"}`,
     promptLines.length ? `## Prompts this article answers (${promptLines.length})\n\n${promptLines.join("\n")}` : "",
-    `## Your key points\n\n${String(keyPoints || "").trim() || "<!-- Your expert input: what you'd tell a client. The writer leads with these. -->"}`,
+    `## Your hot takes\n\n${String(keyPoints || "").trim() || "<!-- Your hot takes: what you'd tell a client. The writer leads with these. -->"}`,
   ]
     .filter(Boolean)
     .join("\n\n")
