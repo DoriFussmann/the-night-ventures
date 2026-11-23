@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, ListPlus, Loader2, PenLine, Plus } from "lucide-react";
+import { ArrowLeft, Check, ListPlus, Loader2, PenLine, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { loadPlaybook } from "./aeoPlaybook/api";
 import { BRIEF_STATUS_LABELS, createBriefs, loadBriefs, nextFreeBatchLabel } from "./aeoGeneration/briefs";
@@ -394,6 +394,24 @@ export default function AeoGeneration() {
                   </span>
                 </h2>
                 <div className="flex gap-2">
+                  {(() => {
+                    const written = list.filter((b) => b.status === "generated");
+                    const ok = written.filter((b) => drafts.get(b.generated_article_id)?.hero_storage_path);
+                    if (!ok.length) return null;
+                    const skipped = written.length - ok.length;
+                    return (
+                      <Button type="button" variant="outline" size="sm" disabled={busy || drafting}
+                        onClick={() => {
+                          const msg = `Approve ${ok.length} written draft${ok.length === 1 ? "" : "s"} in "${label}"?` +
+                            (skipped ? ` ${skipped} without a hero image stay unapproved.` : "") +
+                            " You can still unapprove any of them before it is scheduled.";
+                          if (window.confirm(msg)) run(async () => { for (const b of ok) await approveBrief(b); });
+                        }}>
+                        <Check className="mr-1.5 h-3.5 w-3.5" />
+                        Approve all {ok.length}
+                      </Button>
+                    );
+                  })()}
                   {(() => {
                     const ready = list.filter((b) => b.status === "ready");
                     const free = ready.filter((b) => b.id !== writingId && !queue.includes(b.id));
