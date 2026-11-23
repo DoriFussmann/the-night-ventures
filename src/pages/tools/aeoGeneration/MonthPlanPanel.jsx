@@ -251,15 +251,25 @@ export default function MonthPlanPanel({
     if (!todo.length) return;
     stopRef.current = false;
     const problems = [];
+    const noBank = [];
+    let bankError = "";
     let done = 0;
     for (const [i, b] of todo.entries()) {
       if (stopRef.current) break;
       const group = lookups.groupById.get(b.group_id);
       const pillar = lookups.pillarById.get(group?.pillar_id);
-      setWorking({ text: `Preparing ${i + 1} of ${todo.length} · ${b.title}`, stop: true, stopping: stopRef.current });
+      setWorking({
+        text: `Preparing ${i + 1} of ${todo.length} · ${b.title}${noBank.length ? ` · WARNING: bank not read for ${noBank.length}` : ""}`,
+        stop: true,
+        stopping: stopRef.current,
+      });
       try {
         const res = await prepareBrief({ companyId, brief: b, group, pillar, view: views[pillar?.id || "none"] });
-        if (res === "ready") done += 1;
+        if (res.bankError) {
+          bankError = res.bankError;
+          noBank.push(b.title);
+        }
+        if (res.status === "ready") done += 1;
         else problems.push(`"${b.title}" still needs something (open its card below)`);
       } catch (err) {
         problems.push(`"${b.title}": ${err?.message || "failed"}`);
@@ -267,7 +277,10 @@ export default function MonthPlanPanel({
     }
     setWorking(null);
     await onReload();
-    if (problems.length) onError?.(`Prepared ${done}. ${problems.join(" · ")}`);
+    const warning = noBank.length
+      ? `WARNING: the hot takes bank could not be read (${bankError}). ${noBank.length} brief${noBank.length === 1 ? " was" : "s were"} written from your theme view only and not checked against the bank: ${noBank.map((x) => `"${x}"`).join(", ")}.`
+      : "";
+    if (problems.length || warning) onError?.([warning, problems.length ? `Prepared ${done}. ${problems.join(" · ")}` : ""].filter(Boolean).join(" "));
   };
 
   const writeAll = () => {

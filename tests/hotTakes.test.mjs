@@ -65,3 +65,37 @@ test('Monthly Plan key points: the bank is added when there is one, and the prom
   assert.ok(withBank.includes('[R001] (Fees · Opinion) No equity for a fundraising service.'))
   assert.ok(withBank.indexOf('my view') < withBank.indexOf('[R001]'))
 })
+
+import { findDuplicate, similarity, splitTakes, takesNotInBank } from '../lib/aeo/hotTakesBank.js'
+
+test('splitTakes: paragraphs and bullets, no headings or short labels', () => {
+  const field = 'From Dori (first-hand view):\n- Embed AI into the natural steps people already take. Do not try to change how they work.\n- Avoid revolutions; map where AI fits and where it does not.\n\nA single paragraph\nover two lines that is long enough to count as a take.\n\nToo short.'
+  assert.deepEqual(splitTakes(field), [
+    'Embed AI into the natural steps people already take. Do not try to change how they work.',
+    'Avoid revolutions; map where AI fits and where it does not.',
+    'A single paragraph over two lines that is long enough to count as a take.',
+  ])
+  assert.deepEqual(splitTakes(''), [])
+})
+test('findDuplicate: same words, punctuation and case aside; one inside the other; reworded lightly', () => {
+  const bank = [
+    { code: 'R001', take: 'Founders should not give up equity for a fundraising service, or pay a percentage of the raise for it.' },
+    { code: 'R002', take: 'Do not send multiple follow-ups. One is enough.', status: 'dropped' },
+  ]
+  assert.equal(findDuplicate('founders should not give up equity for a fundraising service or pay a percentage of the raise for it', bank).code, 'R001')
+  assert.equal(findDuplicate('Founders should not give up equity for a fundraising service, or pay a percentage of the raise for it. Cash comes back, equity does not.', bank).code, 'R001')
+  assert.equal(findDuplicate('Founders should never give up equity for a fundraising service, or pay a percentage of the raise for it.', bank).code, 'R001')
+  assert.equal(findDuplicate('Do not send multiple follow-ups. One is enough.', bank).code, 'R002')
+  assert.equal(findDuplicate('A flat monthly fee keeps the advisor focused on the work, not on the size of the round.', bank), null)
+  assert.equal(findDuplicate('', bank), null)
+  assert.ok(similarity('a b c d', 'a b c d') === 1 && similarity('a b c d', 'w x y z') === 0)
+})
+test('takesNotInBank lists only what the bank lacks', () => {
+  const bank = [{ code: 'N001', take: 'Start with the workflow, not the technology. Understand the problem first.' }]
+  const field = 'Start with the workflow, not the technology. Understand the problem first.\n\nHourly billing rewards time spent, which is the wrong thing to reward in an AI build.'
+  assert.deepEqual(takesNotInBank(field, bank), ['Hourly billing rewards time spent, which is the wrong thing to reward in an AI build.'])
+})
+test('findDuplicate: text a take was made from is already in the bank', () => {
+  const bank = [{ code: 'R051', take: 'Fundraising is a time-consuming project. Outsource it.', original: 'fund raising is a time consuming project which will eat a lot of the founder\'s time, who needs to run a grow a company. outsource this, for two main reasons' }]
+  assert.equal(findDuplicate('fund raising is a time consuming project which will eat a lot of the founder\'s time', bank).code, 'R051')
+})

@@ -1,10 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Loader2, Plus, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { TAKE_KINDS, groupByTopic, parseImport } from "../../../../lib/aeo/hotTakesBank.js";
-import { addHotTake, importHotTakes, loadCompanyName, loadHotTakes, updateHotTake } from "./hotTakes";
+import { addHotTake, deleteHotTake, importHotTakes, updateHotTake } from "./hotTakes";
 
 const selectClass =
   "h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring";
@@ -59,11 +59,10 @@ function TakeEditor({ initial, topics, saving, onSave, onCancel }) {
  * Briefs pull from it ("Find in my bank", "Draft a new take" on a brief card),
  * and the Monthly Plan uses it when it writes hot takes from a theme view.
  */
-export default function HotTakesPanel({ companyId, onError }) {
+export default function HotTakesPanel({ companyId, bank, onReload, onError }) {
+  const { takes, companyName, missing } = bank;
+  const reload = onReload;
   const [open, setOpen] = useState(false);
-  const [takes, setTakes] = useState(null);
-  const [companyName, setCompanyName] = useState("");
-  const [missing, setMissing] = useState("");
   const [topic, setTopic] = useState("");
   const [query, setQuery] = useState("");
   const [showDropped, setShowDropped] = useState(false);
@@ -72,22 +71,6 @@ export default function HotTakesPanel({ companyId, onError }) {
   const [saving, setSaving] = useState(false);
   const [note, setNote] = useState("");
   const fileRef = useRef(null);
-
-  const reload = useCallback(async () => {
-    try {
-      const [rows, name] = await Promise.all([loadHotTakes(companyId), loadCompanyName(companyId)]);
-      setTakes(rows);
-      setCompanyName(name);
-      setMissing("");
-    } catch (err) {
-      setTakes([]);
-      setMissing(/aeo_hot_takes/.test(err?.message || "") ? "The bank's table is not in the database yet. Run migration 087 first." : err?.message || "Could not load the bank");
-    }
-  }, [companyId]);
-
-  useEffect(() => {
-    reload();
-  }, [reload]);
 
   const run = async (fn) => {
     setSaving(true);
@@ -246,6 +229,16 @@ export default function HotTakesPanel({ companyId, onError }) {
                         onClick={() => run(() => updateHotTake(t.id, { status: t.status === "dropped" ? "active" : "dropped" }))}
                       >
                         {t.status === "dropped" ? "Restore" : "Drop"}
+                      </button>
+                      <button
+                        type="button"
+                        className="underline underline-offset-2 hover:text-destructive"
+                        disabled={saving}
+                        onClick={() => {
+                          if (window.confirm(`Delete ${t.code} from the bank for good? This cannot be undone. Use Drop to keep it out of articles but keep the record.`)) run(() => deleteHotTake(t.id));
+                        }}
+                      >
+                        Delete
                       </button>
                     </div>
                   </div>

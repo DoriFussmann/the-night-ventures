@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { jsonAuthHeaders } from "@/lib/authHeaders";
-import { nextCode } from "../../../../lib/aeo/hotTakesBank.js";
+import { findDuplicate, nextCode } from "../../../../lib/aeo/hotTakesBank.js";
 
 function fail(error, what) {
   if (error) throw new Error(`${what}: ${error.message}`);
@@ -31,6 +31,27 @@ export async function addHotTake(companyId, takes, companyName, values) {
     .from("aeo_hot_takes")
     .insert({ company_id: companyId, code: nextCode(takes, companyName), ...values });
   fail(error, "Hot take");
+}
+
+/** Remove a take from the bank for good. */
+export async function deleteHotTake(id) {
+  const { error } = await supabase.from("aeo_hot_takes").delete().eq("id", id);
+  fail(error, "Hot take");
+}
+
+/**
+ * Save one take from a brief into the bank. The bank is read again first, so a
+ * take that is already there (also one saved a moment ago, or a dropped one) is
+ * not added twice. Returns {saved: code} or {duplicate: code}.
+ */
+export async function saveTakeToBank(companyId, companyName, values) {
+  const takes = await loadHotTakes(companyId);
+  const dup = findDuplicate(values.take, takes);
+  if (dup) return { duplicate: dup.code };
+  const code = nextCode(takes, companyName);
+  const { error } = await supabase.from("aeo_hot_takes").insert({ company_id: companyId, code, ...values });
+  fail(error, "Hot take");
+  return { saved: code };
 }
 
 /** Add the rows of an import file; a take whose code is already in the bank is replaced. */

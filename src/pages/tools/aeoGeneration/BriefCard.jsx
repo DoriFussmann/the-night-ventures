@@ -14,8 +14,8 @@ import {
   updateBrief,
 } from "./briefs";
 import { downloadBriefMarkdown } from "./briefMarkdown";
-import { draftHotTake, matchHotTakes } from "./hotTakes";
-import { appendTake, hasTake } from "../../../../lib/aeo/hotTakesBank.js";
+import { draftHotTake, matchHotTakes, saveTakeToBank } from "./hotTakes";
+import { appendTake, hasTake, takesNotInBank } from "../../../../lib/aeo/hotTakesBank.js";
 import DraftPanel, { formatPublishAt } from "./DraftPanel";
 
 const selectClass =
@@ -50,6 +50,8 @@ export default function BriefCard({
   pillar,
   prompts,
   personasById,
+  bank,
+  onBankChanged,
   onChanged,
   onError,
   draft,
@@ -76,10 +78,11 @@ export default function BriefCard({
   const [suggesting, setSuggesting] = useState(false);
   const [open, setOpen] = useState(brief.status === "draft" || brief.status === "generated");
   const [cardError, setCardError] = useState("");
-  const [bank, setBank] = useState(null); // {matches, conflicts} from the hot takes bank
+  const [found, setFound] = useState(null); // {matches, conflicts}: what "Find in my bank" returned
   const [newTake, setNewTake] = useState(null); // {take, basedOn, why}: a draft, not yet in the field
   const [bankBusy, setBankBusy] = useState("");
   const [bankError, setBankError] = useState("");
+  const [bankNote, setBankNote] = useState("");
 
   const save = async (values) => {
     try {
@@ -117,10 +120,32 @@ export default function BriefCard({
     setBankError("");
     const about = { companyId, groupId: group.id, title, angle, outline };
     try {
-      if (what === "match") setBank(await matchHotTakes(about));
+      if (what === "match") setFound(await matchHotTakes(about));
       else setNewTake(await draftHotTake({ ...about, current: keyPoints }));
     } catch (err) {
       setBankError(err?.message || "The bank could not be read");
+    } finally {
+      setBankBusy("");
+    }
+  };
+  // Takes in the field that the bank does not hold yet: typed here, or a draft that was accepted.
+  const bankReady = Boolean(bank?.takes) && !bank.missing;
+  const unsaved = bankReady ? takesNotInBank(keyPoints, bank.takes) : [];
+  const saveToBank = async (take) => {
+    setBankBusy(`save:${take}`);
+    setBankError("");
+    try {
+      const res = await saveTakeToBank(companyId, bank.companyName, {
+        take,
+        original: take,
+        topic: pillar?.name || "",
+        kind: "Opinion",
+        source: `${group.code} · ${title || group.name} (saved from the brief)`,
+      });
+      setBankNote(res.saved ? `Saved to the bank as ${res.saved}.` : `Already in the bank as ${res.duplicate}; not added again.`);
+      await onBankChanged?.();
+    } catch (err) {
+      setBankError(err?.message || "Could not save to the bank");
     } finally {
       setBankBusy("");
     }
@@ -284,26 +309,48 @@ export default function BriefCard({
               </span>
             </div>
             {bankError && <p className="text-xs text-destructive">{bankError}</p>}
+            {bank?.missing && <p className="text-xs text-destructive">Hot takes bank: {bank.missing}</p>}
+            {bankNote && <p className="text-xs text-foreground">{bankNote}</p>}
 
-            {bank && bank.matches.length === 0 && (
+            {unsaved.length > 0 && (
+              <details className="space-y-1.5">
+                <summary className="cursor-pointer text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                  On this brief, not in your bank yet · {unsaved.length}
+                </summary>
+                <p className="text-[11px] text-muted-foreground">
+                  Save only what is your own position. Points Claude wrote from a theme view also show here.
+                </p>
+                {unsaved.map((t) => (
+                  <div key={t} className="flex items-start gap-2 rounded-md border border-border px-2 py-1.5">
+                    <p className="min-w-0 flex-1 text-xs text-foreground">{t}</p>
+                    <Button type="button" variant="ghost" size="sm" disabled={Boolean(bankBusy)} onClick={() => saveToBank(t)}>
+                      {bankBusy === `save:${t}` ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Library className="mr-1 h-3.5 w-3.5" />}
+                      Save to bank
+                    </Button>
+                  </div>
+                ))}
+              </details>
+            )}
+
+            {found && found.matches.length === 0 && (
               <p className="text-xs text-muted-foreground">Nothing in your bank speaks to this topic yet.</p>
             )}
-            {bank && bank.matches.length > 0 && (
+            {found && found.matches.length > 0 && (
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                    From your bank · {bank.matches.length}
+                    From your bank · {found.matches.length}
                   </span>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => addTakes(bank.matches.map((m) => m.take))}>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => addTakes(found.matches.map((m) => m.take))}>
                     Add all
                   </Button>
                 </div>
-                {bank.conflicts.map((c) => (
+                {found.conflicts.map((c) => (
                   <p key={c.codes.join("-")} className="rounded bg-amber-50 px-2 py-1 text-xs text-amber-900">
                     {c.codes.join(" and ")} disagree: {c.why} Add one, or fix the bank.
                   </p>
                 ))}
-                {bank.matches.map((m) => {
+                {found.matches.map((m) => {
                   const added = hasTake(keyPoints, m.take);
                   return (
                     <div key={m.code} className="flex items-start gap-2 rounded-md border border-border px-2 py-1.5">
