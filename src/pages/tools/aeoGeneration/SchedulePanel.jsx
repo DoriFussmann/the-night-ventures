@@ -55,6 +55,17 @@ export default function SchedulePanel({ approved, today, taken, busy, onSchedule
       </div>
       {startProblem && <p className="text-xs text-destructive">{startProblem}</p>}
 
+      <label className="flex cursor-pointer items-center gap-3 rounded-md border-b border-border px-2 pb-2 text-xs text-muted-foreground">
+        <input
+          type="checkbox"
+          disabled={busy}
+          checked={order.length === approved.length}
+          ref={(el) => { if (el) el.indeterminate = order.length > 0 && order.length < approved.length; }}
+          onChange={() => setOrder(order.length === approved.length ? [] : approved.map((b) => b.id))}
+        />
+        Select all {approved.length}, in the order listed
+      </label>
+
       <ul className="space-y-1">
         {approved.map((b) => {
           const pos = order.indexOf(b.id);
