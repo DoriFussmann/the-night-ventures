@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, ListPlus, Loader2, PenLine, Plus } from "lucide-react";
+import { ArrowLeft, Check, ListPlus, Loader2, PenLine, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { loadPlaybook } from "./aeoPlaybook/api";
 import { BRIEF_STATUS_LABELS, createBriefs, loadBriefs, nextFreeBatchLabel } from "./aeoGeneration/briefs";
@@ -306,6 +306,16 @@ export default function AeoGeneration() {
         </p>
       ) : data && lookups ? (
         <>
+          {progress && (
+            <div className="sticky top-0 z-30 -mx-1 flex flex-wrap items-center gap-2 rounded-md border border-sky-200 bg-sky-50/95 px-3 py-2 text-xs text-sky-900 shadow-sm backdrop-blur">
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+              <span className="min-w-0 flex-1">{progress.text}</span>
+              {queue.length > 0 && <span>{queue.length} more in the pipeline</span>}
+              <ElapsedTime since={progress.started} />
+              <span className="text-sky-800/80">Keep this tab open</span>
+            </div>
+          )}
+
           <MonthPlanPanel
             companyId={companyId}
             data={data}
@@ -397,6 +407,24 @@ export default function AeoGeneration() {
                   </span>
                 </h2>
                 <div className="flex gap-2">
+                  {(() => {
+                    const written = list.filter((b) => b.status === "generated");
+                    const ok = written.filter((b) => drafts.get(b.generated_article_id)?.hero_storage_path);
+                    if (!ok.length) return null;
+                    const skipped = written.length - ok.length;
+                    return (
+                      <Button type="button" variant="outline" size="sm" disabled={busy || drafting}
+                        onClick={() => {
+                          const msg = `Approve ${ok.length} written draft${ok.length === 1 ? "" : "s"} in "${label}"?` +
+                            (skipped ? ` ${skipped} without a hero image stay unapproved.` : "") +
+                            " You can still unapprove any of them before it is scheduled.";
+                          if (window.confirm(msg)) run(async () => { for (const b of ok) await approveBrief(b); });
+                        }}>
+                        <Check className="mr-1.5 h-3.5 w-3.5" />
+                        Approve all {ok.length}
+                      </Button>
+                    );
+                  })()}
                   {(() => {
                     const ready = list.filter((b) => b.status === "ready");
                     const free = ready.filter((b) => b.id !== writingId && !queue.includes(b.id));
