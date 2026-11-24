@@ -90,6 +90,18 @@ export async function suggestThemeView({ companyId, pillarId, groupIds }) {
   return body.suggestions;
 }
 
+/** The strongest takes in the company's bank for one theme: [{codes, text, serves, from: [{code, take, note}]}]. */
+export async function connectHotTakes({ companyId, pillarId, groupIds, view }) {
+  const res = await fetch("/api/aeo-brief-outline", {
+    method: "POST",
+    headers: await jsonAuthHeaders(),
+    body: JSON.stringify({ mode: "hot_takes_theme", companyId, pillarId, groupIds, view }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `Hot takes connection failed (${res.status})`);
+  return body.connections || [];
+}
+
 /**
  * Get one brief ready to write: outline if it has none, key points from the
  * theme view if it has none, then Ready when nothing is missing.

@@ -99,3 +99,21 @@ test('findDuplicate: text a take was made from is already in the bank', () => {
   const bank = [{ code: 'R051', take: 'Fundraising is a time-consuming project. Outsource it.', original: 'fund raising is a time consuming project which will eat a lot of the founder\'s time, who needs to run a grow a company. outsource this, for two main reasons' }]
   assert.equal(findDuplicate('fund raising is a time consuming project which will eat a lot of the founder\'s time', bank).code, 'R051')
 })
+
+import { buildThemeConnectionPrompt, parseConnections } from '../lib/aeo/hotTakes.js'
+
+test('theme connection: the prompt carries the bank, the articles and the view so far', () => {
+  const p = buildThemeConnectionPrompt({ takes, pillar: { name: 'Fees' }, articles: ['Success fees'], prompts: ['Is a success fee fair?'], view: 'my view so far' })
+  for (const s of ['[R002] (Fees · Opinion) A flat fee aligns incentives. {note: check}', '- Success fees', 'Is a success fee fair?', 'my view so far', 'Never change what the take says']) assert.ok(p.includes(s), s)
+  assert.ok(!buildThemeConnectionPrompt({ takes, pillar: null, articles: [], prompts: [], view: '' }).includes('The view as written so far'))
+})
+test('parseConnections keeps known codes, needs text, carries the original takes', () => {
+  const out = parseConnections('{"connections":[{"codes":["R001","R002","ZZ"],"text":" merged ","serves":"fees article"},{"codes":["ZZ"],"text":"x"},{"codes":["R010"],"text":""},{"code":"R010","text":"one follow-up"}]}', takes)
+  assert.deepEqual(out.map((c) => [c.codes.join('+'), c.text, c.serves]), [['R001+R002', 'merged', 'fees article'], ['R010', 'one follow-up', '']])
+  assert.equal(out[0].from[1].note, 'check')
+  assert.equal(out[1].from[0].take, 'One follow-up is enough.')
+})
+test('parseMatches carries the reworded text when there is one', () => {
+  const out = parseMatches('{"matches":[{"code":"R001","text":"reworded","why":"w"},{"code":"R002"}]}', takes)
+  assert.deepEqual(out.matches.map((m) => [m.code, m.text]), [['R001', 'reworded'], ['R002', '']])
+})

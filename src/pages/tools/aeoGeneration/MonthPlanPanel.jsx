@@ -12,7 +12,8 @@ import {
   shiftMonth,
   themesOf,
 } from "../../../../lib/aeo/monthPlan.js";
-import { approveMonthPlan, loadMonthPlan, loadVoice, prepareBrief, saveMonthPlan, saveVoice, suggestThemeView } from "./monthPlan";
+import { approveMonthPlan, connectHotTakes, loadMonthPlan, loadVoice, prepareBrief, saveMonthPlan, saveVoice, suggestThemeView } from "./monthPlan";
+import { appendTake, hasTake } from "../../../../lib/aeo/hotTakesBank.js";
 
 const DONE_DRAFT = new Set(["generated", "approved", "scheduled", "published"]);
 const DONE_APPROVED = new Set(["approved", "scheduled", "published"]);
@@ -110,6 +111,7 @@ export default function MonthPlanPanel({
   const [open, setOpen] = useState({});
   const [working, setWorking] = useState(null);
   const [suggest, setSuggest] = useState({});
+  const [connect, setConnect] = useState({}); // theme key -> "…" | [{codes, text, serves, from}]
   const [activeKey, setActiveKey] = useState(null);
   const [draft, setDraft] = useState("");
   const stopRef = useRef(false);
@@ -624,6 +626,7 @@ export default function MonthPlanPanel({
           .filter(Boolean)
           .slice(0, 8);
         const sug = suggest[t.key];
+        const con = connect[t.key];
         return (
           <Dialog open onOpenChange={(o) => !o && closeTheme()}>
             <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
@@ -648,9 +651,64 @@ export default function MonthPlanPanel({
                     </ul>
                   </div>
                 )}
+                <div className="rounded-md border border-teal-700/40 bg-teal-50/40 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[11px] font-medium uppercase tracking-wider text-teal-800">Hot takes connection · from your bank</p>
+                    <button type="button" disabled={con === "…"}
+                      className="inline-flex items-center gap-1 text-xs text-teal-800 underline disabled:opacity-50"
+                      onClick={async () => {
+                        setConnect((m) => ({ ...m, [t.key]: "…" }));
+                        try {
+                          const list = await connectHotTakes({ companyId, pillarId: t.pillar?.id || "", groupIds: t.picks.map((p) => p.group.id), view: draft });
+                          setConnect((m) => ({ ...m, [t.key]: list }));
+                        } catch (err) {
+                          setConnect((m) => ({ ...m, [t.key]: undefined }));
+                          onError?.(err?.message);
+                        }
+                      }}>
+                      {con === "…" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                      {con === "…" ? "Reading your bank…" : Array.isArray(con) ? "Connect again" : "Connect my hot takes"}
+                    </button>
+                  </div>
+                  {Array.isArray(con) ? (
+                    con.length ? (
+                      <div className="mt-2 space-y-2">
+                        {con.map((c) => {
+                          const added = hasTake(draft, c.text);
+                          const same = c.from.length === 1 && c.from[0].take.trim() === c.text;
+                          return (
+                            <div key={c.codes.join("-")} className="rounded-md border border-border bg-background p-2">
+                              <p className="text-xs text-foreground">{c.text}</p>
+                              <p className="mt-1 text-[11px] text-muted-foreground" title={c.from.map((f) => `${f.code}: ${f.take}`).join("\n\n")}>
+                                <span className="font-mono">{c.codes.join(" + ")}</span>
+                                {same ? " · your wording" : " · reworded for this theme (hover for your original)"}
+                                {c.serves ? ` · for: ${c.serves}` : ""}
+                                {c.from.some((f) => f.note) ? ` · Note: ${c.from.map((f) => f.note).filter(Boolean).join(" ")}` : ""}
+                              </p>
+                              <button type="button" disabled={added} className="mt-1 text-xs text-teal-800 underline disabled:no-underline disabled:opacity-60"
+                                onClick={() => setDraft((d) => appendTake(d, c.text))}>
+                                {added ? "In your view" : "Add to my view"}
+                              </button>
+                            </div>
+                          );
+                        })}
+                        <button type="button" className="text-xs text-teal-800 underline"
+                          onClick={() => setDraft((d) => con.reduce((cur, c) => appendTake(cur, c.text), d))}>
+                          Add all to my view
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="mt-1 text-xs text-muted-foreground">Nothing in your bank belongs in this theme yet. Write your view; you can save new takes to the bank from the briefs.</p>
+                    )
+                  ) : (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      What you have already said that belongs in this theme. Claude picks the strongest takes from your bank and may adjust the wording to fit; the position stays yours. Nothing is added until you click.
+                    </p>
+                  )}
+                </div>
                 <div className="rounded-md border border-dashed border-border p-3">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-[11px] font-medium uppercase tracking-wider text-teal-800">Suggestions for your view</p>
+                    <p className="text-[11px] font-medium uppercase tracking-wider text-teal-800">New angles · not from your bank</p>
                     <button type="button" disabled={sug === "…"}
                       className="inline-flex items-center gap-1 text-xs text-teal-800 underline disabled:opacity-50"
                       onClick={async () => {
@@ -664,7 +722,7 @@ export default function MonthPlanPanel({
                         }
                       }}>
                       {sug === "…" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                      {sug && sug !== "…" ? "Suggest again" : "Suggest"}
+                      {sug && sug !== "…" ? "Suggest angles again" : "Suggest angles"}
                     </button>
                   </div>
                   {sug && sug !== "…" ? (
@@ -676,7 +734,7 @@ export default function MonthPlanPanel({
                       </button>
                     </>
                   ) : (
-                    <p className="mt-1 text-xs text-muted-foreground">Angles and questions to take a position on. Prompts for your thinking, not your opinion.</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Questions to take a position on. Prompts for your thinking; these do not come from your hot takes bank.</p>
                   )}
                 </div>
                 <div>

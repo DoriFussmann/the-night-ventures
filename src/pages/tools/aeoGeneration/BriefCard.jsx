@@ -130,7 +130,9 @@ export default function BriefCard({
   };
   // Takes in the field that the bank does not hold yet: typed here, or a draft that was accepted.
   const bankReady = Boolean(bank?.takes) && !bank.missing;
-  const unsaved = bankReady ? takesNotInBank(keyPoints, bank.takes) : [];
+  // A take brought from the bank and reworded for this article is already in the bank; do not offer to save it again.
+  const fromBank = new Set((found?.matches || []).map((m) => m.text.trim()));
+  const unsaved = bankReady ? takesNotInBank(keyPoints, bank.takes).filter((x) => !fromBank.has(x.trim())) : [];
   const saveToBank = async (take) => {
     setBankBusy(`save:${take}`);
     setBankError("");
@@ -298,14 +300,14 @@ export default function BriefCard({
             <div className="flex flex-wrap items-center gap-2">
               <Button type="button" variant="outline" size="sm" disabled={Boolean(bankBusy)} onClick={() => askBank("match")}>
                 {bankBusy === "match" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Library className="mr-1.5 h-3.5 w-3.5" />}
-                {bankBusy === "match" ? "Reading your bank…" : "Find in my bank"}
+                {bankBusy === "match" ? "Reading your bank…" : "Connect my hot takes"}
               </Button>
               <Button type="button" variant="outline" size="sm" disabled={Boolean(bankBusy)} onClick={() => askBank("new")}>
                 {bankBusy === "new" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1.5 h-3.5 w-3.5" />}
                 {bankBusy === "new" ? "Drafting…" : "Draft a new take"}
               </Button>
               <span className="text-[11px] text-muted-foreground">
-                What you have already said on this topic, and a new take drafted from your other takes. Nothing is added until you click Add.
+                Hot takes connection: the strongest takes in your bank for this article, reworded to fit where needed, and a new take drafted from your other takes. Nothing is added until you click Add.
               </span>
             </div>
             {bankError && <p className="text-xs text-destructive">{bankError}</p>}
@@ -339,9 +341,9 @@ export default function BriefCard({
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                    From your bank · {found.matches.length}
+                    Hot takes connection · from your bank · {found.matches.length}
                   </span>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => addTakes(found.matches.map((m) => m.take))}>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => addTakes(found.matches.map((m) => m.text))}>
                     Add all
                   </Button>
                 </div>
@@ -351,18 +353,20 @@ export default function BriefCard({
                   </p>
                 ))}
                 {found.matches.map((m) => {
-                  const added = hasTake(keyPoints, m.take);
+                  const added = hasTake(keyPoints, m.text);
+                  const same = m.text.trim() === m.take.trim();
                   return (
                     <div key={m.code} className="flex items-start gap-2 rounded-md border border-border px-2 py-1.5">
                       <div className="min-w-0 flex-1">
-                        <p className="text-xs text-foreground">{m.take}</p>
-                        <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        <p className="text-xs text-foreground">{m.text}</p>
+                        <p className="mt-0.5 text-[11px] text-muted-foreground" title={same ? "" : `${m.code}: ${m.take}`}>
                           <span className="font-mono">{m.code}</span> · {m.topic}
+                          {same ? " · your wording" : " · reworded for this article (hover for your original)"}
                           {m.why ? ` · ${m.why}` : ""}
                           {m.note ? ` · Note: ${m.note}` : ""}
                         </p>
                       </div>
-                      <Button type="button" variant="ghost" size="sm" disabled={added} onClick={() => addTakes([m.take])}>
+                      <Button type="button" variant="ghost" size="sm" disabled={added} onClick={() => addTakes([m.text])}>
                         {added ? <Check className="mr-1 h-3.5 w-3.5" /> : <Plus className="mr-1 h-3.5 w-3.5" />}
                         {added ? "Added" : "Add"}
                       </Button>
