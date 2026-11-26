@@ -402,6 +402,14 @@ export default function AppSidebar({ user }) {
                   status: "New",
                 }}
               />
+              <NavItem
+                item={{
+                  label: "Fan-Out Engine",
+                  path: `/company/${activeCompanyId}/fan-out`,
+                  icon: Compass,
+                  status: "New",
+                }}
+              />
             </div>
 
             <SectionRule />
