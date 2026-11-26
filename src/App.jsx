@@ -23,6 +23,7 @@ import Integrations from '@/pages/tools/Integrations';
 import Analytics from '@/pages/tools/Analytics';
 import AeoPlaybook from '@/pages/tools/AeoPlaybook';
 import AeoGeneration from '@/pages/tools/AeoGeneration';
+import FanOut from '@/pages/tools/FanOut';
 
 /** Company Intelligence moved into the AEO Playbook's Company tab. */
 function RedirectToPlaybookCompany() {
@@ -46,6 +47,7 @@ const AuthenticatedApp = () => {
           <Route path="/company/:companyId/company-data" element={<RedirectToPlaybookCompany />} />
           <Route path="/company/:companyId/aeo-playbook" element={<AeoPlaybook />} />
           <Route path="/company/:companyId/aeo-generation" element={<AeoGeneration />} />
+          <Route path="/company/:companyId/fan-out" element={<FanOut />} />
           <Route path="/company/:companyId/external-audit-snapshot" element={<ExternalAuditSnapshot />} />
           <Route path="/company/:companyId/audit" element={<Audit />} />
           <Route path="/company/:companyId/articles" element={<Articles />} />
