@@ -1,18 +1,24 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  DIRECTIONS,
   PROMPT_MAX,
+  PUSHABLE,
   STEPS,
   answerHeadings,
   briefFromTopic,
   buildPersonaPrompt,
   buildPromptsPrompt,
   buildTopicsPrompt,
+  collectCited,
   collectQueries,
   decideAction,
   icpExcerpt,
   isWeak,
+  listsToGetOn,
+  namedIn,
   parseJsonReply,
+  parsePageTypes,
   parsePersona,
   parsePrompts,
   parseTopics,
@@ -81,6 +87,17 @@ test('the prompt request forbids the own brand and the characters the engine mis
   assert.equal(out.short, 'one line')
 })
 
+test('the direction decides what the prompts ask for; recommend is the default and asks for names', () => {
+  const persona = { who: 'w', where_they_stand: 's', inside: 'i', location: 'Denver' }
+  const rec = buildPromptsPrompt({ description: 'd', persona, ownNames: [] })
+  assert.ok(rec.includes(DIRECTIONS.recommend.rule) && /who or what to use/.test(rec) && /names and options/.test(rec))
+  const adv = buildPromptsPrompt({ description: 'd', persona, ownNames: [], direction: 'advise' })
+  assert.ok(adv.includes(DIRECTIONS.advise.rule) && !adv.includes(DIRECTIONS.recommend.rule))
+  const exp = buildPromptsPrompt({ description: 'd', persona, ownNames: [], direction: 'explain' })
+  assert.ok(exp.includes(DIRECTIONS.explain.rule))
+  assert.ok(buildPromptsPrompt({ description: 'd', persona, ownNames: [], direction: 'nonsense' }).includes(DIRECTIONS.recommend.rule))
+})
+
 test('promptIssues blocks an over-long prompt and one that names the company, and warns on % and +', () => {
   assert.equal(promptIssues('x'.repeat(PROMPT_MAX)).block.length, 0)
   assert.match(promptIssues('x'.repeat(PROMPT_MAX + 1)).block[0], /2,001 characters/)
@@ -117,7 +134,8 @@ test('the topics request lists every search with its id; the reply keeps each se
   const queries = collectQueries(runs, prompts)
   const req = buildTopicsPrompt({ persona: { who: 'w', where_they_stand: 's', location: 'Austin, Texas' }, prompts, queries, runs, pillars: [{ code: 'A', name: 'Raising' }], groups: [{ code: 'A01', name: 'SAFE basics' }], ownNames: ['Rupert'], companyName: 'Rupert' })
   for (const q of queries) assert.ok(req.includes(`${q.id} · ${q.runs} · ${q.q}`))
-  assert.ok(req.includes('carta.com') && req.includes('A01 · SAFE basics') && req.includes('Never write Rupert'))
+  assert.ok(req.includes('c1 · carta.com · x · https://carta.com/x') && req.includes('A01 · SAFE basics') && req.includes('Never write Rupert'))
+  assert.ok(req.includes('"pages": [{"id": "c1", "type": "vendor"}]'))
   const florida = queries.find((q) => /Florida/.test(q.q)).id
   const reply = JSON.stringify({ topics: [
     { title: 'Pre-seed benchmarks for SaaS', queries: ['q1', 'q1', 'q99'], local: false, recommendation: false, owner_note: 'Carta owns the data.', answer_points: ['Median cap', ''], match_group: '', pillar: 'A' },
@@ -132,6 +150,28 @@ test('the topics request lists every search with its id; the reply keeps each se
   assert.throws(() => parseTopics('{"topics": []}', queries), /No topics/)
 })
 
+test('cited pages get ids, most cited first, and a type from the reply; an unknown type is "other"', () => {
+  const cited = collectCited(runs)
+  assert.deepEqual(cited.map((c) => [c.id, c.url, c.runs]), [['c1', 'https://carta.com/x', 2], ['c2', 'https://carta.com/data/state-of-pre-seed-2025/', 1], ['c3', 'https://www.ycombinator.com/safe', 1]])
+  const types = parsePageTypes('{"topics": [], "pages": [{"id": "c1", "type": "Data"}, {"id": "c3", "type": "blog"}]}', cited)
+  assert.deepEqual(types, { 'https://carta.com/x': 'data', 'https://carta.com/data/state-of-pre-seed-2025/': 'other', 'https://www.ycombinator.com/safe': 'other' })
+})
+
+test('namedIn counts tracked brands and the brands ChatGPT tagged, once per run, most named first', () => {
+  const brands = [{ id: OWN, name: 'Rupert', is_own: true }, { id: 'b-o', name: 'OpenVC', is_own: false }]
+  const rs = [
+    { status: 'ok', brands: { 'b-o': { named: true } }, brand_entities: [{ title: 'openvc' }, { title: 'Signal NFX' }, { title: 'Signal NFX' }] },
+    { status: 'ok', brands: { 'b-o': { named: true }, [OWN]: { named: true } }, brand_entities: [] },
+    { status: 'failed', brands: { 'b-o': { named: true } }, brand_entities: [{ title: 'Ghost' }] },
+  ]
+  assert.deepEqual(namedIn(rs, brands), [
+    { name: 'OpenVC', runs: 2, tracked: true, own: false },
+    { name: 'Rupert', runs: 1, tracked: true, own: true },
+    { name: 'Signal NFX', runs: 1, tracked: false, own: false },
+  ])
+  assert.deepEqual(namedIn([], brands), [])
+})
+
 test('topicStats counts runs, forms and who is cited, and labels where the company stands', () => {
   const queries = collectQueries(runs, prompts)
   const stats = topicStats({ queryIds: ['q1'] }, queries, runs, prompts, OWN)
@@ -141,6 +181,23 @@ test('topicStats counts runs, forms and who is cited, and labels where the compa
   assert.equal(stats.standing, 'Absent')
   const named = runs.map((r) => (r.id === 'r1' ? { ...r, brands: { [OWN]: { named: true, cited: false, retrieved: false } } } : r))
   assert.equal(topicStats({ queryIds: ['q1'] }, queries, named, prompts, OWN).standing, 'Named')
+  // page types and who is named ride along when given
+  const typed = topicStats({ queryIds: ['q1'] }, queries, named, prompts, OWN, { brands: [{ id: OWN, name: 'Rupert', is_own: true }], pageTypes: { 'https://carta.com/x': 'data', 'https://www.ycombinator.com/safe': 'vendor' } })
+  assert.equal(typed.winners[0].type, 'data')
+  assert.deepEqual(typed.winners[0].pages.map((p) => [p.url, p.type, p.cited]), [['https://carta.com/x', 'data', 2], ['https://carta.com/data/state-of-pre-seed-2025/', 'other', 1]])
+  assert.deepEqual(typed.named, [{ name: 'Rupert', runs: 1, tracked: true, own: true }])
+})
+
+test('listsToGetOn gathers list and directory pages across topics, skipping removed topics', () => {
+  const topics = [
+    { title: 'T1', status: 'proposed', winners: [{ domain: 'a.com', pages: [{ url: 'https://a.com/best', title: 'Best tools', type: 'list', cited: 3 }, { url: 'https://a.com/guide', title: 'Guide', type: 'guide', cited: 5 }] }] },
+    { title: 'T2', status: 'approved', winners: [{ domain: 'a.com', pages: [{ url: 'https://a.com/best', title: 'Best tools', type: 'list', cited: 2 }] }, { domain: 'dir.io', pages: [{ url: 'https://dir.io/', title: '', type: 'directory', cited: 1 }] }] },
+    { title: 'T3', status: 'removed', winners: [{ domain: 'x.com', pages: [{ url: 'https://x.com/top', title: 'Top', type: 'list', cited: 9 }] }] },
+  ]
+  assert.deepEqual(listsToGetOn(topics), [
+    { url: 'https://a.com/best', domain: 'a.com', title: 'Best tools', type: 'list', cited: 3, topics: ['T1', 'T2'] },
+    { url: 'https://dir.io/', domain: 'dir.io', title: 'dir.io', type: 'directory', cited: 1, topics: ['T2'] },
+  ])
 })
 
 test('decideAction follows the rules in order and gives the rule as the reason', () => {
@@ -178,4 +235,24 @@ test('briefFromTopic fills title, keyword, angle and outline, and leaves hot tak
   assert.ok(b.outline[0].points.includes('pre-seed SAFE valuation cap median'))
   assert.deepEqual(b.outline.slice(1).map((s) => s.heading), ['What cap is typical at $5k MRR', 'How much dilution to expect'])
   assert.ok(!('key_points' in b))
+  assert.equal(b.article_type, null)
+})
+
+test('a comparison article is pushable, never chosen by rule, and its brief compares the named options without the own brand', () => {
+  assert.ok(PUSHABLE.has('comparison_article'))
+  for (const s of ['Named', 'Cited, not named', 'Retrieved, not cited', 'Absent']) {
+    for (const recommendation of [true, false]) assert.notEqual(decideAction({ standing: s, local: false, recommendation, matchGroup: null }).action, 'comparison_article')
+  }
+  const b = briefFromTopic({
+    title: 'Who can run investor outreach for a seed round',
+    action: 'comparison_article',
+    queries: [{ q: 'investor outreach service for startups', runs: 4 }],
+    answer_points: ['What each option costs'],
+    named: [{ name: 'OpenVC', runs: 4, tracked: true, own: false }, { name: 'Rupert', runs: 1, tracked: true, own: true }],
+    winners: [{ domain: 'openvc.app', cited: 4 }],
+  })
+  assert.equal(b.article_type, 'comparison')
+  assert.deepEqual(b.outline.map((s) => s.heading), ['The short story', 'The options compared', 'What each option costs'])
+  assert.ok(b.outline[1].points.some((p) => p.includes('OpenVC')) && !JSON.stringify(b.outline).includes('Rupert'))
+  assert.ok(b.angle.includes('Named today: OpenVC.'))
 })

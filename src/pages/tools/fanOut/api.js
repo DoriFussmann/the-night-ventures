@@ -96,7 +96,7 @@ export async function updateTopic(id, patch) {
 
 /**
  * Turn approved topics into briefs in AEO Generation.
- * New article: a new Content Map topic under the chosen theme, the situation's prompts as its buyer
+ * New article or comparison article: a new Content Map topic under the chosen theme, the situation's prompts as its buyer
  * prompts, and a brief. Existing topic without a brief: the brief only. A brief that already exists
  * is never overwritten. The hot takes field is left empty for the user.
  * @returns {Promise<Array<{ id: string, ok: boolean, message: string, topic?: object }>>}
@@ -150,7 +150,13 @@ export async function pushTopics({ companyId, situation, topics, prompts }) {
       briefs = await loadBriefs(companyId);
       const made = briefs.find((b) => b.group_id === group.id);
       if (!made) throw new Error("The brief was not created.");
-      await updateBrief(made.id, { title: fields.title, primary_keyword: made.primary_keyword || fields.primary_keyword, angle: fields.angle, outline: fields.outline });
+      await updateBrief(made.id, {
+        title: fields.title,
+        primary_keyword: made.primary_keyword || fields.primary_keyword,
+        angle: fields.angle,
+        outline: fields.outline,
+        ...(fields.article_type ? { article_type: fields.article_type } : {}),
+      });
       const topic = await updateTopic(t.id, { status: "pushed", group_id: group.id, pillar_id: group.pillar_id, brief_id: made.id, pushed_at: new Date().toISOString() });
       results.push({ id: t.id, ok: true, topic, message: `Brief created on ${group.code}, in the batch "Fan-Out ${situation.code}".` });
     } catch (err) {

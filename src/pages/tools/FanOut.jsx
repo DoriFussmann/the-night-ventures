@@ -5,12 +5,15 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
   ACTIONS,
+  DIRECTIONS,
   FORM_LABELS,
+  LIST_TYPES,
   PROMPT_MAX,
   PUSHABLE,
   STEPS,
   STEP_LABELS,
   isWeak,
+  listsToGetOn,
   planRuns,
   promptIssues,
   staleAfter,
@@ -164,6 +167,9 @@ function TopicCard({ topic, okRuns, map, busy, onChange }) {
   const pushed = topic.status === "pushed";
   const removed = topic.status === "removed";
   const pushable = PUSHABLE.has(topic.action);
+  const named = topic.named || [];
+  const lists = (topic.winners || []).flatMap((w) => (w.pages || []).filter((p) => LIST_TYPES.has(p.type) && p.url).map((p) => ({ ...p, domain: w.domain, title: p.title || w.domain })));
+  const needsTheme = topic.action === "new_article" || topic.action === "comparison_article";
   const save = (patch) => onChange(topic.id, patch);
   return (
     <div className={`space-y-2 rounded-md border px-3 py-3 text-sm ${topic.status === "approved" ? "border-emerald-300" : "border-border"} ${removed ? "opacity-50" : ""}`}>
@@ -181,10 +187,32 @@ function TopicCard({ topic, okRuns, map, busy, onChange }) {
         </ul>
       </div>
       <div className="text-xs">
+        <p className="font-medium text-foreground">Who ChatGPT names</p>
+        {named.length ? (
+          <p className="mt-0.5 flex flex-wrap gap-1">
+            {named.map((b) => (
+              <Chip key={b.name} tone={b.own ? "border-emerald-300 bg-emerald-50 text-emerald-800" : b.tracked ? "border-sky-300 bg-sky-50 text-sky-800" : undefined}>
+                {b.name} · {b.runs} of {topic.runs_seen}{b.own ? " · you" : b.tracked ? " · tracked" : ""}
+              </Chip>
+            ))}
+          </p>
+        ) : (
+          <p className="text-muted-foreground">No company is named in these answers.</p>
+        )}
+      </div>
+      <div className="text-xs">
         <p className="font-medium text-foreground">Who is cited today</p>
-        <p className="text-muted-foreground">{(topic.winners || []).map((w) => `${w.domain} (${w.cited})`).join(", ") || "Nobody was cited in these runs."}</p>
+        <p className="text-muted-foreground">{(topic.winners || []).map((w) => `${w.domain} (${w.cited}${w.type && w.type !== "other" ? `, ${w.type}` : ""})`).join(" · ") || "Nobody was cited in these runs."}</p>
         {topic.owner_note && <p className="mt-0.5 text-foreground">{topic.owner_note}</p>}
       </div>
+      {lists.length > 0 && (
+        <div className="text-xs">
+          <p className="font-medium text-foreground">Lists to get on <span className="font-normal text-muted-foreground">· pages that name several providers</span></p>
+          <ul className="mt-0.5 space-y-0.5">
+            {lists.map((l) => <li key={l.url}><a className="underline underline-offset-2" href={l.url} target="_blank" rel="noreferrer">{l.title}</a> <span className="text-muted-foreground">· {l.domain} · {l.type} · cited {l.cited}×</span></li>)}
+          </ul>
+        </div>
+      )}
       <div>
         <p className="text-xs font-medium text-foreground">What the article must answer <span className="font-normal text-muted-foreground">· one per line; your hot takes are added on the brief</span></p>
         <Textarea className="mt-1 min-h-[96px] text-xs md:text-xs" value={points} disabled={pushed} onChange={(e) => setPoints(e.target.value)} onBlur={() => save({ answer_points: points.split("\n").map((l) => l.replace(/^[-*]\s*/, "").trim()).filter(Boolean) })} />
@@ -194,7 +222,7 @@ function TopicCard({ topic, okRuns, map, busy, onChange }) {
         <select className={`${inputClass} max-w-full`} value={topic.action} disabled={pushed || busy} onChange={(e) => save({ action: e.target.value, action_reason: "Set by hand.", status: "proposed" })}>
           {Object.entries(ACTIONS).filter(([k]) => k !== "existing_group" || group).map(([k, label]) => <option key={k} value={k}>{label}{k === "existing_group" && group ? `: ${group.code}` : ""}</option>)}
         </select>
-        {topic.action === "new_article" && (
+        {needsTheme && (
           <>
             <label className="text-muted-foreground">Theme</label>
             <select className={`${inputClass} max-w-full`} value={topic.pillar_id || ""} disabled={pushed || busy} onChange={(e) => save({ pillar_id: e.target.value || null })}>
@@ -215,7 +243,12 @@ function TopicCard({ topic, okRuns, map, busy, onChange }) {
                 <Check className="mr-1.5 h-3.5 w-3.5" />{topic.status === "approved" ? "Approved" : "Approve for push"}
               </Button>
             )}
-            {!pushable && !removed && <span className="text-xs text-muted-foreground">Not an article: nothing is pushed for this action. Handle it on the site.</span>}
+            {!pushable && !removed && (
+              <span className="text-xs text-muted-foreground">
+                Not an article: nothing is pushed for this action. Handle it on the site.
+                {topic.action === "commercial_page" && " Or set the action to Comparison article to push one; whether that gets you named is unproven, so try it on one topic first."}
+              </span>
+            )}
             <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => save({ status: removed ? "proposed" : "removed" })}>{removed ? "Restore" : "Remove"}</Button>
           </>
         )}
@@ -363,6 +396,11 @@ export default function FanOut() {
     await patchSituation({ persona, stale_from: staleAfter("persona", has) || situation.stale_from });
   });
 
+  const changeDirection = (direction) => guard("prompt-edit", async () => {
+    // The prompts on the page were written for the old direction: mark them, and everything after, out of date.
+    await patchSituation({ direction, stale_from: has.prompts ? "prompts" : situation.stale_from });
+  });
+
   const doPrompts = () => guard("prompts", async () => {
     const out = await writePrompts(companyId, situation.id);
     const long = prompts.filter((p) => p.form === "long");
@@ -423,6 +461,7 @@ export default function FanOut() {
   });
 
   const approved = topics.filter((t) => t.status === "approved" && PUSHABLE.has(t.action));
+  const allLists = useMemo(() => listsToGetOn(topics), [topics]);
   const doPush = () => guard("push", async () => {
     const results = await pushTopics({ companyId, situation, topics: approved, prompts });
     setPushNotes(results);
@@ -517,7 +556,14 @@ export default function FanOut() {
                 </Button>
               </Panel>
 
-              <Panel {...panel("prompts")} summary={prompts.map((p) => `${FORM_LABELS[p.form]} ${p.prompt.length.toLocaleString("en-US")} characters`).join(" · ")} details={situation.details?.prompts} did={has.prompts ? "What this person would type to ChatGPT. Edit freely; nothing has been sent yet." : "Claude will write a medium and a short prompt in this person's voice."}>
+              <Panel {...panel("prompts")} summary={[(DIRECTIONS[situation.direction] || DIRECTIONS.recommend).label, ...prompts.map((p) => `${FORM_LABELS[p.form]} ${p.prompt.length.toLocaleString("en-US")} characters`)].join(" · ")} details={situation.details?.prompts} did={has.prompts ? "What this person would type to ChatGPT. Edit freely; nothing has been sent yet." : "Claude will write a medium and a short prompt in this person's voice, ending in the ask you choose."}>
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <label className="font-medium text-foreground" htmlFor="fo-direction">Direction</label>
+                  <select id="fo-direction" className={inputClass} value={situation.direction || "recommend"} disabled={working} onChange={(e) => changeDirection(e.target.value)}>
+                    {Object.entries(DIRECTIONS).map(([k, d]) => <option key={k} value={k}>{d.label}</option>)}
+                  </select>
+                  <span className="min-w-0 basis-full text-muted-foreground sm:flex-1 sm:basis-0">{(DIRECTIONS[situation.direction] || DIRECTIONS.recommend).hint}</span>
+                </div>
                 {prompts.map((p) => {
                   const text = promptEdit[p.form] ?? p.prompt;
                   const over = text.length > PROMPT_MAX;
@@ -592,6 +638,14 @@ export default function FanOut() {
                 <Button type="button" size="sm" disabled={working || approved.length === 0} onClick={doPush}>
                   {busy === "push" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-1.5 h-3.5 w-3.5" />}Push to AEO Generation
                 </Button>
+                {allLists.length > 0 && (
+                  <div className="rounded-md border border-border px-3 py-2 text-xs">
+                    <p className="font-medium text-foreground">Lists to get on <span className="font-normal text-muted-foreground">· pages ChatGPT cited that name several providers. Getting listed there is another way to be named.</span></p>
+                    <ul className="mt-1 space-y-0.5">
+                      {allLists.map((l) => <li key={l.url}><a className="underline underline-offset-2" href={l.url} target="_blank" rel="noreferrer">{l.title}</a> <span className="text-muted-foreground">· {l.domain} · {l.type} · cited {l.cited}×</span></li>)}
+                    </ul>
+                  </div>
+                )}
                 {pushNotes.map((n) => <p key={n.id} className={`rounded-md px-3 py-2 text-xs ${n.ok ? "bg-emerald-50 text-emerald-900" : "bg-amber-50 text-amber-900"}`}>{topics.find((t) => t.id === n.id)?.title}: {n.message}</p>)}
                 {topics.some((t) => t.status === "pushed") && (
                   <p className="text-xs text-foreground">
