@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Check, Loader2, Play, Plus, RefreshCw, Send, Square, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, ChevronRight, Loader2, Play, Plus, RefreshCw, Send, Square, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -54,7 +54,7 @@ function Chip({ children, tone = "border-border bg-muted text-muted-foreground" 
 }
 
 /** All six steps, always visible: done, current, upcoming, out of date. Click a done step to jump to it. */
-function Tracker({ states }) {
+function Tracker({ states, onOpen }) {
   return (
     <ol className="sticky top-0 z-10 -mx-1 flex flex-wrap gap-1.5 rounded-lg border border-border bg-background/95 p-2 backdrop-blur">
       {STEPS.map((step, i) => {
@@ -66,7 +66,7 @@ function Tracker({ states }) {
           : "border-border text-muted-foreground opacity-60";
         return (
           <li key={step} className="flex-1 basis-24">
-            <a href={`#fo-${step}`} className={`flex items-center gap-1.5 rounded-md border px-2 py-1.5 text-xs font-medium ${tone}`}>
+            <a href={`#fo-${step}`} onClick={() => onOpen(step)} className={`flex items-center gap-1.5 rounded-md border px-2 py-1.5 text-xs font-medium ${tone}`}>
               <span className="tabular-nums">{i + 1}</span>
               <span>{STEP_LABELS[step]}</span>
               {s === "done" && <Check className="ml-auto h-3 w-3" />}
@@ -79,30 +79,40 @@ function Tracker({ states }) {
   );
 }
 
-/** One step: what went in, what it did, what came out, and the exact request and reply behind it. */
-function Panel({ step, state, did, details, children }) {
+/**
+ * One step: what went in, what it did, what came out, and the exact request and reply behind it.
+ * A step the user has moved past folds into one line with its result; a click opens it again.
+ */
+function Panel({ step, state, did, summary, open, onToggle, details, children }) {
   const n = STEPS.indexOf(step) + 1;
+  const tone = state === "current" ? "border-foreground/40" : state === "stale" ? "border-amber-300" : "border-border";
   return (
-    <section id={`fo-${step}`} className={`scroll-mt-16 rounded-lg border bg-card ${state === "current" ? "border-foreground/40" : state === "stale" ? "border-amber-300" : "border-border"} ${state === "upcoming" ? "opacity-60" : ""}`}>
-      <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-border px-4 py-2.5">
-        <h2 className="text-sm font-medium text-foreground">{n}. {STEP_LABELS[step]}</h2>
-        {did && <p className="text-xs text-muted-foreground">{did}</p>}
-        {state === "stale" && <span className="ml-auto text-xs text-amber-800">Out of date: an earlier step changed. Redo this step.</span>}
-      </header>
-      <div className="space-y-3 p-4">
-        {children}
-        {details?.request != null && (
-          <details className="rounded-md border border-border bg-muted/30 text-xs">
-            <summary className="cursor-pointer px-3 py-1.5 text-muted-foreground">Show details: the exact request and reply</summary>
-            <div className="space-y-2 border-t border-border p-3">
-              <p className="font-medium text-foreground">Sent to Claude</p>
-              <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words text-muted-foreground">{details.request || "(nothing was sent)"}</pre>
-              <p className="font-medium text-foreground">Reply</p>
-              <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words text-muted-foreground">{details.reply}</pre>
-            </div>
-          </details>
-        )}
-      </div>
+    <section id={`fo-${step}`} className={`scroll-mt-16 rounded-lg border bg-card ${tone} ${state === "upcoming" ? "opacity-60" : ""}`}>
+      <button type="button" onClick={() => onToggle(step)} aria-expanded={open} className={`flex w-full flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-2.5 text-left ${open ? "border-b border-border" : ""}`}>
+        <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+          {open ? <ChevronDown className="h-3.5 w-3.5 self-center text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 self-center text-muted-foreground" />}
+          {n}. {STEP_LABELS[step]}
+          {!open && state === "done" && <Check className="h-3.5 w-3.5 self-center text-emerald-700" />}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{open ? did : summary || did}</span>
+        {state === "stale" && <span className="text-xs text-amber-800">{open ? "Out of date: an earlier step changed. Redo this step." : "Out of date"}</span>}
+      </button>
+      {open && (
+        <div className="space-y-3 p-4">
+          {children}
+          {details?.request != null && (
+            <details className="rounded-md border border-border bg-muted/30 text-xs">
+              <summary className="cursor-pointer px-3 py-1.5 text-muted-foreground">Show details: the exact request and reply</summary>
+              <div className="space-y-2 border-t border-border p-3">
+                <p className="font-medium text-foreground">Sent to Claude</p>
+                <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words text-muted-foreground">{details.request || "(nothing was sent)"}</pre>
+                <p className="font-medium text-foreground">Reply</p>
+                <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words text-muted-foreground">{details.reply}</pre>
+              </div>
+            </details>
+          )}
+        </div>
+      )}
     </section>
   );
 }
@@ -231,6 +241,7 @@ export default function FanOut() {
   const [progress, setProgress] = useState("");
   const [pushNotes, setPushNotes] = useState([]);
   const stopRef = useRef(false);
+  const [folds, setFolds] = useState({});
 
   const guard = useCallback(async (label, fn) => {
     setBusy(label);
@@ -299,6 +310,23 @@ export default function FanOut() {
     });
     return out;
   }, [situation, has, okRuns, topics]);
+
+  // Open by default: the step to act on. That is the first out-of-date step, or else the last finished
+  // step (to read its result) and the one after it. Everything the user has moved past is folded.
+  const openByDefault = useMemo(() => {
+    const firstStale = STEPS.find((s) => states[s] === "stale");
+    if (firstStale) return new Set([firstStale]);
+    const out = new Set(STEPS.filter((s) => states[s] === "current"));
+    const done = STEPS.filter((s) => states[s] === "done");
+    if (done.length) out.add(done[done.length - 1]);
+    return out;
+  }, [states]);
+  const defaultKey = `${situation?.id || ""}|${[...openByDefault].join(",")}`;
+  useEffect(() => setFolds({}), [defaultKey]);
+  const isOpen = (step) => folds[step] ?? openByDefault.has(step);
+  const toggle = (step) => setFolds((f) => ({ ...f, [step]: !(f[step] ?? openByDefault.has(step)) }));
+  const openStep = (step) => setFolds((f) => ({ ...f, [step]: true }));
+  const panel = (step) => ({ step, state: states[step], open: isOpen(step), onToggle: toggle });
 
   const patchSituation = async (patch) => {
     const next = await updateSituation(situation.id, patch);
@@ -457,13 +485,13 @@ export default function FanOut() {
 
           {situation && (
             <>
-              <Tracker states={states} />
+              <Tracker states={states} onOpen={openStep} />
 
-              <Panel step="describe" state={states.describe} did={`${situation.code}: the situation in your words. Everything below is built from it.`}>
+              <Panel {...panel("describe")} summary={situation.description} did={`${situation.code}: the situation in your words. Everything below is built from it.`}>
                 <Textarea className="min-h-[90px]" value={desc} onChange={(e) => setDesc(e.target.value)} onBlur={saveDescription} disabled={working} />
               </Panel>
 
-              <Panel step="persona" state={states.persona} details={situation.details?.persona} did={has.persona ? "Claude built this person from your description and the company's ICP." : "Claude will read your description with the company's ICP and build the person."}>
+              <Panel {...panel("persona")} summary={has.persona ? [situation.title, situation.persona.location, situation.situation_id && `buyer situation ${situation.situation_id}`].filter(Boolean).join(" · ") : ""} details={situation.details?.persona} did={has.persona ? "Claude built this person from your description and the company's ICP." : "Claude will read your description with the company's ICP and build the person."}>
                 {has.persona && (
                   <>
                     <p className="text-sm font-medium text-foreground">{situation.title}</p>
@@ -489,7 +517,7 @@ export default function FanOut() {
                 </Button>
               </Panel>
 
-              <Panel step="prompts" state={states.prompts} details={situation.details?.prompts} did={has.prompts ? "What this person would type to ChatGPT. Edit freely; nothing has been sent yet." : "Claude will write a medium and a short prompt in this person's voice."}>
+              <Panel {...panel("prompts")} summary={prompts.map((p) => `${FORM_LABELS[p.form]} ${p.prompt.length.toLocaleString("en-US")} characters`).join(" · ")} details={situation.details?.prompts} did={has.prompts ? "What this person would type to ChatGPT. Edit freely; nothing has been sent yet." : "Claude will write a medium and a short prompt in this person's voice."}>
                 {prompts.map((p) => {
                   const text = promptEdit[p.form] ?? p.prompt;
                   const over = text.length > PROMPT_MAX;
@@ -518,7 +546,7 @@ export default function FanOut() {
                 </div>
               </Panel>
 
-              <Panel step="run" state={states.run} did={okRuns ? `${okRuns} of ${runs.length} captures returned · $${spent.toFixed(3)} spent on this situation.` : "Each prompt is asked on real ChatGPT several times. What repeats across runs is signal."}>
+              <Panel {...panel("run")} summary={okRuns ? `${okRuns} of ${runs.length} captures returned · ${runs.reduce((a, r) => a + (r.fan_out || []).length, 0)} searches · $${spent.toFixed(3)}` : ""} did={okRuns ? `${okRuns} of ${runs.length} captures returned · $${spent.toFixed(3)} spent on this situation.` : "Each prompt is asked on real ChatGPT several times. What repeats across runs is signal."}>
                 <div className="flex flex-wrap items-center gap-2 text-xs">
                   <label className="text-muted-foreground" htmlFor="fo-runs">Runs per prompt</label>
                   <input id="fo-runs" type="number" min={1} max={10} className={`${inputClass} w-16`} value={situation.runs} disabled={working} onChange={(e) => patchSituation({ runs: Math.max(1, Math.min(10, Math.round(Number(e.target.value) || 1))) }).catch((err) => setError(err.message))} />
@@ -546,7 +574,7 @@ export default function FanOut() {
                 ))}
               </Panel>
 
-              <Panel step="topics" state={states.topics} details={situation.details?.topics} did={has.topics ? "The searches, grouped into topics one page could answer. The action comes from a rule, shown next to it." : "Claude will group the searches into topics; rules set what to do with each."}>
+              <Panel {...panel("topics")} summary={has.topics ? `${topics.length} topics · ${topics.filter((t) => t.status === "approved").length} approved · ${topics.filter((t) => t.status === "pushed").length} pushed` : ""} details={situation.details?.topics} did={has.topics ? "The searches, grouped into topics one page could answer. The action comes from a rule, shown next to it." : "Claude will group the searches into topics; rules set what to do with each."}>
                 <Button type="button" size="sm" variant={has.topics ? "outline" : "default"} disabled={working || okRuns === 0} onClick={doTopics}>
                   {busy === "topics" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}{has.topics ? "Group again" : "Find the topics"}
                 </Button>
@@ -557,7 +585,7 @@ export default function FanOut() {
                 </div>
               </Panel>
 
-              <Panel step="push" state={states.push} did="Approved topics become briefs in AEO Generation. Nothing is created before you click.">
+              <Panel {...panel("push")} summary={topics.some((t) => t.status === "pushed") ? `${topics.filter((t) => t.status === "pushed").length} pushed to AEO Generation as briefs` : ""} did="Approved topics become briefs in AEO Generation. Nothing is created before you click.">
                 <p className="text-xs text-muted-foreground">
                   {approved.length ? `${approved.length} approved: ${approved.map((t) => t.title).join(" · ")}` : "No topic is approved yet. Approve the ones worth an article in step 5."}
                 </p>
