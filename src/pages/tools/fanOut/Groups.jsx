@@ -38,7 +38,7 @@ function Measured({ g }) {
       <Line label="Your standing">Named in {g.standing.named} of {g.standing.of} runs where ChatGPT searched this <span className="text-muted-foreground">· a link between the two, not a proven cause</span></Line>
       <Line label="Who wins">
         {g.whoNamed.filter((w) => !w.own).length ? g.whoNamed.filter((w) => !w.own).slice(0, 5).map((w) => `${w.name} (${w.runs})`).join(" · ") : "No other brand is named in these runs."}
-        {g.cited.length > 0 && <span className="block text-muted-foreground">Cited most: {g.cited.slice(0, 4).map((p) => `${p.domain} (${p.runs})`).join(" · ")}</span>}
+        {(g.citedDomains || []).length > 0 && <span className="block text-muted-foreground">Sites cited most: {g.citedDomains.slice(0, 5).map((p) => `${p.domain} (${p.runs})`).join(" · ")}</span>}
       </Line>
       <Line label="Triggered by">{g.triggeredBy.map((t) => `${FORM_LABELS[t.form]} prompts (${t.runs})`).join(" · ")}</Line>
     </>

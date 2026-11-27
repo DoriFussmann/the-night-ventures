@@ -63,6 +63,7 @@ test('a Query Group is measured from the runs that searched it: signal, standing
   assert.equal(a.score, 20) // signal 30% x gap 2/3
   assert.equal(a.verdict, 'Opportunity')
   assert.deepEqual(a.cited.map((p) => [p.domain, p.runs]), [['lists.com', 2], ['rivalco.com', 2]])
+  assert.deepEqual(a.citedDomains, [{ domain: 'lists.com', runs: 2 }, { domain: 'rivalco.com', runs: 2 }])
   assert.deepEqual(a.triggeredBy, [{ form: 'short', runs: 2 }, { form: 'medium', runs: 1 }])
   assert.deepEqual(a.promptIds.sort(), ['p1', 'p2'])
   assert.equal(a.searches[0].runs, 3)
@@ -135,6 +136,7 @@ test('the takeaway may only use numbers the app calculated', () => {
   assert.equal(takeawayOk('Rupert is named in 3 of 30 runs. RivalCo is ahead. Start with agencies.', facts), false)
   assert.equal(takeawayOk('Rupert is named in half of the answers. RivalCo is ahead. Start with agencies.', facts), false)
   assert.equal(takeawayOk('Rupert is named in three of ten runs. RivalCo is ahead. Start with agencies.', facts), false)
+  assert.equal(takeawayOk('Rupert is named in 30% of answers. RivalCo is ahead. Start with the two skipped groups.', facts), false)
   assert.equal(takeawayOk('Rupert is named in 30% of answers. RivalCo is ahead.', facts), false) // not three sentences
   // With nobody named, there is no rank to state.
   const silent = scoreRuns([run('short', [A], 'No names.')], brands)
