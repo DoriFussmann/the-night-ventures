@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Check, ChevronDown, ChevronRight, Loader2, Lock, Play, Plus, RefreshCw, Sparkles, Square, Trash2, Unlock } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, ChevronRight, Download, Loader2, Lock, Play, Plus, RefreshCw, Sparkles, Square, Trash2, Unlock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -60,6 +60,7 @@ import ScoreBlock, { DiscoveredCard, runName } from "./fanOut/Score";
 import GroupsBlock, { InsightsBlock } from "./fanOut/Groups";
 import CompareBlock from "./fanOut/Compare";
 import { dueForRerun } from "../../../lib/fan-out/compare.js";
+import { buildReport, reportFileName } from "../../../lib/fan-out/report.js";
 import { CARD_ACTIONS, PUSHED_ACTIONS } from "../../../lib/fan-out/groups.js";
 
 const inputClass = "h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring";
@@ -729,6 +730,22 @@ export default function FanOut() {
       .finally(() => setLabeling(""));
   }, [shownRun, situation, score, busy, companyId, refreshScore]);
 
+  /** Steps 1 to 5 of this Scenario, for the Run on the page, as a Markdown file. Nothing is recalculated: it is what the page shows. */
+  const downloadReport = () => {
+    const run = shownRun;
+    if (!run) return;
+    const company = map.brands.find((b) => b.is_own)?.name || "";
+    const text = buildReport({ company, situation, prompts, run, allRuns: score.runs, scenarioRuns, cards, ignored: map.ignored || [], limits: score.limits, signal: score.signal, cutoff: score.cutoff });
+    const url = URL.createObjectURL(new Blob([text], { type: "text/markdown;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = reportFileName(situation, run, situation.baseline_run_id);
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  };
+
   /* Step 5: the summary. The app measures; the AI groups the searches, reads the cited pages and writes the cards. */
   const analyze = async (runId, { again = false } = {}) => {
     try {
@@ -1070,6 +1087,12 @@ export default function FanOut() {
 
               <Panel {...panel("topics")} summary={scoredRun?.score.own ? `Mentioned ${scoredRun.score.own.mentioned.pct}% ±${scoredRun.score.own.mentioned.margin}${grouped ? ` · ${scoredRun.groups.opportunities.length} opportunities · ${scoredRun.groups.wins.length} wins` : ""}` : ""} did="Two halves that never mix: the measurement is counted by the app with fixed rules, the interpretation is written by the AI and never touches a number.">
                 {scenarioRuns.length === 0 && <p className="text-xs text-muted-foreground">The summary appears after the first Run.</p>}
+                {shownRun && (
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <Button type="button" size="sm" variant="outline" disabled={working || Boolean(analysis)} onClick={downloadReport}><Download className="mr-1.5 h-3.5 w-3.5" />Download report (.md)</Button>
+                    <span className="text-muted-foreground">Steps 1 to 5 of this Scenario in one Markdown file: Situation, Persona, Prompts, Run and this summary.</span>
+                  </div>
+                )}
                 {scenarioRuns.length > 0 && <ScoreBlock data={score} baselineId={situation.baseline_run_id} takeaway={scoredRun?.takeaway} pick={pickedRun} onPick={setPickedRun} working={working} busy={busy} labeling={labeling} onLabel={doLabel} />}
                 {scoredRun && <DiscoveredCard run={score.runs.find((r) => r.id === pickedRun) || scoredRun} ignored={map.ignored || []} working={working} onTrack={doTrack} onIgnore={doIgnore} onRestore={doRestore} />}
                 {scoredRun && scoredRun.status !== "running" && (
