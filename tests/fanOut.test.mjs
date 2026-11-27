@@ -352,7 +352,7 @@ test('a Scenario name is always "number | Title Case Name | Stage | Direction", 
   const name = scenarioName({ number: 1, name: 'founder ready to raise funding round.', stage: 'exploring', direction: 'recommend' })
   assert.equal(name, '1 | Founder Ready to Raise Funding Round | Stage: Exploring | Direction: Recommend')
   // Formatting a name that is already in the form does not double it.
-  assert.equal(scenarioName({ number: 4, name, stage: 'ready_to_buy', direction: 'advise' }), '4 | Founder Ready to Raise Funding Round | Stage: Ready to buy | Direction: Advise')
+  assert.equal(scenarioName({ number: 4, name, stage: 'ready_to_buy', direction: 'advise' }), '4 | Founder Ready to Raise Funding Round | Stage: Ready to Buy | Direction: Advise')
   assert.equal(scenarioName({ number: 2, name: 'Solo CEO | no income', stage: 'comparing', direction: 'nonsense' }), '2 | Solo CEO No Income | Stage: Comparing | Direction: Recommend')
   assert.equal(renameForFields(name, 'comparing', 'explain'), '1 | Founder Ready to Raise Funding Round | Stage: Comparing | Direction: Explain')
   assert.equal(renameForFields('My own name', 'comparing', 'explain'), 'My own name')
