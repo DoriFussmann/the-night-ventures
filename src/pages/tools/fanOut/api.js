@@ -3,7 +3,7 @@
 import { supabase } from "@/lib/supabase";
 import { loadPlaybook, nextCode, upsertRow } from "../aeoPlaybook/api";
 import { createBriefs, loadBriefs, updateBrief } from "../aeoGeneration/briefs";
-import { PUSHABLE, briefFromTopic } from "../../../../lib/fan-out/core.js";
+import { PUSHABLE, STAGE_TIER, briefFromTopic, situationText, sortPrompts } from "../../../../lib/fan-out/core.js";
 
 const ENDPOINT = "/api/fan-out";
 /** Run columns the page lists; the full answer and raw reply are read per run, on demand. */
@@ -28,23 +28,31 @@ async function post(action, companyId, body = {}) {
   return out;
 }
 
+/** Free text sorted into the Situation fields. Nothing is saved. */
+export const structureText = (companyId, text) => post("structure", companyId, { text });
+/** A suggested name and the saved Situations these fields overlap with. Nothing is saved. */
+export const checkSituation = (companyId, fields, situationId = "") => post("check", companyId, { fields, situationId });
 export const buildPersona = (companyId, situationId) => post("persona", companyId, { situationId });
-export const writePrompts = (companyId, situationId) => post("prompts", companyId, { situationId });
+/** All prompts again, or with promptId only that one, on a new angle. */
+export const writePrompts = (companyId, situationId, promptId = "") => post("prompts", companyId, { situationId, promptId });
 export const runStep = (companyId, situationId, calls, again = false) => post("run", companyId, { situationId, calls, again });
 export const buildTopics = (companyId, situationId) => post("topics", companyId, { situationId });
 
 export async function listSituations(companyId) {
-  return ok(await supabase.from("fo_situations").select("id, code, title, description, step, stale_from, created_at").eq("company_id", companyId).order("created_at", { ascending: false }), "Situations") || [];
+  return ok(await supabase.from("fo_situations").select("id, code, title, description, step, stale_from, created_at, version, variant_of").eq("company_id", companyId).order("created_at", { ascending: false }), "Situations") || [];
 }
 
 export async function loadSituation(id) {
   const [situation, prompts, runs, topics] = await Promise.all([
     supabase.from("fo_situations").select("*").eq("id", id).maybeSingle(),
-    supabase.from("fo_prompts").select("*").eq("situation_id", id),
+    supabase.from("fo_prompts").select("*").eq("situation_id", id).is("archived_at", null),
     supabase.from("fo_runs").select(RUN_COLS).eq("situation_id", id).order("run_no"),
     supabase.from("fo_topics").select("*").eq("situation_id", id).order("sort"),
   ]);
-  return { situation: ok(situation, "Situation"), prompts: ok(prompts, "Prompts") || [], runs: ok(runs, "Runs") || [], topics: ok(topics, "Topics") || [] };
+  const active = sortPrompts(ok(prompts, "Prompts") || []);
+  const ids = new Set(active.map((p) => p.id));
+  // Runs of a prompt that was replaced are kept in the database but are not part of the Scenario any more.
+  return { situation: ok(situation, "Situation"), prompts: active, runs: (ok(runs, "Runs") || []).filter((r) => ids.has(r.prompt_id)), topics: ok(topics, "Topics") || [] };
 }
 
 export async function loadRunDetail(id) {
@@ -60,16 +68,33 @@ export async function loadContentMap(companyId) {
   const brands = ok(own, "Brands") || [];
   const brand = brands.find((b) => b.is_own);
   const names = brand ? [brand.name, ...(Array.isArray(brand.name_patterns) ? brand.name_patterns : [])] : [];
+  const every = brands.flatMap((b) => [b.name, ...(Array.isArray(b.name_patterns) ? b.name_patterns : [])]);
   return {
     pillars: ok(pillars, "Pillars") || [],
     groups: ok(groups, "Topics") || [],
     brands: brands.map((b) => ({ id: b.id, name: b.name, is_own: b.is_own })),
     ownNames: [...new Set(names.map((n) => String(n || "").trim()).filter((n) => n.length >= 2))],
+    // Own brand and competitors, with aliases: prompts are unbranded.
+    allNames: [...new Set(every.map((n) => String(n || "").trim()).filter((n) => n.length >= 2))],
   };
 }
 
-export async function createSituation(companyId, description, existing) {
-  const row = { company_id: companyId, code: nextCode(existing, "F", 3), description: description.trim() };
+/** The Situation fields as stored. The description is the same Situation as one paragraph, for lists. */
+export function situationRow(fields) {
+  const row = {
+    who: String(fields.who || "").trim(),
+    trigger_event: String(fields.trigger_event || "").trim(),
+    goal: String(fields.goal || "").trim(),
+    stage: fields.stage || null,
+    direction: fields.direction || "recommend",
+    comments: String(fields.comments || "").trim(),
+  };
+  return { ...row, description: situationText(row) || "(no description)" };
+}
+
+/** Saves a new Situation to the bank. variantOf is the id of the Situation it is a variant of, or "". */
+export async function createSituation(companyId, { fields, title, variantOf = "" }, existing) {
+  const row = { company_id: companyId, code: nextCode(existing, "F", 3), version: 2, title: String(title || "").trim().slice(0, 120), variant_of: variantOf || null, ...situationRow(fields) };
   return ok(await supabase.from("fo_situations").insert(row).select("*").single(), "Situation");
 }
 
@@ -81,13 +106,35 @@ export async function deleteSituation(id) {
   ok(await supabase.from("fo_situations").delete().eq("id", id), "Situation");
 }
 
-export async function savePrompt(situation, form, prompt) {
-  const row = { company_id: situation.company_id, situation_id: situation.id, form, prompt, updated_at: new Date().toISOString() };
-  return ok(await supabase.from("fo_prompts").upsert(row, { onConflict: "situation_id,form" }).select("*").single(), "Prompt");
+const hasRuns = async (promptId) => {
+  const res = await supabase.from("fo_runs").select("id", { count: "exact", head: true }).eq("prompt_id", promptId);
+  if (res.error) throw new Error(`Runs: ${res.error.message}`);
+  return (res.count || 0) > 0;
+};
+
+/** The user's own prompt, added to a type. */
+export async function addPrompt(situation, form, prompt, sort) {
+  const row = { company_id: situation.company_id, situation_id: situation.id, form, prompt, sort, origin: "user", angle: "" };
+  return ok(await supabase.from("fo_prompts").insert(row).select("*").single(), "Prompt");
 }
 
-export async function deletePrompt(id) {
-  ok(await supabase.from("fo_prompts").delete().eq("id", id), "Prompt");
+/**
+ * New wording for a prompt. If the prompt already has runs, it is archived and the new wording is saved
+ * as a new prompt in its place, so every stored run stays tied to the exact text that produced it.
+ */
+export async function savePromptText(prompt, text) {
+  if (!(await hasRuns(prompt.id))) {
+    return ok(await supabase.from("fo_prompts").update({ prompt: text, updated_at: new Date().toISOString() }).eq("id", prompt.id).select("*").single(), "Prompt");
+  }
+  ok(await supabase.from("fo_prompts").update({ archived_at: new Date().toISOString() }).eq("id", prompt.id), "Prompt");
+  const row = { company_id: prompt.company_id, situation_id: prompt.situation_id, form: prompt.form, prompt: text, sort: prompt.sort, origin: prompt.origin, angle: prompt.angle };
+  return ok(await supabase.from("fo_prompts").insert(row).select("*").single(), "Prompt");
+}
+
+/** Takes a prompt out of the Scenario. One with runs is archived, so its raw runs are kept. */
+export async function removePrompt(prompt) {
+  if (await hasRuns(prompt.id)) ok(await supabase.from("fo_prompts").update({ archived_at: new Date().toISOString() }).eq("id", prompt.id), "Prompt");
+  else ok(await supabase.from("fo_prompts").delete().eq("id", prompt.id), "Prompt");
 }
 
 export async function updateTopic(id, patch) {
@@ -129,12 +176,15 @@ export async function pushTopics({ companyId, situation, topics, prompts }) {
           sort: data.groups.length,
         });
         data.groups.push(group);
-        for (const p of prompts.filter((x) => x.form !== "long")) {
+        const buyer = prompts.filter((x) => x.form !== "long");
+        for (const p of buyer) {
+          const same = buyer.filter((x) => x.form === p.form);
           const row = await upsertRow("aeo_prompts", {
             company_id: companyId,
-            code: `${situation.code}-${group.code}-${p.form.slice(0, 1).toUpperCase()}`,
+            code: `${situation.code}-${group.code}-${p.form.slice(0, 1).toUpperCase()}${same.length > 1 ? same.indexOf(p) + 1 : ""}`,
             group_id: group.id,
-            intent_tier: "Problem",
+            // The intent tier comes from the Scenario's Stage; situations from before v2 have none.
+            intent_tier: STAGE_TIER[situation.stage] || "Problem",
             prompt: p.prompt,
           });
           data.prompts.push(row);

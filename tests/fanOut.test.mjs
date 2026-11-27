@@ -17,13 +17,24 @@ import {
   isWeak,
   listsToGetOn,
   namedIn,
+  STAGE_TIER,
+  buildCheckPrompt,
+  buildStructurePrompt,
+  isPersona,
+  mergeSettings,
+  missingFields,
+  parseCheck,
   parseJsonReply,
   parsePageTypes,
   parsePersona,
   parsePrompts,
+  parseStructure,
   parseTopics,
+  personLine,
   planRuns,
   promptIssues,
+  promptLabel,
+  situationText,
   staleAfter,
   topicStats,
 } from '../lib/fan-out/core.js'
@@ -67,47 +78,93 @@ test('icpExcerpt keeps the customer line, Ideal Customer, Buyer Situations and A
   assert.equal(icpExcerpt(''), '')
 })
 
-test('the persona request carries the description, the ICP and earlier situations; the reply is cleaned', () => {
-  const req = buildPersonaPrompt({ description: 'a tired solo founder', icpMd: '# ICP\nline\n## Buyer Situations\n| S1 | x |', companyName: 'Acme', earlier: [{ code: 'F001', title: 'Panicked founder', description: 'd' }] })
-  assert.ok(req.includes('a tired solo founder') && req.includes('| S1 | x |') && req.includes('F001: Panicked founder'))
-  const p = parsePersona('{"title":"Tired solo founder weighs a raise","who":"A solo founder.","where_they_stand":"7 customers.","inside":"Tired.","location":"Austin, Texas","location_assumed":true,"situation_id":"S1","fit_note":"First raise.","outside_icp":false,"duplicate_of":""}')
-  assert.equal(p.persona.location, 'Austin, Texas')
-  assert.equal(p.persona.location_assumed, true)
-  assert.equal(p.situation_id, 'S1')
-  assert.throws(() => parsePersona('{"title":"x","who":""}'), /empty/)
+const SITUATION = { who: 'Founder and CEO of a three-person B2B SaaS', trigger_event: 'Three weeks of cold outreach to investors got no reply', goal: 'Raise a seed round', stage: 'comparing', direction: 'recommend', comments: '' }
+
+test('a Situation needs Who, Trigger, Goal and a known Stage; its text is one paragraph', () => {
+  assert.deepEqual(missingFields(SITUATION), [])
+  assert.deepEqual(missingFields({ who: 'x', stage: 'later' }), ['Trigger', 'Goal', 'Stage'])
+  assert.equal(situationText(SITUATION), 'Founder and CEO of a three-person B2B SaaS. Three weeks of cold outreach to investors got no reply. Goal: Raise a seed round. Stage: Comparing')
 })
 
-test('the prompt request forbids the own brand and the characters the engine misreads', () => {
-  const req = buildPromptsPrompt({ description: 'd', persona: { who: 'w', where_they_stand: 's', inside: 'i', location: 'Austin, Texas' }, ownNames: ['Rupert', 'heyrupert'] })
-  assert.ok(req.includes('Never mention: Rupert, heyrupert'))
-  assert.ok(req.includes('Austin, Texas'))
-  assert.ok(/% or \+/.test(req))
-  const out = parsePrompts('{"medium":"first line\\nsecond line","short":"one\\nline"}')
-  assert.equal(out.medium, 'first line\nsecond line')
-  assert.equal(out.short, 'one line')
+test('free text is sorted into the fields; fields the text does not cover are flagged, not guessed', () => {
+  assert.ok(buildStructurePrompt({ text: 'a tired solo founder' }).includes('a tired solo founder'))
+  const out = parseStructure('{"who":"A solo founder","trigger":"","goal":"Raise money","stage":"Ready to buy","direction":"nonsense","additional_comments":"tired"}')
+  assert.deepEqual(out.fields, { who: 'A solo founder', trigger_event: '', goal: 'Raise money', stage: 'ready_to_buy', direction: 'recommend', comments: 'tired' })
+  assert.deepEqual(out.missing, ['Trigger'])
 })
 
-test('the direction decides what the prompts ask for; recommend is the default and asks for names', () => {
-  const persona = { who: 'w', where_they_stand: 's', inside: 'i', location: 'Denver' }
-  const rec = buildPromptsPrompt({ description: 'd', persona, ownNames: [] })
-  assert.ok(rec.includes(DIRECTIONS.recommend.rule) && /who or what to use/.test(rec) && /names and options/.test(rec))
-  const adv = buildPromptsPrompt({ description: 'd', persona, ownNames: [], direction: 'advise' })
+test('the overlap check lists the bank and keeps at most three matches, "same" first, from the bank only', () => {
+  const bank = [
+    { id: 'a', code: 'F001', title: 'Stuck after cold outreach', ...SITUATION },
+    { id: 'b', code: 'F002', title: 'Old one', description: 'A founder, free text', who: '', trigger_event: '', goal: '', stage: null },
+    { id: 'c', code: 'F003', title: 'Third', ...SITUATION, stage: 'exploring' },
+    { id: 'd', code: 'F004', title: 'Fourth', ...SITUATION, stage: 'ready_to_buy' },
+  ]
+  const req = buildCheckPrompt({ fields: SITUATION, bank })
+  assert.ok(req.includes('F001 · Stuck after cold outreach · trigger: Three weeks') && req.includes('F002 · Old one · (older, free text) A founder, free text'))
+  assert.ok(/mainly on trigger, goal and stage/.test(req))
+  assert.ok(buildCheckPrompt({ fields: SITUATION, bank: [] }).includes('(the bank is empty)'))
+  const out = parseCheck('{"name":"Founder stuck after cold outreach","matches":[{"code":"F003","match":"variant","why":"other stage"},{"code":"f001","match":"same","why":"same all"},{"code":"F999","match":"same","why":"x"},{"code":"F002","match":"distinct","why":"x"},{"code":"F004","match":"variant","why":"y"},{"code":"F001","match":"variant","why":"dup"}]}', bank)
+  assert.equal(out.name, 'Founder stuck after cold outreach')
+  assert.deepEqual(out.matches.map((m) => [m.code, m.match]), [['F001', 'same'], ['F003', 'variant'], ['F004', 'variant']])
+  assert.equal(out.matches[0].id, 'a')
+})
+
+test('the persona is three tight fields, built without the Alternatives of the ICP, and brand-blind', () => {
+  const req = buildPersonaPrompt({ situation: SITUATION, icpMd: '# ICP\nline\n## Buyer Situations\n| S1 | x |\n## Alternatives\nRivalCo' })
+  assert.ok(req.includes('| S1 | x |') && req.includes('Three weeks of cold outreach') && req.includes('/ Comparing'))
+  assert.ok(!req.includes('RivalCo'))
+  const p = parsePersona('{"knowledge_level":"Novice","what_matters":["speed","cost","not wasting time","a fourth"],"vocabulary":["raise money","investors","Rupert","pitch","warm intro","seed","extra"]}', ['Rupert'])
+  assert.equal(p.knowledge_level, 'novice')
+  assert.deepEqual(p.what_matters, ['speed', 'cost', 'not wasting time'])
+  assert.deepEqual(p.vocabulary, ['raise money', 'investors', 'pitch', 'warm intro'])
+  assert.ok(isPersona(p) && !isPersona({ who: 'an older persona' }))
+  assert.equal(parsePersona('{"knowledge_level":"guru","what_matters":["x"],"vocabulary":[]}').knowledge_level, 'informed')
+  assert.throws(() => parsePersona('{"knowledge_level":"novice","what_matters":[],"vocabulary":[]}'), /empty/)
+})
+
+test('the prompt request fills every dynamic field, follows the Direction, and can ask for one prompt on a new angle', () => {
+  const persona = { knowledge_level: 'novice', what_matters: ['speed', 'cost'], vocabulary: ['raise money', 'investors'] }
+  const req = buildPromptsPrompt({ situation: SITUATION, persona, icpShort: 'Founders raising a first round' })
+  assert.ok(!/\{[a-z_]+\}/.test(req), 'no unfilled field')
+  assert.ok(req.includes('PERSON: Founders raising a first round') && req.includes('knowledge level novice; what matters: speed; cost; vocabulary: raise money, investors'))
+  assert.ok(req.includes('Write 3 prompts of each type') && req.includes('SHORT: 1–2 sentences') && req.includes('LONG: 4–6 sentences'))
+  assert.ok(req.includes(DIRECTIONS.recommend.rule) && /Never name any company, product or brand/.test(req) && /% or \+/.test(req))
+  assert.ok(req.includes('ADDITIONAL CONTEXT: (none)'))
+  const adv = buildPromptsPrompt({ situation: { ...SITUATION, direction: 'advise' }, persona })
   assert.ok(adv.includes(DIRECTIONS.advise.rule) && !adv.includes(DIRECTIONS.recommend.rule))
-  const exp = buildPromptsPrompt({ description: 'd', persona, ownNames: [], direction: 'explain' })
-  assert.ok(exp.includes(DIRECTIONS.explain.rule))
-  assert.ok(buildPromptsPrompt({ description: 'd', persona, ownNames: [], direction: 'nonsense' }).includes(DIRECTIONS.recommend.rule))
+  assert.ok(buildPromptsPrompt({ situation: { ...SITUATION, direction: 'nonsense' }, persona }).includes(DIRECTIONS.recommend.rule))
+  const custom = mergeSettings({ prompts_per_type: 2, ranges: { long: '5–7' }, prompt_prompts: '' })
+  const req2 = buildPromptsPrompt({ situation: SITUATION, persona, settings: custom })
+  assert.ok(req2.includes('Write 2 prompts of each type') && req2.includes('LONG: 5–7 sentences') && req2.includes('SHORT: 1–2 sentences'))
+  const one = buildPromptsPrompt({ situation: SITUATION, persona, only: { form: 'medium', taken: ['cost of a raise', 'finding investors'] } })
+  assert.ok(one.includes('Write 1 prompts of each type') && one.includes('only ONE prompt, of type MEDIUM') && one.includes('- finding investors'))
 })
 
-test('promptIssues blocks an over-long prompt and one that names the company, and warns on % and +', () => {
+test('the prompts reply is read as a list, capped per type and ordered Short, Medium, Long', () => {
+  const reply = '```json\n[{"type":"long","angle":"a","text":"l1"},{"type":"SHORT","angle":"b","text":"one\\nline"},{"type":"short","angle":"c","text":"s2"},{"type":"short","angle":"d","text":"s3"},{"type":"short","angle":"e","text":"s4"},{"type":"essay","angle":"f","text":"x"},{"type":"medium","angle":"g","text":""}]\n```'
+  const out = parsePrompts(reply, { perType: 3 })
+  assert.deepEqual(out.map((p) => [p.form, p.prompt]), [['short', 'one line'], ['short', 's2'], ['short', 's3'], ['long', 'l1']])
+  assert.equal(parsePrompts('{"prompts":[{"type":"short","angle":"a","text":"hi"}]}').length, 1)
+  assert.throws(() => parsePrompts('[]'), /empty/)
+  assert.throws(() => parsePrompts('no json here'), /incomplete/)
+  const three = [{ id: '2', form: 'short', sort: 1 }, { id: '1', form: 'short', sort: 0 }, { id: '3', form: 'long', sort: 0 }]
+  assert.equal(promptLabel(three[0], three), 'Short 2')
+  assert.equal(promptLabel(three[2], three), 'Long')
+})
+
+test('promptIssues blocks an over-long prompt and one that names any tracked brand, and warns on % and + and on length', () => {
   assert.equal(promptIssues('x'.repeat(PROMPT_MAX)).block.length, 0)
   assert.match(promptIssues('x'.repeat(PROMPT_MAX + 1)).block[0], /2,001 characters/)
-  assert.match(promptIssues('Is Rupert any good for outreach?', ['Rupert']).block[0], /names Rupert/)
+  assert.match(promptIssues('Is Rupert any good for outreach?', ['Rupert', 'RivalCo']).block[0], /names Rupert/)
+  assert.match(promptIssues('Is RivalCo any good?', ['Rupert', 'RivalCo']).block[0], /names RivalCo/)
   assert.equal(promptIssues('my friend rupert said so', ['Rupert']).block.length, 0) // a single word matches as a proper noun only
   assert.equal(promptIssues('growing 15% a month').warn.length, 1)
+  assert.match(promptIssues('x'.repeat(901)).warn[0], /Over 900 characters/)
   assert.equal(promptIssues('').block.length, 1)
 })
 
-test('planRuns orders run 1 of every prompt before run 2 and skips captures that already returned', () => {
+test('planRuns orders run 1 of every prompt before run 2, in steps of four at most, and skips captures that already returned', () => {
   assert.deepEqual(planRuns(prompts, 2), [
     [{ promptId: 'p-m', runNo: 1 }, { promptId: 'p-s', runNo: 1 }],
     [{ promptId: 'p-m', runNo: 2 }, { promptId: 'p-s', runNo: 2 }],
@@ -115,6 +172,19 @@ test('planRuns orders run 1 of every prompt before run 2 and skips captures that
   // r4 failed, so it is planned again; the three ok runs are not.
   assert.deepEqual(planRuns(prompts, 2, runs), [[{ promptId: 'p-s', runNo: 2 }]])
   assert.deepEqual(planRuns(prompts, 1, runs), [])
+  const nine = Array.from({ length: 9 }, (_, i) => ({ id: `p${i}` }))
+  const steps = planRuns(nine, 7)
+  assert.equal(steps.reduce((a, s) => a + s.length, 0), 63)
+  assert.ok(steps.every((s) => s.length <= 4 && new Set(s.map((c) => c.runNo)).size === 1))
+  assert.deepEqual(steps.slice(0, 3).map((s) => s.length), [4, 4, 1])
+})
+
+test('the person line reads a structured Situation, or the persona of a situation from before v2', () => {
+  assert.match(personLine(SITUATION), /^Founder and CEO .*What happened: Three weeks.*They want: Raise a seed round\.$/)
+  assert.equal(personLine({ description: 'd', persona: { who: 'A founder.', where_they_stand: '7 customers.', location: 'Austin, Texas' } }), 'A founder. 7 customers. Located in Austin, Texas.')
+  assert.equal(STAGE_TIER.exploring, 'Learn')
+  assert.equal(STAGE_TIER.comparing, 'Problem')
+  assert.equal(STAGE_TIER.ready_to_buy, 'Buy')
 })
 
 test('answerHeadings reads the sub-questions and leaves out figure tiles', () => {
@@ -132,7 +202,7 @@ test('collectQueries merges wordings that differ only in year, case and filler, 
 
 test('the topics request lists every search with its id; the reply keeps each search in one topic and drops none', () => {
   const queries = collectQueries(runs, prompts)
-  const req = buildTopicsPrompt({ persona: { who: 'w', where_they_stand: 's', location: 'Austin, Texas' }, prompts, queries, runs, pillars: [{ code: 'A', name: 'Raising' }], groups: [{ code: 'A01', name: 'SAFE basics' }], ownNames: ['Rupert'], companyName: 'Rupert' })
+  const req = buildTopicsPrompt({ situation: { persona: { who: 'w', where_they_stand: 's', location: 'Austin, Texas' } }, prompts, queries, runs, pillars: [{ code: 'A', name: 'Raising' }], groups: [{ code: 'A01', name: 'SAFE basics' }], ownNames: ['Rupert'], companyName: 'Rupert' })
   for (const q of queries) assert.ok(req.includes(`${q.id} · ${q.runs} · ${q.q}`))
   assert.ok(req.includes('c1 · carta.com · x · https://carta.com/x') && req.includes('A01 · SAFE basics') && req.includes('Never write Rupert'))
   assert.ok(req.includes('"pages": [{"id": "c1", "type": "vendor"}]'))
