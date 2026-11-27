@@ -40,7 +40,7 @@ There is no CI and no `.github/` folder.
 - With `MERGE_VIA_API = true`, **new articles merge straight to the live branch**. Edits and removals open a PR instead.
 
 ## Data
-- Migrations are in `supabase/migrations/`, numbered 001–093. **002 is missing and 074 is duplicated** (`074_audit_ai_prompts.sql`, `074_cron_runs.sql`). The next migration is **094**. There is no `supabase/config.toml`.
+- Migrations are in `supabase/migrations/`, numbered 001–094. **002 is missing and 074 is duplicated** (`074_audit_ai_prompts.sql`, `074_cron_runs.sql`). The next migration is **095**. There is no `supabase/config.toml`.
 - **Env var names** (values only in Vercel):
   - Browser: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
   - Supabase and AI: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`.
@@ -58,7 +58,7 @@ There is no CI and no `.github/` folder.
 - Long handlers use `maxDuration` 300, which depends on the Vercel plan.
 
 ## Fan-Out Engine (v2)
-- Spec: `claude/fan-out-engine-spec.md` in the Night Ventures Claude project. Built 2026-11-27 (PRs #96, #97).
+- Spec: `claude/fan-out-engine-spec.md` in the Night Ventures Claude project. Built 2026-11-27 (PRs #96, #97, #98). **The project copy of the spec is the only current one**: read it with the Projects tool before working on the engine, not an attached or pasted copy.
 - **Flow:** Situation → Persona → Prompts (frozen) → Run → Summary (score, Query Groups, cards, comparison) → Push ("Write this").
 - **Code:** `lib/fan-out/` holds the logic; all of it except `handler.js` and `pages.js`'s fetch is pure and covered by `tests/fanOut*.test.mjs`.
   - `core.js`: Situation, persona, prompts, settings defaults (`DEFAULT_SETTINGS`, including every AI prompt template).
@@ -78,10 +78,13 @@ There is no CI and no `.github/` folder.
 - **Measured (Rupert, F001 Baseline, 2026-11-27):** 63 captures, $0.252, 20 minutes, none failed. Step 5: grouping, 3 cards and the takeaway used 23,207 input and 1,457 output tokens (about $0.09 on Sonnet); labeling was not metered on that Run and is from now on (`fo_scenario_runs.summary_usage`).
 
 ## Current state
-- Build, lint and tests (70) pass. Fan-Out v2 is live.
-- Not yet exercised on live data: an Opportunity card and "Write this". Rupert is named in half or more of the runs for every search in its three Scenarios, so they have Wins only. Both paths are covered by tests.
+- Build, lint and tests (71) pass. Fan-Out v2 is live.
+- Not yet exercised on live data: an Opportunity card, the five rule-based actions, "Write this", and sorting a second Run's searches into the frozen Query Groups (spec 13.2). Rupert is named in half or more of the runs for every search in its three Scenarios, so they have Wins only. Both paths are covered by tests.
 
 ## Open work
+- Fan-Out: a second Run of F001 (Rupert), to test Query Group freezing and the Baseline comparison on live data.
+- Fan-Out: Query Groups made before PR #98 (F001, F002, F003) have no "who should I use" flag, so their Opportunities would default to New article. New groupings carry it.
+- Fan-Out: `fo_cards.comparison` is unused since PR #98.
 - Fan-Out: run a Scenario where the brand is weak, to see Opportunity cards and "Write this" on live data.
 - Fan-Out: remove the dead code of the old topics step (`topics` action in `handler.js`; `buildTopicsPrompt`, `parseTopics`, `topicStats`, `decideAction`, `briefFromTopic` and friends in `core.js`, with their tests).
 - Fan-Out: two tabs grouping the same Run at once can put one search in two groups. No lock yet.

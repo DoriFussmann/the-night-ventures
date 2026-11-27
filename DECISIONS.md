@@ -37,3 +37,9 @@ Append-only log. Newest at the bottom. Format: date · decision · why · altern
 - **Existing topics (fo_topics) are left as they are.** None had been pushed.
 - **Admin settings are writable by any signed-in user**, like the other admin tools: the app has no admin role.
 - **Parts 3 to 6 shipped as one PR (#97) with part 2**, because the old topics and push steps could not survive the new Run model as intermediate states.
+
+## 2026-11-27 · Fan-Out v2: built from the wrong copy of the spec, then corrected (Claude)
+- **What happened:** the build started from a copy of the spec attached to the chat. The project copy (`claude/fan-out-engine-spec.md`) was newer and said to ignore attached copies. It was only read at the end.
+- **Differences found and fixed (PR #98):** the "who should I use" flag on Query Groups; the action set by rule by the app (five actions, including Commercial page or FAQ) instead of chosen by the AI; a comparison article only when the user chooses it.
+- **Difference not undone:** the project copy says existing situations are left as they are and Scenarios start fresh. F001 (Rupert) was given fields, a new persona and 9 prompts during verification, and its two old prompts were removed (it had no runs; its original text is kept). The page also offers "Fill the fields from this text" on older situations. F002 and F003 were not changed, apart from the summary cards written for their earlier runs.
+- **Rule from now on:** read the project docs with the Projects tool before planning. An attachment is not the source of truth.
