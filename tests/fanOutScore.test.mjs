@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { DEFAULT_SETTINGS } from '../lib/fan-out/core.js'
-import { buildLabelPrompt, labelBatches, quoteFits, margin, mentionExcerpt, mentionIndex, namedOrder, parseLabels, scoreRuns, share, signalLabel, unlabeled, verdict } from '../lib/fan-out/score.js'
+import { brandSites, buildLabelPrompt, labelBatches, quoteFits, margin, mentionExcerpt, mentionIndex, namedOrder, parseLabels, scoreRuns, share, signalLabel, unlabeled, verdict } from '../lib/fan-out/score.js'
 
 const OWN = { id: 'own', name: 'Rupert', name_patterns: ['Rupert', 'Hey Rupert'], is_own: true }
 const RIVAL = { id: 'riv', name: 'RivalCo', name_patterns: [], is_own: false }
@@ -57,7 +57,7 @@ test('the score counts Mentioned, First named, Recommended and Mentioned by type
   assert.equal(s.brands[0].labels.unlabeled, 2)
   assert.equal(s.gap, 25)
   assert.deepEqual(s.leader, { name: 'RivalCo', own: false, pct: 75 })
-  assert.deepEqual(s.discovered, [{ name: 'Foundersuite', runs: 2, pct: 50, signal: 'Strong' }])
+  assert.deepEqual(s.discovered, [{ name: 'Foundersuite', runs: 2, pct: 50, signal: 'Strong', site: '' }])
   assert.equal(s.model, 'gpt-6')
   // First named counts discovered brands too: a discovered brand ahead of ours means we are not first.
   const d = scoreRuns([run('1', 'short', 'Foundersuite first, then Rupert.', ['Foundersuite'])], brands)
@@ -113,4 +113,24 @@ test('labeling requests hold a limited number of labels, and positions respect w
   const excl = { ...OWN, exclude_patterns: ['murdoch'] }
   const r = run('3', 'short', 'Rupert Murdoch owns it.\nRivalCo is good. Rupert too.')
   assert.deepEqual(namedOrder(r, [excl, RIVAL]).map((o) => o.name), ['RivalCo', 'Rupert'])
+})
+
+test('a discovered brand gets its website from the Run: the tag\'s own address, or the site named after it', () => {
+  const runs = [
+    { ...run('1', 'short', 'A3M Consultants, Outriva & Partners, RaiseRunner, HubSpot and Jonathan Hua.', ['A3M Consultants', 'Outriva & Partners', 'RaiseRunner', 'HubSpot', 'Jonathan Hua', 'Affinity']),
+      cited: [{ url: 'https://www.a3mconsultants.com/services', domain: 'a3mconsultants.com' }, { url: 'https://outriva.com/', domain: 'outriva.com' }, { domain: 'sec.gov' }],
+      search_results: [{ url: 'https://blog.raiserunner.io/pricing' }, { url: 'https://www.hubspotusercontent.co.uk/x' }, { url: 'https://affinity.co/' }],
+      raw_entities: [{ markdown: 'HubSpot', urls: ['https://www.hubspot.com/startups'] }, { markdown: 'A3M Consultants', urls: null }] },
+  ]
+  const site = brandSites(runs)
+  assert.equal(site('A3M Consultants'), 'a3mconsultants.com')
+  assert.equal(site('Outriva & Partners'), 'outriva.com')
+  assert.equal(site('RaiseRunner'), 'blog.raiserunner.io')
+  assert.equal(site('HubSpot'), 'hubspot.com') // from ChatGPT's own tag
+  assert.equal(site('Affinity'), 'affinity.co')
+  assert.equal(site('Jonathan Hua'), '')
+  assert.equal(site('SEC'), '') // too short to match on
+  const d = scoreRuns(runs, [OWN]).discovered
+  assert.equal(d.find((x) => x.name === 'A3M Consultants').site, 'a3mconsultants.com')
+  assert.equal(d.find((x) => x.name === 'HubSpot').site, 'hubspot.com')
 })
