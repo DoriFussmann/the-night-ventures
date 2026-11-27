@@ -25,3 +25,15 @@ Append-only log. Newest at the bottom. Format: date · decision · why · altern
 - Make "Moved" require a change larger than the noise margin.
 - Run captures in the background on the server.
 - (The working `test` script and the typecheck baseline were done as part of the build.)
+
+## 2026-11-27 · Fan-Out v2: decisions made while building parts 2 to 6 (Claude)
+- **The score is never stored.** It is recalculated from the stored answers and today's tracked list each time, so old Runs stay comparable when brands or thresholds change. Rejected: storing scores per Run (they would go stale).
+- **A label counts only with a quote that is in the answer and about that brand.** Otherwise the mention is Listed. Rejected: trusting the AI's label alone.
+- **The margin uses two pseudo-runs each way** (Agresti–Coull), so 0 of 63 is not shown as certain. It gives about ±12 at 63 runs, as the spec states.
+- **Query Groups hold normalized searches**, and every count per group is recalculated per Run. A new Baseline archives the old groups and regroups.
+- **Cards snapshot the app's numbers at the time they were written**; that snapshot is the "before" for Moved / Not moved.
+- **Acted on is read from the article itself** (`generated_articles.status`, `published_at`, `published_url`), not from the brief's status, which AEO Generation only refreshes when its page is opened.
+- **Write this only for new articles with no live page**; a push that stops half-way resumes instead of making a second topic; new topics are inserted, never upserted.
+- **Existing topics (fo_topics) are left as they are.** None had been pushed.
+- **Admin settings are writable by any signed-in user**, like the other admin tools: the app has no admin role.
+- **Parts 3 to 6 shipped as one PR (#97) with part 2**, because the old topics and push steps could not survive the new Run model as intermediate states.
