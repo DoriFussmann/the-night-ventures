@@ -711,6 +711,24 @@ export default function FanOut() {
     setMap(await loadContentMap(companyId));
   });
 
+  // Mentions the AI left without a label are asked again when the summary is opened, once per Run per visit.
+  // The "Label them" notice is then only seen when that retry did not finish the job.
+  const retriedRef = useRef(new Set());
+  const [labeling, setLabeling] = useState("");
+  const shownRun = score?.runs?.find((r) => r.id === pickedRun) || scoredRun;
+  useEffect(() => {
+    if (!shownRun || !situation || score?.situationId !== situation.id) return;
+    if (!shownRun.unlabeled || shownRun.status === "running" || busy || retriedRef.current.has(shownRun.id)) return;
+    retriedRef.current.add(shownRun.id);
+    const id = situation.id;
+    setLabeling(shownRun.id);
+    labelRun(companyId, shownRun.id)
+      .catch(() => null)
+      .then(() => refreshScore(id))
+      .catch(() => null)
+      .finally(() => setLabeling(""));
+  }, [shownRun, situation, score, busy, companyId, refreshScore]);
+
   /* Step 5: the summary. The app measures; the AI groups the searches, reads the cited pages and writes the cards. */
   const analyze = async (runId, { again = false } = {}) => {
     try {
@@ -1052,7 +1070,7 @@ export default function FanOut() {
 
               <Panel {...panel("topics")} summary={scoredRun?.score.own ? `Mentioned ${scoredRun.score.own.mentioned.pct}% ±${scoredRun.score.own.mentioned.margin}${grouped ? ` · ${scoredRun.groups.opportunities.length} opportunities · ${scoredRun.groups.wins.length} wins` : ""}` : ""} did="Two halves that never mix: the measurement is counted by the app with fixed rules, the interpretation is written by the AI and never touches a number.">
                 {scenarioRuns.length === 0 && <p className="text-xs text-muted-foreground">The summary appears after the first Run.</p>}
-                {scenarioRuns.length > 0 && <ScoreBlock data={score} baselineId={situation.baseline_run_id} takeaway={scoredRun?.takeaway} pick={pickedRun} onPick={setPickedRun} working={working} busy={busy} onLabel={doLabel} />}
+                {scenarioRuns.length > 0 && <ScoreBlock data={score} baselineId={situation.baseline_run_id} takeaway={scoredRun?.takeaway} pick={pickedRun} onPick={setPickedRun} working={working} busy={busy} labeling={labeling} onLabel={doLabel} />}
                 {scoredRun && <DiscoveredCard run={score.runs.find((r) => r.id === pickedRun) || scoredRun} ignored={map.ignored || []} working={working} onTrack={doTrack} onIgnore={doIgnore} onRestore={doRestore} />}
                 {scoredRun && scoredRun.status !== "running" && (
                   <>

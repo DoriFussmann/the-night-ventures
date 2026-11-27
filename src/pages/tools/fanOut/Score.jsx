@@ -98,7 +98,7 @@ const pct = (v) => (v ? `${v.pct}%` : "–");
  * that needs sentences is in a collapsed panel with its heading and key figure in the title.
  * Counted by the app from the stored answers. Only "Recommended" rests on an AI label.
  */
-export default function ScoreBlock({ data, baselineId, takeaway, working, busy, onLabel, pick, onPick }) {
+export default function ScoreBlock({ data, baselineId, takeaway, working, busy, labeling = "", onLabel, pick, onPick }) {
   // Which Run is the Baseline comes from the Scenario as it is now, not from when the score was calculated.
   const runs = (data?.runs || []).filter((r) => r.score.runs > 0).map((r) => ({ ...r, baseline: r.id === baselineId }));
   if (!data) return <SummaryCard title="Summary"><p className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Calculating the score…</p></SummaryCard>;
@@ -142,11 +142,14 @@ export default function ScoreBlock({ data, baselineId, takeaway, working, busy, 
         </>
       )}
 
-      {run.unlabeled > 0 && run.status !== "running" && (
+      {run.unlabeled > 0 && labeling === run.id && (
+        <p className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Labeling {run.unlabeled} {run.unlabeled === 1 ? "mention" : "mentions"} (Recommended, Listed or Qualified)…</p>
+      )}
+      {run.unlabeled > 0 && run.status !== "running" && labeling !== run.id && (
         <p className="flex flex-wrap items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          {run.unlabeled} {run.unlabeled === 1 ? "mention has" : "mentions have"} no label yet, so Recommended may read low.
+          {run.unlabeled} {run.unlabeled === 1 ? "mention" : "mentions"} could not be labeled, so Recommended may read slightly low.
           <Button type="button" size="sm" variant="outline" disabled={working} onClick={() => onLabel(run.id)}>
-            {busy === "label" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}Label them
+            {busy === "label" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}Try again
           </Button>
         </p>
       )}
