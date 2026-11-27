@@ -1,23 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Check, ChevronDown, ChevronRight, Loader2, Lock, Play, Plus, RefreshCw, Send, Sparkles, Square, Trash2, Unlock } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, ChevronRight, Loader2, Lock, Play, Plus, RefreshCw, Sparkles, Square, Trash2, Unlock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  ACTIONS,
   DIRECTIONS,
   FORM_LABELS,
   KNOWLEDGE_LEVELS,
-  LIST_TYPES,
   PROMPT_MAX,
-  PUSHABLE,
   STAGES,
   STEPS,
   STEP_LABELS,
   TYPE_ORDER,
   isPersona,
-  isWeak,
-  listsToGetOn,
   missingFields,
   planRuns,
   promptIssues,
@@ -27,30 +22,34 @@ import {
 import {
   addPrompt,
   buildPersona,
-  buildTopics,
   checkSituation,
   createSituation,
   deleteSituation,
   finishRun,
+  groupRun,
   labelRun,
   loadScore,
   listSituations,
   loadContentMap,
+  loadInsights,
   loadRunDetail,
   loadSituation,
-  pushTopics,
+  pushCard,
   removePrompt,
   runStep,
   savePromptText,
   situationRow,
   startRun,
   trackBrand,
+  updateCard,
   structureText,
   updateSituation,
-  updateTopic,
+  writeCard,
   writePrompts,
+  writeTakeaway,
 } from "./fanOut/api";
 import ScoreBlock, { runName } from "./fanOut/Score";
+import GroupsBlock, { InsightsBlock } from "./fanOut/Groups";
 
 const inputClass = "h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring";
 const PERSONA_FIELDS = [
@@ -59,13 +58,6 @@ const PERSONA_FIELDS = [
   ["inside", "What is going on inside"],
   ["location", "Where they are"],
 ];
-const STANDING_TONE = {
-  Named: "border-emerald-300 bg-emerald-50 text-emerald-800",
-  "Cited, not named": "border-amber-300 bg-amber-50 text-amber-800",
-  "Retrieved, not cited": "border-amber-300 bg-amber-50 text-amber-800",
-  Absent: "border-border bg-muted text-muted-foreground",
-  "No search": "border-border bg-muted text-muted-foreground",
-};
 const domainOf = (c) => c?.domain || "";
 
 function Chip({ children, tone = "border-border bg-muted text-muted-foreground" }) {
@@ -173,106 +165,6 @@ function RunRow({ run, brands }) {
     </li>
   );
 }
-
-function TopicCard({ topic, okRuns, map, busy, onChange }) {
-  const [title, setTitle] = useState(topic.title);
-  const [points, setPoints] = useState((topic.answer_points || []).join("\n"));
-  useEffect(() => { setTitle(topic.title); setPoints((topic.answer_points || []).join("\n")); }, [topic.id, topic.title, topic.answer_points]);
-  const weak = isWeak(topic, okRuns);
-  const group = map.groups.find((g) => g.id === topic.group_id);
-  const pushed = topic.status === "pushed";
-  const removed = topic.status === "removed";
-  const pushable = PUSHABLE.has(topic.action);
-  const named = topic.named || [];
-  const lists = (topic.winners || []).flatMap((w) => (w.pages || []).filter((p) => LIST_TYPES.has(p.type) && p.url).map((p) => ({ ...p, domain: w.domain, title: p.title || w.domain })));
-  const needsTheme = topic.action === "new_article" || topic.action === "comparison_article";
-  const save = (patch) => onChange(topic.id, patch);
-  return (
-    <div className={`space-y-2 rounded-md border px-3 py-3 text-sm ${topic.status === "approved" ? "border-emerald-300" : "border-border"} ${removed ? "opacity-50" : ""}`}>
-      <div className="flex flex-wrap items-center gap-2">
-        <input className={`${inputClass} h-9 min-w-0 flex-1 text-sm font-medium`} value={title} disabled={pushed} onChange={(e) => setTitle(e.target.value)} onBlur={() => title.trim() && title !== topic.title && save({ title: title.trim() })} />
-        <Chip>{topic.runs_seen} of {okRuns} runs · {topic.forms_seen} {topic.forms_seen === 1 ? "form" : "forms"}</Chip>
-        {weak && <Chip tone="border-amber-300 bg-amber-50 text-amber-800">Seen once</Chip>}
-        {topic.local && <Chip tone="border-amber-300 bg-amber-50 text-amber-800">Place not in the prompt</Chip>}
-        <Chip tone={STANDING_TONE[topic.standing]}>{topic.standing}</Chip>
-      </div>
-      <div>
-        <p className="text-xs font-medium text-foreground">Searches ChatGPT ran</p>
-        <ul className="mt-0.5 space-y-0.5 font-mono text-[11px] text-foreground">
-          {(topic.queries || []).map((q, i) => <li key={i}>{q.q} <span className="text-muted-foreground">· {q.runs}×</span></li>)}
-        </ul>
-      </div>
-      <div className="text-xs">
-        <p className="font-medium text-foreground">Who ChatGPT names</p>
-        {named.length ? (
-          <p className="mt-0.5 flex flex-wrap gap-1">
-            {named.map((b) => (
-              <Chip key={b.name} tone={b.own ? "border-emerald-300 bg-emerald-50 text-emerald-800" : b.tracked ? "border-sky-300 bg-sky-50 text-sky-800" : undefined}>
-                {b.name} · {b.runs} of {topic.runs_seen}{b.own ? " · you" : b.tracked ? " · tracked" : ""}
-              </Chip>
-            ))}
-          </p>
-        ) : (
-          <p className="text-muted-foreground">No company is named in these answers.</p>
-        )}
-      </div>
-      <div className="text-xs">
-        <p className="font-medium text-foreground">Who is cited today</p>
-        <p className="text-muted-foreground">{(topic.winners || []).map((w) => `${w.domain} (${w.cited}${w.type && w.type !== "other" ? `, ${w.type}` : ""})`).join(" · ") || "Nobody was cited in these runs."}</p>
-        {topic.owner_note && <p className="mt-0.5 text-foreground">{topic.owner_note}</p>}
-      </div>
-      {lists.length > 0 && (
-        <div className="text-xs">
-          <p className="font-medium text-foreground">Lists to get on <span className="font-normal text-muted-foreground">· pages that name several providers</span></p>
-          <ul className="mt-0.5 space-y-0.5">
-            {lists.map((l) => <li key={l.url}><a className="underline underline-offset-2" href={l.url} target="_blank" rel="noreferrer">{l.title}</a> <span className="text-muted-foreground">· {l.domain} · {l.type} · cited {l.cited}×</span></li>)}
-          </ul>
-        </div>
-      )}
-      <div>
-        <p className="text-xs font-medium text-foreground">What the article must answer <span className="font-normal text-muted-foreground">· one per line; your hot takes are added on the brief</span></p>
-        <Textarea className="mt-1 min-h-[96px] text-xs md:text-xs" value={points} disabled={pushed} onChange={(e) => setPoints(e.target.value)} onBlur={() => save({ answer_points: points.split("\n").map((l) => l.replace(/^[-*]\s*/, "").trim()).filter(Boolean) })} />
-      </div>
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        <label className="text-muted-foreground">Action</label>
-        <select className={`${inputClass} max-w-full`} value={topic.action} disabled={pushed || busy} onChange={(e) => save({ action: e.target.value, action_reason: "Set by hand.", status: "proposed" })}>
-          {Object.entries(ACTIONS).filter(([k]) => k !== "existing_group" || group).map(([k, label]) => <option key={k} value={k}>{label}{k === "existing_group" && group ? `: ${group.code}` : ""}</option>)}
-        </select>
-        {needsTheme && (
-          <>
-            <label className="text-muted-foreground">Theme</label>
-            <select className={`${inputClass} max-w-full`} value={topic.pillar_id || ""} disabled={pushed || busy} onChange={(e) => save({ pillar_id: e.target.value || null })}>
-              <option value="">Choose…</option>
-              {map.pillars.map((p) => <option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}
-            </select>
-          </>
-        )}
-        <span className="min-w-0 basis-full text-muted-foreground sm:flex-1 sm:basis-0">{topic.action_reason}</span>
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        {pushed ? (
-          <Chip tone="border-emerald-300 bg-emerald-50 text-emerald-800">Pushed{group ? ` to ${group.code}` : ""}</Chip>
-        ) : (
-          <>
-            {pushable && !removed && (
-              <Button type="button" size="sm" variant={topic.status === "approved" ? "default" : "outline"} disabled={busy} onClick={() => save({ status: topic.status === "approved" ? "proposed" : "approved" })}>
-                <Check className="mr-1.5 h-3.5 w-3.5" />{topic.status === "approved" ? "Approved" : "Approve for push"}
-              </Button>
-            )}
-            {!pushable && !removed && (
-              <span className="text-xs text-muted-foreground">
-                Not an article: nothing is pushed for this action. Handle it on the site.
-                {topic.action === "commercial_page" && " Or set the action to Comparison article to push one; whether that gets you named is unproven, so try it on one topic first."}
-              </span>
-            )}
-            <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => save({ status: removed ? "proposed" : "removed" })}>{removed ? "Restore" : "Remove"}</Button>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
 
 /** True while a Run of the Scenario is open: a Run never changes under way, so nothing it is built from can be edited. */
 const scenarioRunsOpen = (data) => (data?.scenarioRuns || []).some((r) => r.status === "running");
@@ -440,8 +332,10 @@ export default function FanOut() {
   const [promptEdit, setPromptEdit] = useState({});
   const [adding, setAdding] = useState(null); // { form, text }: the user's own prompt being written
   const [progress, setProgress] = useState("");
-  const [pushNotes, setPushNotes] = useState([]);
+  const [pushNote, setPushNote] = useState(null);
   const [score, setScore] = useState(null);
+  const [insights, setInsights] = useState([]);
+  const [analysis, setAnalysis] = useState("");
   const stopRef = useRef(false);
   const [folds, setFolds] = useState({});
 
@@ -464,6 +358,7 @@ export default function FanOut() {
     setLoading(true);
     Promise.all([listSituations(companyId), loadContentMap(companyId)])
       .then(([list, m]) => { if (live) { setSituations(list); setMap(m); } })
+      .then(() => loadInsights(companyId).then((rows) => live && setInsights(rows)).catch(() => null))
       .catch((err) => live && setError(err?.message || "Could not load"))
       .finally(() => live && setLoading(false));
     return () => { live = false; };
@@ -487,7 +382,7 @@ export default function FanOut() {
   }, [show]);
 
   useEffect(() => {
-    setPushNotes([]);
+    setPushNote(null);
     open(currentId).catch((err) => setError(err?.message || "Could not load the situation"));
   }, [currentId, open]);
 
@@ -498,6 +393,7 @@ export default function FanOut() {
     const out = await loadScore(companyId, id);
     // A score that arrives after the user moved to another Scenario is dropped.
     if (shownRef.current === id) setScore(out);
+    return out;
   }, [companyId]);
 
   useEffect(() => {
@@ -512,7 +408,9 @@ export default function FanOut() {
   const latestRun = scenarioRuns[scenarioRuns.length - 1] || null;
   const openRun = latestRun?.status === "running" ? latestRun : null;
   const runs = useMemo(() => (latestRun ? (data?.runs || []).filter((r) => r.scenario_run_id === latestRun.id) : []), [data, latestRun]);
-  const topics = useMemo(() => data?.topics || [], [data]);
+  const cards = useMemo(() => data?.cards || [], [data]);
+  const scoredRun = score?.runs?.length ? score.runs[score.runs.length - 1] : null;
+  const grouped = (scoredRun?.groups?.all?.length || 0) > 0;
   const okRuns = runs.filter((r) => r.status === "ok").length;
   const persona = situation?.persona || {};
   const newPersona = isPersona(persona);
@@ -520,7 +418,7 @@ export default function FanOut() {
   const gaps = situation ? missingFields(situation) : [];
   const frozen = Boolean(situation?.prompts_confirmed_at);
   const runOpen = scenarioRunsOpen(data);
-  const has = useMemo(() => ({ persona: newPersona || oldPersona, prompts: prompts.length > 0, run: runs.length > 0, topics: topics.length > 0, push: topics.length > 0 }), [newPersona, oldPersona, prompts, runs, topics]);
+  const has = useMemo(() => ({ persona: newPersona || oldPersona, prompts: prompts.length > 0, run: runs.length > 0, topics: cards.length > 0, push: cards.length > 0 }), [newPersona, oldPersona, prompts, runs, cards]);
 
   const states = useMemo(() => {
     const done = {
@@ -528,8 +426,8 @@ export default function FanOut() {
       persona: has.persona,
       prompts: has.prompts,
       run: okRuns > 0,
-      topics: has.topics || ["topics", "push"].includes(situation?.step),
-      push: topics.some((t) => t.status === "pushed"),
+      topics: grouped || cards.length > 0,
+      push: cards.some((c) => ["pushed", "acted_on", "done"].includes(c.status)),
     };
     const staleAt = situation?.stale_from ? STEPS.indexOf(situation.stale_from) : -1;
     const out = {};
@@ -542,7 +440,7 @@ export default function FanOut() {
       else out[step] = "upcoming";
     });
     return out;
-  }, [situation, has, okRuns, topics]);
+  }, [situation, has, okRuns, cards, grouped]);
 
   // Open by default: the step to act on. That is the first out-of-date step, or else the last finished
   // step (to read its result) and the one after it. Everything the user has moved past is folded.
@@ -711,6 +609,9 @@ export default function FanOut() {
     setProgress("Labeling how each brand is named (Recommended, Listed or Qualified)…");
     await labelRun(companyId, run.id).catch(() => null);
     await refreshScore(situation.id);
+    setProgress("");
+    // Step 5 follows on its own: the searches are grouped and the top ones analyzed.
+    await analyze(run.id);
   };
 
   const doRun = () => guard("run", async () => {
@@ -766,32 +667,65 @@ export default function FanOut() {
     await refreshScore(situation.id);
   });
 
-  const doTopics = () => guard("topics", async () => {
-    const out = await buildTopics(companyId, situation.id);
-    const fresh = await loadSituation(situation.id);
-    setData({ ...fresh, situation: out.situation });
-    await reloadList();
+  /* Step 5: the summary. The app measures; the AI groups the searches, reads the cited pages and writes the cards. */
+  const analyze = async (runId, { again = false } = {}) => {
+    try {
+      setAnalysis("Grouping the searches ChatGPT ran…");
+      await groupRun(companyId, runId);
+      const fresh = await refreshScore(situation.id);
+      const run = fresh?.runs?.find((r) => r.id === runId);
+      if (run) {
+        const have = new Set((await loadSituation(situation.id)).cards.filter((c) => c.scenario_run_id === runId && (!again || c.status !== "open")).map((c) => c.group_id));
+        const todo = [...run.groups.opportunities.slice(0, fresh.limits.opportunities), ...run.groups.wins.slice(0, fresh.limits.wins)].filter((g) => !have.has(g.id));
+        let n = 0;
+        for (const g of todo) {
+          n += 1;
+          setAnalysis(`Reading the pages ChatGPT cited for “${g.label}” (${n} of ${todo.length})…`);
+          // One card that fails does not stop the others; it can be analyzed again from its own button.
+          await writeCard(companyId, runId, g.id).catch(() => null);
+        }
+        setAnalysis("Writing the takeaway…");
+        await writeTakeaway(companyId, runId);
+      }
+    } finally {
+      setAnalysis("");
+    }
+    await open(situation.id);
+    await refreshScore(situation.id);
+    setInsights(await loadInsights(companyId).catch(() => insights));
+  };
+
+  const doAnalyze = () => guard("analyze", () => analyze(scoredRun.id, { again: grouped && scoredRun.ungrouped === 0 }));
+
+  const doCard = (groupId) => guard("analyze", async () => {
+    try {
+      setAnalysis("Reading the pages ChatGPT cited…");
+      await writeCard(companyId, scoredRun.id, groupId);
+    } finally {
+      setAnalysis("");
+    }
+    await open(situation.id);
+    setInsights(await loadInsights(companyId).catch(() => insights));
   });
 
-  const changeTopic = (id, patch) => guard("topic-edit", async () => {
-    const row = await updateTopic(id, patch);
-    setData((d) => ({ ...d, topics: d.topics.map((t) => (t.id === id ? row : t)) }));
+  const changeCard = (id, patch) => guard("card-edit", async () => {
+    const row = await updateCard(id, patch);
+    setData((d) => ({ ...d, cards: d.cards.map((c) => (c.id === id ? row : c)) }));
   });
 
-  const approved = topics.filter((t) => t.status === "approved" && PUSHABLE.has(t.action));
-  const allLists = useMemo(() => listsToGetOn(topics), [topics]);
-  const doPush = () => guard("push", async () => {
-    const results = await pushTopics({ companyId, situation, topics: approved, prompts });
-    setPushNotes(results);
-    const [fresh, m] = await Promise.all([loadSituation(situation.id), loadContentMap(companyId)]);
-    setMap(m);
-    setData(fresh);
-    if (results.some((r) => r.ok)) await patchSituation({ step: "push" });
+  /* Step 6: "Write this" turns one Opportunity into a brief in AEO Generation. */
+  const doPush = (card, g, mergeId) => guard("push", async () => {
+    const also = mergeId ? cards.filter((c) => c.id === mergeId && c.status === "open") : [];
+    const out = await pushCard({ companyId, situation, card, stats: g, prompts, also });
+    setPushNote({ ok: out.ok, text: `${g.label}: ${out.message}` });
+    setMap(await loadContentMap(companyId));
+    await open(situation.id);
+    await patchSituation({ step: "push" });
   });
 
   const remove = () => guard("delete", async () => {
-    if (topics.some((t) => t.status === "pushed")) throw new Error("This Scenario has pushed topics. Its briefs stay in AEO Generation; the Scenario is kept as their record.");
-    if (!window.confirm(`Delete ${situation.code} with its prompts, runs and topics?`)) return;
+    if (cards.some((c) => c.brief_id)) throw new Error("This Scenario has Opportunities that were sent to AEO Generation. Its briefs stay there; the Scenario is kept as their record.");
+    if (!window.confirm(`Delete ${situation.code} with its prompts, Runs and cards?`)) return;
     await deleteSituation(situation.id);
     setParams({});
     await reloadList();
@@ -799,6 +733,7 @@ export default function FanOut() {
 
   const spent = runs.reduce((a, r) => a + Number(r.cost || 0), 0);
   const working = Boolean(busy);
+  const todoCards = cards.filter((c) => c.kind === "opportunity" && c.action && c.action !== "new_article");
   const captures = prompts.length * (situation?.runs || 0);
   // Captures run four at a time, one run number after another: 9 prompts are 3 steps per run number.
   const minutes = (seconds) => Math.max(1, Math.round(((situation?.runs || 0) * Math.ceil(prompts.length / 4) * seconds) / 60));
@@ -1055,39 +990,55 @@ export default function FanOut() {
                 )}
               </Panel>
 
-              <Panel {...panel("topics")} summary={score?.runs?.length && score.runs[score.runs.length - 1].score.own ? `Mentioned ${score.runs[score.runs.length - 1].score.own.mentioned.pct}% ±${score.runs[score.runs.length - 1].score.own.mentioned.margin} · ${topics.length} topics` : has.topics ? `${topics.length} topics · ${topics.filter((t) => t.status === "approved").length} approved · ${topics.filter((t) => t.status === "pushed").length} pushed` : ""} details={situation.details?.topics} did="Where the brand stands in ChatGPT's answers, and what ChatGPT went looking for.">
+              <Panel {...panel("topics")} summary={scoredRun?.score.own ? `Mentioned ${scoredRun.score.own.mentioned.pct}% ±${scoredRun.score.own.mentioned.margin}${grouped ? ` · ${scoredRun.groups.opportunities.length} opportunities · ${scoredRun.groups.wins.length} wins` : ""}` : ""} did="Two halves that never mix: the measurement is counted by the app with fixed rules, the interpretation is written by the AI and never touches a number.">
+                {scenarioRuns.length === 0 && <p className="text-xs text-muted-foreground">The summary appears after the first Run.</p>}
+                {scoredRun?.takeaway && <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-foreground">{scoredRun.takeaway}</p>}
                 {scenarioRuns.length > 0 && <ScoreBlock data={score} baselineId={situation.baseline_run_id} working={working} busy={busy} onLabel={doLabel} onTrack={doTrack} />}
-                {scenarioRuns.length > 0 && <p className="border-t border-border pt-3 text-sm font-medium text-foreground">What ChatGPT goes looking for</p>}
-                <Button type="button" size="sm" variant={has.topics ? "outline" : "default"} disabled={working || okRuns === 0} onClick={doTopics}>
-                  {busy === "topics" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}{has.topics ? "Group again" : "Find the topics"}
-                </Button>
-                {has.topics && states.topics !== "stale" && <p className="text-xs text-muted-foreground">Grouping again replaces the topics below, except the ones already pushed. Who is cited is counted per answer, not per search, so it is approximate.</p>}
-                {!has.topics && situation.step === "topics" && <p className="rounded-md bg-muted/40 px-3 py-2 text-xs text-foreground">ChatGPT ran no web search in any run. It answered from memory, so no page can win these prompts through search.</p>}
-                <div className="space-y-3">
-                  {topics.map((t) => <TopicCard key={t.id} topic={t} okRuns={okRuns} map={map} busy={working} onChange={changeTopic} />)}
-                </div>
+                {scoredRun && scoredRun.status !== "running" && (
+                  <>
+                    <p className="border-t border-border pt-3 text-sm font-medium text-foreground">What ChatGPT goes looking for <span className="text-xs font-normal text-muted-foreground">· the latest Run</span></p>
+                    <GroupsBlock run={scoredRun} cards={cards} pillars={map.pillars} limits={score.limits} companyId={companyId} working={working} busy={busy} progress={analysis} onAnalyze={doAnalyze} onWrite={doCard} onChange={changeCard} onPush={doPush} />
+                    {pushNote && <p className={`rounded-md px-3 py-2 text-xs ${pushNote.ok ? "bg-emerald-50 text-emerald-900" : "bg-amber-50 text-amber-900"}`}>{pushNote.text}</p>}
+                  </>
+                )}
+                <InsightsBlock insights={insights} />
               </Panel>
 
-              <Panel {...panel("push")} summary={topics.some((t) => t.status === "pushed") ? `${topics.filter((t) => t.status === "pushed").length} pushed to AEO Generation as briefs` : ""} did="Approved topics become briefs in AEO Generation. Nothing is created before you click.">
-                <p className="text-xs text-muted-foreground">
-                  {approved.length ? `${approved.length} approved: ${approved.map((t) => t.title).join(" · ")}` : "No topic is approved yet. Approve the ones worth an article in step 5."}
-                </p>
-                <Button type="button" size="sm" disabled={working || approved.length === 0} onClick={doPush}>
-                  {busy === "push" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-1.5 h-3.5 w-3.5" />}Push to AEO Generation
-                </Button>
-                {allLists.length > 0 && (
-                  <div className="rounded-md border border-border px-3 py-2 text-xs">
-                    <p className="font-medium text-foreground">Lists to get on <span className="font-normal text-muted-foreground">· pages ChatGPT cited that name several providers. Getting listed there is another way to be named.</span></p>
-                    <ul className="mt-1 space-y-0.5">
-                      {allLists.map((l) => <li key={l.url}><a className="underline underline-offset-2" href={l.url} target="_blank" rel="noreferrer">{l.title}</a> <span className="text-muted-foreground">· {l.domain} · {l.type} · cited {l.cited}×</span></li>)}
-                    </ul>
-                  </div>
+              <Panel {...panel("push")} summary={cards.some((c) => c.brief_id) ? `${new Set(cards.filter((c) => c.brief_id).map((c) => c.brief_id)).size} sent to AEO Generation` : ""} did="What was sent to AEO Generation, and what is left to do by hand. Only new articles are sent, and only when you click Write this on an Opportunity.">
+                {cards.filter((c) => c.brief_id && !c.merged_into).length === 0 ? (
+                  <p className="text-xs text-muted-foreground">Nothing has been sent yet. Click Write this on an Opportunity in step 5.</p>
+                ) : (
+                  <ul className="space-y-1 text-xs">
+                    {cards.filter((c) => c.brief_id && !c.merged_into).map((c) => (
+                      <li key={c.id} className="rounded-md border border-border px-3 py-1.5">
+                        <span className="font-medium text-foreground">{c.stats?.label}</span>{" "}
+                        <span className="text-muted-foreground">· {map.groups.find((g) => g.id === c.aeo_group_id)?.code || "topic"} · sent {day(c.pushed_at)} · {c.status === "acted_on" ? `live${c.acted_url ? `: ${c.acted_url}` : ""}` : "not live yet"}</span>
+                      </li>
+                    ))}
+                  </ul>
                 )}
-                {pushNotes.map((n) => <p key={n.id} className={`rounded-md px-3 py-2 text-xs ${n.ok ? "bg-emerald-50 text-emerald-900" : "bg-amber-50 text-amber-900"}`}>{topics.find((t) => t.id === n.id)?.title}: {n.message}</p>)}
-                {topics.some((t) => t.status === "pushed") && (
+                {cards.some((c) => c.brief_id) && (
                   <p className="text-xs text-foreground">
                     Open <Link className="underline underline-offset-2" to={`/company/${companyId}/aeo-generation`}>AEO Generation</Link>: the briefs are in the batch &quot;Fan-Out {situation.code}&quot;. Add your view with &quot;Connect my hot takes&quot; on each brief.
                   </p>
+                )}
+                {todoCards.length > 0 && (
+                  <div className="text-xs">
+                    <p className="font-medium text-foreground">To do by hand <span className="font-normal text-muted-foreground">· these are not sent to AEO Generation: it writes new articles only</span></p>
+                    <ul className="mt-1 space-y-1">
+                      {todoCards.map((c) => (
+                        <li key={c.id} className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-1.5">
+                          <Chip>{c.action === "fix_existing" ? "Fix existing page" : "Off-site"}</Chip>
+                          <span className="min-w-0 flex-1 basis-60 text-foreground">{c.stats?.label}: <span className="text-muted-foreground">{c.action_line}</span></span>
+                          {c.status === "open" ? (
+                            <Button type="button" size="sm" variant="outline" disabled={working} onClick={() => changeCard(c.id, { status: "done", acted_on_at: new Date().toISOString() })}><Check className="mr-1.5 h-3.5 w-3.5" />Done</Button>
+                          ) : (
+                            <span className="text-emerald-800">Done {day(c.acted_on_at)}</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
               </Panel>
             </>
