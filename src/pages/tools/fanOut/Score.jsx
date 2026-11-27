@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ChevronDown, ChevronRight, EyeOff, Loader2, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink, EyeOff, Loader2, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DIRECTIONS, FORM_LABELS, TYPE_ORDER } from "../../../../lib/fan-out/core.js";
 import { MENTION_LABELS } from "../../../../lib/fan-out/score.js";
@@ -232,7 +232,14 @@ export function DiscoveredCard({ run, ignored = [], working, onTrack, onIgnore, 
   const max = Math.max(1, ...s.discovered.map((d) => d.runs));
   const row = (d, dim) => (
     <li key={d.name} className="grid grid-cols-[minmax(7rem,14rem)_1fr_auto_auto] items-center gap-3 rounded-md border border-border px-3 py-2 text-xs">
-      <span className={`truncate font-medium ${dim ? "text-muted-foreground" : "text-foreground"}`}>{d.name}</span>
+      <span className="flex min-w-0 items-center gap-1.5">
+        <span className={`truncate font-medium ${dim ? "text-muted-foreground" : "text-foreground"}`}>{d.name}</span>
+        {d.site ? (
+          <a href={`https://${d.site}`} target="_blank" rel="noopener noreferrer" className="shrink-0 text-muted-foreground hover:text-foreground" title={`Open ${d.site} in a new tab`} aria-label={`Open ${d.site} in a new tab`}><ExternalLink className="h-3.5 w-3.5" /></a>
+        ) : (
+          <a href={`https://www.google.com/search?q=${encodeURIComponent(d.name)}`} target="_blank" rel="noopener noreferrer" className="shrink-0 text-muted-foreground hover:text-foreground" title={`No website for ${d.name} appeared in this Run. Search the web for it in a new tab`} aria-label={`Search the web for ${d.name} in a new tab`}><Search className="h-3.5 w-3.5" /></a>
+        )}
+      </span>
       <div className="relative hidden h-2 rounded-full bg-muted sm:block" role="img" aria-label={`named in ${d.runs} of ${s.runs} runs`}>
         <div className="absolute inset-y-0 left-0 rounded-full bg-foreground/45" style={{ width: `${(d.runs / max) * 100}%` }} />
       </div>
@@ -257,6 +264,7 @@ export function DiscoveredCard({ run, ignored = [], working, onTrack, onIgnore, 
         )}
         <Fold title="What Track and Ignore do" figure="one click each, and both can be undone">
           <p className="text-foreground"><span className="font-medium">Track</span> adds the brand to this company&apos;s tracked list as a competitor. It is then scored like the others in every Run, old and new, appears in the comparison, and is blocked from prompts.</p>
+          <p className="text-foreground">The <ExternalLink className="inline h-3 w-3" /> icon opens the brand&apos;s website, taken from the pages ChatGPT found or cited in this Run. When the Run shows no website for it, the icon is <Search className="inline h-3 w-3" /> and opens a web search for the name.</p>
           <p className="text-foreground"><span className="font-medium">Ignore</span> takes it off this card for this company. It is still counted in First named and in who wins each search: those always count every brand ChatGPT names.</p>
           <p className="text-muted-foreground">The tracked list is shared with Prompt Tests and is edited in AEO Playbook › Prompt Tests.</p>
         </Fold>
