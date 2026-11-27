@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import GitHubAccessCard from "@/pages/admin/GitHubAccessCard";
+import FanOutSettingsCard from "@/pages/admin/FanOutSettingsCard";
 import { buildDoTasksMarkdown } from "@/lib/doTasksMarkdown";
 import { downloadMarkdown } from "@/pages/tools/siteBuildFlow/buildFlowMarkdown";
 import { Button } from "@/components/ui/button";
@@ -915,6 +916,7 @@ export default function GlobalAdmin() {
         <CoreVersionCompanyMenu />
 
         <GitHubAccessCard cardClass={CARD_CLASS} />
+        <FanOutSettingsCard cardClass={CARD_CLASS} />
 
         {integrations.to ? (
           <ToolCard

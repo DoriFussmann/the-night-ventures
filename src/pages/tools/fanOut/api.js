@@ -3,7 +3,7 @@
 import { supabase } from "@/lib/supabase";
 import { loadPlaybook, nextCode, upsertRow } from "../aeoPlaybook/api";
 import { createBriefs, loadBriefs, updateBrief } from "../aeoGeneration/briefs";
-import { situationText, sortPrompts } from "../../../../lib/fan-out/core.js";
+import { mergeSettings, situationText, sortPrompts } from "../../../../lib/fan-out/core.js";
 import { briefFromCard, buyerPrompts } from "../../../../lib/fan-out/groups.js";
 
 const ENDPOINT = "/api/fan-out";
@@ -48,7 +48,34 @@ export const loadScore = (companyId, situationId) => post("score", companyId, { 
 export const groupRun = (companyId, scenarioRunId) => post("groups", companyId, { scenarioRunId });
 /** Writes the card of one Query Group: reads the cited pages, then the AI's estimate of why, what to cover and the action. */
 export const writeCard = (companyId, scenarioRunId, groupId) => post("card", companyId, { scenarioRunId, groupId });
+/** Marks Opportunities whose brief went live as Acted on, and judges the Insights behind acted-on Opportunities. */
+export const syncScenario = (companyId, situationId) => post("sync", companyId, { situationId });
 export const writeTakeaway = (companyId, scenarioRunId) => post("takeaway", companyId, { scenarioRunId });
+
+/** The engine's admin settings: the defaults with what was saved on top. */
+export async function loadEngineSettings() {
+  const res = await supabase.from("fo_settings").select("values").eq("id", "global").maybeSingle();
+  return mergeSettings(res.error ? {} : res.data?.values);
+}
+
+/** Saves the admin settings. Only what differs from the defaults needs to be in `values`. */
+export async function saveEngineSettings(values) {
+  ok(await supabase.from("fo_settings").upsert({ id: "global", values, updated_at: new Date().toISOString() }), "Settings");
+  return mergeSettings(values);
+}
+
+/** Every Insight of every company, for the admin view: which reasons are behind wins, across companies. */
+export async function loadAllInsights() {
+  return ok(await supabase.from("fo_insights").select("tag, reasons, verdict, company_id").limit(1000), "Insights") || [];
+}
+
+/** When each Scenario of a company was last run (its latest Run that returned anything), for the re-run reminder. */
+export async function lastRuns(companyId) {
+  const rows = ok(await supabase.from("fo_scenario_runs").select("situation_id, started_at, finished_at").eq("company_id", companyId).order("started_at", { ascending: false }).limit(1000), "Runs") || [];
+  const out = {};
+  for (const r of rows) if (!out[r.situation_id]) out[r.situation_id] = r.finished_at || r.started_at;
+  return out;
+}
 
 export async function listSituations(companyId) {
   return ok(await supabase.from("fo_situations").select("id, code, title, description, step, stale_from, created_at, version, variant_of").eq("company_id", companyId).order("created_at", { ascending: false }), "Situations") || [];
@@ -115,7 +142,8 @@ export function situationRow(fields) {
 
 /** Saves a new Situation to the bank. variantOf is the id of the Situation it is a variant of, or "". */
 export async function createSituation(companyId, { fields, title, variantOf = "" }, existing) {
-  const row = { company_id: companyId, code: nextCode(existing, "F", 3), version: 2, title: String(title || "").trim().slice(0, 120), variant_of: variantOf || null, ...situationRow(fields) };
+  const settings = await loadEngineSettings();
+  const row = { company_id: companyId, code: nextCode(existing, "F", 3), version: 2, runs: settings.runs_per_prompt, title: String(title || "").trim().slice(0, 120), variant_of: variantOf || null, ...situationRow(fields) };
   return ok(await supabase.from("fo_situations").insert(row).select("*").single(), "Situation");
 }
 
@@ -201,7 +229,7 @@ export async function pushCard({ companyId, situation, card, stats, prompts, als
       sort: data.groups.length,
     });
     data.groups.push(group);
-    const buyer = buyerPrompts(prompts, stats, situation.stage);
+    const buyer = buyerPrompts(prompts, stats, situation.stage, (await loadEngineSettings()).stage_tier);
     const count = {};
     for (const p of buyer) {
       count[p.form] = (count[p.form] || 0) + 1;

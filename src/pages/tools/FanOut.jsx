@@ -28,6 +28,8 @@ import {
   finishRun,
   groupRun,
   labelRun,
+  lastRuns,
+  loadEngineSettings,
   loadScore,
   listSituations,
   loadContentMap,
@@ -43,6 +45,7 @@ import {
   trackBrand,
   updateCard,
   structureText,
+  syncScenario,
   updateSituation,
   writeCard,
   writePrompts,
@@ -50,6 +53,8 @@ import {
 } from "./fanOut/api";
 import ScoreBlock, { runName } from "./fanOut/Score";
 import GroupsBlock, { InsightsBlock } from "./fanOut/Groups";
+import CompareBlock from "./fanOut/Compare";
+import { dueForRerun } from "../../../lib/fan-out/compare.js";
 
 const inputClass = "h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring";
 const PERSONA_FIELDS = [
@@ -336,6 +341,8 @@ export default function FanOut() {
   const [score, setScore] = useState(null);
   const [insights, setInsights] = useState([]);
   const [analysis, setAnalysis] = useState("");
+  const [lastRun, setLastRun] = useState({}); // situation id -> when it was last run
+  const [reminderDays, setReminderDays] = useState(30);
   const stopRef = useRef(false);
   const [folds, setFolds] = useState({});
 
@@ -359,6 +366,7 @@ export default function FanOut() {
     Promise.all([listSituations(companyId), loadContentMap(companyId)])
       .then(([list, m]) => { if (live) { setSituations(list); setMap(m); } })
       .then(() => loadInsights(companyId).then((rows) => live && setInsights(rows)).catch(() => null))
+      .then(() => Promise.all([lastRuns(companyId), loadEngineSettings()]).then(([last, st]) => { if (live) { setLastRun(last); setReminderDays(st.reminder_days); } }).catch(() => null))
       .catch((err) => live && setError(err?.message || "Could not load"))
       .finally(() => live && setLoading(false));
     return () => { live = false; };
@@ -398,8 +406,14 @@ export default function FanOut() {
 
   useEffect(() => {
     setScore(null);
-    if (currentId) refreshScore(currentId).catch((err) => setError(err?.message || "Could not calculate the score"));
-  }, [currentId, refreshScore]);
+    if (!currentId) return;
+    // Opportunities whose article went live since the last visit are marked Acted on first, then everything is read.
+    syncScenario(companyId, currentId)
+      .then((out) => (out.marked || out.judged ? Promise.all([open(currentId), loadInsights(companyId).then(setInsights)]) : null))
+      .catch(() => null)
+      .then(() => refreshScore(currentId))
+      .catch((err) => setError(err?.message || "Could not calculate the score"));
+  }, [currentId, refreshScore, companyId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const situation = data?.situation || null;
   const prompts = useMemo(() => data?.prompts || [], [data]);
@@ -690,9 +704,11 @@ export default function FanOut() {
     } finally {
       setAnalysis("");
     }
+    await syncScenario(companyId, situation.id).catch(() => null);
     await open(situation.id);
     await refreshScore(situation.id);
     setInsights(await loadInsights(companyId).catch(() => insights));
+    setLastRun(await lastRuns(companyId).catch(() => lastRun));
   };
 
   const doAnalyze = () => guard("analyze", () => analyze(scoredRun.id, { again: grouped && scoredRun.ungrouped === 0 }));
@@ -739,6 +755,8 @@ export default function FanOut() {
   const minutes = (seconds) => Math.max(1, Math.round(((situation?.runs || 0) * Math.ceil(prompts.length / 4) * seconds) / 60));
   const variantOf = situation?.variant_of ? situations.find((s) => s.id === situation.variant_of) : null;
   const nameOf = (s) => `${s.code} · ${s.title || s.description.slice(0, 70)}`;
+  // The monthly reminder, shown in the tool only. Runs are always started by hand.
+  const due = situations.filter((s) => dueForRerun(lastRun[s.id], reminderDays));
 
   return (
     <div className="space-y-5">
@@ -767,10 +785,16 @@ export default function FanOut() {
               <label className="text-xs text-muted-foreground" htmlFor="fo-pick">Scenario</label>
               <select id="fo-pick" className={`${inputClass} w-full min-w-0 sm:w-auto sm:flex-1`} value={currentId} disabled={working} onChange={(e) => setParams(e.target.value ? { s: e.target.value } : {})}>
                 <option value="">New Scenario…</option>
-                {situations.map((s) => <option key={s.id} value={s.id}>{nameOf(s)}</option>)}
+                {situations.map((s) => <option key={s.id} value={s.id}>{nameOf(s)}{due.includes(s) ? " · due for a re-run" : ""}</option>)}
               </select>
               {situation && <Button type="button" size="sm" variant="ghost" disabled={working} onClick={remove}><Trash2 className="mr-1.5 h-3.5 w-3.5" />Delete</Button>}
             </div>
+            {due.length > 0 && (
+              <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                Due for a re-run (last run more than {reminderDays} days ago):{" "}
+                {due.map((s, i) => <React.Fragment key={s.id}>{i > 0 && " · "}<button type="button" className="underline underline-offset-2" disabled={working} onClick={() => setParams({ s: s.id })}>{nameOf(s)}</button></React.Fragment>)}
+              </p>
+            )}
             {!situation && (
               <>
                 <p className="text-xs text-muted-foreground">
@@ -994,6 +1018,7 @@ export default function FanOut() {
                 {scenarioRuns.length === 0 && <p className="text-xs text-muted-foreground">The summary appears after the first Run.</p>}
                 {scoredRun?.takeaway && <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-foreground">{scoredRun.takeaway}</p>}
                 {scenarioRuns.length > 0 && <ScoreBlock data={score} baselineId={situation.baseline_run_id} working={working} busy={busy} onLabel={doLabel} onTrack={doTrack} />}
+                {scenarioRuns.length > 1 && <CompareBlock data={score} baselineId={situation.baseline_run_id} cards={cards} />}
                 {scoredRun && scoredRun.status !== "running" && (
                   <>
                     <p className="border-t border-border pt-3 text-sm font-medium text-foreground">What ChatGPT goes looking for <span className="text-xs font-normal text-muted-foreground">· the latest Run</span></p>
