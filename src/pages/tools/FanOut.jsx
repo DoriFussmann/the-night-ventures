@@ -31,6 +31,9 @@ import {
   checkSituation,
   createSituation,
   deleteSituation,
+  finishRun,
+  labelRun,
+  loadScore,
   listSituations,
   loadContentMap,
   loadRunDetail,
@@ -40,11 +43,14 @@ import {
   runStep,
   savePromptText,
   situationRow,
+  startRun,
+  trackBrand,
   structureText,
   updateSituation,
   updateTopic,
   writePrompts,
 } from "./fanOut/api";
+import ScoreBlock, { runName } from "./fanOut/Score";
 
 const inputClass = "h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring";
 const PERSONA_FIELDS = [
@@ -431,6 +437,7 @@ export default function FanOut() {
   const [adding, setAdding] = useState(null); // { form, text }: the user's own prompt being written
   const [progress, setProgress] = useState("");
   const [pushNotes, setPushNotes] = useState([]);
+  const [score, setScore] = useState(null);
   const stopRef = useRef(false);
   const [folds, setFolds] = useState({});
 
@@ -480,9 +487,24 @@ export default function FanOut() {
     open(currentId).catch((err) => setError(err?.message || "Could not load the situation"));
   }, [currentId, open]);
 
+  const refreshScore = useCallback(async (id) => {
+    if (!id) return setScore(null);
+    setScore(await loadScore(companyId, id));
+  }, [companyId]);
+
+  useEffect(() => {
+    setScore(null);
+    if (currentId) refreshScore(currentId).catch((err) => setError(err?.message || "Could not calculate the score"));
+  }, [currentId, refreshScore]);
+
   const situation = data?.situation || null;
   const prompts = useMemo(() => data?.prompts || [], [data]);
-  const runs = useMemo(() => data?.runs || [], [data]);
+  const allRuns = useMemo(() => data?.runs || [], [data]);
+  const scenarioRuns = useMemo(() => data?.scenarioRuns || [], [data]);
+  // The Run on the page is the latest one: its captures feed the list in step 4 and the topics in step 5.
+  const latestRun = scenarioRuns[scenarioRuns.length - 1] || null;
+  const openRun = latestRun?.status === "running" ? latestRun : null;
+  const runs = useMemo(() => (latestRun ? allRuns.filter((r) => r.scenario_run_id === latestRun.id) : []), [allRuns, latestRun]);
   const topics = useMemo(() => data?.topics || [], [data]);
   const okRuns = runs.filter((r) => r.status === "ok").length;
   const persona = situation?.persona || {};
@@ -563,14 +585,14 @@ export default function FanOut() {
       // The user's own words from before the fields existed are kept.
       ...(Number(situation.version) < 2 && !situation.details?.original_description ? { details: { ...(situation.details || {}), original_description: situation.description } } : {}),
       stale_from: stale,
-      ...(changed ? { prompts_confirmed_at: null } : {}),
+      ...(changed ? { prompts_confirmed_at: null, baseline_run_id: null } : {}),
       ...(changed && !onlyDirection ? { persona_confirmed_at: null } : {}),
     });
     await reloadList();
   });
 
   // Runs stay stored when what produced them changes, but they stop counting: say so before it happens.
-  const okToReset = (what) => runs.length === 0 || window.confirm(`${what} The runs you already have stay stored, but they no longer count: the next Run is a new Baseline. Go on?`);
+  const okToReset = (what) => allRuns.length === 0 || window.confirm(`${what} The runs you already have stay stored, but they no longer count: the next Run is a new Baseline. Go on?`);
 
   /* Step 2: the Persona */
   const doPersona = () => guard("persona", async () => {
@@ -590,7 +612,7 @@ export default function FanOut() {
       persona: next,
       persona_confirmed_at: approve ? new Date().toISOString() : situation.persona_confirmed_at,
       // Prompts written from the old persona are out of date.
-      ...(personaDirty ? { stale_from: staleAfter("persona", has) || situation.stale_from, prompts_confirmed_at: null } : situation.stale_from === "persona" ? { stale_from: staleAfter("persona", has) } : {}),
+      ...(personaDirty ? { stale_from: staleAfter("persona", has) || situation.stale_from, prompts_confirmed_at: null, baseline_run_id: null } : situation.stale_from === "persona" ? { stale_from: staleAfter("persona", has) } : {}),
     });
   });
 
@@ -599,7 +621,7 @@ export default function FanOut() {
   const issues = useMemo(() => Object.fromEntries(prompts.map((p) => [p.id, promptIssues(promptEdit[p.id] ?? p.prompt, map.allNames)])), [prompts, promptEdit, map.allNames]);
   const blocked = prompts.some((p) => issues[p.id]?.block.length);
   const unsaved = prompts.some((p) => textOf(p).trim() !== p.prompt);
-  const promptsHaveRuns = runs.length > 0;
+  const promptsHaveRuns = allRuns.length > 0;
 
   const doPrompts = () => guard("prompts", async () => {
     if (!okToReset("Writing the prompts again replaces them.")) return;
@@ -607,7 +629,7 @@ export default function FanOut() {
     await open(situation.id);
   });
 
-  const hasRunsOf = (p) => runs.some((r) => r.prompt_id === p.id);
+  const hasRunsOf = (p) => allRuns.some((r) => r.prompt_id === p.id);
   const okToReplace = (p, what) => !hasRunsOf(p) || window.confirm(`${promptLabel(p, prompts)} already has runs. ${what} Its runs stay stored, but they no longer count for this Scenario. Go on?`);
 
   const redoPrompt = (p) => guard(`prompt-${p.id}`, async () => {
@@ -624,14 +646,14 @@ export default function FanOut() {
     if (!okToReplace(p, "A new wording replaces it.")) return revert();
     if (text.length > PROMPT_MAX) throw new Error(`${promptLabel(p, prompts)} is ${text.length.toLocaleString("en-US")} characters; the engine takes ${PROMPT_MAX.toLocaleString("en-US")} at most.`);
     await savePromptText(p, text);
-    await updateSituation(situation.id, { stale_from: staleAfter("prompts", has) || situation.stale_from });
+    await updateSituation(situation.id, { stale_from: staleAfter("prompts", has) || situation.stale_from, baseline_run_id: null });
     await open(situation.id);
   });
 
   const dropPrompt = (p) => guard("prompt-edit", async () => {
     if (!okToReplace(p, "Deleting takes it out of the Scenario.")) return;
     await removePrompt(p);
-    await updateSituation(situation.id, { stale_from: staleAfter("prompts", has) || situation.stale_from });
+    await updateSituation(situation.id, { stale_from: staleAfter("prompts", has) || situation.stale_from, baseline_run_id: null });
     await open(situation.id);
   });
 
@@ -641,7 +663,7 @@ export default function FanOut() {
     if (found.block.length) throw new Error(found.block[0]);
     const same = prompts.filter((p) => p.form === adding.form);
     await addPrompt(situation, adding.form, text, same.reduce((m, p) => Math.max(m, (p.sort || 0) + 1), 0));
-    await updateSituation(situation.id, { stale_from: staleAfter("prompts", has) || situation.stale_from });
+    await updateSituation(situation.id, { stale_from: staleAfter("prompts", has) || situation.stale_from, baseline_run_id: null });
     await open(situation.id);
   });
 
@@ -651,30 +673,77 @@ export default function FanOut() {
 
   const unlockPrompts = () => guard("prompt-edit", async () => {
     if (promptsHaveRuns && !window.confirm("The prompts are frozen so that every Run asks the same thing. If you edit them, the comparison resets and the next Run is a new Baseline. Unlock?")) return;
-    await patchSituation({ prompts_confirmed_at: null });
+    await patchSituation({ prompts_confirmed_at: null, baseline_run_id: null });
   });
 
   /* Step 4: the Run */
   const needsConfirm = Number(situation?.version) >= 2 && !frozen;
-  const plan = useMemo(() => planRuns(prompts, situation?.runs || 7, runs), [prompts, situation, runs]);
+  const hasBaseline = Boolean(situation?.baseline_run_id) && scenarioRuns.some((r) => r.id === situation.baseline_run_id);
+  // An open Run asks the prompts it was started with.
+  const runPrompts = useMemo(() => (openRun ? prompts.filter((p) => (openRun.prompt_ids || []).includes(p.id)) : prompts), [openRun, prompts]);
+  const perPrompt = openRun ? openRun.runs_per_prompt : situation?.runs || 7;
+  const plan = useMemo(() => planRuns(runPrompts, perPrompt, openRun ? runs : []), [runPrompts, perPrompt, openRun, runs]);
   const callsLeft = plan.reduce((a, s) => a + s.length, 0);
 
-  const doRun = (again = false) => guard("run", async () => {
+  const endRun = async (run, stopped) => {
+    setProgress("Closing the Run: recording the cost and labeling how each brand is named…");
+    const out = await finishRun(companyId, run.id, stopped);
+    await open(situation.id);
+    await refreshScore(situation.id);
+    if (out.labels?.left) setError(`${out.labels.left} mentions could not be labeled. Use "Label them" in the summary to try again.`);
+  };
+
+  const doRun = () => guard("run", async () => {
     stopRef.current = false;
-    const steps = again ? planRuns(prompts, situation.runs, []) : plan;
+    let run = openRun;
+    let steps = plan;
+    if (!run) {
+      const started = await startRun(companyId, situation.id);
+      if (started.capReached) throw new Error(`This Run is estimated at $${Number(started.estCost).toFixed(2)}, which would pass the monthly cap: $${Number(started.monthSpent).toFixed(2)} of $${Number(started.cap).toFixed(2)} is spent. Raise the cap in AEO Playbook › Prompt Tests.`);
+      run = started.run;
+      steps = planRuns(prompts, run.runs_per_prompt, []);
+      setData((d) => ({ ...d, situation: started.situation, scenarioRuns: [...d.scenarioRuns, run] }));
+    }
     const total = steps.reduce((a, s) => a + s.length, 0);
     let done = 0;
     for (const calls of steps) {
       if (stopRef.current) break;
-      setProgress(`Asking ChatGPT: ${done} of ${total} captures done (run ${calls[0].runNo} of ${situation.runs}). A capture takes 35 to 60 seconds and ${calls.length} run at a time. Keep this tab open.`);
-      const out = await runStep(companyId, situation.id, calls, again);
-      if (out.capReached) throw new Error(`The monthly cap is reached: $${Number(out.monthSpent).toFixed(2)} of $${Number(out.cap).toFixed(2)} spent. Raise it in AEO Playbook › Prompt Tests.`);
+      setProgress(`Asking ChatGPT: ${done} of ${total} captures done (run ${calls[0].runNo} of ${run.runs_per_prompt} for each prompt). A capture takes 35 to 60 seconds and ${calls.length} run at a time. Keep this tab open.`);
+      const out = await runStep(companyId, run.id, calls);
+      if (out.capReached) throw new Error(`The monthly cap is reached: $${Number(out.monthSpent).toFixed(2)} of $${Number(out.cap).toFixed(2)} spent. Raise it in AEO Playbook › Prompt Tests, then continue this Run.`);
       done += calls.length;
-      const fresh = await loadSituation(situation.id);
-      setData(fresh);
+      setData(await loadSituation(situation.id));
     }
-    setProgress("");
+    // Stopped by hand: the Run stays open, to continue or to end as it is.
+    if (stopRef.current) return open(situation.id);
+    // Captures that failed are tried once more by "Continue"; the Run closes only when the user ends it or nothing is missing.
+    const fresh = await loadSituation(situation.id);
+    const missing = planRuns(prompts.filter((p) => (run.prompt_ids || []).includes(p.id)), run.runs_per_prompt, fresh.runs.filter((r) => r.scenario_run_id === run.id));
+    if (missing.length) {
+      setData(fresh);
+      await refreshScore(situation.id);
+      return;
+    }
+    await endRun(run, false);
   }).finally(() => setProgress(""));
+
+  const closeRun = () => guard("run", async () => {
+    if (!window.confirm(`End this Run with ${okRuns} of ${runPrompts.length * perPrompt} captures? It will be scored on the runs it has. A smaller Run has a wider margin.`)) return;
+    await endRun(openRun, true);
+  }).finally(() => setProgress(""));
+
+  const doLabel = (scenarioRunId) => guard("label", async () => {
+    const out = await labelRun(companyId, scenarioRunId);
+    await refreshScore(situation.id);
+    if (out.labels?.left) throw new Error(`${out.labels.left} mentions could not be labeled. Try again.`);
+  });
+
+  const doTrack = (name) => guard("track", async () => {
+    if (!window.confirm(`Add ${name} to this company's tracked brands, as a competitor? It is then scored in every Run, and blocked from prompts.`)) return;
+    await trackBrand(companyId, name, map.brands);
+    setMap(await loadContentMap(companyId));
+    await refreshScore(situation.id);
+  });
 
   const doTopics = () => guard("topics", async () => {
     const out = await buildTopics(companyId, situation.id);
@@ -707,7 +776,6 @@ export default function FanOut() {
     await reloadList();
   });
 
-  const runsOf = (p) => runs.filter((r) => r.prompt_id === p.id);
   const spent = runs.reduce((a, r) => a + Number(r.cost || 0), 0);
   const working = Boolean(busy);
   const captures = prompts.length * (situation?.runs || 0);
@@ -900,36 +968,74 @@ export default function FanOut() {
                 </div>
               </Panel>
 
-              <Panel {...panel("run")} summary={okRuns ? `${okRuns} of ${runs.length} captures returned · ${runs.reduce((a, r) => a + (r.fan_out || []).length, 0)} searches · $${spent.toFixed(3)}` : ""} did={okRuns ? `${okRuns} of ${runs.length} captures returned · $${spent.toFixed(3)} spent on this Scenario.` : "Each prompt is asked on real ChatGPT several times, in a fresh session each time. What repeats across runs is signal."}>
-                <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <label className="text-muted-foreground" htmlFor="fo-runs">Runs per prompt</label>
-                  <input id="fo-runs" type="number" min={1} max={10} className={`${inputClass} w-16`} value={situation.runs} disabled={working} onChange={(e) => patchSituation({ runs: Math.max(1, Math.min(10, Math.round(Number(e.target.value) || 1))) }).catch((err) => setError(err.message))} />
-                  <span className="text-muted-foreground">{prompts.length} prompts × {situation.runs} runs = {captures} captures: about ${(captures * 0.004).toFixed(2)} and {minutes(35)} to {minutes(60)} minutes. Failed captures are not charged.</span>
-                </div>
+              <Panel {...panel("run")} summary={latestRun ? `${scenarioRuns.length} ${scenarioRuns.length === 1 ? "Run" : "Runs"} · latest: ${okRuns} of ${runs.length} captures returned · $${spent.toFixed(2)}` : ""} did="Each prompt is asked on real ChatGPT several times, in a fresh session with no memory. Web search is not forced, so a Run shows whether the prompt triggers a search on its own.">
+                {scenarioRuns.length > 0 && (
+                  <ul className="space-y-1 text-xs">
+                    {scenarioRuns.map((r) => {
+                      const mine = allRuns.filter((x) => x.scenario_run_id === r.id);
+                      const good = mine.filter((x) => x.status === "ok").length;
+                      const cost = r.status === "running" ? mine.reduce((a, x) => a + Number(x.cost || 0), 0) : Number(r.cost);
+                      const name = runName({ ...r, baseline: r.id === situation.baseline_run_id });
+                      return (
+                        <li key={r.id} className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-1.5">
+                          <span className="font-medium text-foreground">{name}</span>
+                          {r.id === situation.baseline_run_id && r.seq > 1 && <span className="text-muted-foreground">(Run {r.seq})</span>}
+                          <span className="tabular-nums text-muted-foreground">{day(r.started_at)} · {good} {r.legacy ? "" : `of ${(r.prompt_ids || []).length * r.runs_per_prompt} `}captures returned · ${cost.toFixed(2)} actual{r.legacy ? "" : ` (estimated $${Number(r.est_cost).toFixed(2)})`}</span>
+                          {r.status === "running" && <Chip tone="border-sky-300 bg-sky-50 text-sky-800">Open</Chip>}
+                          {r.status === "stopped" && <Chip>Ended early</Chip>}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                {!openRun && (
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <label className="text-muted-foreground" htmlFor="fo-runs">Runs per prompt</label>
+                    <input id="fo-runs" type="number" min={1} max={10} className={`${inputClass} w-16`} value={situation.runs} disabled={working} onChange={(e) => patchSituation({ runs: Math.max(1, Math.min(10, Math.round(Number(e.target.value) || 1))) }).catch((err) => setError(err.message))} />
+                    <span className="text-muted-foreground">{prompts.length} prompts × {situation.runs} runs = {captures} captures. Estimated: ${(captures * 0.004).toFixed(2)} for the captures, {minutes(35)} to {minutes(60)} minutes. Failed captures are not charged.</span>
+                  </div>
+                )}
+                {hasBaseline && !openRun && situation.runs !== scenarioRuns.find((r) => r.id === situation.baseline_run_id)?.runs_per_prompt && <p className="text-xs text-amber-800">The Baseline used {scenarioRuns.find((r) => r.id === situation.baseline_run_id)?.runs_per_prompt} runs per prompt. A different number still compares, with a different margin.</p>}
                 <div className="flex flex-wrap items-center gap-2">
                   {busy === "run" ? (
-                    <Button type="button" size="sm" variant="outline" onClick={() => { stopRef.current = true; setProgress("Stopping after this step…"); }}><Square className="mr-1.5 h-3.5 w-3.5" />Stop</Button>
-                  ) : (
+                    <Button type="button" size="sm" variant="outline" onClick={() => { stopRef.current = true; setProgress("Stopping after the captures that are under way…"); }}><Square className="mr-1.5 h-3.5 w-3.5" />Stop</Button>
+                  ) : openRun ? (
                     <>
-                      <Button type="button" size="sm" disabled={working || !has.prompts || needsConfirm || blocked || unsaved || callsLeft === 0} onClick={() => doRun(false)}>
-                        <Play className="mr-1.5 h-3.5 w-3.5" />{runs.length ? `Run the ${callsLeft} missing` : "Run on ChatGPT"}
-                      </Button>
-                      {runs.length > 0 && <Button type="button" size="sm" variant="outline" disabled={working || needsConfirm || blocked || unsaved} onClick={() => doRun(true)}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Run everything again</Button>}
+                      <Button type="button" size="sm" disabled={working || callsLeft === 0} onClick={doRun}><Play className="mr-1.5 h-3.5 w-3.5" />Continue: {callsLeft} {callsLeft === 1 ? "capture" : "captures"} missing</Button>
+                      <Button type="button" size="sm" variant="outline" disabled={working || okRuns === 0} onClick={closeRun}>End the Run here</Button>
                     </>
+                  ) : (
+                    <Button type="button" size="sm" disabled={working || !has.prompts || needsConfirm || blocked || unsaved} onClick={doRun}>
+                      <Play className="mr-1.5 h-3.5 w-3.5" />{hasBaseline ? "Run again, to compare with the Baseline" : "Run the Baseline"}
+                    </Button>
                   )}
                   {has.prompts && needsConfirm && <span className="text-xs text-muted-foreground">Confirm the prompts in step 3 first: a Run uses frozen prompts.</span>}
                   {blocked && <span className="text-xs text-destructive">A prompt cannot run yet; see the note under it.</span>}
+                  {!openRun && !hasBaseline && scenarioRuns.length > 0 && !needsConfirm && <span className="text-xs text-muted-foreground">The Scenario changed since its last Run (or its runs are from before Baselines), so the next Run is a new Baseline.</span>}
                 </div>
                 {progress && <p className="flex items-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900"><Loader2 className="h-3.5 w-3.5 animate-spin" />{progress}</p>}
-                {prompts.map((p) => runsOf(p).length > 0 && (
-                  <div key={p.id}>
-                    <p className="text-xs font-medium text-foreground">{promptLabel(p, prompts)} <span className="font-normal text-muted-foreground">· {p.prompt.length > 110 ? `${p.prompt.slice(0, 110)}…` : p.prompt}</span></p>
-                    <ul className="mt-1 space-y-1.5">{runsOf(p).map((r) => <RunRow key={r.id} run={r} brands={map.brands || []} />)}</ul>
-                  </div>
-                ))}
+                {runs.length > 0 && (
+                  <details className="rounded-md border border-border text-xs">
+                    <summary className="cursor-pointer px-3 py-1.5 text-muted-foreground">The {runs.length} captures of the latest Run: searches, citations and answers</summary>
+                    <div className="space-y-3 border-t border-border p-3">
+                      {[...new Set(runs.map((r) => r.prompt_id))].map((pid) => {
+                        const p = prompts.find((x) => x.id === pid);
+                        const mine = runs.filter((r) => r.prompt_id === pid);
+                        return (
+                          <div key={pid}>
+                            <p className="text-xs font-medium text-foreground">{p ? promptLabel(p, prompts) : "A prompt replaced since"} {p && <span className="font-normal text-muted-foreground">· {p.prompt.length > 110 ? `${p.prompt.slice(0, 110)}…` : p.prompt}</span>}</p>
+                            <ul className="mt-1 space-y-1.5">{mine.map((r) => <RunRow key={r.id} run={r} brands={map.brands || []} />)}</ul>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </details>
+                )}
               </Panel>
 
-              <Panel {...panel("topics")} summary={has.topics ? `${topics.length} topics · ${topics.filter((t) => t.status === "approved").length} approved · ${topics.filter((t) => t.status === "pushed").length} pushed` : ""} details={situation.details?.topics} did={has.topics ? "The searches, grouped into topics one page could answer. The action comes from a rule, shown next to it." : "Claude will group the searches into topics; rules set what to do with each."}>
+              <Panel {...panel("topics")} summary={score?.runs?.length && score.runs[score.runs.length - 1].score.own ? `Mentioned ${score.runs[score.runs.length - 1].score.own.mentioned.pct}% ±${score.runs[score.runs.length - 1].score.own.mentioned.margin} · ${topics.length} topics` : has.topics ? `${topics.length} topics · ${topics.filter((t) => t.status === "approved").length} approved · ${topics.filter((t) => t.status === "pushed").length} pushed` : ""} details={situation.details?.topics} did="Where the brand stands in ChatGPT's answers, and what ChatGPT went looking for.">
+                {scenarioRuns.length > 0 && <ScoreBlock data={score} working={working} busy={busy} onLabel={doLabel} onTrack={doTrack} />}
+                {scenarioRuns.length > 0 && <p className="border-t border-border pt-3 text-sm font-medium text-foreground">What ChatGPT goes looking for</p>}
                 <Button type="button" size="sm" variant={has.topics ? "outline" : "default"} disabled={working || okRuns === 0} onClick={doTopics}>
                   {busy === "topics" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}{has.topics ? "Group again" : "Find the topics"}
                 </Button>

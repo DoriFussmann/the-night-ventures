@@ -7,7 +7,7 @@ import { PUSHABLE, STAGE_TIER, briefFromTopic, situationText, sortPrompts } from
 
 const ENDPOINT = "/api/fan-out";
 /** Run columns the page lists; the full answer and raw reply are read per run, on demand. */
-const RUN_COLS = "id, prompt_id, run_no, status, error, attempts, model, ran_at, seconds, cost, fan_out, search_results, cited, searched, brands, own_cited_urls";
+const RUN_COLS = "id, scenario_run_id, prompt_id, run_no, status, error, attempts, model, ran_at, seconds, cost, fan_out, search_results, cited, searched, brands, own_cited_urls";
 
 const ok = (res, what) => {
   if (res.error) throw new Error(`${what}: ${res.error.message}`);
@@ -35,7 +35,14 @@ export const checkSituation = (companyId, fields, situationId = "") => post("che
 export const buildPersona = (companyId, situationId) => post("persona", companyId, { situationId });
 /** All prompts again, or with promptId only that one, on a new angle. */
 export const writePrompts = (companyId, situationId, promptId = "") => post("prompts", companyId, { situationId, promptId });
-export const runStep = (companyId, situationId, calls, again = false) => post("run", companyId, { situationId, calls, again });
+/** Opens a Run (the Baseline if the Scenario has none). Nothing is asked of ChatGPT yet. */
+export const startRun = (companyId, situationId) => post("start_run", companyId, { situationId });
+export const runStep = (companyId, scenarioRunId, calls) => post("run", companyId, { scenarioRunId, calls });
+/** Ends a Run: records the actual cost and labels the mentions. */
+export const finishRun = (companyId, scenarioRunId, stopped = false) => post("finish_run", companyId, { scenarioRunId, stopped });
+export const labelRun = (companyId, scenarioRunId) => post("label", companyId, { scenarioRunId });
+/** The score of every Run of a Scenario, calculated now from the stored answers and today's brand list. */
+export const loadScore = (companyId, situationId) => post("score", companyId, { situationId });
 export const buildTopics = (companyId, situationId) => post("topics", companyId, { situationId });
 
 export async function listSituations(companyId) {
@@ -43,16 +50,27 @@ export async function listSituations(companyId) {
 }
 
 export async function loadSituation(id) {
-  const [situation, prompts, runs, topics] = await Promise.all([
+  const [situation, prompts, runs, topics, scenarioRuns] = await Promise.all([
     supabase.from("fo_situations").select("*").eq("id", id).maybeSingle(),
     supabase.from("fo_prompts").select("*").eq("situation_id", id).is("archived_at", null),
-    supabase.from("fo_runs").select(RUN_COLS).eq("situation_id", id).order("run_no"),
+    supabase.from("fo_runs").select(RUN_COLS).eq("situation_id", id).order("run_no").limit(2000),
     supabase.from("fo_topics").select("*").eq("situation_id", id).order("sort"),
+    supabase.from("fo_scenario_runs").select("*").eq("situation_id", id).order("seq"),
   ]);
-  const active = sortPrompts(ok(prompts, "Prompts") || []);
-  const ids = new Set(active.map((p) => p.id));
-  // Runs of a prompt that was replaced are kept in the database but are not part of the Scenario any more.
-  return { situation: ok(situation, "Situation"), prompts: active, runs: (ok(runs, "Runs") || []).filter((r) => ids.has(r.prompt_id)), topics: ok(topics, "Topics") || [] };
+  return {
+    situation: ok(situation, "Situation"),
+    prompts: sortPrompts(ok(prompts, "Prompts") || []),
+    // Every capture of every Run. Captures of a prompt that was replaced since are kept: they belong to their Run.
+    runs: ok(runs, "Runs") || [],
+    topics: ok(topics, "Topics") || [],
+    scenarioRuns: ok(scenarioRuns, "Runs") || [],
+  };
+}
+
+/** Adds a brand ChatGPT named to the tracked list, as a competitor. */
+export async function trackBrand(companyId, name, brands) {
+  const row = { company_id: companyId, name: String(name).trim().slice(0, 80), is_own: false, sort: (brands || []).length };
+  return ok(await supabase.from("pt_brands").insert(row).select("id, name, is_own").single(), "Brand");
 }
 
 export async function loadRunDetail(id) {
