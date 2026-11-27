@@ -126,9 +126,11 @@ export async function savePromptText(prompt, text) {
   if (!(await hasRuns(prompt.id))) {
     return ok(await supabase.from("fo_prompts").update({ prompt: text, updated_at: new Date().toISOString() }).eq("id", prompt.id).select("*").single(), "Prompt");
   }
-  ok(await supabase.from("fo_prompts").update({ archived_at: new Date().toISOString() }).eq("id", prompt.id), "Prompt");
+  // The new wording is saved first, so a failed save leaves the old prompt in place.
   const row = { company_id: prompt.company_id, situation_id: prompt.situation_id, form: prompt.form, prompt: text, sort: prompt.sort, origin: prompt.origin, angle: prompt.angle };
-  return ok(await supabase.from("fo_prompts").insert(row).select("*").single(), "Prompt");
+  const made = ok(await supabase.from("fo_prompts").insert(row).select("*").single(), "Prompt");
+  ok(await supabase.from("fo_prompts").update({ archived_at: new Date().toISOString() }).eq("id", prompt.id), "Prompt");
+  return made;
 }
 
 /** Takes a prompt out of the Scenario. One with runs is archived, so its raw runs are kept. */

@@ -557,6 +557,8 @@ export default function FanOut() {
       ...situationRow(fields),
       title: title.trim().slice(0, 120),
       version: 2,
+      // The user's own words from before the fields existed are kept.
+      ...(Number(situation.version) < 2 && !situation.details?.original_description ? { details: { ...(situation.details || {}), original_description: situation.description } } : {}),
       stale_from: stale,
       ...(changed ? { prompts_confirmed_at: null } : {}),
       ...(changed && !onlyDirection ? { persona_confirmed_at: null } : {}),
@@ -564,8 +566,12 @@ export default function FanOut() {
     await reloadList();
   });
 
+  // Runs stay stored when what produced them changes, but they stop counting: say so before it happens.
+  const okToReset = (what) => runs.length === 0 || window.confirm(`${what} The runs you already have stay stored, but they no longer count: the next Run is a new Baseline. Go on?`);
+
   /* Step 2: the Persona */
   const doPersona = () => guard("persona", async () => {
+    if (has.prompts && !okToReset("Writing the persona again makes the prompts out of date.")) return;
     const out = await buildPersona(companyId, situation.id);
     show({ ...data, situation: out.situation });
   });
@@ -576,6 +582,7 @@ export default function FanOut() {
     const next = { ...persona, knowledge_level: personaEdit.knowledge_level, what_matters: lines(personaEdit.what_matters, 3), vocabulary: lines(personaEdit.vocabulary, 5) };
     const named = [...next.what_matters, ...next.vocabulary].filter((x) => promptIssues(x, map.allNames).block.length);
     if (named.length) throw new Error(`The persona is brand-blind: it does not know any company exists. Remove: ${named.join(", ")}.`);
+    if (personaDirty && has.prompts && !okToReset("Changing the persona makes the prompts out of date.")) return;
     await patchSituation({
       persona: next,
       persona_confirmed_at: approve ? new Date().toISOString() : situation.persona_confirmed_at,
@@ -592,19 +599,26 @@ export default function FanOut() {
   const promptsHaveRuns = runs.length > 0;
 
   const doPrompts = () => guard("prompts", async () => {
-    if (promptsHaveRuns && !window.confirm("Writing the prompts again replaces them. The runs you already have stay stored, but they no longer count: the next Run is a new Baseline. Go on?")) return;
+    if (!okToReset("Writing the prompts again replaces them.")) return;
     await writePrompts(companyId, situation.id);
     await open(situation.id);
   });
 
+  const hasRunsOf = (p) => runs.some((r) => r.prompt_id === p.id);
+  const okToReplace = (p, what) => !hasRunsOf(p) || window.confirm(`${promptLabel(p, prompts)} already has runs. ${what} Its runs stay stored, but they no longer count for this Scenario. Go on?`);
+
   const redoPrompt = (p) => guard(`prompt-${p.id}`, async () => {
+    if (!okToReplace(p, "Regenerating replaces it.")) return;
     await writePrompts(companyId, situation.id, p.id);
     await open(situation.id);
   });
 
   const savePromptEdit = (p) => guard("prompt-edit", async () => {
     const text = textOf(p).trim();
-    if (!text || text === p.prompt) return;
+    const revert = () => setPromptEdit((s) => ({ ...s, [p.id]: undefined }));
+    if (!text) return revert(); // an emptied box goes back to the saved prompt; Delete removes one
+    if (text === p.prompt) return;
+    if (!okToReplace(p, "A new wording replaces it.")) return revert();
     if (text.length > PROMPT_MAX) throw new Error(`${promptLabel(p, prompts)} is ${text.length.toLocaleString("en-US")} characters; the engine takes ${PROMPT_MAX.toLocaleString("en-US")} at most.`);
     await savePromptText(p, text);
     await updateSituation(situation.id, { stale_from: staleAfter("prompts", has) || situation.stale_from });
@@ -612,6 +626,7 @@ export default function FanOut() {
   });
 
   const dropPrompt = (p) => guard("prompt-edit", async () => {
+    if (!okToReplace(p, "Deleting takes it out of the Scenario.")) return;
     await removePrompt(p);
     await updateSituation(situation.id, { stale_from: staleAfter("prompts", has) || situation.stale_from });
     await open(situation.id);
@@ -693,7 +708,8 @@ export default function FanOut() {
   const spent = runs.reduce((a, r) => a + Number(r.cost || 0), 0);
   const working = Boolean(busy);
   const captures = prompts.length * (situation?.runs || 0);
-  const minutes = (seconds) => Math.max(1, Math.round((Math.ceil(captures / 4) * seconds) / 60));
+  // Captures run four at a time, one run number after another: 9 prompts are 3 steps per run number.
+  const minutes = (seconds) => Math.max(1, Math.round(((situation?.runs || 0) * Math.ceil(prompts.length / 4) * seconds) / 60));
   const variantOf = situation?.variant_of ? situations.find((s) => s.id === situation.variant_of) : null;
   const nameOf = (s) => `${s.code} · ${s.title || s.description.slice(0, 70)}`;
 
@@ -756,6 +772,12 @@ export default function FanOut() {
                       {busy === "structure" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1.5 h-3.5 w-3.5" />}Fill the fields from this text
                     </Button>
                   </div>
+                )}
+                {situation.details?.original_description && (
+                  <details className="rounded-md border border-border bg-muted/30 text-xs">
+                    <summary className="cursor-pointer px-3 py-1.5 text-muted-foreground">The original description, as first written</summary>
+                    <p className="whitespace-pre-wrap border-t border-border p-3 text-foreground">{situation.details.original_description}</p>
+                  </details>
                 )}
                 <SituationFields idPrefix="fo-edit" value={fields} onChange={setFields} disabled={working} />
                 <div className="flex flex-wrap items-center gap-2">

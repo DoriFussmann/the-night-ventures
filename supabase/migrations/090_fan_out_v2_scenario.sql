@@ -4,8 +4,11 @@
 --
 -- Rollback:
 --   drop table if exists public.fo_settings;
+--   -- Archived prompts count as prompts again once archived_at is gone. Before dropping it, decide what to do with them
+--   -- (deleting an archived prompt deletes its runs). The unique constraint can only come back while no situation has
+--   -- two prompts of one type, archived ones included.
 --   alter table public.fo_prompts drop column if exists angle, drop column if exists sort, drop column if exists origin, drop column if exists archived_at;
---   alter table public.fo_prompts add constraint fo_prompts_situation_id_form_key unique (situation_id, form);  -- only while no situation has two prompts of one type
+--   alter table public.fo_prompts add constraint fo_prompts_situation_id_form_key unique (situation_id, form);
 --   alter table public.fo_situations alter column runs set default 5;
 --   alter table public.fo_situations drop column if exists version, drop column if exists who, drop column if exists trigger_event,
 --     drop column if exists goal, drop column if exists stage, drop column if exists comments, drop column if exists variant_of,
@@ -43,6 +46,7 @@ alter table public.fo_settings enable row level security;
 do $$
 begin
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'fo_settings') then
-    create policy "Authenticated users can manage fo_settings" on public.fo_settings for all to authenticated using (true) with check (true);
+    -- Read-only for signed-in users: these settings apply to every company. Writes go through the server.
+    create policy "Authenticated users can read fo_settings" on public.fo_settings for select to authenticated using (true);
   end if;
 end $$;

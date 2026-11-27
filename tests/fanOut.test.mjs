@@ -34,6 +34,7 @@ import {
   planRuns,
   promptIssues,
   promptLabel,
+  scrubNames,
   situationText,
   staleAfter,
   topicStats,
@@ -325,4 +326,17 @@ test('a comparison article is pushable, never chosen by rule, and its brief comp
   assert.deepEqual(b.outline.map((s) => s.heading), ['The short story', 'The options compared', 'What each option costs'])
   assert.ok(b.outline[1].points.some((p) => p.includes('OpenVC')) && !JSON.stringify(b.outline).includes('Rupert'))
   assert.ok(b.angle.includes('Named today: OpenVC.'))
+})
+
+test('brand names are scrubbed from what goes to the AI, and a prompt that names one is dropped', () => {
+  const names = ['Rupert', 'Hey Rupert', 'RivalCo']
+  assert.equal(scrubNames('Strategic ICP for Hey Rupert. Rupert sells to founders; rupert is a name. RivalCo too.', names), 'Strategic ICP for the company. the company sells to founders; rupert is a name. the company too.')
+  const persona = { knowledge_level: 'novice', what_matters: ['speed'], vocabulary: ['investors'] }
+  const situation = { who: 'Founder who heard of Rupert', trigger_event: 'RivalCo raised prices', goal: 'Raise a seed round', stage: 'comparing', direction: 'recommend', comments: 'Rupert user' }
+  const a = buildPromptsPrompt({ situation, persona, icpShort: 'Rupert sells to founders', names })
+  const b = buildPersonaPrompt({ situation, icpMd: '# ICP: Rupert\nRupert sells to founders.\n## Ideal Customer\nFounders', names })
+  for (const req of [a, b]) assert.ok(!/Rupert|RivalCo/.test(req), req)
+  const out = parsePrompts('[{"type":"short","angle":"a","text":"Is Rupert good?"},{"type":"short","angle":"b","text":"Who helps founders raise?"}]', { names })
+  assert.deepEqual(out.map((p) => p.prompt), ['Who helps founders raise?'])
+  assert.equal(parsePrompts('Note {x}: [{"type":"short","angle":"a","text":"hi"}]').length, 1)
 })
