@@ -1,36 +1,46 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Check, ChevronDown, ChevronRight, Loader2, Play, Plus, RefreshCw, Send, Square, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, ChevronRight, Loader2, Lock, Play, Plus, RefreshCw, Send, Sparkles, Square, Trash2, Unlock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
   ACTIONS,
   DIRECTIONS,
   FORM_LABELS,
+  KNOWLEDGE_LEVELS,
   LIST_TYPES,
   PROMPT_MAX,
   PUSHABLE,
+  STAGES,
   STEPS,
   STEP_LABELS,
+  TYPE_ORDER,
+  isPersona,
   isWeak,
   listsToGetOn,
+  missingFields,
   planRuns,
   promptIssues,
+  promptLabel,
   staleAfter,
 } from "../../../lib/fan-out/core.js";
 import {
+  addPrompt,
   buildPersona,
   buildTopics,
+  checkSituation,
   createSituation,
-  deletePrompt,
   deleteSituation,
   listSituations,
   loadContentMap,
   loadRunDetail,
   loadSituation,
   pushTopics,
+  removePrompt,
   runStep,
-  savePrompt,
+  savePromptText,
+  situationRow,
+  structureText,
   updateSituation,
   updateTopic,
   writePrompts,
@@ -257,20 +267,168 @@ function TopicCard({ topic, okRuns, map, busy, onChange }) {
   );
 }
 
+
+const EMPTY_FIELDS = { who: "", trigger_event: "", goal: "", stage: "", direction: "recommend", comments: "" };
+const fieldsOf = (s) => ({ who: s?.who || "", trigger_event: s?.trigger_event || "", goal: s?.goal || "", stage: s?.stage || "", direction: s?.direction || "recommend", comments: s?.comments || "" });
+const sameFields = (a, b) => Object.keys(EMPTY_FIELDS).every((k) => String(a[k] || "").trim() === String(b[k] || "").trim());
+const lines = (text, max) => [...new Set(String(text || "").split(/\n|;/).map((l) => l.replace(/^[-*]\s*/, "").trim()).filter(Boolean))].slice(0, max);
+const day = (iso) => (iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "");
+
+/** The Situation fields of step 1: Who, Trigger, Goal, Stage, Direction, Additional comments. */
+function SituationFields({ value, onChange, disabled, idPrefix }) {
+  const set = (k) => (e) => onChange({ ...value, [k]: e.target.value });
+  const text = [
+    ["who", "Who", "Role and context. For example: founder and CEO of a three-person B2B SaaS, two years in."],
+    ["trigger_event", "Trigger", "What just happened, or what is forcing action now."],
+    ["goal", "Goal", "What they are trying to get done."],
+  ];
+  const dir = DIRECTIONS[value.direction] || DIRECTIONS.recommend;
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-3 md:grid-cols-3">
+        {text.map(([key, label, hint]) => (
+          <div key={key}>
+            <label className="text-xs font-medium text-foreground" htmlFor={`${idPrefix}-${key}`}>{label}</label>
+            <Textarea id={`${idPrefix}-${key}`} className="mt-1 min-h-[84px]" value={value[key]} disabled={disabled} placeholder={hint} onChange={set(key)} />
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs">
+        <label className="font-medium text-foreground" htmlFor={`${idPrefix}-stage`}>Stage</label>
+        <select id={`${idPrefix}-stage`} className={inputClass} value={value.stage} disabled={disabled} onChange={set("stage")}>
+          <option value="">Choose…</option>
+          {Object.entries(STAGES).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+        </select>
+        <label className="font-medium text-foreground" htmlFor={`${idPrefix}-direction`}>Direction</label>
+        <select id={`${idPrefix}-direction`} className={inputClass} value={value.direction} disabled={disabled} onChange={set("direction")}>
+          {Object.entries(DIRECTIONS).map(([k, d]) => <option key={k} value={k}>{d.label}</option>)}
+        </select>
+        <span className="min-w-0 basis-full text-muted-foreground lg:flex-1 lg:basis-0">{dir.hint}</span>
+      </div>
+      <div>
+        <label className="text-xs font-medium text-foreground" htmlFor={`${idPrefix}-comments`}>Additional comments <span className="font-normal text-muted-foreground">· optional; passed as extra context to the persona and the prompts</span></label>
+        <Textarea id={`${idPrefix}-comments`} className="mt-1 min-h-[56px]" value={value.comments} disabled={disabled} onChange={set("comments")} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Step 1 for a new Scenario: fill the fields (or paste free text and let the AI sort it), get a name
+ * and the overlap check against the bank, then choose: open the existing one, save as a variant, or create new.
+ */
+function NewSituation({ companyId, situations, working, guard, busy, onCreated, onOpen }) {
+  const [text, setText] = useState("");
+  const [fields, setFields] = useState(EMPTY_FIELDS);
+  const [missing, setMissing] = useState(null);
+  const [checked, setChecked] = useState(null); // { name, matches, fields }: the check, and the fields it was made for
+  const [name, setName] = useState("");
+  const [choice, setChoice] = useState("new"); // "new", or the id of the Situation this one is a variant of
+  const current = checked && sameFields(checked.fields, fields) ? checked : null;
+  const gaps = missingFields(fields);
+
+  const structure = () => guard("structure", async () => {
+    const out = await structureText(companyId, text);
+    setFields({ ...EMPTY_FIELDS, ...out.fields });
+    setMissing(out.missing);
+    setChecked(null);
+  });
+
+  const check = () => guard("check", async () => {
+    const out = await checkSituation(companyId, fields);
+    setChecked({ ...out, fields });
+    setName(out.name);
+    setChoice("new");
+  });
+
+  const save = () => guard("create", async () => {
+    if (!name.trim()) throw new Error("Give the Situation a name first.");
+    const row = await createSituation(companyId, { fields, title: name, variantOf: choice === "new" ? "" : choice }, situations);
+    onCreated(row);
+  });
+
+  const same = current?.matches.find((m) => m.match === "same");
+  return (
+    <div className="space-y-4">
+      <div className="rounded-md border border-dashed border-border p-3">
+        <label className="text-xs font-medium text-foreground" htmlFor="fo-free">Describe it in your own words <span className="font-normal text-muted-foreground">· optional; the AI sorts it into the fields below and flags what is missing</span></label>
+        <Textarea id="fo-free" className="mt-1 min-h-[72px]" value={text} disabled={working} onChange={(e) => setText(e.target.value)} placeholder="For example: a founder and CEO of a three-person B2B SaaS has spent three weeks on cold outreach to investors with no replies, and wants to raise a seed round. She is comparing ways to get in front of investors." />
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <Button type="button" size="sm" variant="outline" disabled={working || text.trim().length < 20} onClick={structure}>
+            {busy === "structure" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1.5 h-3.5 w-3.5" />}Fill the fields from this
+          </Button>
+          {missing && missing.length > 0 && <span className="text-xs text-amber-800">Your text does not say: {missing.join(", ")}. Fill {missing.length === 1 ? "it" : "them"} in below.</span>}
+          {missing && missing.length === 0 && <span className="text-xs text-emerald-800">All fields filled. Review them below.</span>}
+        </div>
+      </div>
+
+      <SituationFields idPrefix="fo-new" value={fields} onChange={setFields} disabled={working} />
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="button" size="sm" variant={current ? "outline" : "default"} disabled={working || gaps.length > 0} onClick={check}>
+          {busy === "check" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Check className="mr-1.5 h-3.5 w-3.5" />}{current ? "Check again" : "Name it and check for overlap"}
+        </Button>
+        {gaps.length > 0 && <span className="text-xs text-muted-foreground">Still to fill: {gaps.join(", ")}.</span>}
+        {checked && !current && <span className="text-xs text-amber-800">The fields changed since the check. Check again.</span>}
+      </div>
+
+      {current && (
+        <div className="space-y-3 rounded-md border border-border p-3">
+          <div>
+            <label className="text-xs font-medium text-foreground" htmlFor="fo-name">Name <span className="font-normal text-muted-foreground">· suggested; edit or accept</span></label>
+            <input id="fo-name" className={`${inputClass} mt-1 h-9 w-full text-sm`} value={name} disabled={working} onChange={(e) => setName(e.target.value)} />
+          </div>
+          {current.matches.length === 0 ? (
+            <p className="text-xs text-emerald-800">Distinct: nothing in this company&apos;s Situation bank has the same goal.</p>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-foreground">Similar Situations in the bank</p>
+              {current.matches.map((m) => (
+                <div key={m.id} className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-2 text-xs">
+                  <Chip tone={m.match === "same" ? "border-amber-300 bg-amber-50 text-amber-800" : "border-sky-300 bg-sky-50 text-sky-800"}>{m.match === "same" ? "Same" : "Variant"}</Chip>
+                  <span className="font-medium text-foreground">{m.code} · {m.title || "(no name)"}</span>
+                  <span className="min-w-0 basis-full text-muted-foreground md:flex-1 md:basis-0">{m.why}</span>
+                  <Button type="button" size="sm" variant="outline" disabled={working} onClick={() => onOpen(m.id)}>Use this one</Button>
+                </div>
+              ))}
+              {same && <p className="text-xs text-amber-800">{same.code} has the same trigger, goal and stage. Use it instead of creating a second one: running it again is how you check an existing Scenario.</p>}
+              <fieldset className="space-y-1 text-xs">
+                <legend className="font-medium text-foreground">Or save this one</legend>
+                {current.matches.map((m) => (
+                  <label key={m.id} className="flex items-center gap-2">
+                    <input type="radio" name="fo-choice" checked={choice === m.id} disabled={working} onChange={() => setChoice(m.id)} /> As a variant of {m.code}, linked to it
+                  </label>
+                ))}
+                <label className="flex items-center gap-2">
+                  <input type="radio" name="fo-choice" checked={choice === "new"} disabled={working} onChange={() => setChoice("new")} /> As a new Situation
+                </label>
+              </fieldset>
+            </div>
+          )}
+          <Button type="button" size="sm" disabled={working || !name.trim()} onClick={save}>
+            {busy === "create" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Plus className="mr-1.5 h-3.5 w-3.5" />}{choice === "new" ? "Save to the bank" : "Save as a variant"}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function FanOut() {
   const { companyId } = useParams();
   const [params, setParams] = useSearchParams();
   const currentId = params.get("s") || "";
   const [situations, setSituations] = useState([]);
-  const [map, setMap] = useState({ pillars: [], groups: [], ownNames: [], brands: [] });
+  const [map, setMap] = useState({ pillars: [], groups: [], ownNames: [], allNames: [], brands: [] });
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
-  const [draft, setDraft] = useState("");
-  const [desc, setDesc] = useState("");
-  const [personaEdit, setPersonaEdit] = useState({});
+  const [fields, setFields] = useState(EMPTY_FIELDS);
+  const [title, setTitle] = useState("");
+  const [personaEdit, setPersonaEdit] = useState({ knowledge_level: "informed", what_matters: "", vocabulary: "" });
   const [promptEdit, setPromptEdit] = useState({});
+  const [adding, setAdding] = useState(null); // { form, text }: the user's own prompt being written
   const [progress, setProgress] = useState("");
   const [pushNotes, setPushNotes] = useState([]);
   const stopRef = useRef(false);
@@ -300,15 +458,22 @@ export default function FanOut() {
     return () => { live = false; };
   }, [companyId]);
 
+  const show = useCallback((loaded) => {
+    setData(loaded);
+    setFields(fieldsOf(loaded.situation));
+    setTitle(loaded.situation.title || "");
+    const p = loaded.situation.persona || {};
+    setPersonaEdit({ knowledge_level: p.knowledge_level || "informed", what_matters: (p.what_matters || []).join("\n"), vocabulary: (p.vocabulary || []).join("\n") });
+    setPromptEdit({});
+    setAdding(null);
+  }, []);
+
   const open = useCallback(async (id) => {
     if (!id) return setData(null);
     const loaded = await loadSituation(id);
     if (!loaded.situation) return setData(null);
-    setData(loaded);
-    setDesc(loaded.situation.description);
-    setPersonaEdit(loaded.situation.persona || {});
-    setPromptEdit(Object.fromEntries(loaded.prompts.map((p) => [p.form, p.prompt])));
-  }, []);
+    show(loaded);
+  }, [show]);
 
   useEffect(() => {
     setPushNotes([]);
@@ -316,11 +481,16 @@ export default function FanOut() {
   }, [currentId, open]);
 
   const situation = data?.situation || null;
-  const prompts = useMemo(() => [...(data?.prompts || [])].sort((a, b) => ["medium", "short", "long"].indexOf(a.form) - ["medium", "short", "long"].indexOf(b.form)), [data]);
+  const prompts = useMemo(() => data?.prompts || [], [data]);
   const runs = useMemo(() => data?.runs || [], [data]);
   const topics = useMemo(() => data?.topics || [], [data]);
   const okRuns = runs.filter((r) => r.status === "ok").length;
-  const has = useMemo(() => ({ persona: Boolean(situation?.persona?.who), prompts: prompts.length > 0, run: runs.length > 0, topics: topics.length > 0, push: topics.length > 0 }), [situation, prompts, runs, topics]);
+  const persona = situation?.persona || {};
+  const newPersona = isPersona(persona);
+  const oldPersona = !newPersona && Boolean(persona.who);
+  const gaps = situation ? missingFields(situation) : [];
+  const frozen = Boolean(situation?.prompts_confirmed_at);
+  const has = useMemo(() => ({ persona: newPersona || oldPersona, prompts: prompts.length > 0, run: runs.length > 0, topics: topics.length > 0, push: topics.length > 0 }), [newPersona, oldPersona, prompts, runs, topics]);
 
   const states = useMemo(() => {
     const done = {
@@ -348,12 +518,15 @@ export default function FanOut() {
   // step (to read its result) and the one after it. Everything the user has moved past is folded.
   const openByDefault = useMemo(() => {
     const firstStale = STEPS.find((s) => states[s] === "stale");
-    if (firstStale) return new Set([firstStale]);
-    const out = new Set(STEPS.filter((s) => states[s] === "current"));
+    const todo = new Set();
+    if (gaps.length) todo.add("describe"); // saved before the fields existed: they are the thing to fill
+    if (newPersona && !situation?.persona_confirmed_at) todo.add("persona"); // written, waiting for approval
+    if (firstStale) return todo.add(firstStale);
+    const out = new Set([...todo, ...STEPS.filter((s) => states[s] === "current")]);
     const done = STEPS.filter((s) => states[s] === "done");
     if (done.length) out.add(done[done.length - 1]);
     return out;
-  }, [states]);
+  }, [states, gaps.length, newPersona, situation?.persona_confirmed_at]);
   const defaultKey = `${situation?.id || ""}|${[...openByDefault].join(",")}`;
   useEffect(() => setFolds({}), [defaultKey]);
   const isOpen = (step) => folds[step] ?? openByDefault.has(step);
@@ -367,68 +540,123 @@ export default function FanOut() {
     return next;
   };
 
-  const create = () => guard("create", async () => {
-    if (draft.trim().length < 20) throw new Error("Describe the situation in a sentence or two first.");
-    const row = await createSituation(companyId, draft, situations);
-    setDraft("");
-    await reloadList();
-    setParams({ s: row.id });
+  /* Step 1: the Situation */
+  const fieldsDirty = Boolean(situation) && (!sameFields(fields, fieldsOf(situation)) || title.trim() !== (situation.title || ""));
+  const fieldGaps = missingFields(fields);
+
+  const fillFromDescription = () => guard("structure", async () => {
+    const out = await structureText(companyId, situation.description);
+    setFields({ ...EMPTY_FIELDS, ...out.fields });
   });
 
-  const saveDescription = () => guard("describe", async () => {
-    if (desc.trim() === situation.description) return;
-    await patchSituation({ description: desc.trim(), stale_from: staleAfter("describe", { ...has, persona: has.persona }) });
+  const saveFields = () => guard("describe", async () => {
+    if (fieldGaps.length) throw new Error(`Still to fill: ${fieldGaps.join(", ")}.`);
+    const before = fieldsOf(situation);
+    const onlyDirection = sameFields({ ...fields, direction: before.direction }, before);
+    const changed = !sameFields(fields, before);
+    // A changed Situation makes the persona out of date; a changed Direction only the prompts.
+    const stale = !changed ? situation.stale_from : onlyDirection ? (has.prompts ? "prompts" : situation.stale_from) : staleAfter("describe", has);
+    await patchSituation({
+      ...situationRow(fields),
+      title: title.trim().slice(0, 120),
+      version: 2,
+      // The user's own words from before the fields existed are kept.
+      ...(Number(situation.version) < 2 && !situation.details?.original_description ? { details: { ...(situation.details || {}), original_description: situation.description } } : {}),
+      stale_from: stale,
+      ...(changed ? { prompts_confirmed_at: null } : {}),
+      ...(changed && !onlyDirection ? { persona_confirmed_at: null } : {}),
+    });
     await reloadList();
   });
 
+  // Runs stay stored when what produced them changes, but they stop counting: say so before it happens.
+  const okToReset = (what) => runs.length === 0 || window.confirm(`${what} The runs you already have stay stored, but they no longer count: the next Run is a new Baseline. Go on?`);
+
+  /* Step 2: the Persona */
   const doPersona = () => guard("persona", async () => {
-    if (desc.trim() !== situation.description) await patchSituation({ description: desc.trim() });
+    if (has.prompts && !okToReset("Writing the persona again makes the prompts out of date.")) return;
     const out = await buildPersona(companyId, situation.id);
-    setData((d) => ({ ...d, situation: out.situation }));
-    setPersonaEdit(out.situation.persona || {});
-    await reloadList();
+    show({ ...data, situation: out.situation });
   });
 
-  const savePersonaField = (key) => guard("persona-edit", async () => {
-    const value = String(personaEdit[key] || "").trim();
-    if (value === String(situation.persona?.[key] || "")) return;
-    const persona = { ...situation.persona, [key]: value, ...(key === "location" ? { location_assumed: false } : {}) };
-    await patchSituation({ persona, stale_from: staleAfter("persona", has) || situation.stale_from });
+  const personaDirty = newPersona && (personaEdit.knowledge_level !== persona.knowledge_level || lines(personaEdit.what_matters, 3).join("|") !== (persona.what_matters || []).join("|") || lines(personaEdit.vocabulary, 5).join("|") !== (persona.vocabulary || []).join("|"));
+
+  const savePersona = (approve) => guard("persona-edit", async () => {
+    const next = { ...persona, knowledge_level: personaEdit.knowledge_level, what_matters: lines(personaEdit.what_matters, 3), vocabulary: lines(personaEdit.vocabulary, 5) };
+    const named = [...next.what_matters, ...next.vocabulary].filter((x) => promptIssues(x, map.allNames).block.length);
+    if (named.length) throw new Error(`The persona is brand-blind: it does not know any company exists. Remove: ${named.join(", ")}.`);
+    if (personaDirty && has.prompts && !okToReset("Changing the persona makes the prompts out of date.")) return;
+    await patchSituation({
+      persona: next,
+      persona_confirmed_at: approve ? new Date().toISOString() : situation.persona_confirmed_at,
+      // Prompts written from the old persona are out of date.
+      ...(personaDirty ? { stale_from: staleAfter("persona", has) || situation.stale_from, prompts_confirmed_at: null } : situation.stale_from === "persona" ? { stale_from: staleAfter("persona", has) } : {}),
+    });
   });
 
-  const changeDirection = (direction) => guard("prompt-edit", async () => {
-    // The prompts on the page were written for the old direction: mark them, and everything after, out of date.
-    await patchSituation({ direction, stale_from: has.prompts ? "prompts" : situation.stale_from });
-  });
+  /* Step 3: the prompts */
+  const textOf = (p) => promptEdit[p.id] ?? p.prompt;
+  const issues = useMemo(() => Object.fromEntries(prompts.map((p) => [p.id, promptIssues(promptEdit[p.id] ?? p.prompt, map.allNames)])), [prompts, promptEdit, map.allNames]);
+  const blocked = prompts.some((p) => issues[p.id]?.block.length);
+  const unsaved = prompts.some((p) => textOf(p).trim() !== p.prompt);
+  const promptsHaveRuns = runs.length > 0;
 
   const doPrompts = () => guard("prompts", async () => {
-    const out = await writePrompts(companyId, situation.id);
-    const long = prompts.filter((p) => p.form === "long");
-    setData((d) => ({ ...d, situation: out.situation, prompts: [...out.prompts, ...long] }));
-    setPromptEdit((e) => ({ ...e, ...Object.fromEntries(out.prompts.map((p) => [p.form, p.prompt])) }));
-  });
-
-  const savePromptText = (form) => guard("prompt-edit", async () => {
-    const text = String(promptEdit[form] || "").trim();
-    const existing = prompts.find((p) => p.form === form);
-    if (!text || text === existing?.prompt) return;
-    if (text.length > PROMPT_MAX) throw new Error(`The ${form} prompt is ${text.length} characters; the engine takes ${PROMPT_MAX} at most.`);
-    const row = await savePrompt(situation, form, text);
-    const next = await updateSituation(situation.id, { stale_from: staleAfter("prompts", has) || situation.stale_from });
-    setData((d) => ({ ...d, situation: next, prompts: [...d.prompts.filter((p) => p.form !== form), row] }));
-  });
-
-  const removeLong = () => guard("prompt-edit", async () => {
-    const row = prompts.find((p) => p.form === "long");
-    if (row) await deletePrompt(row.id);
-    setPromptEdit((e) => ({ ...e, long: undefined }));
+    if (!okToReset("Writing the prompts again replaces them.")) return;
+    await writePrompts(companyId, situation.id);
     await open(situation.id);
   });
 
-  const issues = useMemo(() => Object.fromEntries(prompts.map((p) => [p.form, promptIssues(promptEdit[p.form] ?? p.prompt, map.ownNames)])), [prompts, promptEdit, map.ownNames]);
-  const blocked = prompts.some((p) => issues[p.form]?.block.length);
-  const unsaved = prompts.some((p) => (promptEdit[p.form] ?? p.prompt).trim() !== p.prompt);
-  const plan = useMemo(() => planRuns(prompts, situation?.runs || 5, runs), [prompts, situation, runs]);
+  const hasRunsOf = (p) => runs.some((r) => r.prompt_id === p.id);
+  const okToReplace = (p, what) => !hasRunsOf(p) || window.confirm(`${promptLabel(p, prompts)} already has runs. ${what} Its runs stay stored, but they no longer count for this Scenario. Go on?`);
+
+  const redoPrompt = (p) => guard(`prompt-${p.id}`, async () => {
+    if (!okToReplace(p, "Regenerating replaces it.")) return;
+    await writePrompts(companyId, situation.id, p.id);
+    await open(situation.id);
+  });
+
+  const savePromptEdit = (p) => guard("prompt-edit", async () => {
+    const text = textOf(p).trim();
+    const revert = () => setPromptEdit((s) => ({ ...s, [p.id]: undefined }));
+    if (!text) return revert(); // an emptied box goes back to the saved prompt; Delete removes one
+    if (text === p.prompt) return;
+    if (!okToReplace(p, "A new wording replaces it.")) return revert();
+    if (text.length > PROMPT_MAX) throw new Error(`${promptLabel(p, prompts)} is ${text.length.toLocaleString("en-US")} characters; the engine takes ${PROMPT_MAX.toLocaleString("en-US")} at most.`);
+    await savePromptText(p, text);
+    await updateSituation(situation.id, { stale_from: staleAfter("prompts", has) || situation.stale_from });
+    await open(situation.id);
+  });
+
+  const dropPrompt = (p) => guard("prompt-edit", async () => {
+    if (!okToReplace(p, "Deleting takes it out of the Scenario.")) return;
+    await removePrompt(p);
+    await updateSituation(situation.id, { stale_from: staleAfter("prompts", has) || situation.stale_from });
+    await open(situation.id);
+  });
+
+  const saveOwnPrompt = () => guard("prompt-edit", async () => {
+    const text = String(adding?.text || "").trim();
+    const found = promptIssues(text, map.allNames);
+    if (found.block.length) throw new Error(found.block[0]);
+    const same = prompts.filter((p) => p.form === adding.form);
+    await addPrompt(situation, adding.form, text, same.reduce((m, p) => Math.max(m, (p.sort || 0) + 1), 0));
+    await updateSituation(situation.id, { stale_from: staleAfter("prompts", has) || situation.stale_from });
+    await open(situation.id);
+  });
+
+  const confirmPrompts = () => guard("prompt-edit", async () => {
+    await patchSituation({ prompts_confirmed_at: new Date().toISOString(), stale_from: situation.stale_from === "prompts" ? staleAfter("prompts", has) : situation.stale_from });
+  });
+
+  const unlockPrompts = () => guard("prompt-edit", async () => {
+    if (promptsHaveRuns && !window.confirm("The prompts are frozen so that every Run asks the same thing. If you edit them, the comparison resets and the next Run is a new Baseline. Unlock?")) return;
+    await patchSituation({ prompts_confirmed_at: null });
+  });
+
+  /* Step 4: the Run */
+  const needsConfirm = Number(situation?.version) >= 2 && !frozen;
+  const plan = useMemo(() => planRuns(prompts, situation?.runs || 7, runs), [prompts, situation, runs]);
   const callsLeft = plan.reduce((a, s) => a + s.length, 0);
 
   const doRun = (again = false) => guard("run", async () => {
@@ -438,7 +666,7 @@ export default function FanOut() {
     let done = 0;
     for (const calls of steps) {
       if (stopRef.current) break;
-      setProgress(`Run ${calls[0].runNo} of ${situation.runs}: asking ChatGPT (${done} of ${total} captures done). A capture takes 15 to 100 seconds. Keep this tab open.`);
+      setProgress(`Asking ChatGPT: ${done} of ${total} captures done (run ${calls[0].runNo} of ${situation.runs}). A capture takes 35 to 60 seconds and ${calls.length} run at a time. Keep this tab open.`);
       const out = await runStep(companyId, situation.id, calls, again);
       if (out.capReached) throw new Error(`The monthly cap is reached: $${Number(out.monthSpent).toFixed(2)} of $${Number(out.cap).toFixed(2)} spent. Raise it in AEO Playbook › Prompt Tests.`);
       done += calls.length;
@@ -472,16 +700,21 @@ export default function FanOut() {
   });
 
   const remove = () => guard("delete", async () => {
-    if (topics.some((t) => t.status === "pushed")) throw new Error("This situation has pushed topics. Its briefs stay in AEO Generation; the situation is kept as their record.");
-    if (!window.confirm(`Delete situation ${situation.code} with its prompts, runs and topics?`)) return;
+    if (topics.some((t) => t.status === "pushed")) throw new Error("This Scenario has pushed topics. Its briefs stay in AEO Generation; the Scenario is kept as their record.");
+    if (!window.confirm(`Delete ${situation.code} with its prompts, runs and topics?`)) return;
     await deleteSituation(situation.id);
     setParams({});
     await reloadList();
   });
 
-  const byForm = (form) => runs.filter((r) => r.prompt_id === prompts.find((p) => p.form === form)?.id);
+  const runsOf = (p) => runs.filter((r) => r.prompt_id === p.id);
   const spent = runs.reduce((a, r) => a + Number(r.cost || 0), 0);
   const working = Boolean(busy);
+  const captures = prompts.length * (situation?.runs || 0);
+  // Captures run four at a time, one run number after another: 9 prompts are 3 steps per run number.
+  const minutes = (seconds) => Math.max(1, Math.round(((situation?.runs || 0) * Math.ceil(prompts.length / 4) * seconds) / 60));
+  const variantOf = situation?.variant_of ? situations.find((s) => s.id === situation.variant_of) : null;
+  const nameOf = (s) => `${s.code} · ${s.title || s.description.slice(0, 70)}`;
 
   return (
     <div className="space-y-5">
@@ -494,8 +727,8 @@ export default function FanOut() {
           <span className="rounded border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-emerald-800">New</span>
         </h1>
         <p className="mt-0.5 max-w-3xl text-sm text-muted-foreground">
-          Describe one person&apos;s situation. The engine writes what they would ask ChatGPT, runs it on real ChatGPT, reads the web searches ChatGPT
-          makes while answering (its fan-out), and turns them into topics you can push to AEO Generation.
+          A specific person, at a specific moment, typing into ChatGPT. The engine writes their prompts, runs them on real ChatGPT, and records whether the
+          brand is named and which web searches ChatGPT runs while answering (its fan-out).
         </p>
       </div>
 
@@ -507,18 +740,20 @@ export default function FanOut() {
         <>
           <section className="space-y-3 rounded-lg border border-border bg-card p-4">
             <div className="flex flex-wrap items-center gap-2">
-              <label className="text-xs text-muted-foreground" htmlFor="fo-pick">Situation</label>
+              <label className="text-xs text-muted-foreground" htmlFor="fo-pick">Scenario</label>
               <select id="fo-pick" className={`${inputClass} w-full min-w-0 sm:w-auto sm:flex-1`} value={currentId} onChange={(e) => setParams(e.target.value ? { s: e.target.value } : {})}>
-                <option value="">New situation…</option>
-                {situations.map((s) => <option key={s.id} value={s.id}>{s.code} · {s.title || s.description.slice(0, 70)}</option>)}
+                <option value="">New Scenario…</option>
+                {situations.map((s) => <option key={s.id} value={s.id}>{nameOf(s)}</option>)}
               </select>
               {situation && <Button type="button" size="sm" variant="ghost" disabled={working} onClick={remove}><Trash2 className="mr-1.5 h-3.5 w-3.5" />Delete</Button>}
             </div>
             {!situation && (
-              <div className="space-y-2">
-                <Textarea className="min-h-[110px]" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Describe one person at one moment, in your own words. For example: a founder and CEO of a bootstrapped one-person SaaS, two years in, barely breaking even, exhausted, starting to think about raising money." />
-                <Button type="button" size="sm" disabled={working} onClick={create}><Plus className="mr-1.5 h-3.5 w-3.5" />Start this situation</Button>
-              </div>
+              <>
+                <p className="text-xs text-muted-foreground">
+                  {situations.length ? "Pick a Scenario above to check it again, or define a new Situation here. One Situation per Scenario: to compare Situations, create another Scenario." : "Define the Situation: the moment that makes this person open ChatGPT."}
+                </p>
+                <NewSituation companyId={companyId} situations={situations} working={working} busy={busy} guard={guard} onOpen={(id) => setParams({ s: id })} onCreated={async (row) => { await reloadList(); setParams({ s: row.id }); }} />
+              </>
             )}
           </section>
 
@@ -526,96 +761,170 @@ export default function FanOut() {
             <>
               <Tracker states={states} onOpen={openStep} />
 
-              <Panel {...panel("describe")} summary={situation.description} did={`${situation.code}: the situation in your words. Everything below is built from it.`}>
-                <Textarea className="min-h-[90px]" value={desc} onChange={(e) => setDesc(e.target.value)} onBlur={saveDescription} disabled={working} />
+              <Panel {...panel("describe")} summary={[situation.title, STAGES[situation.stage], (DIRECTIONS[situation.direction] || DIRECTIONS.recommend).label].filter(Boolean).join(" · ") || situation.description} did={`${situation.code}: the moment that makes this person open ChatGPT. The persona and the prompts are built from it.`}>
+                <div>
+                  <label className="text-xs font-medium text-foreground" htmlFor="fo-title">Name</label>
+                  <input id="fo-title" className={`${inputClass} mt-1 h-9 w-full text-sm`} value={title} disabled={working} onChange={(e) => setTitle(e.target.value)} />
+                </div>
+                {variantOf && <p className="text-xs text-muted-foreground"><Chip tone="border-sky-300 bg-sky-50 text-sky-800">Variant</Chip> of <button type="button" className="underline underline-offset-2" onClick={() => setParams({ s: variantOf.id })}>{nameOf(variantOf)}</button>: the same goal, with a different trigger or stage.</p>}
+                {gaps.length > 0 && (
+                  <div className="space-y-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                    <p>This Situation was saved as free text, before the fields below existed. Fill them in to write a persona and prompts for it. Its runs and topics are kept as they are.</p>
+                    <p className="whitespace-pre-wrap text-foreground">{situation.description}</p>
+                    <Button type="button" size="sm" variant="outline" disabled={working} onClick={fillFromDescription}>
+                      {busy === "structure" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1.5 h-3.5 w-3.5" />}Fill the fields from this text
+                    </Button>
+                  </div>
+                )}
+                {situation.details?.original_description && (
+                  <details className="rounded-md border border-border bg-muted/30 text-xs">
+                    <summary className="cursor-pointer px-3 py-1.5 text-muted-foreground">The original description, as first written</summary>
+                    <p className="whitespace-pre-wrap border-t border-border p-3 text-foreground">{situation.details.original_description}</p>
+                  </details>
+                )}
+                <SituationFields idPrefix="fo-edit" value={fields} onChange={setFields} disabled={working} />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button type="button" size="sm" variant={fieldsDirty ? "default" : "outline"} disabled={working || !fieldsDirty || fieldGaps.length > 0} onClick={saveFields}>
+                    {busy === "describe" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Check className="mr-1.5 h-3.5 w-3.5" />}Save the Situation
+                  </Button>
+                  {fieldsDirty && fieldGaps.length > 0 && <span className="text-xs text-muted-foreground">Still to fill: {fieldGaps.join(", ")}.</span>}
+                  {fieldsDirty && fieldGaps.length === 0 && has.persona && <span className="text-xs text-amber-800">Saving a changed Situation marks the persona, and everything after it, out of date.</span>}
+                </div>
               </Panel>
 
-              <Panel {...panel("persona")} summary={has.persona ? [situation.title, situation.persona.location, situation.situation_id && `buyer situation ${situation.situation_id}`].filter(Boolean).join(" · ") : ""} details={situation.details?.persona} did={has.persona ? "Claude built this person from your description and the company's ICP." : "Claude will read your description with the company's ICP and build the person."}>
-                {has.persona && (
+              <Panel {...panel("persona")} summary={newPersona ? [`Knowledge: ${persona.knowledge_level}`, (persona.vocabulary || []).slice(0, 3).join(", "), situation.persona_confirmed_at ? "approved" : "not approved yet"].filter(Boolean).join(" · ") : oldPersona ? "Written before the three-field persona" : ""} details={situation.details?.persona} did={newPersona ? "Three fields, inferred from the ICP and the Situation. Written once, then reused on every Run." : "The AI will infer three fields from the ICP and the Situation: knowledge level, what matters, vocabulary."}>
+                {oldPersona && (
+                  <div className="space-y-1 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                    <p>This persona was written in the earlier format. Write it again to get the three fields the prompts are built from.</p>
+                    {PERSONA_FIELDS.map(([key, label]) => persona[key] && <p key={key} className="text-foreground"><span className="font-medium">{label}:</span> {persona[key]}</p>)}
+                  </div>
+                )}
+                {newPersona && (
                   <>
-                    <p className="text-sm font-medium text-foreground">{situation.title}</p>
-                    <div className="grid gap-3 md:grid-cols-2">
-                      {PERSONA_FIELDS.map(([key, label]) => (
-                        <div key={key}>
-                          <label className="text-xs font-medium text-foreground">{label}{key === "location" && situation.persona.location_assumed ? " (assumed: your description names no place)" : ""}</label>
-                          <Textarea className="mt-1 min-h-[64px]" value={personaEdit[key] || ""} disabled={working} onChange={(e) => setPersonaEdit((p) => ({ ...p, [key]: e.target.value }))} onBlur={() => savePersonaField(key)} />
-                        </div>
-                      ))}
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <div>
+                        <label className="text-xs font-medium text-foreground" htmlFor="fo-level">Knowledge level</label>
+                        <select id="fo-level" className={`${inputClass} mt-1 w-full`} value={personaEdit.knowledge_level} disabled={working} onChange={(e) => setPersonaEdit((p) => ({ ...p, knowledge_level: e.target.value }))}>
+                          {KNOWLEDGE_LEVELS.map((k) => <option key={k} value={k}>{k.slice(0, 1).toUpperCase() + k.slice(1)}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-foreground" htmlFor="fo-matters">What matters <span className="font-normal text-muted-foreground">· 3 at most, one per line</span></label>
+                        <Textarea id="fo-matters" className="mt-1 min-h-[84px]" value={personaEdit.what_matters} disabled={working} onChange={(e) => setPersonaEdit((p) => ({ ...p, what_matters: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-foreground" htmlFor="fo-vocab">Vocabulary <span className="font-normal text-muted-foreground">· 5 terms at most, one per line</span></label>
+                        <Textarea id="fo-vocab" className="mt-1 min-h-[84px]" value={personaEdit.vocabulary} disabled={working} onChange={(e) => setPersonaEdit((p) => ({ ...p, vocabulary: e.target.value }))} />
+                      </div>
                     </div>
-                    <div className="flex flex-wrap gap-2 text-xs">
-                      {situation.situation_id ? <Chip>Buyer situation {situation.situation_id}</Chip> : <Chip>No buyer situation matched</Chip>}
-                      {situation.fit_note && <span className="text-muted-foreground">{situation.fit_note}</span>}
-                    </div>
-                    {situation.persona.has_icp === false && <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">This company has no ICP on file, so the person was built from your description alone.</p>}
-                    {situation.persona.outside_icp && <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">Outside the ICP: this is not a buyer the ICP describes. You can go on.</p>}
-                    {situation.persona.duplicate_of && <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">Close to situation {situation.persona.duplicate_of}, which you already ran. You can go on.</p>}
+                    <p className="text-xs text-muted-foreground">Brand-blind: this person does not know the company exists. No company or product names here.</p>
+                    {persona.has_icp === false && <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">This company has no ICP on file, so the persona was inferred from the Situation alone.</p>}
                   </>
                 )}
-                <Button type="button" size="sm" variant={has.persona ? "outline" : "default"} disabled={working} onClick={doPersona}>
-                  {busy === "persona" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}{has.persona ? "Build again" : "Build the persona"}
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {newPersona && (
+                    <Button type="button" size="sm" variant={situation.persona_confirmed_at && !personaDirty ? "outline" : "default"} disabled={working || (Boolean(situation.persona_confirmed_at) && !personaDirty)} onClick={() => savePersona(true)}>
+                      <Check className="mr-1.5 h-3.5 w-3.5" />{situation.persona_confirmed_at && !personaDirty ? `Approved ${day(situation.persona_confirmed_at)}` : personaDirty ? "Save and approve" : "Approve"}
+                    </Button>
+                  )}
+                  <Button type="button" size="sm" variant={has.persona ? "outline" : "default"} disabled={working || gaps.length > 0} onClick={doPersona}>
+                    {busy === "persona" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}{newPersona ? "Regenerate" : oldPersona ? "Write the persona again" : "Write the persona"}
+                  </Button>
+                  {gaps.length > 0 && <span className="text-xs text-muted-foreground">Fill in the Situation first: {gaps.join(", ")}.</span>}
+                </div>
               </Panel>
 
-              <Panel {...panel("prompts")} summary={[(DIRECTIONS[situation.direction] || DIRECTIONS.recommend).label, ...prompts.map((p) => `${FORM_LABELS[p.form]} ${p.prompt.length.toLocaleString("en-US")} characters`)].join(" · ")} details={situation.details?.prompts} did={has.prompts ? "What this person would type to ChatGPT. Edit freely; nothing has been sent yet." : "Claude will write a medium and a short prompt in this person's voice, ending in the ask you choose."}>
-                <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <label className="font-medium text-foreground" htmlFor="fo-direction">Direction</label>
-                  <select id="fo-direction" className={inputClass} value={situation.direction || "recommend"} disabled={working} onChange={(e) => changeDirection(e.target.value)}>
-                    {Object.entries(DIRECTIONS).map(([k, d]) => <option key={k} value={k}>{d.label}</option>)}
-                  </select>
-                  <span className="min-w-0 basis-full text-muted-foreground sm:flex-1 sm:basis-0">{(DIRECTIONS[situation.direction] || DIRECTIONS.recommend).hint}</span>
-                </div>
-                {prompts.map((p) => {
-                  const text = promptEdit[p.form] ?? p.prompt;
-                  const over = text.length > PROMPT_MAX;
+              <Panel {...panel("prompts")} summary={has.prompts ? [`${prompts.length} prompts`, TYPE_ORDER.map((f) => `${prompts.filter((p) => p.form === f).length} ${FORM_LABELS[f].toLowerCase()}`).join(", "), frozen ? "frozen" : "not confirmed yet"].join(" · ") : ""} details={situation.details?.prompts} did={has.prompts ? "What this person would type into ChatGPT. Each prompt in a type takes a different angle on the same goal." : "The AI will write three Short, three Medium and three Long prompts in this person's words, each on a different angle."}>
+                {frozen && (
+                  <p className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-foreground">
+                    <Lock className="h-3.5 w-3.5" /> Frozen on {day(situation.prompts_confirmed_at)}. Every Run of this Scenario asks exactly these prompts.
+                    <button type="button" className="ml-auto text-muted-foreground underline underline-offset-2 hover:text-foreground" disabled={working} onClick={unlockPrompts}><Unlock className="mr-1 inline h-3 w-3" />Unlock to edit</button>
+                  </p>
+                )}
+                {TYPE_ORDER.map((form) => {
+                  const mine = prompts.filter((p) => p.form === form);
+                  if (!has.prompts) return null;
                   return (
-                    <div key={p.id}>
-                      <div className="flex items-baseline gap-2">
-                        <label className="text-xs font-medium text-foreground">{FORM_LABELS[p.form]}</label>
-                        <span className={`text-xs tabular-nums ${over ? "font-medium text-destructive" : "text-muted-foreground"}`}>{text.length.toLocaleString("en-US")} of {PROMPT_MAX.toLocaleString("en-US")} characters</span>
-                        {p.form === "long" && <button type="button" className="ml-auto text-xs text-muted-foreground underline underline-offset-2" onClick={removeLong}>Remove the long prompt</button>}
+                    <div key={form} className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{FORM_LABELS[form]}</p>
+                        {!frozen && <button type="button" className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground" disabled={working} onClick={() => setAdding({ form, text: "" })}>Add your own</button>}
                       </div>
-                      <Textarea className={`mt-1 ${p.form === "short" ? "min-h-[56px]" : "min-h-[150px]"}`} value={text} disabled={working} onChange={(e) => setPromptEdit((s) => ({ ...s, [p.form]: e.target.value }))} onBlur={() => savePromptText(p.form)} />
-                      {issues[p.form]?.block.map((m) => <p key={m} className="mt-1 text-xs text-destructive">{m}</p>)}
-                      {issues[p.form]?.warn.map((m) => <p key={m} className="mt-1 text-xs text-amber-800">{m}</p>)}
+                      {mine.length === 0 && <p className="text-xs text-muted-foreground">No {FORM_LABELS[form].toLowerCase()} prompt.</p>}
+                      {mine.map((p) => {
+                        const text = textOf(p);
+                        const over = text.length > PROMPT_MAX;
+                        return (
+                          <div key={p.id}>
+                            <div className="flex flex-wrap items-baseline gap-2">
+                              <label className="text-xs font-medium text-foreground" htmlFor={`fo-p-${p.id}`}>{promptLabel(p, prompts)}</label>
+                              <span className="text-xs text-muted-foreground">{p.origin === "user" ? "your own" : p.angle}</span>
+                              <span className={`text-xs tabular-nums ${over ? "font-medium text-destructive" : "text-muted-foreground"}`}>{text.length.toLocaleString("en-US")} characters</span>
+                              {!frozen && (
+                                <span className="ml-auto flex gap-3 text-xs text-muted-foreground">
+                                  {p.origin !== "user" && <button type="button" className="underline underline-offset-2 hover:text-foreground" disabled={working} onClick={() => redoPrompt(p)}>{busy === `prompt-${p.id}` ? "Writing…" : "Regenerate"}</button>}
+                                  <button type="button" className="underline underline-offset-2 hover:text-foreground" disabled={working} onClick={() => dropPrompt(p)}>Delete</button>
+                                </span>
+                              )}
+                            </div>
+                            <Textarea id={`fo-p-${p.id}`} className={`mt-1 ${form === "short" ? "min-h-[56px]" : form === "medium" ? "min-h-[96px]" : "min-h-[130px]"}`} value={text} disabled={working || frozen} onChange={(e) => setPromptEdit((s) => ({ ...s, [p.id]: e.target.value }))} onBlur={() => savePromptEdit(p)} />
+                            {issues[p.id]?.block.map((m) => <p key={m} className="mt-1 text-xs text-destructive">{m}</p>)}
+                            {issues[p.id]?.warn.map((m) => <p key={m} className="mt-1 text-xs text-amber-800">{m}</p>)}
+                          </div>
+                        );
+                      })}
+                      {adding?.form === form && (
+                        <div className="rounded-md border border-dashed border-border p-2">
+                          <Textarea className="min-h-[72px]" value={adding.text} disabled={working} placeholder="Your own prompt, in this person's words. No company or product names." onChange={(e) => setAdding({ form, text: e.target.value })} />
+                          <div className="mt-2 flex gap-2">
+                            <Button type="button" size="sm" disabled={working || !adding.text.trim()} onClick={saveOwnPrompt}>Add this prompt</Button>
+                            <Button type="button" size="sm" variant="ghost" disabled={working} onClick={() => setAdding(null)}>Cancel</Button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" size="sm" variant={has.prompts ? "outline" : "default"} disabled={working || !has.persona} onClick={doPrompts}>
-                    {busy === "prompts" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}{has.prompts ? "Write again" : "Write the prompts"}
-                  </Button>
-                  {has.prompts && !prompts.some((p) => p.form === "long") && (
-                    <Button type="button" size="sm" variant="ghost" disabled={working} onClick={() => guard("prompt-edit", async () => { await savePrompt(situation, "long", prompts.find((p) => p.form === "medium").prompt); await open(situation.id); })}>
-                      <Plus className="mr-1.5 h-3.5 w-3.5" />Add a long prompt
+                  {has.prompts && !frozen && (
+                    <Button type="button" size="sm" disabled={working || blocked || unsaved} onClick={confirmPrompts}><Lock className="mr-1.5 h-3.5 w-3.5" />Confirm and freeze the prompts</Button>
+                  )}
+                  {!frozen && (
+                    <Button type="button" size="sm" variant={has.prompts ? "outline" : "default"} disabled={working || !newPersona || gaps.length > 0} onClick={doPrompts}>
+                      {busy === "prompts" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}{has.prompts ? "Write all again" : "Write the prompts"}
                     </Button>
                   )}
+                  {!newPersona && <span className="text-xs text-muted-foreground">Write the persona first.</span>}
+                  {newPersona && !situation.persona_confirmed_at && !has.prompts && <span className="text-xs text-amber-800">The persona is not approved yet. You can still go on.</span>}
+                  {blocked && <span className="text-xs text-destructive">A prompt cannot be confirmed yet; see the note under it.</span>}
                 </div>
               </Panel>
 
-              <Panel {...panel("run")} summary={okRuns ? `${okRuns} of ${runs.length} captures returned · ${runs.reduce((a, r) => a + (r.fan_out || []).length, 0)} searches · $${spent.toFixed(3)}` : ""} did={okRuns ? `${okRuns} of ${runs.length} captures returned · $${spent.toFixed(3)} spent on this situation.` : "Each prompt is asked on real ChatGPT several times. What repeats across runs is signal."}>
+              <Panel {...panel("run")} summary={okRuns ? `${okRuns} of ${runs.length} captures returned · ${runs.reduce((a, r) => a + (r.fan_out || []).length, 0)} searches · $${spent.toFixed(3)}` : ""} did={okRuns ? `${okRuns} of ${runs.length} captures returned · $${spent.toFixed(3)} spent on this Scenario.` : "Each prompt is asked on real ChatGPT several times, in a fresh session each time. What repeats across runs is signal."}>
                 <div className="flex flex-wrap items-center gap-2 text-xs">
                   <label className="text-muted-foreground" htmlFor="fo-runs">Runs per prompt</label>
                   <input id="fo-runs" type="number" min={1} max={10} className={`${inputClass} w-16`} value={situation.runs} disabled={working} onChange={(e) => patchSituation({ runs: Math.max(1, Math.min(10, Math.round(Number(e.target.value) || 1))) }).catch((err) => setError(err.message))} />
-                  <span className="text-muted-foreground">{prompts.length} prompts × {situation.runs} runs = {prompts.length * situation.runs} captures, about ${(prompts.length * situation.runs * 0.004).toFixed(2)}. Failed captures are not charged.</span>
+                  <span className="text-muted-foreground">{prompts.length} prompts × {situation.runs} runs = {captures} captures: about ${(captures * 0.004).toFixed(2)} and {minutes(35)} to {minutes(60)} minutes. Failed captures are not charged.</span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {busy === "run" ? (
                     <Button type="button" size="sm" variant="outline" onClick={() => { stopRef.current = true; setProgress("Stopping after this step…"); }}><Square className="mr-1.5 h-3.5 w-3.5" />Stop</Button>
                   ) : (
                     <>
-                      <Button type="button" size="sm" disabled={working || !has.prompts || blocked || unsaved || callsLeft === 0} onClick={() => doRun(false)}>
+                      <Button type="button" size="sm" disabled={working || !has.prompts || needsConfirm || blocked || unsaved || callsLeft === 0} onClick={() => doRun(false)}>
                         <Play className="mr-1.5 h-3.5 w-3.5" />{runs.length ? `Run the ${callsLeft} missing` : "Run on ChatGPT"}
                       </Button>
-                      {runs.length > 0 && <Button type="button" size="sm" variant="outline" disabled={working || blocked || unsaved} onClick={() => doRun(true)}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Run everything again</Button>}
+                      {runs.length > 0 && <Button type="button" size="sm" variant="outline" disabled={working || needsConfirm || blocked || unsaved} onClick={() => doRun(true)}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Run everything again</Button>}
                     </>
                   )}
+                  {has.prompts && needsConfirm && <span className="text-xs text-muted-foreground">Confirm the prompts in step 3 first: a Run uses frozen prompts.</span>}
                   {blocked && <span className="text-xs text-destructive">A prompt cannot run yet; see the note under it.</span>}
                 </div>
                 {progress && <p className="flex items-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900"><Loader2 className="h-3.5 w-3.5 animate-spin" />{progress}</p>}
-                {prompts.map((p) => byForm(p.form).length > 0 && (
+                {prompts.map((p) => runsOf(p).length > 0 && (
                   <div key={p.id}>
-                    <p className="text-xs font-medium text-foreground">{FORM_LABELS[p.form]} prompt</p>
-                    <ul className="mt-1 space-y-1.5">{byForm(p.form).map((r) => <RunRow key={r.id} run={r} brands={map.brands || []} />)}</ul>
+                    <p className="text-xs font-medium text-foreground">{promptLabel(p, prompts)} <span className="font-normal text-muted-foreground">· {p.prompt.length > 110 ? `${p.prompt.slice(0, 110)}…` : p.prompt}</span></p>
+                    <ul className="mt-1 space-y-1.5">{runsOf(p).map((r) => <RunRow key={r.id} run={r} brands={map.brands || []} />)}</ul>
                   </div>
                 ))}
               </Panel>

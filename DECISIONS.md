@@ -6,3 +6,22 @@ Append-only log. Newest at the bottom. Format: date · decision · why · altern
 - **Why:** run work through Claude as tech lead with sub-agents; CEO sets goals, Claude owns execution and quality.
 - **Key terms (CEO decisions):** Claude merges to main on green checks; silence on a plan = go; additive DB migrations may be applied straight to production (no paid Supabase branches); model choice per agent is Claude's call.
 - **Rejected:** Claude Code as the working environment (CEO preference: Claude app chat).
+
+## 2026-11-27 · Fan-Out v2: what gets pushed (CEO)
+- **Decision:** every Opportunity is shown as a card. Only **new article** goes to AEO Generation, and only when the user clicks Write this. Anything on a fundamental page (home, pricing, how it works) is a manual to-do in Fan-Out and never goes to AEO Generation.
+- **Why:** AEO Generation writes articles only; fundamental pages are too sensitive to automate.
+- **Rejected:** the earlier rule that blocked comparison articles on "who should I use" topics unless the user opted in. If a comparison article is what wins, the card says so.
+
+## 2026-11-27 · Fan-Out v2: build decisions (Claude)
+- **Existing data is kept.** Situations saved before v2 stay as version 1, with their runs and topics. They can be given fields from their free text; the original text is kept in `details.original_description`.
+- **Prompts with runs are archived, not deleted.** Raw runs are always kept (spec section 8).
+- **One brand system.** Fan-Out builds on the Prompt Tests brand list, name matching, capture code and spending cap.
+- **Runs stay browser-driven for now** (spec open question 4). Captured runs survive a closed tab.
+- **One migration per part**, not one up front: each part's schema is designed with its code.
+- **Monthly cap left as is** (Rupert $25). CEO is fine with raising it when needed.
+- **Verification run on Rupert**, the only company with Fan-Out data. CEO: every new Scenario needs a Baseline anyway.
+
+## 2026-11-27 · Ideas declined (CEO)
+- Make "Moved" require a change larger than the noise margin.
+- Run captures in the background on the server.
+- (The working `test` script and the typecheck baseline were done as part of the build.)
