@@ -17,6 +17,9 @@ import {
   planRuns,
   promptIssues,
   promptLabel,
+  renameForFields,
+  scenarioName,
+  scenarioNumber,
   staleAfter,
 } from "../../../lib/fan-out/core.js";
 import {
@@ -245,7 +248,9 @@ function NewSituation({ companyId, situations, working, guard, busy, onCreated, 
   const check = () => guard("check", async () => {
     const out = await checkSituation(companyId, fields);
     setChecked({ ...out, fields });
-    setName(out.name);
+    // Always written the same way: number | Name in Title Case | Stage | Direction.
+    const number = situations.reduce((m, s) => Math.max(m, scenarioNumber(s.code)), 0) + 1;
+    setName(scenarioName({ number, name: out.name, stage: fields.stage, direction: fields.direction }));
     setChoice("new");
   });
 
@@ -503,9 +508,10 @@ export default function FanOut() {
     const changed = !sameFields(fields, before);
     // A changed Situation makes the persona out of date; a changed Direction only the prompts.
     const stale = !changed ? situation.stale_from : onlyDirection ? (has.prompts ? "prompts" : situation.stale_from) : staleAfter("describe", has);
-    await patchSituation({
+    const saved = await patchSituation({
       ...situationRow(fields),
-      title: title.trim().slice(0, 120),
+      // A name in the standard form follows the Stage and Direction it carries.
+      title: renameForFields(title.trim(), fields.stage, fields.direction).slice(0, 160),
       version: 2,
       // The user's own words from before the fields existed are kept.
       ...(Number(situation.version) < 2 && !situation.details?.original_description ? { details: { ...(situation.details || {}), original_description: situation.description } } : {}),
@@ -513,6 +519,7 @@ export default function FanOut() {
       ...(changed ? { prompts_confirmed_at: null, baseline_run_id: null } : {}),
       ...(changed && !onlyDirection ? { persona_confirmed_at: null } : {}),
     });
+    setTitle(saved.title || "");
     await reloadList();
   });
 

@@ -143,7 +143,7 @@ export function situationRow(fields) {
 /** Saves a new Situation to the bank. variantOf is the id of the Situation it is a variant of, or "". */
 export async function createSituation(companyId, { fields, title, variantOf = "" }, existing) {
   const settings = await loadEngineSettings();
-  const row = { company_id: companyId, code: nextCode(existing, "F", 3), version: 2, runs: settings.runs_per_prompt, title: String(title || "").trim().slice(0, 120), variant_of: variantOf || null, ...situationRow(fields) };
+  const row = { company_id: companyId, code: nextCode(existing, "F", 3), version: 2, runs: settings.runs_per_prompt, title: String(title || "").trim().slice(0, 160), variant_of: variantOf || null, ...situationRow(fields) };
   return ok(await supabase.from("fo_situations").insert(row).select("*").single(), "Situation");
 }
 

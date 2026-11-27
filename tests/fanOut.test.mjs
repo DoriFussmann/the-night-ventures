@@ -34,6 +34,10 @@ import {
   planRuns,
   promptIssues,
   promptLabel,
+  renameForFields,
+  scenarioName,
+  scenarioNumber,
+  titleCase,
   scrubNames,
   situationText,
   staleAfter,
@@ -339,4 +343,18 @@ test('brand names are scrubbed from what goes to the AI, and a prompt that names
   const out = parsePrompts('[{"type":"short","angle":"a","text":"Is Rupert good?"},{"type":"short","angle":"b","text":"Who helps founders raise?"}]', { names })
   assert.deepEqual(out.map((p) => p.prompt), ['Who helps founders raise?'])
   assert.equal(parsePrompts('Note {x}: [{"type":"short","angle":"a","text":"hi"}]').length, 1)
+})
+
+test('a Scenario name is always "number | Title Case Name | Stage | Direction", and follows the Stage and Direction', () => {
+  assert.equal(titleCase('founder ready to raise funding round'), 'Founder Ready to Raise Funding Round')
+  assert.equal(titleCase('the CEO of a B2B SaaS, in a hurry'), 'The CEO of a B2B SaaS, in a Hurry')
+  assert.equal(titleCase('what to look for'), 'What to Look For')
+  const name = scenarioName({ number: 1, name: 'founder ready to raise funding round.', stage: 'exploring', direction: 'recommend' })
+  assert.equal(name, '1 | Founder Ready to Raise Funding Round | Stage: Exploring | Direction: Recommend')
+  // Formatting a name that is already in the form does not double it.
+  assert.equal(scenarioName({ number: 4, name, stage: 'ready_to_buy', direction: 'advise' }), '4 | Founder Ready to Raise Funding Round | Stage: Ready to Buy | Direction: Advise')
+  assert.equal(scenarioName({ number: 2, name: 'Solo CEO | no income', stage: 'comparing', direction: 'nonsense' }), '2 | Solo CEO No Income | Stage: Comparing | Direction: Recommend')
+  assert.equal(renameForFields(name, 'comparing', 'explain'), '1 | Founder Ready to Raise Funding Round | Stage: Comparing | Direction: Explain')
+  assert.equal(renameForFields('My own name', 'comparing', 'explain'), 'My own name')
+  assert.equal(scenarioNumber('F012'), 12)
 })
