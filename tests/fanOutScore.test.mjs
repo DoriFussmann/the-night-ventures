@@ -7,7 +7,7 @@ const OWN = { id: 'own', name: 'Rupert', name_patterns: ['Rupert', 'Hey Rupert']
 const RIVAL = { id: 'riv', name: 'RivalCo', name_patterns: [], is_own: false }
 const OTHER = { id: 'oth', name: 'Thirdly', name_patterns: [], is_own: false }
 const brands = [OWN, RIVAL, OTHER]
-const run = (id, form, answer, entities = [], labels = {}, extra = {}) => ({ id, status: 'ok', prompt_form: form, answer, brand_entities: entities.map((title) => ({ title })), mention_labels: labels, searched: true, model: 'gpt-6', ...extra })
+const run = (id, form, answer, entities = [], labels = {}, extra = {}) => ({ id, status: 'ok', prompt_form: form, answer, brand_entities: entities.map((name) => ({ name, title: 'a kind of company' })), mention_labels: labels, searched: true, model: 'gpt-6', ...extra })
 
 test('signal labels follow the thresholds', () => {
   assert.equal(signalLabel(0.5), 'Strong')
