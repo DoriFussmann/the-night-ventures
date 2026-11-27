@@ -127,6 +127,9 @@ test('a card stays inside its formats: reasons from the fixed list, 3 to 6 lines
   assert.ok(req.includes('OPPORTUNITY') && req.includes('RivalCo, named in 3 of 3 runs') && req.includes('could not be read') && req.includes('- no_page: No page'))
   assert.ok(req.includes('THE ACTION (set by rule, not yours to change): Commercial page or FAQ'))
   assert.ok(req.includes('We run outreach. $& $1 {group}')) // page text goes in as it is: nothing in it is expanded
+  // Templates saved before these fields existed still carry them.
+  assert.ok(buildCardPrompt({ kind: 'opportunity', situation: {}, stats: a, winner: a.leader, how: { how: 'own_page' }, yourPage: none, action: 'off_site', pagesRead: [], template: 'OLD {group}' }).includes('THE ACTION (set by rule, not yours to change): Off-site'))
+  assert.ok(buildGroupsPrompt({ situation: {}, queries: [], template: 'OLD {queries}' }).includes('who_should_i_use'))
   const reply = JSON.stringify({ reasons: ['format', 'made_up', 'no_page', 'fresh'], why: 'Their page lists options in a table.', what_to_cover: ['What an agency does', 'What it costs', 'Why Rupert is best', 'How long it takes'], action: 'new_article', action_line: 'Put the claim on the pricing page.', theme: 'a' })
   const card = parseCard(reply, { kind: 'opportunity', yourPage: none, pillars: [{ id: 'pA', code: 'A', name: 'Raising' }], brandNames: ['Rupert'], action: 'commercial_page' })
   assert.deepEqual(card.reasons, ['format', 'no_page'])

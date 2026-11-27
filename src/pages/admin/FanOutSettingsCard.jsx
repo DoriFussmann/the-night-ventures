@@ -14,7 +14,7 @@ const PROMPTS = [
   ["prompt_prompts", "Prompt for the prompts", "{icp} {who} {trigger} {goal} {stage} {additional_comments} {level} {what_matters} {vocabulary} {direction_rule} {n_per_type} {short_range} {medium_range} {long_range}"],
   ["prompt_labels", "Mention labels (Recommended / Listed / Qualified)", "{answers}"],
   ["prompt_groups", "Query grouping", "{person} {mode} {groups} {queries}"],
-  ["prompt_card", "Cards: reasons, what to cover and the action", "{kind} {person} {group} {searches} {standing} {winner} {how} {your_page} {pillars} {pages} {reasons}"],
+  ["prompt_card", "Cards: reasons, what to cover and the action", "{kind} {person} {group} {searches} {standing} {winner} {how} {action} {your_page} {pillars} {pages} {reasons}"],
   ["prompt_takeaway", "The three-sentence takeaway", "{facts}"],
 ];
 const pct = (v) => Math.round(Number(v) * 100);
