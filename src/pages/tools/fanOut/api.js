@@ -50,25 +50,23 @@ export async function listSituations(companyId) {
 }
 
 export async function loadSituation(id) {
-  const [situation, prompts, runs, topics, scenarioRuns] = await Promise.all([
+  const [situation, prompts, topics, scenarioRuns] = await Promise.all([
     supabase.from("fo_situations").select("*").eq("id", id).maybeSingle(),
     supabase.from("fo_prompts").select("*").eq("situation_id", id).is("archived_at", null),
-    supabase.from("fo_runs").select(RUN_COLS).eq("situation_id", id).order("run_no").limit(2000),
     supabase.from("fo_topics").select("*").eq("situation_id", id).order("sort"),
     supabase.from("fo_scenario_runs").select("*").eq("situation_id", id).order("seq"),
   ]);
-  return {
-    situation: ok(situation, "Situation"),
-    prompts: sortPrompts(ok(prompts, "Prompts") || []),
-    // Every capture of every Run. Captures of a prompt that was replaced since are kept: they belong to their Run.
-    runs: ok(runs, "Runs") || [],
-    topics: ok(topics, "Topics") || [],
-    scenarioRuns: ok(scenarioRuns, "Runs") || [],
-  };
+  const all = ok(scenarioRuns, "Runs") || [];
+  const latest = all[all.length - 1];
+  // Only the captures of the latest Run are listed on the page; earlier Runs are read by the score.
+  const runs = latest ? ok(await supabase.from("fo_runs").select(RUN_COLS).eq("scenario_run_id", latest.id).order("run_no").limit(200), "Runs") || [] : [];
+  return { situation: ok(situation, "Situation"), prompts: sortPrompts(ok(prompts, "Prompts") || []), runs, topics: ok(topics, "Topics") || [], scenarioRuns: all };
 }
 
 /** Adds a brand ChatGPT named to the tracked list, as a competitor. */
 export async function trackBrand(companyId, name, brands) {
+  const clean = String(name).trim().toLowerCase();
+  if ((brands || []).some((b) => String(b.name).trim().toLowerCase() === clean)) throw new Error(`${name} is already on the tracked list.`);
   const row = { company_id: companyId, name: String(name).trim().slice(0, 80), is_own: false, sort: (brands || []).length };
   return ok(await supabase.from("pt_brands").insert(row).select("id, name, is_own").single(), "Brand");
 }

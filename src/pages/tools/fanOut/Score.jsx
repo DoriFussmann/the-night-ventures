@@ -36,10 +36,11 @@ const pct = (v) => (v ? `${v.pct}%` : "–");
  * The measurement half of the summary: counted by the app with fixed rules, from the stored answers.
  * Only "Recommended" rests on an AI label, and every such label carries the phrase it quotes.
  */
-export default function ScoreBlock({ data, working, busy, onLabel, onTrack }) {
+export default function ScoreBlock({ data, baselineId, working, busy, onLabel, onTrack }) {
   const [pick, setPick] = useState("");
   const [showAll, setShowAll] = useState(false);
-  const runs = (data?.runs || []).filter((r) => r.score.runs > 0);
+  // Which Run is the Baseline comes from the Scenario as it is now, not from when the score was calculated.
+  const runs = (data?.runs || []).filter((r) => r.score.runs > 0).map((r) => ({ ...r, baseline: r.id === baselineId }));
   if (!data) return <p className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Calculating the score…</p>;
   if (!runs.length) return <p className="text-xs text-muted-foreground">No score yet: no Run has returned an answer.</p>;
   const run = runs.find((r) => r.id === pick) || runs[runs.length - 1];

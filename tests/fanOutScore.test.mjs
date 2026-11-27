@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { DEFAULT_SETTINGS } from '../lib/fan-out/core.js'
-import { buildLabelPrompt, margin, mentionExcerpt, mentionIndex, namedOrder, parseLabels, scoreRuns, share, signalLabel, unlabeled, verdict } from '../lib/fan-out/score.js'
+import { buildLabelPrompt, labelBatches, quoteFits, margin, mentionExcerpt, mentionIndex, namedOrder, parseLabels, scoreRuns, share, signalLabel, unlabeled, verdict } from '../lib/fan-out/score.js'
 
 const OWN = { id: 'own', name: 'Rupert', name_patterns: ['Rupert', 'Hey Rupert'], is_own: true }
 const RIVAL = { id: 'riv', name: 'RivalCo', name_patterns: [], is_own: false }
@@ -78,18 +78,39 @@ test('only named brands without a label are sent for labeling, with the lines ar
   assert.ok(req.includes('--- r1 · brands to label: RivalCo') && req.includes('RivalCo is fine.') && !req.includes('{answers}'))
 })
 
-test('a label counts only with a quote that is really in the answer; otherwise the mention is Listed', () => {
-  const batch = [{ run: run('1', 'short', 'For this, **Rupert** is the  strongest fit. RivalCo works, but is expensive for small teams. Thirdly too.'), brands }]
+test('a label counts only with a quote that is really in the answer and is about that brand; otherwise the mention is Listed', () => {
+  const answer = 'For this, **Rupert** is the  strongest fit. RivalCo works, but is expensive for small teams. Thirdly too.'
+  const batch = [{ run: run('1', 'short', answer), brands }]
   const reply = JSON.stringify({ labels: [
-    { run: 'r1', brand: 'Rupert', label: 'Recommended', quote: 'Rupert is the strongest fit' },
+    { run: 'r1', brand: 'Hey Rupert', label: 'Recommended', quote: 'Rupert is the strongest fit' },
     { run: 'r1', brand: 'RivalCo', label: 'qualified', quote: 'works, but is cheap' },
-    { run: 'r1', brand: 'Thirdly', label: 'amazing', quote: 'Thirdly too' },
   ] })
-  assert.deepEqual(parseLabels(reply, batch), [
+  assert.deepEqual(parseLabels(reply, batch, brands), [
     { runId: '1', brandId: 'own', label: 'recommended', quote: 'Rupert is the strongest fit' },
     { runId: '1', brandId: 'riv', label: 'listed', quote: '' },
-    { runId: '1', brandId: 'oth', label: 'listed', quote: 'Thirdly too' },
-  ])
-  // A brand the reply left out is Listed, not dropped.
-  assert.deepEqual(parseLabels('{"labels": []}', batch).map((l) => l.label), ['listed', 'listed', 'listed'])
+  ]) // Thirdly was left out of the reply: it gets no label and is asked again
+  assert.deepEqual(parseLabels('{"labels": []}', batch, brands), [])
+  // A real phrase about another brand does not make ours Recommended.
+  const other = 'RivalCo is the strongest fit for most teams. Rupert is also an option.'
+  assert.equal(quoteFits(other, 'the strongest fit', OWN, brands), false)
+  assert.equal(quoteFits(other, 'the strongest fit', RIVAL, brands), true)
+  assert.equal(quoteFits(other, 'you.', OWN, brands), false)
+  // A statement right under a heading that names the brand counts.
+  assert.equal(quoteFits('### Best overall: Rupert\nStrongest fit for small teams.', 'Strongest fit for small teams', OWN, brands), true)
+  assert.equal(quoteFits('### Best overall: Rupert\nRivalCo is the strongest fit.', 'the strongest fit', OWN, brands), false)
+  const out = parseLabels(JSON.stringify({ labels: [{ run: 'r1', brand: 'Rupert', label: 'recommended', quote: 'the strongest fit' }] }), [{ run: run('2', 'short', other), brands: [OWN] }], brands)
+  assert.deepEqual(out, [{ runId: '2', brandId: 'own', label: 'listed', quote: '' }])
+})
+
+test('labeling requests hold a limited number of labels, and positions respect whole words and excluded lines', () => {
+  const todo = Array.from({ length: 5 }, (_, i) => ({ run: { id: String(i) }, brands: [OWN, RIVAL, OTHER] }))
+  assert.deepEqual(labelBatches(todo, 7).map((b) => b.length), [2, 2, 1])
+  assert.deepEqual(labelBatches([], 7), [])
+  const bench = run('1', 'short', 'A good benchmark first. Then Rupert. Bench is another.', ['Bench'])
+  assert.deepEqual(namedOrder(bench, brands).map((o) => o.name), ['Rupert', 'Bench'])
+  const tagged = run('2', 'short', 'Try Rivalco or RivalCo.', ['rivalco'])
+  assert.deepEqual(namedOrder(tagged, brands).map((o) => o.name), ['RivalCo'])
+  const excl = { ...OWN, exclude_patterns: ['murdoch'] }
+  const r = run('3', 'short', 'Rupert Murdoch owns it.\nRivalCo is good. Rupert too.')
+  assert.deepEqual(namedOrder(r, [excl, RIVAL]).map((o) => o.name), ['RivalCo', 'Rupert'])
 })

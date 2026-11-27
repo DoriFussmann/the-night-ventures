@@ -3,7 +3,7 @@
 -- (scenario_run_id, prompt_id, run_no). Existing captures are kept: each situation's captures are grouped into one
 -- Run marked `legacy` (made by the engine before v2; never a Baseline), and their new columns are filled in.
 --
--- Rollback:
+-- Rollback (run in one transaction; step 3 fails once any prompt has captures in two Runs, and then nothing should be rolled back):
 --   alter table public.fo_situations drop column if exists baseline_run_id;
 --   alter table public.fo_runs drop constraint if exists fo_runs_scenario_run_prompt_run_key;
 --   -- (prompt_id, run_no) can be unique again only while no prompt has captures in two Runs:
@@ -62,6 +62,9 @@ update public.fo_runs r
 set prompt_text = p.prompt, prompt_form = p.form
 from public.fo_prompts p
 where p.id = r.prompt_id and r.prompt_text is null;
+
+-- Every capture now belongs to a Run.
+alter table public.fo_runs alter column scenario_run_id set not null;
 
 alter table public.fo_runs drop constraint if exists fo_runs_prompt_id_run_no_key;
 do $$

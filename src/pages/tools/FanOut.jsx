@@ -274,6 +274,10 @@ function TopicCard({ topic, okRuns, map, busy, onChange }) {
 }
 
 
+/** True while a Run of the Scenario is open: a Run never changes under way, so nothing it is built from can be edited. */
+const scenarioRunsOpen = (data) => (data?.scenarioRuns || []).some((r) => r.status === "running");
+const OPEN_RUN = "A Run of this Scenario is open. Continue it or end it in step 4 first.";
+
 const EMPTY_FIELDS = { who: "", trigger_event: "", goal: "", stage: "", direction: "recommend", comments: "" };
 const fieldsOf = (s) => ({ who: s?.who || "", trigger_event: s?.trigger_event || "", goal: s?.goal || "", stage: s?.stage || "", direction: s?.direction || "recommend", comments: s?.comments || "" });
 const sameFields = (a, b) => Object.keys(EMPTY_FIELDS).every((k) => String(a[k] || "").trim() === String(b[k] || "").trim());
@@ -487,9 +491,13 @@ export default function FanOut() {
     open(currentId).catch((err) => setError(err?.message || "Could not load the situation"));
   }, [currentId, open]);
 
+  const shownRef = useRef("");
+  shownRef.current = currentId;
   const refreshScore = useCallback(async (id) => {
     if (!id) return setScore(null);
-    setScore(await loadScore(companyId, id));
+    const out = await loadScore(companyId, id);
+    // A score that arrives after the user moved to another Scenario is dropped.
+    if (shownRef.current === id) setScore(out);
   }, [companyId]);
 
   useEffect(() => {
@@ -499,12 +507,11 @@ export default function FanOut() {
 
   const situation = data?.situation || null;
   const prompts = useMemo(() => data?.prompts || [], [data]);
-  const allRuns = useMemo(() => data?.runs || [], [data]);
   const scenarioRuns = useMemo(() => data?.scenarioRuns || [], [data]);
   // The Run on the page is the latest one: its captures feed the list in step 4 and the topics in step 5.
   const latestRun = scenarioRuns[scenarioRuns.length - 1] || null;
   const openRun = latestRun?.status === "running" ? latestRun : null;
-  const runs = useMemo(() => (latestRun ? allRuns.filter((r) => r.scenario_run_id === latestRun.id) : []), [allRuns, latestRun]);
+  const runs = useMemo(() => (latestRun ? (data?.runs || []).filter((r) => r.scenario_run_id === latestRun.id) : []), [data, latestRun]);
   const topics = useMemo(() => data?.topics || [], [data]);
   const okRuns = runs.filter((r) => r.status === "ok").length;
   const persona = situation?.persona || {};
@@ -512,6 +519,7 @@ export default function FanOut() {
   const oldPersona = !newPersona && Boolean(persona.who);
   const gaps = situation ? missingFields(situation) : [];
   const frozen = Boolean(situation?.prompts_confirmed_at);
+  const runOpen = scenarioRunsOpen(data);
   const has = useMemo(() => ({ persona: newPersona || oldPersona, prompts: prompts.length > 0, run: runs.length > 0, topics: topics.length > 0, push: topics.length > 0 }), [newPersona, oldPersona, prompts, runs, topics]);
 
   const states = useMemo(() => {
@@ -572,6 +580,7 @@ export default function FanOut() {
   });
 
   const saveFields = () => guard("describe", async () => {
+    if (runOpen) throw new Error(OPEN_RUN);
     if (fieldGaps.length) throw new Error(`Still to fill: ${fieldGaps.join(", ")}.`);
     const before = fieldsOf(situation);
     const onlyDirection = sameFields({ ...fields, direction: before.direction }, before);
@@ -592,10 +601,11 @@ export default function FanOut() {
   });
 
   // Runs stay stored when what produced them changes, but they stop counting: say so before it happens.
-  const okToReset = (what) => allRuns.length === 0 || window.confirm(`${what} The runs you already have stay stored, but they no longer count: the next Run is a new Baseline. Go on?`);
+  const okToReset = (what) => scenarioRuns.length === 0 || window.confirm(`${what} The runs you already have stay stored, but they no longer count: the next Run is a new Baseline. Go on?`);
 
   /* Step 2: the Persona */
   const doPersona = () => guard("persona", async () => {
+    if (runOpen) throw new Error(OPEN_RUN);
     if (has.prompts && !okToReset("Writing the persona again makes the prompts out of date.")) return;
     const out = await buildPersona(companyId, situation.id);
     show({ ...data, situation: out.situation });
@@ -604,6 +614,7 @@ export default function FanOut() {
   const personaDirty = newPersona && (personaEdit.knowledge_level !== persona.knowledge_level || lines(personaEdit.what_matters, 3).join("|") !== (persona.what_matters || []).join("|") || lines(personaEdit.vocabulary, 5).join("|") !== (persona.vocabulary || []).join("|"));
 
   const savePersona = (approve) => guard("persona-edit", async () => {
+    if (runOpen && personaDirty) throw new Error(OPEN_RUN);
     const next = { ...persona, knowledge_level: personaEdit.knowledge_level, what_matters: lines(personaEdit.what_matters, 3), vocabulary: lines(personaEdit.vocabulary, 5) };
     const named = [...next.what_matters, ...next.vocabulary].filter((x) => promptIssues(x, map.allNames).block.length);
     if (named.length) throw new Error(`The persona is brand-blind: it does not know any company exists. Remove: ${named.join(", ")}.`);
@@ -621,7 +632,8 @@ export default function FanOut() {
   const issues = useMemo(() => Object.fromEntries(prompts.map((p) => [p.id, promptIssues(promptEdit[p.id] ?? p.prompt, map.allNames)])), [prompts, promptEdit, map.allNames]);
   const blocked = prompts.some((p) => issues[p.id]?.block.length);
   const unsaved = prompts.some((p) => textOf(p).trim() !== p.prompt);
-  const promptsHaveRuns = allRuns.length > 0;
+  const promptsHaveRuns = scenarioRuns.length > 0;
+  const locked = frozen || runOpen; // v1 Scenarios are never frozen, but an open Run locks their prompts too
 
   const doPrompts = () => guard("prompts", async () => {
     if (!okToReset("Writing the prompts again replaces them.")) return;
@@ -629,7 +641,7 @@ export default function FanOut() {
     await open(situation.id);
   });
 
-  const hasRunsOf = (p) => allRuns.some((r) => r.prompt_id === p.id);
+  const hasRunsOf = (p) => runs.some((r) => r.prompt_id === p.id) || scenarioRuns.some((r) => (r.prompt_ids || []).includes(p.id));
   const okToReplace = (p, what) => !hasRunsOf(p) || window.confirm(`${promptLabel(p, prompts)} already has runs. ${what} Its runs stay stored, but they no longer count for this Scenario. Go on?`);
 
   const redoPrompt = (p) => guard(`prompt-${p.id}`, async () => {
@@ -672,6 +684,7 @@ export default function FanOut() {
   });
 
   const unlockPrompts = () => guard("prompt-edit", async () => {
+    if (runOpen) throw new Error(OPEN_RUN);
     if (promptsHaveRuns && !window.confirm("The prompts are frozen so that every Run asks the same thing. If you edit them, the comparison resets and the next Run is a new Baseline. Unlock?")) return;
     await patchSituation({ prompts_confirmed_at: null, baseline_run_id: null });
   });
@@ -680,17 +693,24 @@ export default function FanOut() {
   const needsConfirm = Number(situation?.version) >= 2 && !frozen;
   const hasBaseline = Boolean(situation?.baseline_run_id) && scenarioRuns.some((r) => r.id === situation.baseline_run_id);
   // An open Run asks the prompts it was started with.
-  const runPrompts = useMemo(() => (openRun ? prompts.filter((p) => (openRun.prompt_ids || []).includes(p.id)) : prompts), [openRun, prompts]);
+  const runPrompts = useMemo(() => (openRun ? (openRun.prompt_ids || []).map((id) => ({ id })) : prompts), [openRun, prompts]);
   const perPrompt = openRun ? openRun.runs_per_prompt : situation?.runs || 7;
   const plan = useMemo(() => planRuns(runPrompts, perPrompt, openRun ? runs : []), [runPrompts, perPrompt, openRun, runs]);
   const callsLeft = plan.reduce((a, s) => a + s.length, 0);
 
   const endRun = async (run, stopped) => {
-    setProgress("Closing the Run: recording the cost and labeling how each brand is named…");
+    setProgress("Closing the Run and recording its cost…");
     const out = await finishRun(companyId, run.id, stopped);
     await open(situation.id);
+    if (out.removed) {
+      setScore(null);
+      await refreshScore(situation.id);
+      throw new Error("Nothing came back from ChatGPT in this Run, so it was removed. Nothing was charged. Try again in a few minutes.");
+    }
+    // Labeling is its own step: if it is slow or fails, the Run is still closed and scored, and "Label them" finishes the job.
+    setProgress("Labeling how each brand is named (Recommended, Listed or Qualified)…");
+    await labelRun(companyId, run.id).catch(() => null);
     await refreshScore(situation.id);
-    if (out.labels?.left) setError(`${out.labels.left} mentions could not be labeled. Use "Label them" in the summary to try again.`);
   };
 
   const doRun = () => guard("run", async () => {
@@ -718,7 +738,7 @@ export default function FanOut() {
     if (stopRef.current) return open(situation.id);
     // Captures that failed are tried once more by "Continue"; the Run closes only when the user ends it or nothing is missing.
     const fresh = await loadSituation(situation.id);
-    const missing = planRuns(prompts.filter((p) => (run.prompt_ids || []).includes(p.id)), run.runs_per_prompt, fresh.runs.filter((r) => r.scenario_run_id === run.id));
+    const missing = planRuns((run.prompt_ids || []).map((id) => ({ id })), run.runs_per_prompt, fresh.runs.filter((r) => r.scenario_run_id === run.id));
     if (missing.length) {
       setData(fresh);
       await refreshScore(situation.id);
@@ -728,7 +748,8 @@ export default function FanOut() {
   }).finally(() => setProgress(""));
 
   const closeRun = () => guard("run", async () => {
-    if (!window.confirm(`End this Run with ${okRuns} of ${runPrompts.length * perPrompt} captures? It will be scored on the runs it has. A smaller Run has a wider margin.`)) return;
+    const planned = (openRun.prompt_ids || []).length * openRun.runs_per_prompt;
+    if (!window.confirm(okRuns ? `End this Run with ${okRuns} of ${planned} captures? It will be scored on the runs it has. A smaller Run has a wider margin.` : "Nothing has come back in this Run. Remove it?")) return;
     await endRun(openRun, true);
   }).finally(() => setProgress(""));
 
@@ -809,7 +830,7 @@ export default function FanOut() {
           <section className="space-y-3 rounded-lg border border-border bg-card p-4">
             <div className="flex flex-wrap items-center gap-2">
               <label className="text-xs text-muted-foreground" htmlFor="fo-pick">Scenario</label>
-              <select id="fo-pick" className={`${inputClass} w-full min-w-0 sm:w-auto sm:flex-1`} value={currentId} onChange={(e) => setParams(e.target.value ? { s: e.target.value } : {})}>
+              <select id="fo-pick" className={`${inputClass} w-full min-w-0 sm:w-auto sm:flex-1`} value={currentId} disabled={working} onChange={(e) => setParams(e.target.value ? { s: e.target.value } : {})}>
                 <option value="">New Scenario…</option>
                 {situations.map((s) => <option key={s.id} value={s.id}>{nameOf(s)}</option>)}
               </select>
@@ -905,7 +926,7 @@ export default function FanOut() {
               <Panel {...panel("prompts")} summary={has.prompts ? [`${prompts.length} prompts`, TYPE_ORDER.map((f) => `${prompts.filter((p) => p.form === f).length} ${FORM_LABELS[f].toLowerCase()}`).join(", "), frozen ? "frozen" : "not confirmed yet"].join(" · ") : ""} details={situation.details?.prompts} did={has.prompts ? "What this person would type into ChatGPT. Each prompt in a type takes a different angle on the same goal." : "The AI will write three Short, three Medium and three Long prompts in this person's words, each on a different angle."}>
                 {frozen && (
                   <p className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-foreground">
-                    <Lock className="h-3.5 w-3.5" /> Frozen on {day(situation.prompts_confirmed_at)}. Every Run of this Scenario asks exactly these prompts.
+                    <Lock className="h-3.5 w-3.5" /> Frozen on {day(situation.prompts_confirmed_at)}. Every Run of this Scenario asks exactly these prompts.{runOpen ? " A Run is open: end it before unlocking." : ""}
                     <button type="button" className="ml-auto text-muted-foreground underline underline-offset-2 hover:text-foreground" disabled={working} onClick={unlockPrompts}><Unlock className="mr-1 inline h-3 w-3" />Unlock to edit</button>
                   </p>
                 )}
@@ -916,7 +937,7 @@ export default function FanOut() {
                     <div key={form} className="space-y-2">
                       <div className="flex items-center gap-2">
                         <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{FORM_LABELS[form]}</p>
-                        {!frozen && <button type="button" className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground" disabled={working} onClick={() => setAdding({ form, text: "" })}>Add your own</button>}
+                        {!locked && <button type="button" className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground" disabled={working} onClick={() => setAdding({ form, text: "" })}>Add your own</button>}
                       </div>
                       {mine.length === 0 && <p className="text-xs text-muted-foreground">No {FORM_LABELS[form].toLowerCase()} prompt.</p>}
                       {mine.map((p) => {
@@ -928,14 +949,14 @@ export default function FanOut() {
                               <label className="text-xs font-medium text-foreground" htmlFor={`fo-p-${p.id}`}>{promptLabel(p, prompts)}</label>
                               <span className="text-xs text-muted-foreground">{p.origin === "user" ? "your own" : p.angle}</span>
                               <span className={`text-xs tabular-nums ${over ? "font-medium text-destructive" : "text-muted-foreground"}`}>{text.length.toLocaleString("en-US")} characters</span>
-                              {!frozen && (
+                              {!locked && (
                                 <span className="ml-auto flex gap-3 text-xs text-muted-foreground">
                                   {p.origin !== "user" && <button type="button" className="underline underline-offset-2 hover:text-foreground" disabled={working} onClick={() => redoPrompt(p)}>{busy === `prompt-${p.id}` ? "Writing…" : "Regenerate"}</button>}
                                   <button type="button" className="underline underline-offset-2 hover:text-foreground" disabled={working} onClick={() => dropPrompt(p)}>Delete</button>
                                 </span>
                               )}
                             </div>
-                            <Textarea id={`fo-p-${p.id}`} className={`mt-1 ${form === "short" ? "min-h-[56px]" : form === "medium" ? "min-h-[96px]" : "min-h-[130px]"}`} value={text} disabled={working || frozen} onChange={(e) => setPromptEdit((s) => ({ ...s, [p.id]: e.target.value }))} onBlur={() => savePromptEdit(p)} />
+                            <Textarea id={`fo-p-${p.id}`} className={`mt-1 ${form === "short" ? "min-h-[56px]" : form === "medium" ? "min-h-[96px]" : "min-h-[130px]"}`} value={text} disabled={working || locked} onChange={(e) => setPromptEdit((s) => ({ ...s, [p.id]: e.target.value }))} onBlur={() => savePromptEdit(p)} />
                             {issues[p.id]?.block.map((m) => <p key={m} className="mt-1 text-xs text-destructive">{m}</p>)}
                             {issues[p.id]?.warn.map((m) => <p key={m} className="mt-1 text-xs text-amber-800">{m}</p>)}
                           </div>
@@ -954,10 +975,10 @@ export default function FanOut() {
                   );
                 })}
                 <div className="flex flex-wrap items-center gap-2">
-                  {has.prompts && !frozen && (
+                  {has.prompts && !locked && (
                     <Button type="button" size="sm" disabled={working || blocked || unsaved} onClick={confirmPrompts}><Lock className="mr-1.5 h-3.5 w-3.5" />Confirm and freeze the prompts</Button>
                   )}
-                  {!frozen && (
+                  {!locked && (
                     <Button type="button" size="sm" variant={has.prompts ? "outline" : "default"} disabled={working || !newPersona || gaps.length > 0} onClick={doPrompts}>
                       {busy === "prompts" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}{has.prompts ? "Write all again" : "Write the prompts"}
                     </Button>
@@ -972,15 +993,16 @@ export default function FanOut() {
                 {scenarioRuns.length > 0 && (
                   <ul className="space-y-1 text-xs">
                     {scenarioRuns.map((r) => {
-                      const mine = allRuns.filter((x) => x.scenario_run_id === r.id);
-                      const good = mine.filter((x) => x.status === "ok").length;
-                      const cost = r.status === "running" ? mine.reduce((a, x) => a + Number(x.cost || 0), 0) : Number(r.cost);
+                      const scored = score?.runs?.find((x) => x.id === r.id)?.score;
+                      const isLatest = r.id === latestRun?.id;
+                      const good = isLatest ? okRuns : scored ? scored.runs : null;
+                      const cost = r.status === "running" ? spent : Number(r.cost);
                       const name = runName({ ...r, baseline: r.id === situation.baseline_run_id });
                       return (
                         <li key={r.id} className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-1.5">
                           <span className="font-medium text-foreground">{name}</span>
                           {r.id === situation.baseline_run_id && r.seq > 1 && <span className="text-muted-foreground">(Run {r.seq})</span>}
-                          <span className="tabular-nums text-muted-foreground">{day(r.started_at)} · {good} {r.legacy ? "" : `of ${(r.prompt_ids || []).length * r.runs_per_prompt} `}captures returned · ${cost.toFixed(2)} actual{r.legacy ? "" : ` (estimated $${Number(r.est_cost).toFixed(2)})`}</span>
+                          <span className="tabular-nums text-muted-foreground">{day(r.started_at)}{good == null ? "" : ` · ${good} ${r.legacy ? "" : `of ${(r.prompt_ids || []).length * r.runs_per_prompt} `}captures returned`} · ${cost.toFixed(2)} actual{r.legacy ? "" : ` (estimated $${Number(r.est_cost).toFixed(2)})`}</span>
                           {r.status === "running" && <Chip tone="border-sky-300 bg-sky-50 text-sky-800">Open</Chip>}
                           {r.status === "stopped" && <Chip>Ended early</Chip>}
                         </li>
@@ -1002,7 +1024,7 @@ export default function FanOut() {
                   ) : openRun ? (
                     <>
                       <Button type="button" size="sm" disabled={working || callsLeft === 0} onClick={doRun}><Play className="mr-1.5 h-3.5 w-3.5" />Continue: {callsLeft} {callsLeft === 1 ? "capture" : "captures"} missing</Button>
-                      <Button type="button" size="sm" variant="outline" disabled={working || okRuns === 0} onClick={closeRun}>End the Run here</Button>
+                      <Button type="button" size="sm" variant="outline" disabled={working} onClick={closeRun}>{okRuns ? "End the Run here" : "Remove this Run"}</Button>
                     </>
                   ) : (
                     <Button type="button" size="sm" disabled={working || !has.prompts || needsConfirm || blocked || unsaved} onClick={doRun}>
@@ -1034,7 +1056,7 @@ export default function FanOut() {
               </Panel>
 
               <Panel {...panel("topics")} summary={score?.runs?.length && score.runs[score.runs.length - 1].score.own ? `Mentioned ${score.runs[score.runs.length - 1].score.own.mentioned.pct}% ±${score.runs[score.runs.length - 1].score.own.mentioned.margin} · ${topics.length} topics` : has.topics ? `${topics.length} topics · ${topics.filter((t) => t.status === "approved").length} approved · ${topics.filter((t) => t.status === "pushed").length} pushed` : ""} details={situation.details?.topics} did="Where the brand stands in ChatGPT's answers, and what ChatGPT went looking for.">
-                {scenarioRuns.length > 0 && <ScoreBlock data={score} working={working} busy={busy} onLabel={doLabel} onTrack={doTrack} />}
+                {scenarioRuns.length > 0 && <ScoreBlock data={score} baselineId={situation.baseline_run_id} working={working} busy={busy} onLabel={doLabel} onTrack={doTrack} />}
                 {scenarioRuns.length > 0 && <p className="border-t border-border pt-3 text-sm font-medium text-foreground">What ChatGPT goes looking for</p>}
                 <Button type="button" size="sm" variant={has.topics ? "outline" : "default"} disabled={working || okRuns === 0} onClick={doTopics}>
                   {busy === "topics" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}{has.topics ? "Group again" : "Find the topics"}
