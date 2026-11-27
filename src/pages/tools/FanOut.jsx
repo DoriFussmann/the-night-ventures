@@ -30,6 +30,7 @@ import {
   deleteSituation,
   finishRun,
   groupRun,
+  ignoreBrand,
   labelRun,
   lastRuns,
   loadEngineSettings,
@@ -41,6 +42,7 @@ import {
   loadSituation,
   pushCard,
   removePrompt,
+  restoreBrand,
   runStep,
   savePromptText,
   situationRow,
@@ -54,7 +56,7 @@ import {
   writePrompts,
   writeTakeaway,
 } from "./fanOut/api";
-import ScoreBlock, { runName } from "./fanOut/Score";
+import ScoreBlock, { DiscoveredCard, runName } from "./fanOut/Score";
 import GroupsBlock, { InsightsBlock } from "./fanOut/Groups";
 import CompareBlock from "./fanOut/Compare";
 import { dueForRerun } from "../../../lib/fan-out/compare.js";
@@ -332,7 +334,8 @@ export default function FanOut() {
   const [params, setParams] = useSearchParams();
   const currentId = params.get("s") || "";
   const [situations, setSituations] = useState([]);
-  const [map, setMap] = useState({ pillars: [], groups: [], ownNames: [], allNames: [], brands: [] });
+  const [map, setMap] = useState({ pillars: [], groups: [], ownNames: [], allNames: [], brands: [], ignored: [] });
+  const [pickedRun, setPickedRun] = useState("");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -402,6 +405,7 @@ export default function FanOut() {
 
   useEffect(() => {
     setPushNote(null);
+    setPickedRun("");
     open(currentId).catch((err) => setError(err?.message || "Could not load the situation"));
   }, [currentId, open]);
 
@@ -685,11 +689,26 @@ export default function FanOut() {
     if (out.labels?.left) throw new Error(`${out.labels.left} mentions could not be labeled. Try again.`);
   });
 
+  // One click each. Tracking a brand scores it in every Run; its mentions are labeled right away so Recommended is complete.
   const doTrack = (name) => guard("track", async () => {
-    if (!window.confirm(`Add ${name} to this company's tracked brands, as a competitor? It is then scored in every Run, and blocked from prompts.`)) return;
     await trackBrand(companyId, name, map.brands);
     setMap(await loadContentMap(companyId));
+    const shown = score?.runs?.find((r) => r.id === pickedRun) || scoredRun;
     await refreshScore(situation.id);
+    if (shown && shown.status !== "running") {
+      await labelRun(companyId, shown.id).catch(() => null);
+      await refreshScore(situation.id);
+    }
+  });
+
+  const doIgnore = (name) => guard("track", async () => {
+    await ignoreBrand(companyId, name);
+    setMap(await loadContentMap(companyId));
+  });
+
+  const doRestore = (name) => guard("track", async () => {
+    await restoreBrand(companyId, name);
+    setMap(await loadContentMap(companyId));
   });
 
   /* Step 5: the summary. The app measures; the AI groups the searches, reads the cited pages and writes the cards. */
@@ -1033,16 +1052,15 @@ export default function FanOut() {
 
               <Panel {...panel("topics")} summary={scoredRun?.score.own ? `Mentioned ${scoredRun.score.own.mentioned.pct}% ±${scoredRun.score.own.mentioned.margin}${grouped ? ` · ${scoredRun.groups.opportunities.length} opportunities · ${scoredRun.groups.wins.length} wins` : ""}` : ""} did="Two halves that never mix: the measurement is counted by the app with fixed rules, the interpretation is written by the AI and never touches a number.">
                 {scenarioRuns.length === 0 && <p className="text-xs text-muted-foreground">The summary appears after the first Run.</p>}
-                {scoredRun?.takeaway && <p className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-foreground">{scoredRun.takeaway}</p>}
-                {scenarioRuns.length > 0 && <ScoreBlock data={score} baselineId={situation.baseline_run_id} working={working} busy={busy} onLabel={doLabel} onTrack={doTrack} />}
-                {scenarioRuns.length > 1 && <CompareBlock data={score} baselineId={situation.baseline_run_id} cards={cards} />}
+                {scenarioRuns.length > 0 && <ScoreBlock data={score} baselineId={situation.baseline_run_id} takeaway={scoredRun?.takeaway} pick={pickedRun} onPick={setPickedRun} working={working} busy={busy} onLabel={doLabel} />}
+                {scoredRun && <DiscoveredCard run={score.runs.find((r) => r.id === pickedRun) || scoredRun} ignored={map.ignored || []} working={working} onTrack={doTrack} onIgnore={doIgnore} onRestore={doRestore} />}
                 {scoredRun && scoredRun.status !== "running" && (
                   <>
-                    <p className="border-t border-border pt-3 text-sm font-medium text-foreground">What ChatGPT goes looking for <span className="text-xs font-normal text-muted-foreground">· the latest Run</span></p>
                     <GroupsBlock run={scoredRun} cards={cards} pillars={map.pillars} limits={score.limits} signal={score.signal} cutoff={score.cutoff} companyId={companyId} working={working} busy={busy} progress={analysis} onAnalyze={doAnalyze} onWrite={doCard} onChange={changeCard} onPush={doPush} />
                     {pushNote && <p className={`rounded-md px-3 py-2 text-xs ${pushNote.ok ? "bg-emerald-50 text-emerald-900" : "bg-amber-50 text-amber-900"}`}>{pushNote.text}</p>}
                   </>
                 )}
+                {scenarioRuns.length > 1 && <CompareBlock data={score} baselineId={situation.baseline_run_id} cards={cards} />}
                 <InsightsBlock insights={insights} />
               </Panel>
 

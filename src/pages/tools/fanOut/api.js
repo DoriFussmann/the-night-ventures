@@ -95,6 +95,15 @@ export async function loadSituation(id) {
   return { situation: ok(situation, "Situation"), prompts: sortPrompts(ok(prompts, "Prompts") || []), runs, cards: ok(cards, "Cards") || [], scenarioRuns: all };
 }
 
+/** Takes a discovered brand off the Discovered card for this company. It is still counted wherever every named brand is counted. */
+export async function ignoreBrand(companyId, name) {
+  ok(await supabase.from("fo_ignored_brands").insert({ company_id: companyId, name: String(name).trim().slice(0, 80) }), "Ignore");
+}
+
+export async function restoreBrand(companyId, name) {
+  ok(await supabase.from("fo_ignored_brands").delete().eq("company_id", companyId).ilike("name", String(name).trim().replace(/[%_\\]/g, "\\$&")), "Restore");
+}
+
 /** Adds a brand ChatGPT named to the tracked list, as a competitor. */
 export async function trackBrand(companyId, name, brands) {
   const clean = String(name).trim().toLowerCase();
@@ -108,10 +117,11 @@ export async function loadRunDetail(id) {
 }
 
 export async function loadContentMap(companyId) {
-  const [pillars, groups, own] = await Promise.all([
+  const [pillars, groups, own, ignored] = await Promise.all([
     supabase.from("aeo_pillars").select("id, code, name").eq("company_id", companyId).order("sort"),
     supabase.from("aeo_prompt_groups").select("id, code, name, pillar_id, status").eq("company_id", companyId).order("code"),
     supabase.from("pt_brands").select("id, name, name_patterns, is_own").eq("company_id", companyId).order("sort"),
+    supabase.from("fo_ignored_brands").select("id, name").eq("company_id", companyId).order("name"),
   ]);
   const brands = ok(own, "Brands") || [];
   const brand = brands.find((b) => b.is_own);
@@ -121,6 +131,8 @@ export async function loadContentMap(companyId) {
     pillars: ok(pillars, "Pillars") || [],
     groups: ok(groups, "Topics") || [],
     brands: brands.map((b) => ({ id: b.id, name: b.name, is_own: b.is_own })),
+    // Discovered brands the company chose not to track.
+    ignored: ignored.error ? [] : ignored.data || [],
     ownNames: [...new Set(names.map((n) => String(n || "").trim()).filter((n) => n.length >= 2))],
     // Own brand and competitors, with aliases: prompts are unbranded.
     allNames: [...new Set(every.map((n) => String(n || "").trim()).filter((n) => n.length >= 2))],
