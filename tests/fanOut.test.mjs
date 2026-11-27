@@ -231,9 +231,9 @@ test('cited pages get ids, most cited first, and a type from the reply; an unkno
 test('namedIn counts tracked brands and the brands ChatGPT tagged, once per run, most named first', () => {
   const brands = [{ id: OWN, name: 'Rupert', is_own: true }, { id: 'b-o', name: 'OpenVC', is_own: false }]
   const rs = [
-    { status: 'ok', brands: { 'b-o': { named: true } }, brand_entities: [{ title: 'openvc' }, { title: 'Signal NFX' }, { title: 'Signal NFX' }] },
+    { status: 'ok', brands: { 'b-o': { named: true } }, brand_entities: [{ name: 'openvc', title: 'Investor database' }, { markdown: 'Signal NFX', title: 'Investor network' }, { name: 'Signal NFX' }] },
     { status: 'ok', brands: { 'b-o': { named: true }, [OWN]: { named: true } }, brand_entities: [] },
-    { status: 'failed', brands: { 'b-o': { named: true } }, brand_entities: [{ title: 'Ghost' }] },
+    { status: 'failed', brands: { 'b-o': { named: true } }, brand_entities: [{ name: 'Ghost' }] },
   ]
   assert.deepEqual(namedIn(rs, brands), [
     { name: 'OpenVC', runs: 2, tracked: true, own: false },
