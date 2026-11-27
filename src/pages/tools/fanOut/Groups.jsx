@@ -75,11 +75,14 @@ function OpportunityCard({ g, card, others, pillars, companyId, working, onWrite
   useEffect(() => setCover((card?.cover || []).join("\n")), [card?.id, card?.cover]);
   const closed = card && card.status !== "open";
   const page = card?.your_page || {};
+  // A page that is already live is fixed by hand: a second article would compete with it.
+  const hasLivePage = ["live", "cited"].includes(page.kind);
   return (
     <div className={`rounded-md border px-3 py-2 ${closed ? "border-emerald-300" : "border-border"}`}>
       <div className="flex flex-wrap items-center gap-2">
         <p className="min-w-0 flex-1 basis-60 text-sm font-medium text-foreground">{g.label}</p>
         {g.isNew && <Chip tone="border-violet-300 bg-violet-50 text-violet-800">New</Chip>}
+        {g.core && <Chip>80/20</Chip>}
         <Chip tone={SIGNAL_TONE[g.signal.label]}>{g.signal.label} · {g.signal.x} of {g.signal.n} runs</Chip>
         <Chip tone={DIFFICULTY_TONE[g.difficulty]}>{g.difficulty}</Chip>
         <Chip>Score {g.score}</Chip>
@@ -94,13 +97,13 @@ function OpportunityCard({ g, card, others, pillars, companyId, working, onWrite
               {page.kind === "none" || !page.kind ? "None found: nothing of yours covers this." : page.kind === "cited" ? <>{pageLink(page)} <span className="text-muted-foreground">· {page.note}</span></> : <>{page.code} · {page.title} <span className="text-muted-foreground">· {page.note}</span></>}
             </Line>
             <Line label="What to cover" by="ai">
-              <Textarea className="min-h-[92px] text-xs md:text-xs" value={cover} disabled={working || closed} onChange={(e) => setCover(e.target.value)} onBlur={() => { const next = cover.split("\n").map((l) => l.replace(/^[-*]\s*/, "").trim()).filter(Boolean).slice(0, 8); if (next.join("\n") !== (card.cover || []).join("\n")) onChange(card.id, { cover: next }); }} />
-              <span className="text-muted-foreground">One per line. This becomes the outline of the brief; your hot takes are added on the brief.</span>
+              <Textarea className="min-h-[92px] text-xs md:text-xs" value={cover} disabled={working || closed} onChange={(e) => setCover(e.target.value)} onBlur={() => { const next = cover.split("\n").map((l) => l.replace(/^[-*]\s*/, "").trim()).filter(Boolean).slice(0, 6); if (next.join("\n") !== (card.cover || []).join("\n")) onChange(card.id, { cover: next }); }} />
+              <span className="text-muted-foreground">3 to 6 lines, one per line. This becomes the outline of the brief; your hot takes are added on the brief.</span>
             </Line>
             <Line label="Action" by="ai">
               <span className="flex flex-wrap items-center gap-2">
                 <select className={inputClass} value={card.action} disabled={working || closed} onChange={(e) => onChange(card.id, { action: e.target.value })} aria-label="Action">
-                  {Object.entries(CARD_ACTIONS).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+                  {Object.entries(CARD_ACTIONS).filter(([k]) => k !== "new_article" || !hasLivePage).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
                 </select>
                 <span className="min-w-0 basis-full sm:flex-1 sm:basis-0">{card.action_line}</span>
               </span>
@@ -110,7 +113,8 @@ function OpportunityCard({ g, card, others, pillars, companyId, working, onWrite
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
         {!card && <Button type="button" size="sm" variant="outline" disabled={working} onClick={() => onWrite(g.id)}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Analyze this one</Button>}
-        {card && card.status === "open" && card.action === "new_article" && (
+        {card && card.status === "open" && card.action === "new_article" && g.other && <span className="text-muted-foreground">These searches fit no group, so they are not one topic to write on. Analyze again to regroup them.</span>}
+        {card && card.status === "open" && card.action === "new_article" && !g.other && (
           <>
             {page.kind !== "topic" && (
               <>
@@ -187,12 +191,13 @@ function Fold({ title, hint, children, startOpen = false }) {
  * What ChatGPT goes looking for: the Query Groups of the latest Run, as Opportunities (Open first, then by
  * opportunity score), Wins and Skips, with the cards of the top ones.
  */
-export default function GroupsBlock({ run, cards, pillars, limits, companyId, working, busy, progress, onAnalyze, onWrite, onChange, onPush }) {
+export default function GroupsBlock({ run, cards, pillars, limits, signal = { occasional: 0.2 }, cutoff = 0.5, companyId, working, busy, progress, onAnalyze, onWrite, onChange, onPush }) {
   if (!run) return null;
   const g = run.groups;
   const cardOf = (id) => cards.find((c) => c.group_id === id && c.scenario_run_id === run.id) || null;
   const pushable = g.opportunities.map((x) => ({ g: x, card: cardOf(x.id) })).filter((x) => x.card && x.card.status === "open" && x.card.action === "new_article");
   const needsWork = run.ungrouped > 0 || !g.all.length;
+  const pc = (v) => `${Math.round(v * 100)}%`;
   if (!run.score.searched.x) return <p className="rounded-md bg-muted/40 px-3 py-2 text-xs text-foreground">ChatGPT ran no web search in any run of this Run. It answered from memory, so no page can win these prompts through search.</p>;
   return (
     <div className="space-y-3">
@@ -209,24 +214,23 @@ export default function GroupsBlock({ run, cards, pillars, limits, companyId, wo
 
       {g.opportunities.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs font-medium text-foreground">Opportunities <span className="font-normal text-muted-foreground">· ChatGPT searches this in at least one run in five, and you are named in fewer than half of those runs. Open ones first, then by score (signal × the share of runs without you). The top {limits.opportunities} are analyzed.</span></p>
-          {g.opportunities.map((x, i) => (
+          <p className="text-xs font-medium text-foreground">Opportunities <span className="font-normal text-muted-foreground">· ChatGPT searches this in at least {pc(signal.occasional)} of the runs, and you are named in fewer than {pc(cutoff)} of those. Open ones first, then by score (signal × the share of those runs without you). The top {limits.opportunities} are analyzed. 80/20 marks the groups that account for 80% of all searches.</span></p>
+          {g.opportunities.map((x) => (
             <React.Fragment key={x.id}>
               <OpportunityCard g={x} card={cardOf(x.id)} others={pushable.filter((o) => o.g.id !== x.id)} pillars={pillars} companyId={companyId} working={working} onWrite={onWrite} onChange={onChange} onPush={onPush} />
-              {x.core && !g.opportunities[i + 1]?.core && i < g.opportunities.length - 1 && <p className="border-t border-dashed border-border pt-1 text-[11px] uppercase tracking-wider text-muted-foreground">80/20: the groups above this line are among those that account for 80% of all searches</p>}
             </React.Fragment>
           ))}
         </div>
       )}
-      {g.all.length > 0 && g.opportunities.length === 0 && <p className="text-xs text-muted-foreground">No opportunity in this Run: every search ChatGPT runs often enough already names you in half or more of its runs.</p>}
+      {g.all.length > 0 && g.opportunities.length === 0 && <p className="text-xs text-muted-foreground">No opportunity in this Run: every search ChatGPT runs often enough already names you often enough to count as a win.</p>}
 
       {g.wins.length > 0 && (
-        <Fold title={`Wins (${g.wins.length})`} hint="· searches where you are already named in half or more of the runs. The top ones are analyzed, to repeat what works." startOpen={g.opportunities.length === 0}>
+        <Fold title={`Wins (${g.wins.length})`} hint={`· searches where you are already named in ${pc(cutoff)} or more of the runs. The top ones are analyzed, to repeat what works.`} startOpen={g.opportunities.length === 0}>
           {g.wins.map((x) => <WinCard key={x.id} g={x} card={cardOf(x.id)} working={working} onWrite={onWrite} />)}
         </Fold>
       )}
       {g.skips.length > 0 && (
-        <Fold title={`Skipped (${g.skips.length})`} hint="· noise: ChatGPT searched this in fewer than one run in five.">
+        <Fold title={`Skipped (${g.skips.length})`} hint={`· noise: ChatGPT searched this in fewer than ${pc(signal.occasional)} of the runs.`}>
           <ul className="space-y-1 text-xs">
             {g.skips.map((x) => <li key={x.id} className="rounded-md border border-border px-3 py-1.5"><span className="text-foreground">{x.label}</span> <span className="text-muted-foreground">· {x.signal.x} of {x.signal.n} runs · named in {x.standing.named} of {x.standing.of} · {x.searches.slice(0, 2).map((q) => q.q).join(" | ")}</span></li>)}
           </ul>

@@ -207,29 +207,44 @@ export async function loadInsights(companyId) {
 export async function pushCard({ companyId, situation, card, stats, prompts, also = [] }) {
   if (card.action !== "new_article") throw new Error("Only a new article goes to AEO Generation. This one stays here as a to-do.");
   if (card.status !== "open") throw new Error("This card was already written or closed.");
+  if (stats.other) throw new Error("These are searches that fit no group, not one topic. Analyze again to regroup them before writing.");
+  // AEO Generation does not rewrite a page that is already live: that is fixed by hand.
+  if (["live", "cited"].includes(card.your_page?.kind)) throw new Error("You already have a live page for this. Set the action to Fix existing page: a second article would compete with it.");
   const data = await loadPlaybook(companyId);
   let briefs = await loadBriefs(companyId);
   const fields = briefFromCard(card, stats, also);
   if (fields.outline.length < 3) throw new Error("A brief needs at least 3 lines under What to cover. Add lines to the card first.");
-  let group = card.your_page?.kind === "topic" ? data.groups.find((g) => g.id === card.your_page.topicId) : null;
-  if (group && ["live", "published"].includes(group.status)) throw new Error(`${group.code} is already live. AEO Generation does not rewrite a live topic: mark this card as Fix existing page.`);
-  if (group && briefs.some((b) => b.group_id === group.id)) throw new Error(`${group.code} already has a brief. It was not changed. Open it in AEO Generation and add the lines from What to cover by hand.`);
+  // A push that stopped half-way left its topic on the card: it is picked up from there, not made again.
+  let group = data.groups.find((g) => g.id === card.aeo_group_id) || (card.your_page?.kind === "topic" ? data.groups.find((g) => g.id === card.your_page.topicId) : null);
+  const resumed = Boolean(group && group.id === card.aeo_group_id);
+  if (group && ["live", "published"].includes(group.status)) throw new Error(`${group.code} is already live. AEO Generation does not rewrite a live topic: set the action to Fix existing page.`);
+  if (group && !resumed && briefs.some((b) => b.group_id === group.id)) throw new Error(`${group.code} already has a brief. It was not changed. Open it in AEO Generation and add the lines from What to cover by hand.`);
   if (!group) {
     const pillar = data.pillars.find((p) => p.id === card.pillar_id);
     if (!pillar) throw new Error("Confirm the theme for this article first.");
-    group = await upsertRow("aeo_prompt_groups", {
-      company_id: companyId,
-      pillar_id: pillar.id,
-      code: nextCode(data.groups, pillar.code.slice(0, 1), 2),
-      name: fields.title,
-      page_type: "supporting",
-      status: "new",
-      primary_keyword: fields.primary_keyword,
-      notes: `From Fan-Out ${situation.code}: ${situation.title || ""}`.trim(),
-      sort: data.groups.length,
-    });
+    // Inserted, never upserted: a code someone else took in the meantime must not overwrite their topic.
+    for (let attempt = 0; attempt < 3 && !group; attempt += 1) {
+      const fresh = attempt ? ok(await supabase.from("aeo_prompt_groups").select("code").eq("company_id", companyId), "Topics") || [] : data.groups;
+      const res = await supabase.from("aeo_prompt_groups").insert({
+        company_id: companyId,
+        pillar_id: pillar.id,
+        code: nextCode(fresh, pillar.code.slice(0, 1), 2),
+        name: fields.title,
+        page_type: "supporting",
+        status: "new",
+        primary_keyword: fields.primary_keyword,
+        notes: `From Fan-Out ${situation.code}: ${situation.title || ""}`.trim(),
+        sort: data.groups.length,
+      }).select().single();
+      if (res.error && res.error.code !== "23505") throw new Error(`Topic: ${res.error.message}`);
+      if (!res.error) group = res.data;
+    }
+    if (!group) throw new Error("The Content Map changed while this was being written. Try again.");
     data.groups.push(group);
-    const buyer = buyerPrompts(prompts, stats, situation.stage, (await loadEngineSettings()).stage_tier);
+    await updateCard(card.id, { aeo_group_id: group.id });
+  }
+  if (!data.prompts.some((p) => p.group_id === group.id)) {
+    const buyer = buyerPrompts(prompts, stats, situation.stage, (await loadEngineSettings()).stage_tier, also);
     const count = {};
     for (const p of buyer) {
       count[p.form] = (count[p.form] || 0) + 1;
@@ -243,17 +258,26 @@ export async function pushCard({ companyId, situation, card, stats, prompts, als
       data.prompts.push(row);
     }
   }
-  await createBriefs(companyId, [{ group }], data, { batchLabel: `Fan-Out ${situation.code}` });
-  briefs = await loadBriefs(companyId);
-  const made = briefs.find((b) => b.group_id === group.id);
-  if (!made) throw new Error("The brief was not created.");
-  await updateBrief(made.id, {
-    title: fields.title,
-    primary_keyword: made.primary_keyword || fields.primary_keyword,
-    angle: fields.angle,
-    outline: fields.outline,
-    ...(fields.article_type ? { article_type: fields.article_type } : {}),
-  });
+  // A brief that already exists is never overwritten. The one exception is the brief this same push made
+  // before it stopped: it still has no outline, and it is finished here.
+  let made = briefs.find((b) => b.group_id === group.id);
+  if (made && (!resumed || (Array.isArray(made.outline) && made.outline.length))) {
+    if (!resumed) throw new Error(`${group.code} already has a brief. It was not changed.`);
+  } else {
+    if (!made) {
+      await createBriefs(companyId, [{ group }], data, { batchLabel: `Fan-Out ${situation.code}` });
+      briefs = await loadBriefs(companyId);
+      made = briefs.find((b) => b.group_id === group.id);
+      if (!made) throw new Error("The brief was not created.");
+    }
+    await updateBrief(made.id, {
+      title: fields.title,
+      primary_keyword: made.primary_keyword || fields.primary_keyword,
+      angle: fields.angle,
+      outline: fields.outline,
+      ...(fields.article_type ? { article_type: fields.article_type } : {}),
+    });
+  }
   const at = new Date().toISOString();
   const patch = { status: "pushed", aeo_group_id: group.id, pillar_id: group.pillar_id, brief_id: made.id, pushed_at: at };
   const cards = [await updateCard(card.id, patch)];

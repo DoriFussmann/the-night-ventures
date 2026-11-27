@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { DEFAULT_SETTINGS } from '../lib/fan-out/core.js'
 import { scoreRuns } from '../lib/fan-out/score.js'
 import { briefFromCard, buildCardPrompt, buildGroupsPrompt, buyerPrompts, closestPage, groupStats, howTheyGotThere, parseCard, parseGroups, plainTakeaway, runQueries, summarizeGroups, takeawayFacts, takeawayOk, ungrouped } from '../lib/fan-out/groups.js'
-import { htmlToText, readableUrl } from '../lib/fan-out/pages.js'
+import { htmlToText, privateAddress, readableUrl } from '../lib/fan-out/pages.js'
 
 const OWN = { id: 'own', name: 'Rupert', name_patterns: ['Rupert'], domains: ['heyrupert.com'], is_own: true }
 const RIVAL = { id: 'riv', name: 'RivalCo', name_patterns: [], domains: ['rivalco.com'], is_own: false }
@@ -48,6 +48,10 @@ test('the grouping reply puts every search in exactly one group, keeps what the 
   const out = parseGroups(reply, q, [groups[0]], ['RivalCo'])
   assert.deepEqual(out.into, [{ groupId: 'gA', norms: [q[0].norm] }])
   assert.deepEqual(out.created, [{ label: 'Untitled group', norms: [q[1].norm] }, { label: 'Other searches', norms: [q[2].norm] }])
+  assert.equal(out.leftOver, 1)
+  // The same group listed twice is one entry.
+  const twice = parseGroups(JSON.stringify({ existing: [{ group: 'g1', queries: ['q1'] }, { group: 'g1', queries: ['q2'] }], new: [] }), q, [groups[0]])
+  assert.deepEqual(twice.into, [{ groupId: 'gA', norms: [q[0].norm, q[1].norm] }])
 })
 
 test('a Query Group is measured from the runs that searched it: signal, standing as a count, who wins, score and difficulty', () => {
@@ -125,8 +129,16 @@ test('the takeaway may only use numbers the app calculated', () => {
   const facts = takeawayFacts(s, g)
   assert.ok(facts[0].startsWith('Mentioned: 30% (3 of 10 runs)'))
   assert.equal(takeawayOk('Rupert is named in 30% of answers, 3 of 10 runs. RivalCo is ahead. Start with outreach agencies.', facts), true)
-  assert.equal(takeawayOk('Rupert is named in 45% of answers.', facts), false)
-  assert.equal(takeawayOk('One. Two. Three. Four. Five.', facts), false)
+  assert.equal(takeawayOk('Rupert is named in 45% of answers. RivalCo is ahead. Start with agencies.', facts), false)
+  // A real number in the wrong role does not pass: 10 is in the facts, "10%" is not.
+  assert.equal(takeawayOk('Rupert is named in 10% of answers. RivalCo is ahead. Start with agencies.', facts), false)
+  assert.equal(takeawayOk('Rupert is named in 3 of 30 runs. RivalCo is ahead. Start with agencies.', facts), false)
+  assert.equal(takeawayOk('Rupert is named in half of the answers. RivalCo is ahead. Start with agencies.', facts), false)
+  assert.equal(takeawayOk('Rupert is named in three of ten runs. RivalCo is ahead. Start with agencies.', facts), false)
+  assert.equal(takeawayOk('Rupert is named in 30% of answers. RivalCo is ahead.', facts), false) // not three sentences
+  // With nobody named, there is no rank to state.
+  const silent = scoreRuns([run('short', [A], 'No names.')], brands)
+  assert.ok(!takeawayFacts(silent, summarizeGroups(groups, [], brands)).some((f) => f.startsWith('Rank')))
   assert.match(plainTakeaway(s, g), /named in 30% of the answers \(3 of 10 runs\).*first opportunity is "Agencies that run investor outreach"/)
 })
 
@@ -147,5 +159,12 @@ test('pages are read only from public web addresses, and HTML becomes plain text
   assert.equal(readableUrl('https://example.com/a?utm_source=x&b=1#top'), 'https://example.com/a?b=1')
   for (const bad of ['http://localhost/x', 'http://127.0.0.1/', 'http://10.0.0.5/a', 'http://192.168.1.1', 'file:///etc/passwd', 'http://intranet/', 'http://169.254.169.254/latest', 'nonsense']) assert.equal(readableUrl(bad), '', bad)
   const text = htmlToText('<html><head><style>p{}</style><script>alert(1)</script></head><body><nav>Menu</nav><h2>Pricing</h2><p>From &amp; to $5&nbsp;k</p><table><tr><td>Plan</td><td>Price</td></tr></table></body></html>')
+  for (const bad of ['http://100.100.100.200/', 'http://user:pw@example.com/', 'http://198.18.0.1/', 'http://[fd00::1]/', 'http://[::ffff:10.0.0.1]/']) assert.equal(readableUrl(bad), '', bad)
+  assert.equal(readableUrl('https://shop.localbusiness.com/a'), 'https://shop.localbusiness.com/a')
+  for (const [ip, want] of [['10.1.2.3', true], ['100.64.0.1', true], ['172.31.0.1', true], ['172.32.0.1', false], ['8.8.8.8', false], ['::1', true], ['fe80::1', true], ['2606:4700::1', false], ['nonsense', true]]) assert.equal(privateAddress(ip), want, ip)
+  // A broken or hostile page cannot slow the reader down.
+  const t0 = Date.now()
+  for (const hostile of ['<nav>'.repeat(60000), '<'.repeat(300000), '<!--'.repeat(70000), '<script '.repeat(40000)]) htmlToText(hostile)
+  assert.ok(Date.now() - t0 < 1500)
   assert.ok(text.includes('## Pricing') && text.includes('From & to $5 k') && text.includes('Plan | Price') && !/alert|Menu|p\{\}/.test(text))
 })

@@ -41,6 +41,9 @@ test('when competitors moved the same way as us, the comparison says so', () => 
   const before = scored('gpt-6', [brand('o', 'Rupert', true, 10, 63, 3), brand('r', 'RivalCo', false, 20, 63, 1), brand('t', 'Thirdly', false, 15, 63, 2)], [])
   const now = scored('gpt-6', [brand('o', 'Rupert', true, 40, 63, 3), brand('r', 'RivalCo', false, 50, 63, 1), brand('t', 'Thirdly', false, 45, 63, 2)], [])
   assert.equal(compareRuns(before, now).together, true)
+  // With no rival named in either Run there is no "everyone".
+  const alone = (x) => scored('gpt-6', [brand('o', 'Rupert', true, x, 63, 1), brand('r', 'RivalCo', false, 0, 63, 2), brand('t', 'Thirdly', false, 0, 63, 2)], [])
+  assert.equal(compareRuns(alone(10), alone(40)).together, false)
 })
 
 test('addresses match across protocol, www and trailing slash; the re-run reminder is due after a month', () => {

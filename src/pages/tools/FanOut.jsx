@@ -346,6 +346,9 @@ export default function FanOut() {
   const stopRef = useRef(false);
   const [folds, setFolds] = useState({});
 
+  const shownRef = useRef("");
+  shownRef.current = currentId;
+
   const guard = useCallback(async (label, fn) => {
     setBusy(label);
     setError("");
@@ -385,6 +388,8 @@ export default function FanOut() {
   const open = useCallback(async (id) => {
     if (!id) return setData(null);
     const loaded = await loadSituation(id);
+    // Data that arrives after the user moved to another Scenario is dropped.
+    if (shownRef.current !== id) return;
     if (!loaded.situation) return setData(null);
     show(loaded);
   }, [show]);
@@ -394,8 +399,6 @@ export default function FanOut() {
     open(currentId).catch((err) => setError(err?.message || "Could not load the situation"));
   }, [currentId, open]);
 
-  const shownRef = useRef("");
-  shownRef.current = currentId;
   const refreshScore = useCallback(async (id) => {
     if (!id) return setScore(null);
     const out = await loadScore(companyId, id);
@@ -711,9 +714,15 @@ export default function FanOut() {
     setLastRun(await lastRuns(companyId).catch(() => lastRun));
   };
 
-  const doAnalyze = () => guard("analyze", () => analyze(scoredRun.id, { again: grouped && scoredRun.ungrouped === 0 }));
+  const doAnalyze = () => guard("analyze", async () => {
+    const again = grouped && scoredRun.ungrouped === 0;
+    const open_ = cards.filter((c) => c.scenario_run_id === scoredRun.id && c.status === "open").length;
+    if (again && open_ && !window.confirm(`This writes the ${open_} open ${open_ === 1 ? "card" : "cards"} again, from the pages as they are now. Your edits to What to cover and Action on those cards are replaced. Cards already sent or done are not touched. Go on?`)) return;
+    await analyze(scoredRun.id, { again });
+  });
 
   const doCard = (groupId) => guard("analyze", async () => {
+    if (cards.some((c) => c.group_id === groupId && c.scenario_run_id === scoredRun.id) && !window.confirm("This writes the card again, from the pages as they are now. Your edits to What to cover and Action are replaced. Go on?")) return;
     try {
       setAnalysis("Reading the pages ChatGPT cited…");
       await writeCard(companyId, scoredRun.id, groupId);
@@ -1022,7 +1031,7 @@ export default function FanOut() {
                 {scoredRun && scoredRun.status !== "running" && (
                   <>
                     <p className="border-t border-border pt-3 text-sm font-medium text-foreground">What ChatGPT goes looking for <span className="text-xs font-normal text-muted-foreground">· the latest Run</span></p>
-                    <GroupsBlock run={scoredRun} cards={cards} pillars={map.pillars} limits={score.limits} companyId={companyId} working={working} busy={busy} progress={analysis} onAnalyze={doAnalyze} onWrite={doCard} onChange={changeCard} onPush={doPush} />
+                    <GroupsBlock run={scoredRun} cards={cards} pillars={map.pillars} limits={score.limits} signal={score.signal} cutoff={score.cutoff} companyId={companyId} working={working} busy={busy} progress={analysis} onAnalyze={doAnalyze} onWrite={doCard} onChange={changeCard} onPush={doPush} />
                     {pushNote && <p className={`rounded-md px-3 py-2 text-xs ${pushNote.ok ? "bg-emerald-50 text-emerald-900" : "bg-amber-50 text-amber-900"}`}>{pushNote.text}</p>}
                   </>
                 )}
