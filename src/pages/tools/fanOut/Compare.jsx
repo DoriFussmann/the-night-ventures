@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { compareRuns } from "../../../../lib/fan-out/compare.js";
-import { runName } from "./Score";
+import { SummaryCard, runName } from "./Score";
 
 const day = (iso) => (iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "");
 const signed = (n) => `${n > 0 ? "+" : ""}${n}`;
@@ -25,9 +25,8 @@ export default function CompareBlock({ data, baselineId, cards }) {
   const c = compareRuns(before, now, { cards, cutoff: data.cutoff });
   const head = c.scores.slice(0, 3);
   return (
-    <div className="space-y-3 border-t border-border pt-3">
+    <SummaryCard title="Did it move?">
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        <p className="text-sm font-medium text-foreground">Did it move?</p>
         <span className="text-muted-foreground">{runName(now)} ({day(now.started_at)}) versus</span>
         {previous && previous.id !== baseline.id ? (
           <select className="h-8 rounded-md border border-input bg-background px-2 text-xs" value={against} onChange={(e) => setAgainst(e.target.value)} aria-label="Compare with">
@@ -97,6 +96,6 @@ export default function CompareBlock({ data, baselineId, cards }) {
           <li>Competitors that fell: {c.around.fell.length ? c.around.fell.map((x) => `${x.name} ${signed(x.change)} to ${x.now}%`).join(" · ") : <span className="text-muted-foreground">none beyond the margin</span>}</li>
         </ul>
       </div>
-    </div>
+    </SummaryCard>
   );
 }
