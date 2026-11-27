@@ -4,7 +4,7 @@ import { Check, ChevronDown, ChevronRight, Loader2, RefreshCw, Send } from "luci
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { FORM_LABELS } from "../../../../lib/fan-out/core.js";
-import { CARD_ACTIONS, HOW, REASONS } from "../../../../lib/fan-out/groups.js";
+import { CARD_ACTIONS, HOW, PUSHED_ACTIONS, REASONS } from "../../../../lib/fan-out/groups.js";
 
 const inputClass = "h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring";
 const SIGNAL_TONE = { Strong: "border-emerald-300 bg-emerald-50 text-emerald-800", Occasional: "border-sky-300 bg-sky-50 text-sky-800", Noise: "border-border bg-muted text-muted-foreground" };
@@ -77,11 +77,13 @@ function OpportunityCard({ g, card, others, pillars, companyId, working, onWrite
   const page = card?.your_page || {};
   // A page that is already live is fixed by hand: a second article would compete with it.
   const hasLivePage = ["live", "cited"].includes(page.kind);
+  const pushes = Boolean(card) && PUSHED_ACTIONS.has(card.action);
   return (
     <div className={`rounded-md border px-3 py-2 ${closed ? "border-emerald-300" : "border-border"}`}>
       <div className="flex flex-wrap items-center gap-2">
         <p className="min-w-0 flex-1 basis-60 text-sm font-medium text-foreground">{g.label}</p>
         {g.isNew && <Chip tone="border-violet-300 bg-violet-50 text-violet-800">New</Chip>}
+        {g.recommendation && <Chip>Who should I use</Chip>}
         {g.core && <Chip>80/20</Chip>}
         <Chip tone={SIGNAL_TONE[g.signal.label]}>{g.signal.label} · {g.signal.x} of {g.signal.n} runs</Chip>
         <Chip tone={DIFFICULTY_TONE[g.difficulty]}>{g.difficulty}</Chip>
@@ -100,21 +102,22 @@ function OpportunityCard({ g, card, others, pillars, companyId, working, onWrite
               <Textarea className="min-h-[92px] text-xs md:text-xs" value={cover} disabled={working || closed} onChange={(e) => setCover(e.target.value)} onBlur={() => { const next = cover.split("\n").map((l) => l.replace(/^[-*]\s*/, "").trim()).filter(Boolean).slice(0, 6); if (next.join("\n") !== (card.cover || []).join("\n")) onChange(card.id, { cover: next }); }} />
               <span className="text-muted-foreground">3 to 6 lines, one per line. This becomes the outline of the brief; your hot takes are added on the brief.</span>
             </Line>
-            <Line label="Action" by="ai">
+            <Line label="Action">
               <span className="flex flex-wrap items-center gap-2">
                 <select className={inputClass} value={card.action} disabled={working || closed} onChange={(e) => onChange(card.id, { action: e.target.value })} aria-label="Action">
-                  {Object.entries(CARD_ACTIONS).filter(([k]) => k !== "new_article" || !hasLivePage).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+                  {Object.entries(CARD_ACTIONS).filter(([k]) => !PUSHED_ACTIONS.has(k) || !hasLivePage).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
                 </select>
-                <span className="min-w-0 basis-full sm:flex-1 sm:basis-0">{card.action_line}</span>
+                <span className="min-w-0 basis-full text-muted-foreground sm:flex-1 sm:basis-0">{card.stats?.actionRule && card.action === card.stats.ruleAction ? card.stats.actionRule : card.action !== card.stats?.ruleAction && card.stats?.ruleAction ? "Set by hand." : card.stats?.actionRule}</span>
               </span>
+              {card.action_line && <span className="mt-1 block">{card.action_line} <span className="rounded bg-muted px-1 text-[10px] uppercase tracking-wider text-muted-foreground">estimate</span></span>}
             </Line>
           </>
         )}
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
         {!card && <Button type="button" size="sm" variant="outline" disabled={working} onClick={() => onWrite(g.id)}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Analyze this one</Button>}
-        {card && card.status === "open" && card.action === "new_article" && g.other && <span className="text-muted-foreground">These searches fit no group, so they are not one topic to write on. Analyze again to regroup them.</span>}
-        {card && card.status === "open" && card.action === "new_article" && !g.other && (
+        {card && card.status === "open" && pushes && g.other && <span className="text-muted-foreground">These searches fit no group, so they are not one topic to write on. Analyze again to regroup them.</span>}
+        {card && card.status === "open" && pushes && !g.other && (
           <>
             {page.kind !== "topic" && (
               <>
@@ -135,10 +138,10 @@ function OpportunityCard({ g, card, others, pillars, companyId, working, onWrite
             <span className="text-muted-foreground">Creates a brief in AEO Generation. Nothing is created before you click.</span>
           </>
         )}
-        {card && card.status === "open" && card.action !== "new_article" && (
+        {card && card.status === "open" && !pushes && (
           <>
             <Button type="button" size="sm" variant="outline" disabled={working} onClick={() => onChange(card.id, { status: "done", acted_on_at: new Date().toISOString() })}><Check className="mr-1.5 h-3.5 w-3.5" />Done</Button>
-            <span className="text-muted-foreground">{card.action === "fix_existing" ? "A page that exists is fixed by hand, not by AEO Generation. Click Done when it is." : "Off-site work is done by hand. Click Done when you are on those pages."}</span>
+            <span className="text-muted-foreground">{card.action === "fix_existing" ? "A page that exists is fixed by hand, not by AEO Generation. Click Done when it is." : card.action === "commercial_page" ? "Commercial pages (home, pricing, how it works) and FAQs are changed by hand, not by AEO Generation. Click Done when it is. To write a comparison article instead, set the action to Comparison article." : "Off-site work is done by hand. Click Done when you are on those pages."}</span>
           </>
         )}
         {card?.status === "pushed" && <span className="text-emerald-800">Sent to <Link className="underline underline-offset-2" to={`/company/${companyId}/aeo-generation`}>AEO Generation</Link> on {new Date(card.pushed_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}{card.merged_into ? ", as one brief with another Opportunity" : ""}. It is marked Acted on when the article goes live.</span>}
@@ -195,7 +198,7 @@ export default function GroupsBlock({ run, cards, pillars, limits, signal = { oc
   if (!run) return null;
   const g = run.groups;
   const cardOf = (id) => cards.find((c) => c.group_id === id && c.scenario_run_id === run.id) || null;
-  const pushable = g.opportunities.map((x) => ({ g: x, card: cardOf(x.id) })).filter((x) => x.card && x.card.status === "open" && x.card.action === "new_article");
+  const pushable = g.opportunities.map((x) => ({ g: x, card: cardOf(x.id) })).filter((x) => x.card && x.card.status === "open" && PUSHED_ACTIONS.has(x.card.action));
   const needsWork = run.ungrouped > 0 || !g.all.length;
   const pc = (v) => `${Math.round(v * 100)}%`;
   if (!run.score.searched.x) return <p className="rounded-md bg-muted/40 px-3 py-2 text-xs text-foreground">ChatGPT ran no web search in any run of this Run. It answered from memory, so no page can win these prompts through search.</p>;

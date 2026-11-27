@@ -55,6 +55,7 @@ import ScoreBlock, { runName } from "./fanOut/Score";
 import GroupsBlock, { InsightsBlock } from "./fanOut/Groups";
 import CompareBlock from "./fanOut/Compare";
 import { dueForRerun } from "../../../lib/fan-out/compare.js";
+import { CARD_ACTIONS, PUSHED_ACTIONS } from "../../../lib/fan-out/groups.js";
 
 const inputClass = "h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring";
 const PERSONA_FIELDS = [
@@ -758,7 +759,7 @@ export default function FanOut() {
 
   const spent = runs.reduce((a, r) => a + Number(r.cost || 0), 0);
   const working = Boolean(busy);
-  const todoCards = cards.filter((c) => c.kind === "opportunity" && c.action && c.action !== "new_article");
+  const todoCards = cards.filter((c) => c.kind === "opportunity" && c.action && !PUSHED_ACTIONS.has(c.action));
   const captures = prompts.length * (situation?.runs || 0);
   // Captures run four at a time, one run number after another: 9 prompts are 3 steps per run number.
   const minutes = (seconds) => Math.max(1, Math.round(((situation?.runs || 0) * Math.ceil(prompts.length / 4) * seconds) / 60));
@@ -1038,7 +1039,7 @@ export default function FanOut() {
                 <InsightsBlock insights={insights} />
               </Panel>
 
-              <Panel {...panel("push")} summary={cards.some((c) => c.brief_id) ? `${new Set(cards.filter((c) => c.brief_id).map((c) => c.brief_id)).size} sent to AEO Generation` : ""} did="What was sent to AEO Generation, and what is left to do by hand. Only new articles are sent, and only when you click Write this on an Opportunity.">
+              <Panel {...panel("push")} summary={cards.some((c) => c.brief_id) ? `${new Set(cards.filter((c) => c.brief_id).map((c) => c.brief_id)).size} sent to AEO Generation` : ""} did="What was sent to AEO Generation, and what is left to do by hand. Only new articles and comparison articles are sent, and only when you click Write this on an Opportunity.">
                 {cards.filter((c) => c.brief_id && !c.merged_into).length === 0 ? (
                   <p className="text-xs text-muted-foreground">Nothing has been sent yet. Click Write this on an Opportunity in step 5.</p>
                 ) : (
@@ -1058,11 +1059,11 @@ export default function FanOut() {
                 )}
                 {todoCards.length > 0 && (
                   <div className="text-xs">
-                    <p className="font-medium text-foreground">To do by hand <span className="font-normal text-muted-foreground">· these are not sent to AEO Generation: it writes new articles only</span></p>
+                    <p className="font-medium text-foreground">To do by hand <span className="font-normal text-muted-foreground">· these are not sent to AEO Generation: it writes articles only</span></p>
                     <ul className="mt-1 space-y-1">
                       {todoCards.map((c) => (
                         <li key={c.id} className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-1.5">
-                          <Chip>{c.action === "fix_existing" ? "Fix existing page" : "Off-site"}</Chip>
+                          <Chip>{CARD_ACTIONS[c.action] || c.action}</Chip>
                           <span className="min-w-0 flex-1 basis-60 text-foreground">{c.stats?.label}: <span className="text-muted-foreground">{c.action_line}</span></span>
                           {c.status === "open" ? (
                             <Button type="button" size="sm" variant="outline" disabled={working} onClick={() => changeCard(c.id, { status: "done", acted_on_at: new Date().toISOString() })}><Check className="mr-1.5 h-3.5 w-3.5" />Done</Button>

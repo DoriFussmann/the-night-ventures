@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { DEFAULT_SETTINGS } from '../lib/fan-out/core.js'
 import { scoreRuns } from '../lib/fan-out/score.js'
-import { briefFromCard, buildCardPrompt, buildGroupsPrompt, buyerPrompts, closestPage, groupStats, howTheyGotThere, parseCard, parseGroups, plainTakeaway, runQueries, summarizeGroups, takeawayFacts, takeawayOk, ungrouped } from '../lib/fan-out/groups.js'
+import { PUSHED_ACTIONS, briefFromCard, decideCardAction, buildCardPrompt, buildGroupsPrompt, buyerPrompts, closestPage, groupStats, howTheyGotThere, parseCard, parseGroups, plainTakeaway, runQueries, summarizeGroups, takeawayFacts, takeawayOk, ungrouped } from '../lib/fan-out/groups.js'
 import { htmlToText, privateAddress, readableUrl } from '../lib/fan-out/pages.js'
 
 const OWN = { id: 'own', name: 'Rupert', name_patterns: ['Rupert'], domains: ['heyrupert.com'], is_own: true }
@@ -44,10 +44,10 @@ test('the searches of a Run are merged across wordings and counted by run; only 
 
 test('the grouping reply puts every search in exactly one group, keeps what the AI left out, and strips brand names from labels', () => {
   const q = runQueries(runs)
-  const reply = JSON.stringify({ existing: [{ group: 'g1', queries: ['q1', 'q9'] }, { group: 'g7', queries: ['q2'] }], new: [{ label: 'Why RivalCo costs more', queries: ['q2', 'q1'] }] })
+  const reply = JSON.stringify({ existing: [{ group: 'g1', queries: ['q1', 'q9'] }, { group: 'g7', queries: ['q2'] }], new: [{ label: 'Why RivalCo costs more', who_should_i_use: true, queries: ['q2', 'q1'] }] })
   const out = parseGroups(reply, q, [groups[0]], ['RivalCo'])
   assert.deepEqual(out.into, [{ groupId: 'gA', norms: [q[0].norm] }])
-  assert.deepEqual(out.created, [{ label: 'Untitled group', norms: [q[1].norm] }, { label: 'Other searches', norms: [q[2].norm] }])
+  assert.deepEqual(out.created, [{ label: 'Untitled group', norms: [q[1].norm], recommendation: true }, { label: 'Other searches', norms: [q[2].norm], recommendation: false }])
   assert.equal(out.leftOver, 1)
   // The same group listed twice is one entry.
   const twice = parseGroups(JSON.stringify({ existing: [{ group: 'g1', queries: ['q1'] }, { group: 'g1', queries: ['q2'] }], new: [] }), q, [groups[0]])
@@ -106,22 +106,40 @@ test('how the winner got there comes from what was cited: their own page, third-
   assert.equal(howTheyGotThere(null, a, brands).how, 'neither')
 })
 
-test('a card stays inside its formats: reasons from the fixed list, 3 to 6 lines to cover, one of three actions', () => {
+test('the action is set by rule: fix a page that exists, go off-site, a commercial page for "who should I use", else a new article', () => {
+  const none = { kind: 'none' }
+  assert.equal(decideCardAction({ yourPage: { kind: 'live' }, how: 'third_party', recommendation: true }).action, 'fix_existing')
+  assert.equal(decideCardAction({ yourPage: { kind: 'cited' }, how: 'neither', recommendation: false }).action, 'fix_existing')
+  assert.equal(decideCardAction({ yourPage: none, how: 'third_party', recommendation: true }).action, 'off_site')
+  assert.equal(decideCardAction({ yourPage: none, how: 'own_page', recommendation: true }).action, 'commercial_page')
+  assert.equal(decideCardAction({ yourPage: { kind: 'topic' }, how: 'own_page', recommendation: false }).action, 'new_article')
+  assert.equal(decideCardAction({ yourPage: none, how: 'neither', recommendation: false }).action, 'new_article')
+  // A comparison article is never chosen by rule, and only articles are pushed.
+  for (const r of [true, false]) for (const how of ['own_page', 'third_party', 'neither']) assert.notEqual(decideCardAction({ yourPage: none, how, recommendation: r }).action, 'comparison_article')
+  assert.deepEqual([...PUSHED_ACTIONS].sort(), ['comparison_article', 'new_article'])
+  assert.equal(groupStats({ ...groups[0], recommendation: true }, runs, brands).recommendation, true)
+})
+
+test('a card stays inside its formats: reasons from the fixed list, 3 to 6 lines to cover, and the action the app decided', () => {
   const a = groupStats(groups[0], runs, brands)
   const none = { kind: 'none' }
-  const req = buildCardPrompt({ kind: 'opportunity', situation: { description: 'A founder' }, stats: a, winner: a.leader, how: { how: 'own_page' }, yourPage: none, pagesRead: [{ ok: true, domain: 'rivalco.com', runs: 2, title: 'Outreach', text: 'We run outreach.' }, { ok: false, domain: 'x.com' }], pillars: [{ code: 'A', name: 'Raising' }], template: DEFAULT_SETTINGS.prompt_card })
-  assert.ok(req.includes('OPPORTUNITY') && req.includes('RivalCo, named in 3 of 3 runs') && req.includes('We run outreach.') && req.includes('could not be read') && req.includes('- no_page: No page') && !/\{[a-z_]+\}/.test(req))
-  const reply = JSON.stringify({ reasons: ['format', 'made_up', 'no_page', 'fresh'], why: 'Their page lists options in a table.', what_to_cover: ['What an agency does', 'What it costs', 'Why Rupert is best', 'How long it takes'], action: 'new_article', action_line: 'Write a comparison.', comparison: true, theme: 'a' })
-  const card = parseCard(reply, { kind: 'opportunity', yourPage: none, pillars: [{ id: 'pA', code: 'A', name: 'Raising' }], brandNames: ['Rupert'] })
+  const req = buildCardPrompt({ kind: 'opportunity', situation: { description: 'A founder' }, stats: a, winner: a.leader, how: { how: 'own_page' }, yourPage: none, action: 'commercial_page', pagesRead: [{ ok: true, domain: 'rivalco.com', runs: 2, title: 'Outreach', text: 'We run outreach. $& $1 {group}' }, { ok: false, domain: 'x.com' }], pillars: [{ code: 'A', name: 'Raising' }], template: DEFAULT_SETTINGS.prompt_card })
+  assert.ok(req.includes('OPPORTUNITY') && req.includes('RivalCo, named in 3 of 3 runs') && req.includes('could not be read') && req.includes('- no_page: No page'))
+  assert.ok(req.includes('THE ACTION (set by rule, not yours to change): Commercial page or FAQ'))
+  assert.ok(req.includes('We run outreach. $& $1 {group}')) // page text goes in as it is: nothing in it is expanded
+  // Templates saved before these fields existed still carry them.
+  assert.ok(buildCardPrompt({ kind: 'opportunity', situation: {}, stats: a, winner: a.leader, how: { how: 'own_page' }, yourPage: none, action: 'off_site', pagesRead: [], template: 'OLD {group}' }).includes('THE ACTION (set by rule, not yours to change): Off-site'))
+  assert.ok(buildGroupsPrompt({ situation: {}, queries: [], template: 'OLD {queries}' }).includes('who_should_i_use'))
+  const reply = JSON.stringify({ reasons: ['format', 'made_up', 'no_page', 'fresh'], why: 'Their page lists options in a table.', what_to_cover: ['What an agency does', 'What it costs', 'Why Rupert is best', 'How long it takes'], action: 'new_article', action_line: 'Put the claim on the pricing page.', theme: 'a' })
+  const card = parseCard(reply, { kind: 'opportunity', yourPage: none, pillars: [{ id: 'pA', code: 'A', name: 'Raising' }], brandNames: ['Rupert'], action: 'commercial_page' })
   assert.deepEqual(card.reasons, ['format', 'no_page'])
   assert.deepEqual(card.cover, ['What an agency does', 'What it costs', 'How long it takes'])
-  assert.deepEqual([card.action, card.comparison, card.pillarId], ['new_article', true, 'pA'])
-  // A live page is fixed by hand, never rewritten by AEO Generation; and "no page" is false when a page exists.
-  const live = parseCard(reply, { kind: 'opportunity', yourPage: { kind: 'live' }, pillars: [] })
-  assert.deepEqual([live.action, live.reasons], ['fix_existing', ['format']])
-  const win = parseCard(JSON.stringify({ reasons: ['no_page', 'direct_match'], why: 'w', what_to_cover: ['x'], action: 'new_article', repeat_this: 'Do it again.' }), { kind: 'win', yourPage: { kind: 'cited' } })
-  assert.deepEqual([win.reasons, win.cover, win.action, win.repeatThis], [['direct_match'], [], '', 'Do it again.'])
-  assert.ok(buildCardPrompt({ kind: 'win', situation: {}, stats: a, winner: null, how: { how: 'neither' }, yourPage: none, pagesRead: [], template: DEFAULT_SETTINGS.prompt_card }).includes('- no_page') === false)
+  // The AI's reply cannot change the action.
+  assert.deepEqual([card.action, card.actionLine, card.pillarId], ['commercial_page', 'Put the claim on the pricing page.', 'pA'])
+  assert.deepEqual(parseCard(reply, { kind: 'opportunity', yourPage: { kind: 'live' }, pillars: [], action: 'fix_existing' }).reasons, ['format']) // "no page" is false when a page exists
+  const win = parseCard(JSON.stringify({ reasons: ['no_page', 'direct_match'], why: 'w', what_to_cover: ['x'], action_line: 'x', repeat_this: 'Do it again.' }), { kind: 'win', yourPage: { kind: 'cited' } })
+  assert.deepEqual([win.reasons, win.cover, win.action, win.actionLine, win.repeatThis], [['direct_match'], [], '', '', 'Do it again.'])
+  assert.ok(!buildCardPrompt({ kind: 'win', situation: {}, stats: a, winner: null, how: { how: 'neither' }, yourPage: none, pagesRead: [], template: DEFAULT_SETTINGS.prompt_card }).includes('- no_page'))
 })
 
 test('the takeaway may only use numbers the app calculated', () => {
@@ -146,12 +164,13 @@ test('the takeaway may only use numbers the app calculated', () => {
 
 test('a brief takes its title from the group, its keyword from the top search, its outline from What to cover; merged cards add theirs', () => {
   const a = groupStats(groups[0], runs, brands)
-  const card = { cover: ['What an agency does', 'What it costs.'], reasons: ['format'], why: 'They use a table.', comparison: true }
+  const card = { cover: ['What an agency does', 'What it costs.'], reasons: ['format'], why: 'They use a table.', action: 'comparison_article' }
   const brief = briefFromCard(card, a, [{ cover: ['What it costs.', 'How long it takes'] }])
   assert.equal(brief.title, 'Agencies that run investor outreach')
   assert.equal(brief.primary_keyword, a.searches[0].q)
   assert.deepEqual(brief.outline.map((o) => o.heading), ['What an agency does', 'What it costs', 'How long it takes'])
   assert.equal(brief.article_type, 'comparison')
+  assert.equal(briefFromCard({ ...card, action: 'new_article' }, a).article_type, null)
   assert.match(brief.angle, /Named most today: RivalCo \(3 of 3 runs\)\. Why \(estimate\): Format\. They use a table\./)
   const prompts = [{ id: 'p1', form: 'short', prompt: 's' }, { id: 'p2', form: 'medium', prompt: 'm' }, { id: 'p3', form: 'long', prompt: 'l' }]
   assert.deepEqual(buyerPrompts(prompts, a, 'ready_to_buy').map((p) => [p.id, p.intent_tier]), [['p1', 'Buy'], ['p2', 'Buy']])

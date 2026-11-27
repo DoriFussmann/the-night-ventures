@@ -4,7 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { loadPlaybook, nextCode, upsertRow } from "../aeoPlaybook/api";
 import { createBriefs, loadBriefs, updateBrief } from "../aeoGeneration/briefs";
 import { mergeSettings, situationText, sortPrompts } from "../../../../lib/fan-out/core.js";
-import { briefFromCard, buyerPrompts } from "../../../../lib/fan-out/groups.js";
+import { PUSHED_ACTIONS, briefFromCard, buyerPrompts } from "../../../../lib/fan-out/groups.js";
 
 const ENDPOINT = "/api/fan-out";
 /** Run columns the page lists; the full answer and raw reply are read per run, on demand. */
@@ -198,14 +198,15 @@ export async function loadInsights(companyId) {
 }
 
 /**
- * "Write this": turns one Opportunity card into a brief in AEO Generation. Only new-article cards are pushed.
+ * "Write this": turns one Opportunity card into a brief in AEO Generation. Only new articles and comparison
+ * articles are pushed; the other actions stay in Fan-Out as to-dos.
  * The Content Map topic is the existing one the card matched, if it has no brief; otherwise a new topic made
  * from the Query Group, with the Scenario prompts that led to it as buyer prompts (intent tier from the Stage).
  * A brief that already exists is never overwritten. `also` are cards written together with this one, as one brief.
  * @returns {Promise<{ ok: boolean, message: string, cards: object[] }>}
  */
 export async function pushCard({ companyId, situation, card, stats, prompts, also = [] }) {
-  if (card.action !== "new_article") throw new Error("Only a new article goes to AEO Generation. This one stays here as a to-do.");
+  if (!PUSHED_ACTIONS.has(card.action)) throw new Error("Only a new article or a comparison article goes to AEO Generation. This one stays here as a to-do.");
   if (card.status !== "open") throw new Error("This card was already written or closed.");
   if (stats.other) throw new Error("These are searches that fit no group, not one topic. Analyze again to regroup them before writing.");
   // AEO Generation does not rewrite a page that is already live: that is fixed by hand.
