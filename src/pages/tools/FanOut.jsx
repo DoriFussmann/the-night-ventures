@@ -518,12 +518,15 @@ export default function FanOut() {
   // step (to read its result) and the one after it. Everything the user has moved past is folded.
   const openByDefault = useMemo(() => {
     const firstStale = STEPS.find((s) => states[s] === "stale");
-    if (firstStale) return new Set([firstStale]);
-    const out = new Set(STEPS.filter((s) => states[s] === "current"));
+    const todo = new Set();
+    if (gaps.length) todo.add("describe"); // saved before the fields existed: they are the thing to fill
+    if (newPersona && !situation?.persona_confirmed_at) todo.add("persona"); // written, waiting for approval
+    if (firstStale) return todo.add(firstStale);
+    const out = new Set([...todo, ...STEPS.filter((s) => states[s] === "current")]);
     const done = STEPS.filter((s) => states[s] === "done");
     if (done.length) out.add(done[done.length - 1]);
     return out;
-  }, [states]);
+  }, [states, gaps.length, newPersona, situation?.persona_confirmed_at]);
   const defaultKey = `${situation?.id || ""}|${[...openByDefault].join(",")}`;
   useEffect(() => setFolds({}), [defaultKey]);
   const isOpen = (step) => folds[step] ?? openByDefault.has(step);
