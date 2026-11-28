@@ -2,12 +2,14 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { DEFAULT_SETTINGS } from '../lib/fan-out/core.js'
 import { scoreRuns } from '../lib/fan-out/score.js'
-import { PUSHED_ACTIONS, briefFromCard, decideCardAction, buildCardPrompt, buildGroupsPrompt, buyerPrompts, closestPage, groupStats, howTheyGotThere, parseCard, parseGroups, plainTakeaway, runQueries, summarizeGroups, takeawayFacts, takeawayOk, ungrouped } from '../lib/fan-out/groups.js'
+import { PUSHED_ACTIONS, briefFromCard, decideCardAction, buildCardPrompt, buildGroupsPrompt, buyerPrompts, closestPage, groupStats, howTheyGotThere, parseCard, parseGroups, plainTakeaway, runQueries, splitByMissed, summarizeGroups, takeawayFacts, takeawayOk, ungrouped } from '../lib/fan-out/groups.js'
 import { htmlToText, privateAddress, readableUrl } from '../lib/fan-out/pages.js'
 
 const OWN = { id: 'own', name: 'Rupert', name_patterns: ['Rupert'], domains: ['heyrupert.com'], is_own: true }
 const RIVAL = { id: 'riv', name: 'RivalCo', name_patterns: [], domains: ['rivalco.com'], is_own: false }
 const brands = [OWN, RIVAL]
+// The fixture has 10 runs and Rupert is not named in 7 of them; an Opportunity here needs 2 of those (5 in the app).
+const OPT = { cutoffs: { min_missed: 2 } }
 let n = 0
 const run = (form, fanOut, answer, cited = [], promptId = 'p1') => ({ id: `r${(n += 1)}`, status: 'ok', prompt_id: promptId, prompt_form: form, fan_out: fanOut, answer, cited, brand_entities: [], mention_labels: {} })
 const A = 'investor outreach agency for startups'
@@ -54,50 +56,68 @@ test('the grouping reply puts every search in exactly one group, keeps what the 
   assert.deepEqual(twice.into, [{ groupId: 'gA', norms: [q[0].norm, q[1].norm] }])
 })
 
-test('a Query Group is measured from the runs that searched it: signal, standing as a count, who wins, score and difficulty', () => {
-  const a = groupStats(groups[0], runs, brands)
+test('an Opportunity is a search ChatGPT ran in enough runs where the company was not named, and is described by those runs', () => {
+  const a = groupStats(groups[0], runs, brands, OPT)
   assert.deepEqual([a.runs, a.signal.x, a.signal.n, a.signal.label], [3, 3, 10, 'Occasional'])
   assert.deepEqual(a.standing, { named: 1, of: 3 })
-  assert.deepEqual(a.leader, { name: 'RivalCo', brandId: 'riv', runs: 3 })
-  assert.equal(a.difficulty, 'Dominated')
-  assert.equal(a.score, 20) // signal 30% x gap 2/3
+  // Rupert is missing in 7 of the 10 runs, and this search was run in 2 of those 7.
+  assert.deepEqual(a.missed, { x: 2, n: 7 })
   assert.equal(a.verdict, 'Opportunity')
-  assert.deepEqual(a.cited.map((p) => [p.domain, p.runs]), [['lists.com', 2], ['rivalco.com', 2]])
-  assert.deepEqual(a.citedDomains, [{ domain: 'lists.com', runs: 2 }, { domain: 'rivalco.com', runs: 2 }])
-  assert.deepEqual(a.triggeredBy, [{ form: 'short', runs: 2 }, { form: 'medium', runs: 1 }])
-  assert.deepEqual(a.promptIds.sort(), ['p1', 'p2'])
-  assert.equal(a.searches[0].runs, 3)
-  const b = groupStats(groups[1], runs, brands)
+  assert.equal(a.scopeRuns, 2)
+  // Who is named, what is cited, the searches and the prompts are counted in those 2 runs only.
+  assert.deepEqual(a.leader, { name: 'RivalCo', brandId: 'riv', runs: 2 })
+  assert.equal(a.difficulty, 'Dominated')
+  assert.equal(a.score, 19) // 2 of the 7 missing runs x missing in 2 of its 3 runs
+  assert.deepEqual(a.cited.map((p) => [p.domain, p.runs]), [['rivalco.com', 2], ['lists.com', 1]])
+  assert.deepEqual(a.citedDomains, [{ domain: 'rivalco.com', runs: 2 }, { domain: 'lists.com', runs: 1 }])
+  assert.deepEqual(a.triggeredBy, [{ form: 'short', runs: 2 }])
+  assert.deepEqual(a.byPrompt, [{ promptId: 'p1', runs: 2 }])
+  assert.deepEqual(a.promptIds, ['p1'])
+  assert.equal(a.searches[0].runs, 2)
+  assert.equal(a.searchCount, 3) // the size of the group is counted over all its runs
+  const b = groupStats(groups[1], runs, brands, OPT)
   assert.deepEqual([b.standing, b.verdict, b.difficulty], [{ named: 2, of: 3 }, 'Win', 'Open'])
   assert.equal(b.ownCited[0].url, 'https://heyrupert.com/pricing')
-  const c = groupStats(groups[2], runs, brands)
+  const c = groupStats(groups[2], runs, brands, OPT)
   assert.deepEqual([c.signal.label, c.verdict, c.isNew], ['Noise', 'Skip', true])
-  // The cut-offs come from the admin settings.
-  assert.equal(groupStats(groups[0], runs, brands, { cutoffs: { opportunity: 0.3, open: 0.5, dominated: 0.75 } }).verdict, 'Win')
+  // How many missing runs it takes comes from the admin settings: 5 by default, and this search has 2.
+  assert.equal(groupStats(groups[0], runs, brands).verdict, 'Win')
+  assert.equal(groupStats(groups[0], runs, brands).leader.runs, 3) // not an Opportunity: counted over all its runs
+  // A search that is rare overall is still an Opportunity when it sits in the runs where the company is missing.
+  assert.equal(groupStats(groups[2], runs, brands, { cutoffs: { min_missed: 1 } }).verdict, 'Opportunity')
+  // The first grouping starts from the searches of the runs where the company was not named.
+  const split = splitByMissed(runQueries(runs), runs, brands)
+  assert.deepEqual([split.missedRuns, split.missed.length, split.rest.length], [7, 3, 0])
+  const named = splitByMissed(runQueries(runs.slice(2, 4)), runs.slice(2, 4), brands)
+  assert.deepEqual([named.missedRuns, named.missed.length, named.rest.length], [0, 0, 2])
 })
 
-test('the summary lists Opportunities (Open first, then by score), Wins and Skips, and marks the 80/20 groups', () => {
-  const s = summarizeGroups(groups, runs, brands)
+test('the summary lists Opportunities (highest score first), Wins and Skips, and marks the 80/20 groups', () => {
+  const s = summarizeGroups(groups, runs, brands, OPT)
   assert.deepEqual([s.opportunities.map((g) => g.id), s.wins.map((g) => g.id), s.skips.map((g) => g.id)], [['gA'], ['gB'], ['gC']])
   assert.equal(s.totalSearches, 7)
   assert.deepEqual(s.all.filter((g) => g.core).map((g) => g.id).sort(), ['gA', 'gB'])
   const open = { id: 'o', label: 'o', norms: ['x'] }
   const dom = { id: 'd', label: 'd', norms: ['y'] }
   const rs = [run('short', ['x', 'y'], 'RivalCo.'), run('short', ['x', 'y'], 'RivalCo.'), run('short', ['x'], 'none'), run('short', ['x'], 'none')]
-  assert.deepEqual(summarizeGroups([dom, open], rs, brands).opportunities.map((g) => [g.id, g.difficulty]), [['o', 'Open'], ['d', 'Dominated']])
+  assert.deepEqual(summarizeGroups([dom, open], rs, brands, OPT).opportunities.map((g) => [g.id, g.difficulty]), [['o', 'Open'], ['d', 'Dominated']])
 })
 
 test('the closest page is an own page ChatGPT cited, or the Content Map topic that shares the most words, or none', () => {
-  const a = groupStats(groups[0], runs, brands)
+  const a = groupStats(groups[0], runs, brands, OPT)
   const topics = [{ id: 't1', code: 'A01', name: 'Investor outreach agencies compared', status: 'new' }, { id: 't2', code: 'A02', name: 'SAFE notes explained', status: 'live', live_slug: 'safe' }]
   assert.deepEqual([closestPage(a, topics).kind, closestPage(a, topics).code], ['topic', 'A01'])
   assert.equal(closestPage(a, [topics[1]]).kind, 'none')
-  assert.equal(closestPage(groupStats(groups[1], runs, brands), topics).kind, 'cited')
-  assert.equal(closestPage(groupStats(groups[2], runs, brands), topics).kind, 'live')
+  // An own page counts only when it is cited in a real share of those runs: two at least, and a quarter of them.
+  assert.equal(closestPage(groupStats(groups[1], runs, brands, OPT), topics).kind, 'none') // cited in 1 of 3
+  const stats = (runsCited, of) => ({ label: 'x', searches: [], runs: 40, scopeRuns: of, ownCited: [{ url: 'https://heyrupert.com/pricing', runs: runsCited }] })
+  assert.deepEqual([closestPage(stats(2, 8)).kind, closestPage(stats(2, 8)).note], ['cited', 'cited in 2 of 8 runs'])
+  assert.equal(closestPage(stats(2, 12)).kind, 'none')
+  assert.equal(closestPage(groupStats(groups[2], runs, brands, OPT), topics).kind, 'live')
 })
 
 test('how the winner got there comes from what was cited: their own page, third-party pages that name them, or neither', () => {
-  const a = groupStats(groups[0], runs, brands)
+  const a = groupStats(groups[0], runs, brands, OPT)
   assert.equal(howTheyGotThere(a.leader, a, brands).how, 'own_page')
   const noOwn = { ...a, cited: a.cited.filter((p) => p.domain !== 'rivalco.com') }
   assert.equal(howTheyGotThere(a.leader, noOwn, brands, [{ ok: true, url: 'https://lists.com/best', domain: 'lists.com', title: 'Best', runs: 2, text: 'Top pick: RivalCo' }]).how, 'third_party')
@@ -117,14 +137,14 @@ test('the action is set by rule: fix a page that exists, go off-site, a commerci
   // A comparison article is never chosen by rule, and only articles are pushed.
   for (const r of [true, false]) for (const how of ['own_page', 'third_party', 'neither']) assert.notEqual(decideCardAction({ yourPage: none, how, recommendation: r }).action, 'comparison_article')
   assert.deepEqual([...PUSHED_ACTIONS].sort(), ['comparison_article', 'new_article'])
-  assert.equal(groupStats({ ...groups[0], recommendation: true }, runs, brands).recommendation, true)
+  assert.equal(groupStats({ ...groups[0], recommendation: true }, runs, brands, OPT).recommendation, true)
 })
 
 test('a card stays inside its formats: reasons from the fixed list, 3 to 6 lines to cover, and the action the app decided', () => {
-  const a = groupStats(groups[0], runs, brands)
+  const a = groupStats(groups[0], runs, brands, OPT)
   const none = { kind: 'none' }
   const req = buildCardPrompt({ kind: 'opportunity', situation: { description: 'A founder' }, stats: a, winner: a.leader, how: { how: 'own_page' }, yourPage: none, action: 'commercial_page', pagesRead: [{ ok: true, domain: 'rivalco.com', runs: 2, title: 'Outreach', text: 'We run outreach. $& $1 {group}' }, { ok: false, domain: 'x.com' }], pillars: [{ code: 'A', name: 'Raising' }], template: DEFAULT_SETTINGS.prompt_card })
-  assert.ok(req.includes('OPPORTUNITY') && req.includes('RivalCo, named in 3 of 3 runs') && req.includes('could not be read') && req.includes('- no_page: No page'))
+  assert.ok(req.includes('OPPORTUNITY') && req.includes('RivalCo, named in 2 of 2 runs') && req.includes('could not be read') && req.includes('- no_page: No page'))
   assert.ok(req.includes('THE ACTION (set by rule, not yours to change): Commercial page or FAQ'))
   assert.ok(req.includes('We run outreach. $& $1 {group}')) // page text goes in as it is: nothing in it is expanded
   // Templates saved before these fields existed still carry them.
@@ -144,7 +164,7 @@ test('a card stays inside its formats: reasons from the fixed list, 3 to 6 lines
 
 test('the takeaway may only use numbers the app calculated', () => {
   const s = scoreRuns(runs, brands)
-  const g = summarizeGroups(groups, runs, brands)
+  const g = summarizeGroups(groups, runs, brands, OPT)
   const facts = takeawayFacts(s, g)
   assert.ok(facts[0].startsWith('Mentioned: 30% (3 of 10 runs)'))
   assert.equal(takeawayOk('Rupert is named in 30% of answers, 3 of 10 runs. RivalCo is ahead. Start with outreach agencies.', facts), true)
@@ -163,7 +183,7 @@ test('the takeaway may only use numbers the app calculated', () => {
 })
 
 test('a brief takes its title from the group, its keyword from the top search, its outline from What to cover; merged cards add theirs', () => {
-  const a = groupStats(groups[0], runs, brands)
+  const a = groupStats(groups[0], runs, brands, OPT)
   const card = { cover: ['What an agency does', 'What it costs.'], reasons: ['format'], why: 'They use a table.', action: 'comparison_article' }
   const brief = briefFromCard(card, a, [{ cover: ['What it costs.', 'How long it takes'] }])
   assert.equal(brief.title, 'Agencies that run investor outreach')
@@ -171,9 +191,9 @@ test('a brief takes its title from the group, its keyword from the top search, i
   assert.deepEqual(brief.outline.map((o) => o.heading), ['What an agency does', 'What it costs', 'How long it takes'])
   assert.equal(brief.article_type, 'comparison')
   assert.equal(briefFromCard({ ...card, action: 'new_article' }, a).article_type, null)
-  assert.match(brief.angle, /Named most today: RivalCo \(3 of 3 runs\)\. Why \(estimate\): Format\. They use a table\./)
+  assert.match(brief.angle, /Named most today: RivalCo \(2 of 2 runs\)\. Why \(estimate\): Format\. They use a table\./)
   const prompts = [{ id: 'p1', form: 'short', prompt: 's' }, { id: 'p2', form: 'medium', prompt: 'm' }, { id: 'p3', form: 'long', prompt: 'l' }]
-  assert.deepEqual(buyerPrompts(prompts, a, 'ready_to_buy').map((p) => [p.id, p.intent_tier]), [['p1', 'Buy'], ['p2', 'Buy']])
+  assert.deepEqual(buyerPrompts(prompts, a, 'ready_to_buy').map((p) => [p.id, p.intent_tier]), [['p1', 'Buy']])
 })
 
 test('pages are read only from public web addresses, and HTML becomes plain text with table rows kept', () => {

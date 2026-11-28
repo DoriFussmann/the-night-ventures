@@ -4,7 +4,7 @@ import { Check, ChevronDown, ChevronRight, Loader2, RefreshCw, Send } from "luci
 import { Fold, SummaryCard } from "./Score";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { FORM_LABELS } from "../../../../lib/fan-out/core.js";
+import { FORM_LABELS, promptLabel } from "../../../../lib/fan-out/core.js";
 import { CARD_ACTIONS, HOW, PUSHED_ACTIONS, REASONS } from "../../../../lib/fan-out/groups.js";
 
 const inputClass = "h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring";
@@ -27,21 +27,33 @@ function Line({ label, by, children }) {
 
 const pageLink = (p) => <a className="underline underline-offset-2" href={p.url} target="_blank" rel="noreferrer">{p.title || p.domain}</a>;
 
-function Measured({ g }) {
+function Measured({ g, prompts = [] }) {
+  const opp = g.verdict === "Opportunity";
+  const named = g.standing.named;
+  // "Short 2 · comparing options for warm intros (7)": the prompts whose runs are counted here.
+  const promptName = (id) => {
+    const p = prompts.find((x) => x.id === id);
+    if (!p) return "";
+    return `${promptLabel(p, prompts)}${p.angle ? ` · ${p.angle}` : ""}`;
+  };
+  const byPrompt = (g.byPrompt || []).map((t) => ({ name: promptName(t.promptId), runs: t.runs })).filter((t) => t.name);
   return (
     <>
+      {opp && <Line label="Where you are missing">ChatGPT searched this in {g.missed.x} of the {g.missed.n} runs where you were not named{named > 0 ? `, and in ${named} where you were` : ""}. <span className="text-muted-foreground">Everything below is counted in those {g.missed.x} runs · a link between the search and the missing mention, not a proven cause</span></Line>}
       <Line label="ChatGPT searched">
         <ul className="space-y-0.5 font-mono text-[11px]">
           {g.searches.slice(0, 6).map((q) => <li key={q.q}>{q.q} <span className="text-muted-foreground">· {q.runs}×</span></li>)}
           {g.searches.length > 6 && <li className="font-sans text-muted-foreground">and {g.searches.length - 6} more</li>}
         </ul>
       </Line>
-      <Line label="Your standing">Named in {g.standing.named} of {g.standing.of} runs where ChatGPT searched this <span className="text-muted-foreground">· a link between the two, not a proven cause</span></Line>
-      <Line label="Who wins">
+      {!opp && <Line label="Your standing">Named in {g.standing.named} of {g.standing.of} runs where ChatGPT searched this <span className="text-muted-foreground">· a link between the two, not a proven cause</span></Line>}
+      <Line label={opp ? "Named instead of you" : "Who wins"}>
         {g.whoNamed.filter((w) => !w.own).length ? g.whoNamed.filter((w) => !w.own).slice(0, 5).map((w) => `${w.name} (${w.runs})`).join(" · ") : "No other brand is named in these runs."}
         {(g.citedDomains || []).length > 0 && <span className="block text-muted-foreground">Sites cited most: {g.citedDomains.slice(0, 5).map((p) => `${p.domain} (${p.runs})`).join(" · ")}</span>}
       </Line>
-      <Line label="Triggered by">{g.triggeredBy.map((t) => `${FORM_LABELS[t.form]} prompts (${t.runs})`).join(" · ")}</Line>
+      <Line label="Triggered by">
+        {byPrompt.length ? <ul className="space-y-0.5">{byPrompt.map((t) => <li key={t.name}>{t.name} <span className="text-muted-foreground">· {t.runs} {t.runs === 1 ? "run" : "runs"}</span></li>)}</ul> : g.triggeredBy.map((t) => `${FORM_LABELS[t.form]} prompts (${t.runs})`).join(" · ")}
+      </Line>
     </>
   );
 }
@@ -70,7 +82,7 @@ function How({ card, mine }) {
  * An Opportunity: the app's numbers, the AI's estimate of why the winner wins, what a page must cover,
  * and the action. "Write this" sends a new article to AEO Generation; the other actions stay here as to-dos.
  */
-function OpportunityCard({ g, card, others, pillars, companyId, working, onWrite, onChange, onPush }) {
+function OpportunityCard({ g, card, others, pillars, prompts, companyId, working, onWrite, onChange, onPush }) {
   const [cover, setCover] = useState((card?.cover || []).join("\n"));
   const [mergeWith, setMergeWith] = useState("");
   const [open, setOpen] = useState(false);
@@ -85,7 +97,7 @@ function OpportunityCard({ g, card, others, pillars, companyId, working, onWrite
       <button type="button" className="flex w-full flex-wrap items-center gap-2 px-3 py-2 text-left" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
         {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
         <span className="min-w-0 flex-1 basis-60 text-sm font-medium text-foreground">{g.label}</span>
-        <Chip>Named in {g.standing.named} of {g.standing.of}</Chip>
+        <Chip tone="border-amber-300 bg-amber-50 text-amber-900">In {g.missed.x} of {g.missed.n} runs without you</Chip>
         {card?.action && <Chip tone={closed ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-foreground/30 bg-background text-foreground"}>{card.status === "pushed" ? "Sent to AEO Generation" : card.status === "acted_on" ? "Acted on" : card.status === "done" ? "Done" : CARD_ACTIONS[card.action]}</Chip>}
         {g.isNew && <Chip tone="border-violet-300 bg-violet-50 text-violet-800">New</Chip>}
         {g.recommendation && <Chip>Who should I use</Chip>}
@@ -97,7 +109,7 @@ function OpportunityCard({ g, card, others, pillars, companyId, working, onWrite
       {open && (
       <div className="border-t border-border px-3 pb-2.5">
       <div className="divide-y divide-border/60">
-        <Measured g={g} />
+        <Measured g={g} prompts={prompts} />
         {card && (
           <>
             <Line label="How they got there"><How card={card} /></Line>
@@ -162,7 +174,7 @@ function OpportunityCard({ g, card, others, pillars, companyId, working, onWrite
   );
 }
 
-function WinCard({ g, card, working, onWrite }) {
+function WinCard({ g, card, prompts, working, onWrite }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="rounded-md border border-border">
@@ -176,7 +188,7 @@ function WinCard({ g, card, working, onWrite }) {
       {open && (
         <div className="border-t border-border px-3 pb-2.5">
           <div className="divide-y divide-border/60">
-            <Measured g={g} />
+            <Measured g={g} prompts={prompts} />
             {card && (
               <>
                 <Line label="How you got there"><How card={card} mine /></Line>
@@ -222,7 +234,7 @@ function Split({ g }) {
  * Opportunities (Open first, then by opportunity score), Wins and Skipped. Each group is a collapsed
  * panel: its name and standing in the title, the searches and the card inside.
  */
-export default function GroupsBlock({ run, cards, pillars, limits, signal = { occasional: 0.2 }, cutoff = 0.5, companyId, working, busy, progress, onAnalyze, onWrite, onChange, onPush }) {
+export default function GroupsBlock({ run, cards, pillars, limits, signal = { occasional: 0.2 }, minMissed = 5, prompts = [], companyId, working, busy, progress, onAnalyze, onWrite, onChange, onPush }) {
   if (!run) return null;
   const g = run.groups;
   const cardOf = (id) => cards.find((c) => c.group_id === id && c.scenario_run_id === run.id) || null;
@@ -244,20 +256,23 @@ export default function GroupsBlock({ run, cards, pillars, limits, signal = { oc
     >
       {progress && <p className="flex items-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900"><Loader2 className="h-3.5 w-3.5 animate-spin" />{progress}</p>}
       {run.ungrouped > 0 && g.all.length > 0 && <p className="text-xs text-amber-800">{run.ungrouped} new searches are not sorted into the groups yet. Click Analyze again.</p>}
+      {g.all.length > 0 && run.score.own && (
+        <p className="text-xs text-foreground">You were not named in <span className="font-medium tabular-nums">{g.all[0].missed.n} of {run.score.runs}</span> runs. The Opportunities below are what ChatGPT searched in those runs.</p>
+      )}
       {g.all.length > 0 && <Split g={g} />}
 
       {g.opportunities.length > 0 && (
         <div className="space-y-1.5">
-          <p className="text-xs font-medium text-foreground">Opportunities <span className="font-normal text-muted-foreground">· searched often, and you are rarely named</span></p>
+          <p className="text-xs font-medium text-foreground">Opportunities <span className="font-normal text-muted-foreground">· what ChatGPT searched in the runs where you were not named</span></p>
           {g.opportunities.map((x) => (
-            <OpportunityCard key={x.id} g={x} card={cardOf(x.id)} others={pushable.filter((o) => o.g.id !== x.id)} pillars={pillars} companyId={companyId} working={working} onWrite={onWrite} onChange={onChange} onPush={onPush} />
+            <OpportunityCard key={x.id} g={x} card={cardOf(x.id)} others={pushable.filter((o) => o.g.id !== x.id)} pillars={pillars} prompts={prompts} companyId={companyId} working={working} onWrite={onWrite} onChange={onChange} onPush={onPush} />
           ))}
         </div>
       )}
       {g.wins.length > 0 && (
         <div className="space-y-1.5">
-          <p className="text-xs font-medium text-foreground">Wins <span className="font-normal text-muted-foreground">· searched often, and you are already named</span></p>
-          {g.wins.map((x) => <WinCard key={x.id} g={x} card={cardOf(x.id)} working={working} onWrite={onWrite} />)}
+          <p className="text-xs font-medium text-foreground">Wins <span className="font-normal text-muted-foreground">· searched often, and almost only in runs where you are named</span></p>
+          {g.wins.map((x) => <WinCard key={x.id} g={x} card={cardOf(x.id)} prompts={prompts} working={working} onWrite={onWrite} />)}
         </div>
       )}
       <div className="space-y-1.5">
@@ -270,9 +285,9 @@ export default function GroupsBlock({ run, cards, pillars, limits, signal = { oc
         )}
         {g.all.length > 0 && (
           <Fold title="How to read this" figure="what Opportunity, Win, Skipped, Score and 80/20 mean">
-            <p className="text-foreground"><span className="font-medium">Opportunity:</span> ChatGPT searches this in at least {pc(signal.occasional)} of the runs, and you are named in fewer than {pc(cutoff)} of those. Open ones come first, then by score (how often it is searched × the share of those runs without you). The top {limits.opportunities} are analyzed.</p>
-            <p className="text-foreground"><span className="font-medium">Win:</span> you are already named in {pc(cutoff)} or more of the runs that searched it. The top {limits.wins} are analyzed, to repeat what works.</p>
-            <p className="text-foreground"><span className="font-medium">Skipped:</span> noise. ChatGPT searched it in fewer than {pc(signal.occasional)} of the runs.</p>
+            <p className="text-foreground"><span className="font-medium">Opportunity:</span> the runs are split into those where you were named and those where you were not. A search ChatGPT ran in at least {minMissed} of the runs where you were not named is an Opportunity, and its card shows what ChatGPT searched, named and cited in those runs. Score: the share of your missing runs it is part of × how often you are missing when it is searched. Highest first; the top {limits.opportunities} are analyzed.</p>
+            <p className="text-foreground"><span className="font-medium">Win:</span> searched in at least {pc(signal.occasional)} of the runs, and in fewer than {minMissed} where you were not named. The top {limits.wins} are analyzed, to repeat what works.</p>
+            <p className="text-foreground"><span className="font-medium">Skipped:</span> noise. ChatGPT searched it in fewer than {pc(signal.occasional)} of the runs, and in fewer than {minMissed} where you were not named.</p>
             <p className="text-foreground"><span className="font-medium">80/20</span> marks the groups that account for 80% of all searches. <span className="font-medium">Open / Contested / Dominated</span> says how firmly another brand holds those answers.</p>
             <p className="text-muted-foreground">The counts are the app&apos;s. Lines marked “estimate” are the AI&apos;s reading of the pages ChatGPT cited: we can see what it searched and cited, not why it chose those pages. The next Run tests the estimate.</p>
           </Fold>
