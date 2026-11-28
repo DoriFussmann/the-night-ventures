@@ -3,7 +3,7 @@
 import { supabase } from "@/lib/supabase";
 import { loadPlaybook, nextCode, upsertRow } from "../aeoPlaybook/api";
 import { createBriefs, loadBriefs, updateBrief } from "../aeoGeneration/briefs";
-import { mergeSettings, situationText, sortPrompts } from "../../../../lib/fan-out/core.js";
+import { mergeSettings, renumberName, scenarioNumber, situationText, sortPrompts } from "../../../../lib/fan-out/core.js";
 import { PUSHED_ACTIONS, briefFromCard, buyerPrompts } from "../../../../lib/fan-out/groups.js";
 
 const ENDPOINT = "/api/fan-out";
@@ -152,11 +152,38 @@ export function situationRow(fields) {
   return { ...row, description: situationText(row) || "(no description)" };
 }
 
-/** Saves a new Situation to the bank. variantOf is the id of the Situation it is a variant of, or "". */
-export async function createSituation(companyId, { fields, title, variantOf = "" }, existing) {
+/**
+ * The serial number the next Scenario of a company gets, read from the database now (not from the list on the
+ * page, which can be out of date or empty). Scenario 12 has the code F012.
+ */
+export async function nextScenarioNumber(companyId) {
+  const rows = ok(await supabase.from("fo_situations").select("code").eq("company_id", companyId), "Scenarios") || [];
+  return rows.reduce((m, r) => Math.max(m, scenarioNumber(r.code)), 0) + 1;
+}
+
+/**
+ * Saves a new Situation to the bank. variantOf is the id of the Situation it is a variant of, or "".
+ * The serial number is taken from the database at this moment, and the code is unique per company: if two are
+ * saved at once, the second takes the next number. A name in the standard form gets that number at its start.
+ */
+export async function createSituation(companyId, { fields, title, variantOf = "" }) {
   const settings = await loadEngineSettings();
-  const row = { company_id: companyId, code: nextCode(existing, "F", 3), version: 2, runs: settings.runs_per_prompt, title: String(title || "").trim().slice(0, 160), variant_of: variantOf || null, ...situationRow(fields) };
-  return ok(await supabase.from("fo_situations").insert(row).select("*").single(), "Situation");
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const number = await nextScenarioNumber(companyId);
+    const row = {
+      company_id: companyId,
+      code: `F${String(number).padStart(3, "0")}`,
+      version: 2,
+      runs: settings.runs_per_prompt,
+      title: renumberName(String(title || "").trim(), number).slice(0, 160),
+      variant_of: variantOf || null,
+      ...situationRow(fields),
+    };
+    const res = await supabase.from("fo_situations").insert(row).select("*").single();
+    if (!res.error) return res.data;
+    if (res.error.code !== "23505") throw new Error(`Situation: ${res.error.message}`);
+  }
+  throw new Error("Another Scenario was being saved at the same moment. Try again.");
 }
 
 export async function updateSituation(id, patch) {

@@ -19,7 +19,6 @@ import {
   promptLabel,
   renameForFields,
   scenarioName,
-  scenarioNumber,
   staleAfter,
 } from "../../../lib/fan-out/core.js";
 import {
@@ -40,6 +39,7 @@ import {
   loadInsights,
   loadRunDetail,
   loadSituation,
+  nextScenarioNumber,
   pushCard,
   removePrompt,
   restoreBrand,
@@ -252,14 +252,15 @@ function NewSituation({ companyId, situations, working, guard, busy, onCreated, 
     const out = await checkSituation(companyId, fields);
     setChecked({ ...out, fields });
     // Always written the same way: number | Name in Title Case | Stage | Direction.
-    const number = situations.reduce((m, s) => Math.max(m, scenarioNumber(s.code)), 0) + 1;
+    // The serial number comes from the database now, not from the list on the page.
+    const number = await nextScenarioNumber(companyId);
     setName(scenarioName({ number, name: out.name, stage: fields.stage, direction: fields.direction }));
     setChoice("new");
   });
 
   const save = () => guard("create", async () => {
     if (!name.trim()) throw new Error("Give the Situation a name first.");
-    const row = await createSituation(companyId, { fields, title: name, variantOf: choice === "new" ? "" : choice }, situations);
+    const row = await createSituation(companyId, { fields, title: name, variantOf: choice === "new" ? "" : choice });
     onCreated(row);
   });
 

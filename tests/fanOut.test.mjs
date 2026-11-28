@@ -35,6 +35,7 @@ import {
   promptIssues,
   promptLabel,
   renameForFields,
+  renumberName,
   scenarioName,
   scenarioNumber,
   titleCase,
@@ -357,4 +358,8 @@ test('a Scenario name is always "number | Title Case Name | Stage | Direction", 
   assert.equal(renameForFields(name, 'comparing', 'explain'), '1 | Founder Ready to Raise Funding Round | Stage: Comparing | Direction: Explain')
   assert.equal(renameForFields('My own name', 'comparing', 'explain'), 'My own name')
   assert.equal(scenarioNumber('F012'), 12)
+  // The leading number is the Scenario's serial number, whatever was typed.
+  assert.equal(renumberName(name, 7), '7 | Founder Ready to Raise Funding Round | Stage: Exploring | Direction: Recommend')
+  assert.equal(renumberName('Founder Ready | Stage: Exploring | Direction: Recommend', 3), '3 | Founder Ready | Stage: Exploring | Direction: Recommend')
+  assert.equal(renumberName('My own name', 3), 'My own name')
 })
