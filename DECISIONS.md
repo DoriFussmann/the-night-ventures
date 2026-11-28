@@ -50,3 +50,14 @@ Append-only log. Newest at the bottom. Format: date · decision · why · altern
 - **Prompts:** the request no longer includes the ICP (the spec's draft starts with `PERSON: {icp}`). It may not add a requirement or an exclusion the Situation does not state. `{icp}` still works in an admin-edited prompt.
 - **Checked on a real generation:** the same Situation, rebuilt as Rupert F002, gave a neutral persona and nine prompts open to all four kinds of help.
 - **Not changed:** F001's persona and prompts were written before this and carry the same tilt. They are frozen with its Baseline.
+
+## 2026-11-27 · Fan-Out: an Opportunity is what ChatGPT searched where the company was not named (CEO decision)
+- **Why:** all searches were grouped together and each group judged by how often the company was named in its runs. With broad groups every group repeated the overall score. Rupert F002 (named in 41 of 63 runs, in 2 of 21 Short runs) reported no Opportunity.
+- **Rule now:** the runs are split into named and not named. A Query Group is an Opportunity when ChatGPT searched it in at least 5 runs where the company was not named (`cutoffs.min_missed`, in the admin). This replaces "named in fewer than 50% of the runs that searched it" in the spec. The 50% cut-off is still what Moved means on a re-run.
+- **An Opportunity is described by the missed runs only:** the searches, the brands named instead, the pages cited, the prompts.
+- **Score:** the share of the missed runs the group is part of, times how often the company is missing when it is searched.
+- **Tried and dropped:** calling a theme background when it is as common in the named runs. Named runs carry about twice as many searches each (3.6 against 1.7 on F002), so every theme looked like background.
+- **Grouping:** the first grouping starts from the searches of the missed runs, then sorts the rest into those groups. The request asks for narrow groups.
+- **Own page:** counts as covering a search only when cited in at least 2 and a quarter of those runs.
+- **Later, agreed:** the same analysis for runs where the company is named but not recommended.
+- **Known:** the second pass still merges too much into the first groups (one group of 81 searches on F002, and no Win group); two of F002's four Opportunities overlap on the SEC rules.
