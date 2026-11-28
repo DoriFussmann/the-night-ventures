@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { DEFAULT_SETTINGS } from '../lib/fan-out/core.js'
-import { brandSites, buildLabelPrompt, labelBatches, quoteFits, margin, mentionExcerpt, mentionIndex, namedOrder, parseLabels, scoreRuns, share, signalLabel, unlabeled, verdict } from '../lib/fan-out/score.js'
+import { brandKey, brandSites, buildLabelPrompt, labelBatches, quoteFits, margin, mentionExcerpt, mentionIndex, namedOrder, parseLabels, scoreRuns, share, signalLabel, unlabeled, verdict } from '../lib/fan-out/score.js'
 
 const OWN = { id: 'own', name: 'Rupert', name_patterns: ['Rupert', 'Hey Rupert'], is_own: true }
 const RIVAL = { id: 'riv', name: 'RivalCo', name_patterns: [], is_own: false }
@@ -133,4 +133,19 @@ test('a discovered brand gets its website from the Run: the tag\'s own address, 
   const d = scoreRuns(runs, [OWN]).discovered
   assert.equal(d.find((x) => x.name === 'A3M Consultants').site, 'a3mconsultants.com')
   assert.equal(d.find((x) => x.name === 'HubSpot').site, 'hubspot.com')
+})
+
+test('one brand under different spellings is one discovered brand, shown under its most used spelling', () => {
+  assert.equal(brandKey('Signal by NFX'), brandKey('NFX Signal'))
+  assert.equal(brandKey('Streak CRM'), brandKey('Streak'))
+  assert.equal(brandKey('Apollo.io'), brandKey('Apollo'))
+  assert.notEqual(brandKey('Gmail'), brandKey('Google Sheets'))
+  assert.equal(brandKey('CRM'), 'crm') // a name made only of generic words keeps them
+  const runs = [
+    run('1', 'short', 'Try Signal by NFX and Streak.', ['Signal by NFX', 'Streak']),
+    run('2', 'short', 'Try NFX Signal, or Streak CRM.', ['NFX Signal', 'Streak CRM']),
+    run('3', 'short', 'Signal by NFX again. Streak CRM too.', ['Signal by NFX', 'Streak CRM']),
+  ]
+  const d = scoreRuns(runs, [OWN]).discovered
+  assert.deepEqual(d.map((x) => [x.name, x.runs]), [['Signal by NFX', 3], ['Streak CRM', 3]])
 })
