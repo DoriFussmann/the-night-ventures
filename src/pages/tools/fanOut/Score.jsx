@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { ChevronDown, ChevronRight, ExternalLink, EyeOff, Loader2, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DIRECTIONS, FORM_LABELS, TYPE_ORDER } from "../../../../lib/fan-out/core.js";
-import { MENTION_LABELS } from "../../../../lib/fan-out/score.js";
+import { MENTION_LABELS, brandKey } from "../../../../lib/fan-out/score.js";
 
 const inputClass = "h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring";
 const day = (iso) => (iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "");
@@ -227,11 +227,12 @@ export default function ScoreBlock({ data, baselineId, takeaway, working, busy, 
 export function DiscoveredCard({ run, ignored = [], working, onTrack, onIgnore, onRestore }) {
   if (!run) return null;
   const s = run.score;
-  const hidden = new Set(ignored.map((i) => String(i.name).toLowerCase()));
-  const open = s.discovered.filter((d) => !hidden.has(d.name.toLowerCase()));
+  // An ignored brand stays ignored under any of its spellings.
+  const hidden = new Set(ignored.map((i) => brandKey(i.name)));
+  const open = s.discovered.filter((d) => !hidden.has(brandKey(d.name)));
   const main = open.filter((d) => d.signal !== "Noise");
   const rare = open.filter((d) => d.signal === "Noise");
-  const shelved = s.discovered.filter((d) => hidden.has(d.name.toLowerCase()));
+  const shelved = s.discovered.filter((d) => hidden.has(brandKey(d.name)));
   const max = Math.max(1, ...s.discovered.map((d) => d.runs));
   const row = (d, dim) => (
     <li key={d.name} className="grid grid-cols-[minmax(7rem,14rem)_1fr_auto_auto] items-center gap-3 rounded-md border border-border px-3 py-2 text-xs">

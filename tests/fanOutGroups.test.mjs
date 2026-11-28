@@ -189,3 +189,15 @@ test('pages are read only from public web addresses, and HTML becomes plain text
   assert.ok(Date.now() - t0 < 1500)
   assert.ok(text.includes('## Pricing') && text.includes('From & to $5 k') && text.includes('Plan | Price') && !/alert|Menu|p\{\}/.test(text))
 })
+
+test('a brand that is not tracked is matched to the site named after it; long AI lines end at a sentence or a whole word', () => {
+  const cited = (domain) => ({ cited: [{ domain, url: `https://${domain}/` }] })
+  for (const [name, domain] of [['HubSpot CRM', 'hubspot.com'], ['Apollo.io', 'apollo.io'], ['Signal by NFX', 'signal.nfx.com'], ['Mailmeteor', 'mailmeteor.com'], ['Crunchbase', 'www.crunchbase.com']]) {
+    assert.equal(howTheyGotThere({ name, brandId: '', runs: 2 }, cited(domain), brands).how, 'own_page', name)
+  }
+  assert.equal(howTheyGotThere({ name: 'HubSpot CRM', brandId: '', runs: 2 }, cited('crunchbase.com'), brands).how, 'neither')
+  const long = `${'The page answers the search. '.repeat(30)}`
+  const card = parseCard(JSON.stringify({ reasons: ['direct_match'], why: long, action_line: 'word '.repeat(200), what_to_cover: ['a b', 'c d', 'e f'] }), { kind: 'opportunity', yourPage: { kind: 'none' } })
+  assert.ok(card.why.length <= 500 && card.why.endsWith('search.'))
+  assert.ok(card.actionLine.length <= 401 && card.actionLine.endsWith('word…'))
+})
