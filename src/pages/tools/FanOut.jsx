@@ -736,7 +736,7 @@ export default function FanOut() {
     const run = shownRun;
     if (!run) return;
     const company = map.brands.find((b) => b.is_own)?.name || "";
-    const text = buildReport({ company, situation, prompts, run, allRuns: score.runs, scenarioRuns, cards, ignored: map.ignored || [], limits: score.limits, signal: score.signal, cutoff: score.cutoff });
+    const text = buildReport({ company, situation, prompts, run, allRuns: score.runs, scenarioRuns, cards, ignored: map.ignored || [], limits: score.limits, signal: score.signal, cutoff: score.cutoff, minMissed: score.minMissed });
     const url = URL.createObjectURL(new Blob([text], { type: "text/markdown;charset=utf-8" }));
     const a = document.createElement("a");
     a.href = url;
@@ -1098,7 +1098,7 @@ export default function FanOut() {
                 {scoredRun && <DiscoveredCard run={score.runs.find((r) => r.id === pickedRun) || scoredRun} ignored={map.ignored || []} working={working} onTrack={doTrack} onIgnore={doIgnore} onRestore={doRestore} />}
                 {scoredRun && scoredRun.status !== "running" && (
                   <>
-                    <GroupsBlock run={scoredRun} cards={cards} pillars={map.pillars} limits={score.limits} signal={score.signal} cutoff={score.cutoff} companyId={companyId} working={working} busy={busy} progress={analysis} onAnalyze={doAnalyze} onWrite={doCard} onChange={changeCard} onPush={doPush} />
+                    <GroupsBlock run={scoredRun} cards={cards} pillars={map.pillars} limits={score.limits} signal={score.signal} minMissed={score.minMissed} prompts={prompts} companyId={companyId} working={working} busy={busy} progress={analysis} onAnalyze={doAnalyze} onWrite={doCard} onChange={changeCard} onPush={doPush} />
                     {pushNote && <p className={`rounded-md px-3 py-2 text-xs ${pushNote.ok ? "bg-emerald-50 text-emerald-900" : "bg-amber-50 text-amber-900"}`}>{pushNote.text}</p>}
                   </>
                 )}

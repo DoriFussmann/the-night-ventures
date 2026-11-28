@@ -99,7 +99,8 @@ export default function FanOutSettingsCard({ cardClass = "" }) {
             <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Thresholds (percent of runs)</p>
             {row("Signal: Strong from", share("signal", "strong"))}
             {row("Signal: Occasional from", share("signal", "occasional"), "Below this is Noise.")}
-            {row("Opportunity: named in fewer than", share("cutoffs", "opportunity"), "of the runs for that search. Also the Moved cut-off.")}
+            {row("Opportunity: searched in at least", <input className={inputClass} type="number" min={1} max={50} value={s.cutoffs.min_missed ?? 5} onChange={(e) => setS((v) => ({ ...v, cutoffs: { ...v.cutoffs, min_missed: Math.max(1, Math.min(50, Math.round(Number(e.target.value) || 5))) } }))} />, "runs where the company was not named. A count, not a percent.")}
+            {row("Moved: named in at least", share("cutoffs", "opportunity"), "of the runs for that search, after being below it.")}
             {row("Difficulty: Open up to", share("cutoffs", "open"), "the most-named brand's share.")}
             {row("Difficulty: Dominated from", share("cutoffs", "dominated"))}
           </div>
