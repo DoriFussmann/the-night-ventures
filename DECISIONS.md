@@ -43,3 +43,10 @@ Append-only log. Newest at the bottom. Format: date · decision · why · altern
 - **Differences found and fixed (PR #98):** the "who should I use" flag on Query Groups; the action set by rule by the app (five actions, including Commercial page or FAQ) instead of chosen by the AI; a comparison article only when the user chooses it.
 - **Difference not undone:** the project copy says existing situations are left as they are and Scenarios start fresh. F001 (Rupert) was given fields, a new persona and 9 prompts during verification, and its two old prompts were removed (it had no runs; its original text is kept). The page also offers "Fill the fields from this text" on older situations. F002 and F003 were not changed, apart from the summary cards written for their earlier runs.
 - **Rule from now on:** read the project docs with the Projects tool before planning. An attachment is not the source of truth.
+
+## 2026-11-27 · Fan-Out: the ICP's selling points kept out of the persona and the prompts (Claude, CEO asked for the fix)
+- **What happened:** the persona was built from the ICP, which describes the customer partly by what they like about the company ("approve every message, keep every investor relationship"). That came back as the person's "What matters" and then as demands in the prompts (8 of 9 on Rupert F002). The Run measured a buyer who already wanted the company's model: Mentioned 94%, no Opportunities.
+- **Persona:** the request no longer includes the ICP's summary line or "Problem & Reasons to Buy". The Situation comes first; the ICP is marked as background for vocabulary and knowledge level; "What matters" comes from the Situation.
+- **Prompts:** the request no longer includes the ICP (the spec's draft starts with `PERSON: {icp}`). It may not add a requirement or an exclusion the Situation does not state. `{icp}` still works in an admin-edited prompt.
+- **Checked on a real generation:** the same Situation, rebuilt as Rupert F002, gave a neutral persona and nine prompts open to all four kinds of help.
+- **Not changed:** F001's persona and prompts were written before this and carry the same tilt. They are frozen with its Baseline.

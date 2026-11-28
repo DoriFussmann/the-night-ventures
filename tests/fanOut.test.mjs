@@ -82,6 +82,10 @@ test('icpExcerpt keeps the customer line, Ideal Customer, Buyer Situations and A
   for (const want of ['Bootstrapped founders', 'keep-ideal', '| S1 | First raise |', 'keep-note', 'keep-alt']) assert.ok(out.includes(want), want)
   for (const not of ['secret-a', 'secret-b']) assert.ok(!out.includes(not), not)
   assert.equal(icpExcerpt(''), '')
+  const pitch = ['# ICP: Acme', 'Founders who want the Acme way.', '## Ideal Customer', 'keep-ideal', '## Problem & Reasons to Buy', 'why-acme', '## Buyer Situations', 'keep-sit'].join('\n')
+  assert.ok(icpExcerpt(pitch).includes('why-acme') && icpExcerpt(pitch).includes('the Acme way'))
+  const lean = icpExcerpt(pitch, 9000, { reasons: false, summary: false })
+  assert.ok(lean.includes('keep-ideal') && lean.includes('keep-sit') && !lean.includes('why-acme') && !lean.includes('the Acme way'), lean)
 })
 
 const SITUATION = { who: 'Founder and CEO of a three-person B2B SaaS', trigger_event: 'Three weeks of cold outreach to investors got no reply', goal: 'Raise a seed round', stage: 'comparing', direction: 'recommend', comments: '' }
@@ -120,6 +124,11 @@ test('the persona is three tight fields, built without the Alternatives of the I
   const req = buildPersonaPrompt({ situation: SITUATION, icpMd: '# ICP\nline\n## Buyer Situations\n| S1 | x |\n## Alternatives\nRivalCo' })
   assert.ok(req.includes('| S1 | x |') && req.includes('Three weeks of cold outreach') && req.includes('/ Comparing'))
   assert.ok(!req.includes('RivalCo'))
+  // The company's own arguments are not sent, and the request says its selling points are not this person's criteria.
+  const sold = buildPersonaPrompt({ situation: SITUATION, icpMd: '# ICP\nFounders who want to approve every message.\n## Ideal Customer\nFounder\n## Problem & Reasons to Buy\nWhy us: flat fee\n## Buyer Situations\n| S1 | x |' })
+  assert.ok(sold.includes('| S1 | x |') && !sold.includes('flat fee') && !sold.includes('approve every message'), sold)
+  assert.ok(/selling points, not this person's criteria/.test(sold) && sold.indexOf('SITUATION:') < sold.indexOf('BACKGROUND'))
+  assert.ok(buildPersonaPrompt({ situation: SITUATION, icpShort: 'Founders raising' }).includes('Founders raising'))
   const p = parsePersona('{"knowledge_level":"Novice","what_matters":["speed","cost","not wasting time","a fourth"],"vocabulary":["raise money","investors","Rupert","pitch","warm intro","seed","extra"]}', ['Rupert'])
   assert.equal(p.knowledge_level, 'novice')
   assert.deepEqual(p.what_matters, ['speed', 'cost', 'not wasting time'])
@@ -133,7 +142,9 @@ test('the prompt request fills every dynamic field, follows the Direction, and c
   const persona = { knowledge_level: 'novice', what_matters: ['speed', 'cost'], vocabulary: ['raise money', 'investors'] }
   const req = buildPromptsPrompt({ situation: SITUATION, persona, icpShort: 'Founders raising a first round' })
   assert.ok(!/\{[a-z_]+\}/.test(req), 'no unfilled field')
-  assert.ok(req.includes('PERSON: Founders raising a first round') && req.includes('knowledge level novice; what matters: speed; cost; vocabulary: raise money, investors'))
+  // The ICP is not sent with the prompts: it carries the company's selling points, and they came back as the person's demands.
+  assert.ok(!req.includes('Founders raising a first round') && req.includes('knowledge level novice; what matters: speed; cost; vocabulary: raise money, investors'))
+  assert.ok(/Do not add a requirement, a condition or an exclusion/.test(req) && /stays open to all of them/.test(req))
   assert.ok(req.includes('Write 3 prompts of each type') && req.includes('SHORT: 1–2 sentences') && req.includes('LONG: 4–6 sentences'))
   assert.ok(req.includes(DIRECTIONS.recommend.rule) && /Never name any company, product or brand/.test(req) && /% or \+/.test(req))
   assert.ok(req.includes('ADDITIONAL CONTEXT: (none)'))
